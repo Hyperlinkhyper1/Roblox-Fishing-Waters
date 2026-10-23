@@ -117,6 +117,13 @@ function Map.build(onHarbourReady: ((Folder) -> ())?, onStage: ((string, number)
 	local function context(biome: Biomes.Biome, index: number): Regions.Context
 		local folder = Instance.new("Folder")
 		folder.Name = biome.name
+		-- Set an island's streaming mode as it's parented, before it first replicates.
+		-- Switching it once the whole map is done made every island re-stream at once.
+		folder.ChildAdded:Connect(function(child)
+			if child:IsA("Model") and child:FindFirstChild("Ground") then
+				Lod.prepareIsland(child)
+			end
+		end)
 		folder.Parent = root
 		return { rng = Random.new(Biomes.Seed + index), biome = biome, folder = folder, placed = placed }
 	end
@@ -219,6 +226,11 @@ function Map.animate()
 		return
 	end
 	for _, lens in root:GetDescendants() do
+		-- Repair glazing already baked into saved maps, including current layouts
+		-- whose builders correctly reuse their existing models at startup.
+		if lens:IsA("BasePart") and lens.Material == Enum.Material.Glass and lens.Transparency > 0 then
+			lens.Material = Enum.Material.SmoothPlastic
+		end
 		if lens.Name == "LighthouseLens" and lens:IsA("BasePart") then
 			local pivot = lens.CFrame
 			task.spawn(function()

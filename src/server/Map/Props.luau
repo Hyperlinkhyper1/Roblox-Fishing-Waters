@@ -966,7 +966,7 @@ function Props.lighthouse(parent: Instance, ground: Vector3): Model
 	end
 
 	-- Lantern room
-	local glass = cylinder(m, Vector3.new(gx, y + 4, gz), 6, (r - 0.5) * 2, rgb(255, 240, 200), M.Glass)
+	local glass = cylinder(m, Vector3.new(gx, y + 4, gz), 6, (r - 0.5) * 2, rgb(255, 240, 200), M.SmoothPlastic)
 	glass.Transparency = 0.5
 	local lamp = ball(m, Vector3.new(gx, y + 4, gz), 3, LAMP, M.Neon)
 	light(lamp, LAMP, 100, 3)
@@ -1496,7 +1496,7 @@ end
 -- Little sandcastle with four towers, a keep and a flag, ringed by a moat.
 function Props.sandcastle(parent: Instance, ground: Vector3, color: Color3): Model
 	local m = newModel("Sandcastle", parent)
-	cylinder(m, ground + Vector3.new(0, 0.05, 0), 0.1, 7.5, rgb(120, 140, 130), M.Glass).Transparency = 0.3
+	cylinder(m, ground + Vector3.new(0, 0.05, 0), 0.1, 7.5, rgb(120, 140, 130), M.SmoothPlastic).Transparency = 0.3
 	part(m, Vector3.new(4, 1.2, 4), CFrame.new(ground + Vector3.new(0, 0.6, 0)), color, M.Sand)
 	for _, x in { -1.8, 1.8 } do
 		for _, z in { -1.8, 1.8 } do

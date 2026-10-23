@@ -232,6 +232,8 @@ function FishingBoat.build(frame: CFrame, anchored: boolean?): Model
 
 	-- Cream wheelhouse near the stern. The 2.6-stud front opening reaches the
 	-- same level deck without a doorstep; the helm controls do not obstruct it.
+	-- Transparent SmoothPlastic keeps terrain water visible through the windows;
+	-- refractive Glass hides water and other transparent effects behind it.
 	part("CabinBackLower", Vector3.new(4.2, 2.35, 0.24), CFrame.new(0, 2.275, 7.8), CREAM, nil, true)
 	part("CabinBackHeader", Vector3.new(4.2, 0.55, 0.24), CFrame.new(0, 6.525, 7.8), CREAM, nil, true)
 	for _, side in { -1, 1 } do
@@ -244,7 +246,7 @@ function FishingBoat.build(frame: CFrame, anchored: boolean?): Model
 			Vector3.new(0.58, 2.55, 0.12),
 			CFrame.new(side * 1.7, 4.825, 3.0),
 			GLASS,
-			Enum.Material.Glass,
+			Enum.Material.SmoothPlastic,
 			true
 		)
 		frontGlass.Transparency = 0.28
@@ -255,7 +257,7 @@ function FishingBoat.build(frame: CFrame, anchored: boolean?): Model
 				Vector3.new(0.12, 2.55, 2.12),
 				CFrame.new(side * 1.98, 4.825, z),
 				GLASS,
-				Enum.Material.Glass,
+				Enum.Material.SmoothPlastic,
 				true
 			)
 			glass.Transparency = 0.28
@@ -267,7 +269,7 @@ function FishingBoat.build(frame: CFrame, anchored: boolean?): Model
 			Vector3.new(1.67, 2.55, 0.12),
 			CFrame.new(side * 0.97, 4.825, 7.8),
 			GLASS,
-			Enum.Material.Glass,
+			Enum.Material.SmoothPlastic,
 			true
 		)
 		rearGlass.Transparency = 0.28

@@ -81,6 +81,7 @@ local pool = beams()
 assert(#pool > 0 and #pool <= 100 and #heartbeat.callbacks == 1, "Startup must keep one bounded render pool")
 local motion, previous = false, {}
 local maximumSeaHeight = 0
+local strongestCrestOpacity = 0
 for _ = 1, 120 do
 	tick(1 / 30)
 	for _, beam in pool do
@@ -96,6 +97,10 @@ for _ = 1, 120 do
 		local actual = dependencies.Weather.heightAt(position, now, dependencies.Weather.getState(now))
 		assert(math.abs(position.Y - actual - 0.06) < 1e-5, "Visible crests must sample the boat's exact wave height")
 		maximumSeaHeight = math.max(maximumSeaHeight, position.Y)
+		if beam.Name == "WindCrest" then
+			strongestCrestOpacity = math.max(strongestCrestOpacity, 1 - beam.LocalTransparencyModifier)
+			assert(beam.Width0 > 1, "Crests must be wide enough to read from a boat")
+		end
 		assert(
 			math.abs(attachment.CFrame.RightVector:Dot(attachment.CFrame.UpVector)) < 1e-5,
 			"Water ribbons must lie in the sampled surface tangent plane"
@@ -105,9 +110,14 @@ end
 assert(motion and maximumSeaHeight > 0.3, "Storm crests must visibly move and rise above the sea")
 assert(enabledCount() > 0, "Open water must show crests")
 local seaRipple = workspace.Terrain.WaterWaveSize
+assert(seaRipple > 0.7 and seaRipple <= 1, "Storm surface must visibly roll within the engine wave-height limit")
+assert(strongestCrestOpacity > 0.5, "Storm crests must have clearly visible contrast")
 dry = true
 tick(1)
+tick(1)
 assert(enabledCount() == 0, "Dry land must mask all swells")
+assert(workspace.Terrain.WaterWaveSize < seaRipple * 0.1,
+	"Coastal viewpoints must suppress native oscillations that clip through the shoreline")
 dry = false
 tick(1)
 assert(enabledCount() > 0, "Water masks must refresh after geometry changes")
@@ -125,6 +135,7 @@ for _ = 1, 120 do
 end
 assert(enabledCount() > 0 and #beams() == #pool, "Camera recovery must reuse its render pool")
 assert(workspace.Terrain.WaterWaveSize < seaRipple * 0.5, "Lake ripples must be smaller than open-sea ripples")
+assert(workspace.Terrain.WaterWaveSize < 0.3, "Inner lake must retain sheltered waves")
 camera.CFrame = CFrame.new(0, -3, 0)
 tick(0.04)
 assert(enabledCount() == 0, "Submerged camera must hide surface ribbons")

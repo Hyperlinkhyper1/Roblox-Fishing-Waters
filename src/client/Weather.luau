@@ -15,6 +15,8 @@ local CELL_SIZE = 22
 local RAIN_HEIGHT = 28
 local UPDATE_INTERVAL = 0.2
 local LIGHTNING_INTERVAL = 9
+-- Roblox Creator Store: Rain Effect by Roblox; thunder by Pro Sound Effects.
+local RAIN_SOUND = "rbxassetid://1516791621"
 local THUNDER_SOUND = "rbxassetid://9120018088"
 local STREAK_TEXTURE = "rbxasset://textures/particles/sparkles_main.dds"
 
@@ -64,14 +66,14 @@ local function hash(value: number): number
 	return result - math.floor(result)
 end
 
-local function thunderSoundId(): string
-	local override = workspace:GetAttribute("WeatherThunderSoundId")
+local function soundId(attribute: string, defaultId: string): string
+	local override = workspace:GetAttribute(attribute)
 	if type(override) == "number" and override > 0 and override < math.huge then
 		return "rbxassetid://" .. tostring(math.floor(override))
 	elseif type(override) == "string" and string.match(override, "^rbxassetid://%d+$") then
 		return override
 	end
-	return THUNDER_SOUND
+	return defaultId
 end
 
 function WeatherController.start()
@@ -118,9 +120,15 @@ function WeatherController.start()
 	flash.Parent = Lighting
 	local thunder = Instance.new("Sound")
 	thunder.Name = "WeatherThunder"
-	thunder.SoundId = thunderSoundId()
+	thunder.SoundId = soundId("WeatherThunderSoundId", THUNDER_SOUND)
 	thunder.Volume = 0.5
 	thunder.Parent = SoundService
+	local rainSound = Instance.new("Sound")
+	rainSound.Name = "WeatherRain"
+	rainSound.SoundId = soundId("WeatherRainSoundId", RAIN_SOUND)
+	rainSound.Looped = true
+	rainSound.Volume = 0
+	rainSound.Parent = SoundService
 
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -153,6 +161,10 @@ function WeatherController.start()
 	RunService:BindToRenderStep("WeatherEffects", Enum.RenderPriority.Camera.Value + 2, function(dt: number)
 		local camera = workspace.CurrentCamera
 		if not camera then
+			rainSound.Volume = 0
+			if rainSound.IsPlaying then
+				rainSound:Stop()
+			end
 			if not hidden then
 				hide()
 				hidden = true
@@ -240,6 +252,27 @@ function WeatherController.start()
 		end
 		hidden = shouldHide
 
+		-- Keep audio independent of the particle-performance toggle. Fade the same
+		-- loop with the forecast instead of restarting it as rainfall changes.
+		local rainId = soundId("WeatherRainSoundId", RAIN_SOUND)
+		if rainSound.SoundId ~= rainId then
+			rainSound:Stop()
+			rainSound.SoundId = rainId
+		end
+		local exposure = if submerged then 0.08 elseif sheltered then 0.3 else 1
+		local targetVolume = state.rain * 0.55 * exposure
+		rainSound.Volume += (targetVolume - rainSound.Volume) * (1 - math.exp(-dt * 3))
+		if targetVolume > 0.001 then
+			if not rainSound.IsPlaying then
+				rainSound:Play()
+			end
+		elseif rainSound.Volume < 0.001 then
+			rainSound.Volume = 0
+			if rainSound.IsPlaying then
+				rainSound:Stop()
+			end
+		end
+
 		if state.storm <= 0.1 and previousStorm > 0.1 then
 			thunderToken += 1
 			thunder:Stop()
@@ -264,7 +297,7 @@ function WeatherController.start()
 				local strength = state.storm
 				task.delay(1.1 + hash(bucket * 7) * 2.6, function()
 					if token == thunderToken and Weather.getState(workspace:GetServerTimeNow()).storm > 0.1 then
-						thunder.SoundId = thunderSoundId()
+						thunder.SoundId = soundId("WeatherThunderSoundId", THUNDER_SOUND)
 						thunder.Volume = (0.22 + strength * 0.43) * (0.45 + currentSkyFraction * 0.55)
 						thunder:Play()
 					end

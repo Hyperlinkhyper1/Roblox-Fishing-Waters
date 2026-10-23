@@ -93,10 +93,13 @@ local function move(x, y, z, dt)
   render(dt or 1/60)
 end
 local function clearWater()
-  assert(Terrain.WaterTransparency == 0.9, "Underwater visibility must stay clear")
+  assert(Terrain.WaterTransparency == 0.9, "Nearby underwater scenery must stay clear")
   assert(Terrain.WaterColor.B > Terrain.WaterColor.G and Terrain.WaterColor.G > Terrain.WaterColor.R,
     "Native underwater distance fog must be blue in every biome")
-  assert(atmosphere.Density == 0 and atmosphere.Haze == 0, "Surface haze must not obscure underwater scenery")
+  assert(atmosphere.Density == 0.3 and atmosphere.Offset == 0, "Underwater fog must start at the camera")
+  assert(atmosphere.Haze == 0, "Surface haze must not obscure underwater scenery")
+  assert(atmosphere.Color.B > atmosphere.Color.G and atmosphere.Decay.B > atmosphere.Decay.R,
+    "Underwater fog must be blue")
 end
 Client.start()
 render(1/60)

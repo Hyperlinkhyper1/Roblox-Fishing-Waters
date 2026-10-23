@@ -341,7 +341,7 @@ do
 	end
 	check(freezer and freezer:IsA("Model"), "Shop is missing its default freezer")
 	checkFinish(freezer, {
-		obj_0 = Enum.Material.Glass,
+		obj_0 = Enum.Material.SmoothPlastic,
 		obj_1 = Enum.Material.Ice,
 		obj_2 = Enum.Material.Metal,
 		obj_3 = Enum.Material.SmoothPlastic,

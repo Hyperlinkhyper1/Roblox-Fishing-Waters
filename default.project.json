@@ -26,7 +26,10 @@
     "Workspace": {
       "$properties": {
         "FilteringEnabled": true,
-        "StreamingEnabled": true
+        "StreamingEnabled": true,
+        "StreamingTargetRadius": 1024,
+        "StreamingMinRadius": 128,
+        "StreamOutBehavior": "LowMemory"
       }
     },
     "SoundService": {

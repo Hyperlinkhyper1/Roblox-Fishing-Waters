@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 
 local ShoreWaves = {}
 local TAG = "ShoreWaveSource"
-local PERIOD = 6.8
+local PERIOD = 9.2
 local DISTANCE = 550
 local started = false
 
@@ -57,8 +57,12 @@ function ShoreWaves.start()
 		local water = { source:GetAttribute("WaterHeight1"), source:GetAttribute("WaterHeight2") }
 		local runup = { source:GetAttribute("RunupHeight1"), source:GetAttribute("RunupHeight2") }
 		for i = 1, 2 do
-			if typeof(shore[i]) ~= "Vector3" or typeof(inland[i]) ~= "Vector3"
-				or typeof(water[i]) ~= "number" or typeof(runup[i]) ~= "number" then
+			if
+				typeof(shore[i]) ~= "Vector3"
+				or typeof(inland[i]) ~= "Vector3"
+				or typeof(water[i]) ~= "number"
+				or typeof(runup[i]) ~= "number"
+			then
 				return
 			end
 		end
@@ -69,8 +73,12 @@ function ShoreWaves.start()
 		local tangent = delta.Unit
 		local along = source:GetAttribute("Along") or 0
 		local state = {
-			shore = shore, inland = inland, water = water, runup = runup,
-			along = along, fade = source:GetAttribute("EdgeFade") or 1,
+			shore = shore,
+			inland = inland,
+			water = water,
+			runup = runup,
+			along = along,
+			fade = source:GetAttribute("EdgeFade") or 1,
 			waves = {},
 		}
 		for layer = 0, 1 do
@@ -88,9 +96,11 @@ function ShoreWaves.start()
 			beam.Texture = "rbxasset://textures/particles/smoke_main.dds"
 			beam.TextureMode = Enum.TextureMode.Wrap
 			beam.TextureLength = 3.4 + math.sin(along / 17) * 0.6
-			beam.TextureSpeed = 0.12
+			beam.TextureSpeed = 0.04
 			beam.LightEmission = 0
 			beam.LightInfluence = 1
+			-- Separate the foam from the nearly coplanar sand/water depth surface.
+			beam.ZOffset = 0.15
 			beam.Transparency = NumberSequence.new({
 				NumberSequenceKeypoint.new(0, 1),
 				NumberSequenceKeypoint.new(0.18, 0.15),
@@ -101,7 +111,10 @@ function ShoreWaves.start()
 			beam.Enabled = false
 			beam.Parent = source
 			table.insert(state.waves, {
-				a = a, b = b, beam = beam, layer = layer,
+				a = a,
+				b = b,
+				beam = beam,
+				layer = layer,
 				tangentA = (tangent + inland[1] * 0.18).Unit,
 				tangentB = (tangent - inland[2] * 0.18).Unit,
 			})
@@ -115,17 +128,14 @@ function ShoreWaves.start()
 		add(source)
 	end
 
-	local elapsed = 0
-	RunService.Heartbeat:Connect(function(dt)
-		elapsed += dt
-		if elapsed < 1 / 30 then
-			return
-		end
-		elapsed %= 1 / 30
+	-- Shore foam is close to the camera: stepping it at 30 Hz visibly judders
+	-- on higher-refresh displays. Server time still keeps every frame in phase.
+	RunService.RenderStepped:Connect(function()
 		local camera = workspace.CurrentCamera
 		local time = workspace:GetServerTimeNow()
 		for source, state in sources do
-			local visible = camera ~= nil and source:IsDescendantOf(workspace)
+			local visible = camera ~= nil
+				and source:IsDescendantOf(workspace)
 				and (source.Position - camera.CFrame.Position).Magnitude < DISTANCE
 			for _, wave in state.waves do
 				local beam = wave.beam
@@ -135,9 +145,11 @@ function ShoreWaves.start()
 				end
 				local offset, opacity, width = sampleWave(time, state.along, wave.layer)
 				for i, attachment in { wave.a, wave.b } do
-					local ripple = math.sin(state.along / 11 + time * 0.7 + i * 0.9 + wave.layer) * 0.25
+					-- Keep the shoreward wash steady instead of wobbling its endpoints.
+					local ripple = math.sin(state.along / 35 + time * 0.25 + i * 0.2 + wave.layer) * 0.06
 					local distance = offset + ripple
-					local height = 0.16 + (state.water[i] - 0.16) * smoothstep((distance + 2) / 2)
+					local height = 0.16
+						+ (state.water[i] - 0.16) * smoothstep((distance + 2) / 2)
 						+ (state.runup[i] - state.water[i]) * smoothstep(distance / 2.8)
 					local position = state.shore[i] + state.inland[i] * distance + Vector3.yAxis * height
 					attachment.CFrame = attachmentFrame(position, if i == 1 then wave.tangentA else wave.tangentB)

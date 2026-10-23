@@ -49,9 +49,13 @@ function Settings.start()
 		instance:GetPropertyChangedSignal("SoundGroup"):Connect(route)
 		route()
 	end
-	game.DescendantAdded:Connect(bind)
-	for _, instance in game:GetDescendants() do
-		bind(instance)
+	-- Only places sounds can play from. Watching the whole game ran this for every
+	-- part streaming into the map, and the first scan walked every instance there is.
+	for _, root in { workspace, SoundService, Players.LocalPlayer } do
+		root.DescendantAdded:Connect(bind)
+		for _, instance in root:GetDescendants() do
+			bind(instance)
+		end
 	end
 end
 

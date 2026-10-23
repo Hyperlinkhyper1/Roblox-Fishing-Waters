@@ -450,6 +450,15 @@ local function updateSuspension(boat)
 	boat.heading.MaxTorque = mass * (gravity + 100) * boat.spec.Length * 2
 end
 
+local function clearMotion(boat)
+	for _, piece in boat.model:GetDescendants() do
+		if piece:IsA("BasePart") then
+			piece.AssemblyLinearVelocity = Vector3.zero
+			piece.AssemblyAngularVelocity = Vector3.zero
+		end
+	end
+end
+
 local function setParked(boat, parked: boolean)
 	if boat.parked == parked then
 		return
@@ -461,13 +470,22 @@ local function setParked(boat, parked: boolean)
 		-- Anchor only the hull root, leaving deck collisions and seats usable.
 		boat.speed, boat.turn = 0, 0
 		boat.velocity.PlaneVelocity = Vector2.zero
-		boat.root.AssemblyLinearVelocity = Vector3.zero
-		boat.root.AssemblyAngularVelocity = Vector3.zero
-		boat.root.Anchored = true
+		clearMotion(boat)
+		-- Anchor every piece, not just the root. A standing player is carried by the
+		-- velocity of the part underfoot, so no deck piece may keep a stray drift.
+		for _, piece in boat.model:GetDescendants() do
+			if piece:IsA("BasePart") then
+				piece.Anchored = true
+			end
+		end
 		boat.model:SetAttribute("RowThrottle", 0)
 		boat.model:SetAttribute("RowSteer", 0)
 	else
-		boat.root.Anchored = false
+		for _, piece in boat.model:GetDescendants() do
+			if piece:IsA("BasePart") then
+				piece.Anchored = false
+			end
+		end
 		-- Anchoring resets network ownership. Reapply it after releasing the
 		-- hull, before enabling forces, so boarding cannot change its simulator.
 		boat.root:SetNetworkOwner(nil)
@@ -814,6 +832,10 @@ function BoatService.start()
 				if not wantsMotion then
 					-- Anchored assemblies have infinite mass. Do not sample their
 					-- mass or run wave/drive corrections while people use the deck.
+					local root = boat.root
+					if root.AssemblyLinearVelocity ~= Vector3.zero or root.AssemblyAngularVelocity ~= Vector3.zero then
+						clearMotion(boat)
+					end
 					continue
 				end
 				setParked(boat, false)
@@ -827,7 +849,8 @@ function BoatService.start()
 				continue
 			end
 			boat.turn = turn
-			boat.yaw -= turn * math.min(dt, 0.1)
+			-- Like a real boat (or car), reversing mirrors the steering direction.
+			boat.yaw -= turn * (if speed < 0 then -1 else 1) * math.min(dt, 0.1)
 			-- Seat welds change assembly mass when passengers board or leave.
 			updateSuspension(boat)
 			local wave = Weather.sample(boat.root.Position, serverTime)
