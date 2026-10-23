@@ -92,7 +92,7 @@ print("Client startup: shop/equipment run while LOD is streaming; loading screen
   await writeFile(path, program);
   run(path);
   // A required module failure must surface to the loader; optional visuals may fail independently.
-  for (const failedModule of ['Boating', 'Fishing', 'RodPhysics', 'PlayerMenu', 'Weather']) {
+  for (const failedModule of ['Boating', 'Fishing', 'Oxygen', 'RodPhysics', 'PlayerMenu', 'Weather']) {
     const critical = failedModule !== 'Weather';
     const failureProgram = `
 local attributes, warnings = {}, {}
