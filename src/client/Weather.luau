@@ -15,6 +15,9 @@ local CELL_SIZE = 22
 local RAIN_HEIGHT = 28
 local UPDATE_INTERVAL = 0.2
 local LIGHTNING_INTERVAL = 9
+-- Roblox-published sound effects: a looping rain bed and a distant thunder clap.
+-- Keeping these as catalog assets avoids requiring any uploaded audio in the place.
+local RAIN_SOUND = "rbxassetid://1516791621"
 local THUNDER_SOUND = "rbxassetid://9120018088"
 local STREAK_TEXTURE = "rbxasset://textures/particles/sparkles_main.dds"
 
@@ -74,6 +77,16 @@ local function thunderSoundId(): string
 	return THUNDER_SOUND
 end
 
+local function rainSoundId(): string
+	local override = workspace:GetAttribute("WeatherRainSoundId")
+	if type(override) == "number" and override > 0 and override < math.huge then
+		return "rbxassetid://" .. tostring(math.floor(override))
+	elseif type(override) == "string" and string.match(override, "^rbxassetid://%d+$") then
+		return override
+	end
+	return RAIN_SOUND
+end
+
 function WeatherController.start()
 	if started then
 		return
@@ -121,6 +134,12 @@ function WeatherController.start()
 	thunder.SoundId = thunderSoundId()
 	thunder.Volume = 0.5
 	thunder.Parent = SoundService
+	local rainSound = Instance.new("Sound")
+	rainSound.Name = "WeatherRain"
+	rainSound.SoundId = rainSoundId()
+	rainSound.Looped = true
+	rainSound.Volume = 0
+	rainSound.Parent = SoundService
 
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -239,6 +258,19 @@ function WeatherController.start()
 			elapsed = UPDATE_INTERVAL
 		end
 		hidden = shouldHide
+
+		-- The rain bed comes from Roblox's stock catalog and follows the same
+		-- shelter, underwater, and accessibility rules as the visual rain.
+		local rainTarget = if shouldHide then 0 else state.rain * currentSkyFraction * 0.38
+		rainSound.Volume += (rainTarget - rainSound.Volume) * math.min(1, dt * 5)
+		if rainTarget > 0.01 then
+			if not rainSound.IsPlaying then
+				rainSound.SoundId = rainSoundId()
+				rainSound:Play()
+			end
+		elseif rainSound.IsPlaying then
+			rainSound:Stop()
+		end
 
 		if state.storm <= 0.1 and previousStorm > 0.1 then
 			thunderToken += 1
