@@ -8,7 +8,6 @@ local TweenService = game:GetService("TweenService")
 local Oxygen = {}
 local started = false
 
-local OXYGEN_SECONDS = 20
 local BUBBLE_COUNT = 12
 local BAR_FADE = TweenInfo.new(0.18, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 local BLACKOUT_FADE = TweenInfo.new(1.15, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
@@ -102,7 +101,7 @@ function Oxygen.start()
 	remaining.Position = UDim2.new(1, -12, 0.5, 0)
 	remaining.Size = UDim2.fromOffset(48, 30)
 	remaining.Font = Enum.Font.GothamBold
-	remaining.Text = "20s"
+	remaining.Text = "100%"
 	remaining.TextSize = 14
 	remaining.TextColor3 = Color3.fromRGB(197, 242, 255)
 	remaining.TextTransparency = 1
@@ -181,7 +180,7 @@ function Oxygen.start()
 	local function refresh()
 		local oxygen = math.clamp(player:GetAttribute("Oxygen") or 1, 0, 1)
 		fill.Size = UDim2.new(oxygen, 0, 1, 0)
-		remaining.Text = string.format("%ds", math.ceil(oxygen * OXYGEN_SECONDS))
+		remaining.Text = string.format("%d%%", math.ceil(oxygen * 100))
 		setMeterVisible(player:GetAttribute("Underwater") == true and player:GetAttribute("OxygenBlackout") ~= true)
 	end
 
