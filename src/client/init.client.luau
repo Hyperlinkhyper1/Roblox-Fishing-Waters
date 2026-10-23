@@ -3,6 +3,7 @@ local player = game:GetService("Players").LocalPlayer
 local modules = {
 	"BiomeAtmosphere",
 	"Lod",
+	"Oxygen",
 	"Boating",
 	"Fishing",
 	"PlayerMenu",
@@ -13,7 +14,7 @@ local modules = {
 	"Weather",
 	"WaterWaves",
 }
-local required = { Boating = true, Fishing = true, RodPhysics = true, PlayerMenu = true }
+local required = { Boating = true, Fishing = true, Oxygen = true, RodPhysics = true, PlayerMenu = true }
 local ready = 0
 player:SetAttribute("FishingWatersClientReady", false)
 player:SetAttribute("FishingWatersClientError", false)
@@ -24,7 +25,7 @@ for _, name in modules do
 		end)
 		if success and required[name] then
 			ready += 1
-			if ready == 4 then
+			if ready == 5 then
 				player:SetAttribute("FishingWatersClientReady", true)
 			end
 		elseif not success then
