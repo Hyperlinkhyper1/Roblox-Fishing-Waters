@@ -69,6 +69,9 @@ local ColorSequence = {
 		return { ... }
 	end,
 }
+local ColorSequenceKeypoint = { new = function(time, value) return { Time = time, Value = value } end }
+local NumberSequenceKeypoint = { new = function(time, value) return { Time = time, Value = value } end }
+local NumberSequence = { new = function(value) return { Keypoints = value } end }
 local Enum = setmetatable({}, {
 	__index = function(self, key)
 		local values = setmetatable({}, {
@@ -413,6 +416,10 @@ local sidebar = gui:WaitForChild("LeftNavigation")
 local overlay = gui:WaitForChild("MenuOverlay")
 local card = overlay:WaitForChild("MenuWindow")
 local content = card:WaitForChild("Content")
+check(
+	sidebar.Bestiary.LayoutOrder == 1 and sidebar.Journal.LayoutOrder == 2 and sidebar.Equipmentbag.LayoutOrder == 3,
+	"Bestiary and Journal lead the sidebar"
+)
 local function contains(value)
 	for _, item in content:GetDescendants() do
 		if type(item.Text) == "string" and string.find(item.Text, value, 1, true) then
@@ -450,10 +457,22 @@ for _, name in { "Bestiary", "Equipmentbag", "Journal", "Settings", "Shop" } do
 	check(sidebar.Parent == gui and not sidebar.Visible, "Menu windows do not contain the main navigation tabs")
 	local selected = sidebar:WaitForChild(name)
 	check(selected.ThemeFace:GetAttribute("Finish") == "Selected", "Active navigation uses the blue finish")
+	local isBook = name == "Bestiary" or name == "Journal"
 	check(
-		selected.ThemeCaption.Text == selected.Text and selected.ThemeCaption.TextStrokeTransparency == 0,
-		"Button caption remains white and outlined above its gradient"
+		selected.ThemeCaption.Text == selected.Text
+			and selected.ThemeCaption.TextStrokeTransparency == (if isBook then 1 else 0),
+		"Book captions use ink typography; other navigation retains outlined captions"
 	)
+	check(
+		(not not card.BookChrome.Visible) == isBook and (not card.ThemeInnerRim.Visible) == isBook,
+		"Only books use the parchment window"
+	)
+	if isBook then
+		check(
+			selected.ThemeFace:FindFirstChild("BookSpine") and selected.ThemeFace:FindFirstChild("PageEdges"),
+			"Book buttons show covers and page edges"
+		)
+	end
 	card:WaitForChild("CloseMenu").Activated:Fire()
 	check(not overlay.Visible and not player:GetAttribute("PlayerMenuOpen"), "Close resets modal state")
 	check(
@@ -501,6 +520,10 @@ check(
 )
 clickText("Achievements")
 check(contains("First catch") and contains("Complete"), "Achievements derive from saved catches")
+card.BookChrome.BestiaryBookmarkTab.Activated:Fire()
+check(contains("3.25 kg") and not content:FindFirstChild("JournalFindingsPage", true), "Book edge tab switches to the saved bestiary")
+card.BookChrome.JournalBookmarkTab.Activated:Fire()
+check(content:FindFirstChild("JournalFindingsPage", true) and contains("First catch"), "Journal edge tab restores the journal and selected achievements")
 open("Settings")
 check(content:FindFirstChild("Shadows", true) ~= nil, "Performance tab exposes shadows")
 clickText("Audio")
@@ -524,6 +547,7 @@ check(
 )
 open("Journal")
 check(content:FindFirstChild("JournalFindingsPage", true).Position.Y.Offset == 514, "Narrow journal pages stack")
+check(not card.BookChrome.CenterBinding.Visible, "Narrow books hide the center binding when pages stack")
 open("Shop")
 check(contains("Nothing in the shop yet"), "Robux shop is empty")
 UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.ButtonB })

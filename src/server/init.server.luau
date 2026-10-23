@@ -24,6 +24,7 @@ local ok, failure = xpcall(function()
 	local function openHarbour(root: Folder)
 		stage("Getting your dock ready", 0.9)
 		Map.prepareStreaming(root)
+		require(script.Map.ChartCatalog).start(root)
 		require(script.WeatherService).start()
 		-- Install inventory/character listeners and remotes before BaseService spawns players.
 		require(script.BoatService).start()

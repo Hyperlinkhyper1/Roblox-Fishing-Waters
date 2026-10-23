@@ -262,7 +262,9 @@ function methods:Destroy()
 	rawset(self, "Parent", nil)
 end
 function methods:SetNetworkOwner(owner)
+	assert(not self.Anchored, "Cannot assign ownership to an anchored assembly")
 	self.serverOwned = owner == nil
+	self.ownerAssignments = (self.ownerAssignments or 0) + 1
 end
 
 local workspace = Instance.new("Workspace")
@@ -790,12 +792,42 @@ local function checkSuspension(boat, label)
 	)
 end
 checkSuspension(floatingBoat, "Dock rowboat")
+local function checkParked(boat, label)
+	check(boat.parked and boat.root.Anchored and boat.model:GetAttribute("Parked"), label .. " must be a fixed platform")
+	check(
+		not boat.float.Enabled and not boat.lift.Enabled and not boat.heading.Enabled and not boat.velocity.Enabled,
+		label .. " must disable every force controller"
+	)
+	check(boat.speed == 0 and boat.turn == 0, label .. " must clear stored motion")
+	check(boat.model:GetAttribute("RowThrottle") == 0 and boat.model:GetAttribute("RowSteer") == 0, label .. " must stop rowing animation")
+end
+checkParked(floatingBoat, "New dock boat")
+local heldFrame, heldSupport = floatingBoat.root.CFrame, floatingBoat.lift.Force
+-- Roblox reports infinite assembly mass for an anchored hull. Idle updates must
+-- neither feed infinity to a mover nor reposition the deck to chase waves.
+floatingBoat.root.AssemblyMass = math.huge
 waveHeight = 1.5
+for _ = 1, 300 do RunService.Heartbeat:Fire(1 / 60) end
+checkParked(floatingBoat, "Boat while standing on deck")
+check(floatingBoat.root.CFrame == heldFrame and floatingBoat.lift.Force == heldSupport, "Idle waves must not move the deck or recalculate support with infinite mass")
+floatingBoat.root.AssemblyMass = 100
+floatingBoat.seat.Occupant = { Parent = rich.Character }
+floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = 0, 0.04, now
 RunService.Heartbeat:Fire(1 / 60)
-checkSuspension(floatingBoat, "Unoccupied rowboat")
+checkParked(floatingBoat, "Neutral helm and analog drift")
+floatingBoat.seat.Occupant = { Parent = fresh.Character }
+floatingBoat.throttle = 1
+RunService.Heartbeat:Fire(1 / 60)
+checkParked(floatingBoat, "Unauthorized helm input")
+floatingBoat.seat.Occupant = { Parent = rich.Character }
+sightResult = { Material = Enum.Material.Water }
+RunService.Heartbeat:Fire(1 / 60)
+checkSuspension(floatingBoat, "Released rowboat")
+check(not floatingBoat.root.Anchored and not floatingBoat.parked and floatingBoat.velocity.Enabled, "Owner input must release the boat and enable driving")
+check(floatingBoat.root.ownerAssignments == 2, "Release must explicitly restore server ownership after unanchoring")
 check(
 	math.abs(floatingBoat.float.Position.Y - 1.1) < 0.00001,
-	"An unoccupied boat must bob at the sampled wave height while preserving its root offset"
+	"A moving boat must follow waves while preserving its root offset"
 )
 check(
 	waveSampleTime == workspace.serverTime and waveSamplePosition == floatingBoat.root.Position,
@@ -803,6 +835,8 @@ check(
 )
 waveHeight, waveNormal = -1, Vector3.new(0.25, 1, 0.2).Unit
 floatingBoat.yaw = math.pi / 2
+floatingBoat.speed, floatingBoat.turn = 0, 0
+floatingBoat.steer = 0
 floatingBoat.seat.Occupant = { Parent = rich.Character }
 floatingBoat.throttle, floatingBoat.lastInput = 1, now
 floatingBoat.root.AssemblyMass = 200
@@ -834,6 +868,17 @@ workspace.Gravity = 100
 RunService.Heartbeat:Fire(1 / 60)
 checkSuspension(floatingBoat, "Rowboat with changed gravity")
 workspace.Gravity = originalGravity
+for _ = 1, 300 do RunService.Heartbeat:Fire(1 / 60) end
+checkParked(floatingBoat, "Boat after dismounting and coasting to rest")
+check(floatingBoat.root.AssemblyLinearVelocity.Magnitude == 0 and floatingBoat.root.AssemblyAngularVelocity.Magnitude == 0, "Parking must clear residual linear and angular velocity")
+floatingBoat.seat.Occupant = { Parent = rich.Character }
+floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = 0, 0.5, now
+RunService.Heartbeat:Fire(1 / 60)
+check(not floatingBoat.parked and floatingBoat.turn > 0, "Steering in place must also release the hull")
+floatingBoat.steer = 0
+for _ = 1, 300 do RunService.Heartbeat:Fire(1 / 60) end
+checkParked(floatingBoat, "Neutral helm after turning")
+floatingBoat.seat.Occupant = nil
 waveHeight, waveNormal, sightResult = 0, Vector3.new(0, 1, 0), nil
 Service.spawnBoat(rich, spawnPrompt)
 check(#builtBoats == 1, "Rapid spawn retries must be limited")
@@ -1048,10 +1093,10 @@ check(
 	"Boarding must stream the boat and teleport the buyer to it"
 )
 check(
-	launchedModel.PrimaryPart.Anchored == false
+	launchedModel.PrimaryPart.Anchored == true
 		and not Service.active[buyer].seat.Disabled
 		and Service.active[buyer].seat.CanTouch,
-	"Purchased preview must enable physics and normal seat entry"
+	"Purchased preview must park afloat with normal seat entry"
 )
 check(next(launchReservations) == nil, "Completed purchase must release its reservation")
 checkSuspension(Service.active[buyer], "Drydock rowboat")
@@ -1261,15 +1306,17 @@ for _, piece in fisherDisplay:GetDescendants() do
 	end
 end
 workingFisher.root.AssemblyMass = 230
+workingFisher.throttle, workingFisher.lastInput = 1, now
 RunService.Heartbeat:Fire(1 / 60)
 checkSuspension(workingFisher, "Fishing boat with passengers")
 workingFisher.root.AssemblyMass = 100
 RunService.Heartbeat:Fire(1 / 60)
 checkSuspension(workingFisher, "Fishing boat after passengers leave")
 workingFisher.yaw = 0
+workingFisher.speed, workingFisher.turn = 0, 0
 workingFisher.throttle, workingFisher.steer, workingFisher.lastInput = 1, 0, now
 RunService.Heartbeat:Fire(1 / 60)
-check(math.abs(workingFisher.velocity.PlaneVelocity.Y + 4 / 60) < 0.00001, "Fishing boat starts with bounded acceleration")
+check(math.abs(workingFisher.velocity.PlaneVelocity.Y + BoatCatalog.FishingBoat.Acceleration / 60) < 0.00001, "Fishing boat starts with bounded acceleration")
 for _ = 1, 1200 do
 	-- Model a lagging actuator rather than treating requested speed as actual.
 	local measured = workingFisher.root.AssemblyLinearVelocity
@@ -1277,27 +1324,26 @@ for _ = 1, 1200 do
 	workingFisher.root.AssemblyLinearVelocity = measured + (requested - measured) * (1 - math.exp(-4 / 60))
 	RunService.Heartbeat:Fire(1 / 60)
 end
-check(-workingFisher.root.AssemblyLinearVelocity.Z > 23.5, "Real service must build cruise speed despite actuator lag")
-workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, -24)
-workingFisher.speed = 24
+check(-workingFisher.root.AssemblyLinearVelocity.Z > 39.5, "Real service must build faster cruise speed despite actuator lag")
+workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, -40)
+workingFisher.speed = 40
 RunService.Heartbeat:Fire(1 / 60)
-check(workingFisher.velocity.PlaneVelocity.Y == -24, "Fishing boat retains its top speed")
+check(workingFisher.velocity.PlaneVelocity.Y == -40, "Fishing boat reaches its faster top speed")
 workingFisher.throttle = -1
 RunService.Heartbeat:Fire(1 / 60)
-check(math.abs(workingFisher.velocity.PlaneVelocity.Y + 24 - 5 / 60) < 0.00001, "Reversing brakes before changing direction")
+check(math.abs(workingFisher.velocity.PlaneVelocity.Y + 40 - BoatCatalog.FishingBoat.BrakeDeceleration / 60) < 0.00001, "Reversing brakes before changing direction")
 workingFisher.root.AssemblyLinearVelocity = Vector3.zero
 workingFisher.speed = 0
 RunService.Heartbeat:Fire(1 / 60)
-check(math.abs(workingFisher.velocity.PlaneVelocity.Y - 4 / 60) < 0.00001, "A stopped hull restarts gently in reverse")
-workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, 9)
-workingFisher.speed = -9
+check(math.abs(workingFisher.velocity.PlaneVelocity.Y - BoatCatalog.FishingBoat.Acceleration / 60) < 0.00001, "A stopped hull restarts gently in reverse")
+workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, 14)
+workingFisher.speed = -14
 RunService.Heartbeat:Fire(1 / 60)
-check(workingFisher.velocity.PlaneVelocity.Y == 9, "Fishing boat retains its reverse top speed")
+check(workingFisher.velocity.PlaneVelocity.Y == 14, "Fishing boat reaches its faster reverse top speed")
 workingFisher.throttle, workingFisher.steer = 0, 1
 RunService.Heartbeat:Fire(0.1)
 check(math.abs(workingFisher.yaw + 0.004) < 0.00001, "Fishing boat steering eases into its reduced turn rate")
-check(workingFisher.velocity.MaxForce == 4000, "Drive force includes headroom for water resistance")
-check(workingFisher.velocity.ForceLimitMode == Enum.ForceLimitMode.Magnitude, "Drive force limit must explicitly match MaxForce")
+check(workingFisher.velocity.ForceLimitsEnabled == false, "Velocity ramp must have enough solver force to overcome water drag")
 request.OnServerEvent:Fire(otherBuyer, "Row", 1, 1)
 check(workingFisher.steer == 1, "Other players cannot send controls to this boat")
 workingFisher.seat.Occupant = nil

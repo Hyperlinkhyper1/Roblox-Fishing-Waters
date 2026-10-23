@@ -20,11 +20,4 @@ function BoatMotion.step(speed: number, turn: number, throttle: number, steer: n
 	return speed, turn
 end
 
-function BoatMotion.drive(commandedSpeed: number, measuredSpeed: number, turn: number, throttle: number, steer: number, spec, dt: number)
-	-- Retain the ramp between frames so solver lag and water drag do not reset it.
-	-- Bound the lead to prevent a blocked hull from accumulating full throttle.
-	local speed = math.clamp(commandedSpeed, measuredSpeed - 3, measuredSpeed + 3)
-	return BoatMotion.step(speed, turn, throttle, steer, spec, dt)
-end
-
 return BoatMotion

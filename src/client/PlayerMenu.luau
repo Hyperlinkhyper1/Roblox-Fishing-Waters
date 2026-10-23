@@ -15,6 +15,54 @@ local navy = Theme.Colors.Window
 local muted = Theme.Colors.Muted
 local gold = Theme.Colors.Blue
 local green = Theme.Colors.Green
+local Book = {
+	Paper = Color3.fromRGB(209, 196, 168),
+	Page = Color3.fromRGB(230, 219, 194),
+	Ink = Color3.fromRGB(51, 43, 32),
+	Edge = Color3.fromRGB(133, 115, 80),
+	Leather = Color3.fromRGB(102, 35, 36),
+	Bestiary = Color3.fromRGB(43, 83, 68),
+	Gold = Color3.fromRGB(225, 192, 119),
+}
+
+local function styleBookItem(item)
+	local ancestor = item.Parent
+	while ancestor and not ancestor:GetAttribute("BookSurface") do
+		ancestor = ancestor.Parent
+	end
+	if not ancestor then
+		return
+	end
+	if item:IsA("TextLabel") or item:IsA("TextBox") then
+		item.Font = Enum.Font.Garamond
+		item.TextColor3 = Book.Ink
+		item.TextStrokeTransparency = 1
+		if item:IsA("TextBox") then
+			item.BackgroundColor3 = Book.Page
+			item.PlaceholderColor3 = Book.Leather
+		end
+	elseif item:IsA("TextButton") and item:FindFirstChild("ThemeFace") then
+		local selected = item.ThemeFace:GetAttribute("Finish") == "Selected"
+		item.ThemeFace.ThemeFinish.Color =
+			ColorSequence.new(if selected then Book.Gold else Book.Page, if selected then Book.Edge else Book.Paper)
+		item.ThemeBorder.Color = Book.Edge
+		item.ThemeCaption.Font = Enum.Font.Garamond
+		item.ThemeCaption.TextColor3 = Book.Ink
+		item.ThemeCaption.TextStrokeTransparency = 1
+	elseif item:IsA("ScrollingFrame") then
+		item.ScrollBarImageColor3 = Book.Edge
+		item.ScrollBarThickness = 6
+	elseif item:IsA("Frame") or item:IsA("ImageLabel") then
+		if item.BackgroundTransparency ~= 1 then
+			item.BackgroundColor3 = Book.Page
+		end
+	end
+	local border = item:FindFirstChild("ThemeBorder")
+	if border then
+		border.Color = Book.Edge
+		border.Transparency = 0.6
+	end
+end
 
 local function make(class, parent, props)
 	local instance = Instance.new(class)
@@ -30,7 +78,112 @@ local function make(class, parent, props)
 		Theme.scroll(instance)
 	end
 	instance.Parent = parent
+	styleBookItem(instance)
 	return instance
+end
+local function decoration(parent, name, color, position, size)
+	local item = make("Frame", parent, {
+		Name = name,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = position,
+		Size = size,
+		Active = false,
+	})
+	item.BackgroundColor3, item.BackgroundTransparency = color, 0
+	return item
+end
+
+-- Native GUI geometry keeps the book sharp at every resolution, without an
+-- uploaded texture. Decorations deliberately bypass the shared metal UI theme.
+local function bookPart(parent, name, color, position, size, radius)
+	local part = decoration(parent, name, color, position, size)
+	if radius then
+		Theme.corner(part, radius)
+	end
+	return part
+end
+
+local function paperFinish(part, reverse)
+	local gradient = Instance.new("UIGradient")
+	gradient.Name = "PaperLight"
+	gradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(171, 153, 120)),
+		ColorSequenceKeypoint.new(0.12, Color3.fromRGB(224, 212, 185)),
+		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(238, 228, 205)),
+		ColorSequenceKeypoint.new(0.9, Color3.fromRGB(222, 209, 182)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(158, 137, 103)),
+	})
+	gradient.Rotation = if reverse then 180 else 0
+	part.BackgroundColor3 = Color3.new(1, 1, 1)
+	gradient.Parent = part
+end
+
+local function bookButton(item, selected)
+	Theme.button(item, if selected then "Selected" else "Normal")
+	local cover = if item.Name == "Bestiary" then Book.Bestiary else Book.Leather
+	item.BackgroundColor3 = cover
+	Theme.corner(item, 4)
+	Theme.corner(item.ThemeFace, 4)
+	item.ThemeFace.ThemeFinish.Color = ColorSequence.new(if selected then Book.Edge else cover, cover)
+	item.ThemeBorder.Color = Book.Gold
+	item.ThemeCaption.Font = Enum.Font.Garamond
+	item.ThemeCaption.TextColor3 = Book.Gold
+	item.ThemeCaption.TextStrokeTransparency = 1
+	item.ThemeCaption.Position = UDim2.fromOffset(18, 0)
+	item.ThemeCaption.Size = UDim2.new(1, -30, 1, -4)
+	local grain = item.ThemeFace:FindFirstChild("BookGrain")
+	if not grain then
+		grain = Instance.new("Frame")
+		grain.Name = "BookGrain"
+		grain.BackgroundTransparency = 1
+		grain.BorderSizePixel = 0
+		grain.Size = UDim2.fromScale(1, 1)
+		grain.ClipsDescendants = true
+		grain.Active = false
+		grain.ZIndex = item.ThemeFace.ZIndex
+		grain.Parent = item.ThemeFace
+
+		-- A fixed seed keeps the leather grain stable when selection refreshes.
+		local seed = if item.Name == "Bestiary" then 413 else 829
+		local function nextUnit()
+			seed = (seed * 48271) % 2147483647
+			return seed / 2147483647
+		end
+		for index = 1, 84 do
+			local fleck = Instance.new("Frame")
+			fleck.Name = "GrainFleck" .. index
+			fleck.BorderSizePixel = 0
+			fleck.BackgroundColor3 = if index % 3 == 0 then Book.Gold else Book.Paper
+			fleck.BackgroundTransparency = if index % 4 == 0 then 0.84 else 0.91
+			fleck.Position = UDim2.fromScale(nextUnit(), nextUnit())
+			fleck.Size = UDim2.fromScale(0.004 + nextUnit() * 0.009, 0.018 + nextUnit() * 0.04)
+			fleck.Rotation = math.floor(nextUnit() * 70) - 35
+			fleck.Active = false
+			fleck.ZIndex = grain.ZIndex
+			fleck.Parent = grain
+		end
+		for index = 1, 11 do
+			local grainLine = Instance.new("Frame")
+			grainLine.Name = "GrainLine" .. index
+			grainLine.BorderSizePixel = 0
+			grainLine.BackgroundColor3 = Book.Ink
+			grainLine.BackgroundTransparency = 0.88
+			grainLine.Position = UDim2.fromScale(0.08 + nextUnit() * 0.84, nextUnit())
+			grainLine.Size = UDim2.fromScale(0.035 + nextUnit() * 0.09, 0.008)
+			grainLine.Rotation = math.floor(nextUnit() * 24) - 12
+			grainLine.Active = false
+			grainLine.ZIndex = grain.ZIndex
+			grainLine.Parent = grain
+		end
+	end
+	if not item.ThemeFace:FindFirstChild("BookSpine") then
+		decoration(item.ThemeFace, "BookSpine", Book.Ink, UDim2.fromOffset(6, 0), UDim2.new(0, 5, 1, 0))
+		decoration(item.ThemeFace, "PageEdges", Book.Paper, UDim2.new(0, 16, 1, -5), UDim2.new(1, -20, 0, 3))
+		for _, y in { 8, 35 } do
+			decoration(item.ThemeFace, "SpineBand" .. y, Book.Gold, UDim2.fromOffset(5, y), UDim2.fromOffset(7, 2))
+		end
+	end
 end
 local function round(parent, radius)
 	Theme.corner(parent, if parent:IsA("TextButton") then 10 else math.min(radius or 2, 4))
@@ -50,6 +203,7 @@ local function text(parent, value, size, color, props)
 		item[key] = setting
 	end
 	Theme.text(item, color or cream)
+	styleBookItem(item)
 	return item
 end
 local function button(parent, value, callback, props)
@@ -67,6 +221,7 @@ local function button(parent, value, callback, props)
 		item[key] = setting
 	end
 	Theme.button(item, if item.BackgroundColor3 == gold or item.BackgroundColor3 == green then "Selected" else "Normal")
+	styleBookItem(item)
 	item.Activated:Connect(callback)
 	return item
 end
@@ -104,6 +259,7 @@ local function input(parent, placeholder)
 	})
 	Theme.panel(item, true, 2)
 	Theme.text(item)
+	styleBookItem(item)
 	make("UIPadding", item, { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) })
 	return item
 end
@@ -139,6 +295,19 @@ local function picture(parent, id, props)
 		holder[key] = value
 	end
 	round(holder, 7)
+	local surface = parent
+	while surface and not surface:GetAttribute("BookSurface") do
+		surface = surface.Parent
+	end
+	if surface then
+		holder.BackgroundColor3 = Color3.fromRGB(159, 151, 115)
+		holder.BackgroundTransparency = 0
+		Theme.corner(holder, 1)
+		local wash = Instance.new("UIGradient")
+		wash.Color = ColorSequence.new(Color3.fromRGB(231, 223, 191), Color3.fromRGB(145, 139, 113))
+		wash.Rotation = 90
+		wash.Parent = holder
+	end
 	if species and species.Image and species.Image ~= "" then
 		make("ImageLabel", holder, {
 			BackgroundTransparency = 1,
@@ -212,6 +381,62 @@ function Menu.start()
 	})
 	make("UISizeConstraint", card, { MaxSize = Vector2.new(1020, 680) })
 	Theme.window(card)
+	local bookChrome = make("Frame", card, {
+		Name = "BookChrome",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Visible = false,
+	})
+	local shadow = bookPart(bookChrome, "BookShadow", Color3.new(), UDim2.fromOffset(5, 12), UDim2.new(1, 8, 1, 0), 14)
+	shadow.BackgroundTransparency = 0.55
+	local leatherCover = bookPart(bookChrome, "LeatherCover", Book.Leather, UDim2.fromOffset(0, 0), UDim2.fromScale(1, 1), 9)
+	local leaves = {}
+	for _, side in { 0, 1 } do
+		for layer = 4, 1, -1 do
+			bookPart(bookChrome, "PageEdges" .. side .. layer,
+				if layer % 2 == 0 then Book.Edge else Book.Paper,
+				UDim2.new(side * 0.5, 18 + layer * 2, 0, 14 + layer * 2),
+				UDim2.new(0.5, -40, 1, -36), 20)
+		end
+		local page = bookPart(bookChrome, if side == 0 then "LeftLeaf" else "RightLeaf", Book.Page,
+			UDim2.new(side * 0.5, if side == 0 then 18 else -3, 0, 12),
+			UDim2.new(0.5, -15, 1, -34), 26)
+		paperFinish(page, side == 1)
+		leaves[side + 1] = page
+		-- Sparse fibers and edge marks suggest worn paper without competing with text.
+		for index = 1, 28 do
+			local fiber = bookPart(page, "PaperFiber" .. index, Book.Edge,
+				UDim2.fromScale(0.06 + ((index * 37) % 89) / 100, 0.03 + ((index * 23) % 93) / 100),
+				UDim2.fromOffset(2 + index % 4, 1))
+			fiber.BackgroundTransparency = 0.88
+		end
+		for _, y in { 0, 1 } do
+			bookPart(page, "MarginRule" .. y, Book.Edge, UDim2.new(0, 26, y, if y == 0 then 69 else -24),
+				UDim2.new(1, -58, 0, 1))
+		end
+	end
+	local binding = bookPart(bookChrome, "CenterBinding", Book.Ink,
+		UDim2.new(0.5, -18, 0, 22), UDim2.new(0, 36, 1, -53), 18)
+	local gutter = Instance.new("UIGradient")
+	gutter.Color = ColorSequence.new(Book.Paper, Book.Ink)
+	gutter.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.35), NumberSequenceKeypoint.new(1, 1),
+	})
+	gutter.Parent = binding
+	for index = 1, 12 do
+		local loop = bookPart(binding, "BindingLoop" .. index, Book.Ink,
+			UDim2.new(0.5, -22, (index - 0.5) / 12, -5), UDim2.fromOffset(44, 10), 5)
+		loop.Rotation = -5
+		local highlight = bookPart(loop, "ThreadHighlight", Book.Edge, UDim2.fromOffset(3, 1), UDim2.new(1, -6, 0, 2), 1)
+		highlight.BackgroundTransparency = 0.45
+	end
+	for _, point in { Vector2.new(0, 0), Vector2.new(1, 0), Vector2.new(0, 1), Vector2.new(1, 1) } do
+		local corner = bookPart(bookChrome, "BrassCorner", Book.Gold,
+			UDim2.new(point.X, if point.X == 0 then 3 else -3, point.Y, if point.Y == 0 then 3 else -3),
+			UDim2.fromOffset(13, 13), 2)
+		corner.AnchorPoint = point
+	end
+	bookPart(bookChrome, "RibbonBookmark", Book.Bestiary, UDim2.new(1, -88, 0, 0), UDim2.fromOffset(18, 38))
 	local heading = text(card, "", 26, cream, {
 		Position = UDim2.fromOffset(60, 8),
 		Size = UDim2.new(1, -120, 0, 36),
@@ -236,7 +461,11 @@ function Menu.start()
 	local layoutWindow
 	local function refreshSelection()
 		for name, item in navButtons do
-			Theme.button(item, if name == active then "Selected" else "Normal")
+			if name == "Bestiary" or name == "Journal" then
+				bookButton(item, name == active)
+			else
+				Theme.button(item, if name == active then "Selected" else "Normal")
+			end
 		end
 	end
 	local function close()
@@ -293,8 +522,29 @@ function Menu.start()
 			end
 		end)
 	end
+	local bookTabs = {}
+	for index, name in { "Journal", "Bestiary" } do
+		local tab = button(bookChrome, name, function()
+			active = name
+			render()
+		end, {
+			Name = name .. "BookmarkTab", Position = UDim2.new(1, -25, 0, 112 + (index - 1) * 118),
+			Size = UDim2.fromOffset(25, 108), ZIndex = 3, TextSize = 15,
+		})
+		tab.ThemeCaption.Rotation = 90
+		tab.ThemeCaption.Position = UDim2.fromOffset(-40, 40)
+		tab.ThemeCaption.Size = UDim2.fromOffset(104, 26)
+		bookTabs[name] = tab
+	end
 	local function bestiary()
 		local search = input(content, "Search fish or mutations…")
+		search.Size = UDim2.new(if narrow then 1 else 0.5, if narrow then -8 else -32, 0, 42)
+		if not narrow then
+			text(content, "SPECIMENS & FIELD NOTES", 20, Book.Ink, {
+				Position = UDim2.new(0.5, 32, 0, 0), Size = UDim2.new(0.5, -40, 0, 42),
+				TextXAlignment = Enum.TextXAlignment.Center,
+			})
+		end
 		local body = scroll(content, { Position = UDim2.fromOffset(0, 54), Size = UDim2.new(1, 0, 1, -54) })
 		local emptyState = make(
 			"Frame",
@@ -302,8 +552,8 @@ function Menu.start()
 			{ BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 54), Size = UDim2.new(1, 0, 1, -54) }
 		)
 		local grid = make("UIGridLayout", body, {
-			CellSize = UDim2.new(if narrow then 1 else 0.5, -8, 0, 240),
-			CellPadding = UDim2.fromOffset(8, 12),
+			CellSize = UDim2.new(if narrow then 1 else 0.5, if narrow then -8 else -36, 0, 240),
+			CellPadding = UDim2.fromOffset(if narrow then 0 else 64, 12),
 			SortOrder = Enum.SortOrder.Name,
 		})
 		local function fill()
@@ -445,31 +695,19 @@ function Menu.start()
 		local book = scroll(content)
 		local left = make("Frame", book, {
 			Name = "JournalStatsPage",
-			BackgroundColor3 = paper,
+			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			Size = if narrow then UDim2.new(1, -8, 0, 500) else UDim2.new(0.49, -6, 0, 510),
+			Size = if narrow then UDim2.new(1, -8, 0, 500) else UDim2.new(0.5, -30, 0, 510),
 		})
 		round(left, 8)
 		local right = make("Frame", book, {
 			Name = "JournalFindingsPage",
-			BackgroundColor3 = paper,
+			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			Position = if narrow then UDim2.fromOffset(0, 514) else UDim2.new(0.51, 0, 0, 0),
-			Size = if narrow then UDim2.new(1, -8, 0, 548) else UDim2.new(0.49, -6, 0, 548),
+			Position = if narrow then UDim2.fromOffset(0, 514) else UDim2.new(0.5, 30, 0, 0),
+			Size = if narrow then UDim2.new(1, -8, 0, 548) else UDim2.new(0.5, -38, 0, 548),
 		})
 		round(right, 8)
-		if not narrow then
-			for y = 24, 510, 40 do
-				local binding = make("Frame", book, {
-					BackgroundColor3 = ink,
-					Position = UDim2.new(0.49, -4, 0, y),
-					Size = UDim2.new(0.02, 10, 0, 7),
-					BorderSizePixel = 0,
-					ZIndex = 2,
-				})
-				round(binding, 4)
-			end
-		end
 		text(
 			left,
 			"ANGLER'S JOURNAL",
@@ -572,6 +810,9 @@ function Menu.start()
 					LayoutOrder = i,
 					BorderSizePixel = 0,
 				})
+				row.BackgroundColor3 = Book.Edge
+				row.BackgroundTransparency = if i % 2 == 0 then 0.89 else 1
+				row.ThemeBorder.Transparency = 1
 				text(row, entry[1], 14, ink, { Position = UDim2.fromOffset(5, 0), Size = UDim2.new(0.7, -5, 1, 0) })
 				text(row, tostring(entry[2]), 14, ink, {
 					Position = UDim2.fromScale(0.7, 0),
@@ -795,6 +1036,29 @@ function Menu.start()
 	end
 	render = function()
 		content:ClearAllChildren()
+		local isBook = active == "Bestiary" or active == "Journal"
+		card:SetAttribute("BookSurface", isBook)
+		bookChrome.Visible = isBook
+		binding.Visible = isBook and card.AbsoluteSize.X >= 680
+		card.BackgroundColor3 = if isBook then (if active == "Bestiary" then Book.Bestiary else Book.Leather) else navy
+		leatherCover.BackgroundColor3 = card.BackgroundColor3
+		Theme.button(closeButton, "Danger")
+		if isBook then
+			styleBookItem(closeButton)
+		end
+		for name, tab in bookTabs do
+			Theme.button(tab, if name == active then "Selected" else "Normal")
+			styleBookItem(tab)
+		end
+		card.ThemeBorder.Color = if isBook then Book.Edge else Theme.Colors.Border
+		card.ThemeInnerRim.Visible = not isBook
+		for index = 1, 4 do
+			card["ThemeBolt" .. index].Visible = not isBook
+		end
+		for _, label in { heading, subtitle, notice } do
+			Theme.text(label, if label == heading then cream elseif label == notice then gold else muted)
+			styleBookItem(label)
+		end
 		refreshSelection()
 		if layoutWindow then
 			layoutWindow()
@@ -831,7 +1095,7 @@ function Menu.start()
 			settings()
 		end
 	end
-	for index, name in { "Bestiary", "Equipment bag", "Journal", "Settings", "Shop" } do
+	for index, name in { "Bestiary", "Journal", "Equipment bag", "Settings", "Shop" } do
 		navButtons[name] = button(sidebar, name, function()
 			if player:GetAttribute("DrydockScreenOpen") then
 				return
@@ -856,6 +1120,7 @@ function Menu.start()
 			TextSize = 14,
 		})
 	end
+	refreshSelection()
 	UserInputService.InputBegan:Connect(function(event)
 		if overlay.Visible and (event.KeyCode == Enum.KeyCode.Escape or event.KeyCode == Enum.KeyCode.ButtonB) then
 			close()
@@ -888,6 +1153,17 @@ function Menu.start()
 	player.CharacterRemoving:Connect(close)
 	layoutWindow = function()
 		narrow = card.AbsoluteSize.X < 680
+		local isBook = active == "Bestiary" or active == "Journal"
+		binding.Visible = isBook and not narrow
+		leaves[1].Visible = not narrow
+		leaves[2].Position = if narrow then UDim2.fromOffset(18, 12) else UDim2.new(0.5, -3, 0, 12)
+		leaves[2].Size = if narrow then UDim2.new(1, -36, 1, -34) else UDim2.new(0.5, -15, 1, -34)
+		heading.Position = if isBook then UDim2.fromOffset(48, 22) else UDim2.fromOffset(60, 8)
+		heading.Size = if isBook then UDim2.new(if narrow then 1 else 0.5, if narrow then -100 else -78, 0, 32) else UDim2.new(1, -120, 0, 36)
+		heading.TextXAlignment = if isBook then Enum.TextXAlignment.Left else Enum.TextXAlignment.Center
+		subtitle.Position = if isBook then UDim2.fromOffset(48, 54) else UDim2.fromOffset(24, 53)
+		subtitle.Size = if isBook then UDim2.new(if narrow then 1 else 0.5, if narrow then -100 else -78, 0, 26) else UDim2.new(1, -48, 0, 34)
+		subtitle.TextSize = if isBook then 12 else 13
 		sidebar.Size = UDim2.fromOffset(if gui.AbsoluteSize.X < 680 then 116 else 148, 280)
 		for _, item in navButtons do
 			item.TextSize = 16

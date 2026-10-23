@@ -59,13 +59,6 @@ function Fishing.start()
 		return item
 	end
 
-	local equipment = button(gui, "EquipFishingRod")
-	equipment.AnchorPoint = Vector2.new(0, 1)
-	equipment.Position = UDim2.new(0, 24, 1, -122)
-	equipment.Size = UDim2.fromOffset(190, 48)
-	equipment.TextSize = 14
-	equipment.Visible = false
-
 	local overlay = Instance.new("TextButton")
 	overlay.Name = "ShopOverlay"
 	overlay.Size = UDim2.fromScale(1, 1)
@@ -194,13 +187,6 @@ function Fishing.start()
 			pending = nil
 		end
 		local enabled = ready and alive() and pending == nil
-		equipment.Visible = owned and not overlay.Visible and not player:GetAttribute("PlayerMenuOpen")
-		equipment.Active, equipment.Selectable, equipment.AutoButtonColor = enabled, enabled, enabled
-		Theme.button(equipment, if enabled then "Normal" else "Disabled")
-		equipment.Text = if pending
-			then "Please wait…"
-			elseif equipped then "Stow starter rod"
-			else "Equip starter rod"
 		action.Active, action.Selectable, action.AutoButtonColor = enabled, enabled, enabled
 		Theme.button(action, if enabled then "Selected" else "Disabled")
 		action.Text = if pending
@@ -217,9 +203,9 @@ function Fishing.start()
 		elseif pending then
 			status.Text = "Waiting for your inventory to update…"
 		elseif equipped then
-			status.Text = "Equipped. Your rod flexes as you move. Use the equipment button to stow it."
+			status.Text = "Equipped. Your rod flexes as you move. Stow it from your backpack or equipment bag."
 		elseif owned then
-			status.Text = "You own this rod. Equip it here or use the equipment button whenever you need it."
+			status.Text = "You own this rod. Equip it from your backpack or equipment bag whenever you need it."
 		else
 			status.Text = "Your first rod is on the house. It will equip automatically when you collect it."
 		end
@@ -265,7 +251,6 @@ function Fishing.start()
 	end)
 	close.Activated:Connect(closeShop)
 	overlay.Activated:Connect(closeShop)
-	equipment.Activated:Connect(toggleRod)
 	action.Activated:Connect(function()
 		if not overlay.Visible or not insideShop() then
 			closeShop()
@@ -326,8 +311,6 @@ function Fishing.start()
 			scale.Scale =
 				math.max(0.25, math.min(1, (camera.ViewportSize.X - 28) / 420, (camera.ViewportSize.Y - 64) / 402))
 		end
-		-- Leave room for Roblox's movement thumbstick and the central backpack bar.
-		equipment.Position = UDim2.new(0, 18, 1, if UserInputService.TouchEnabled then -210 else -90)
 		if overlay.Visible and (not alive() or not insideShop()) then
 			closeShop()
 		end

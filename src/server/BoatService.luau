@@ -450,6 +450,35 @@ local function updateSuspension(boat)
 	boat.heading.MaxTorque = mass * (gravity + 100) * boat.spec.Length * 2
 end
 
+local function setParked(boat, parked: boolean)
+	if boat.parked == parked then
+		return
+	end
+	boat.parked = parked
+	if parked then
+		-- A standing character is a separate, client-simulated assembly. Keeping
+		-- an idle hull dynamic lets its contacts fight our server-side movers.
+		-- Anchor only the hull root, leaving deck collisions and seats usable.
+		boat.speed, boat.turn = 0, 0
+		boat.velocity.PlaneVelocity = Vector2.zero
+		boat.root.AssemblyLinearVelocity = Vector3.zero
+		boat.root.AssemblyAngularVelocity = Vector3.zero
+		boat.root.Anchored = true
+		boat.model:SetAttribute("RowThrottle", 0)
+		boat.model:SetAttribute("RowSteer", 0)
+	else
+		boat.root.Anchored = false
+		-- Anchoring resets network ownership. Reapply it after releasing the
+		-- hull, before enabling forces, so boarding cannot change its simulator.
+		boat.root:SetNetworkOwner(nil)
+	end
+	boat.float.Enabled = not parked
+	boat.lift.Enabled = not parked
+	boat.heading.Enabled = not parked
+	boat.velocity.Enabled = not parked
+	boat.model:SetAttribute("Parked", parked)
+end
+
 local function launch(player: Player, frame: CFrame, existing: Model?, boatId: string?)
 	local id = boatId or (existing and existing:GetAttribute("BoatId")) or "Rowboat"
 	local spec = BoatCatalog[id]
@@ -524,9 +553,9 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 	velocity.PrimaryTangentAxis = Vector3.xAxis
 	velocity.SecondaryTangentAxis = Vector3.zAxis
 	velocity.PlaneVelocity = Vector2.zero
-	velocity.ForceLimitsEnabled = true
-	velocity.ForceLimitMode = Enum.ForceLimitMode.Magnitude
-	velocity.MaxForce = root.AssemblyMass * spec.DriveForcePerMass
+	-- Acceleration is limited by the velocity ramp, not by starving the solver
+	-- of the force it needs to overcome terrain-water drag and passengers.
+	velocity.ForceLimitsEnabled = false
 	velocity.Parent = root
 
 	model.Parent = workspace:FindFirstChild("PlayerBoats")
@@ -554,6 +583,7 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 		launchGraceUntil = if existing then os.clock() + 10 else 0,
 	}
 	updateSuspension(boat)
+	setParked(boat, true)
 	active[player] = boat
 	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
 		boat.throttle, boat.steer = 0, 0
@@ -779,16 +809,25 @@ function BoatService.start()
 				and boat.seat.Occupant.Parent == player.Character
 				and os.clock() - boat.lastInput < 0.5
 			local throttle, steer = if rowing then boat.throttle else 0, if rowing then boat.steer else 0
-			local currentHeading = CFrame.Angles(0, boat.yaw, 0)
+			local wantsMotion = throttle ~= 0 or math.abs(steer) >= 0.08
+			if boat.parked then
+				if not wantsMotion then
+					-- Anchored assemblies have infinite mass. Do not sample their
+					-- mass or run wave/drive corrections while people use the deck.
+					continue
+				end
+				setParked(boat, false)
+			end
 			-- Integrate the speed command across frames; water drag and solver lag
 			-- must not restart the acceleration ramp at every physics step.
-			local measuredSpeed = boat.root.AssemblyLinearVelocity:Dot(currentHeading.LookVector)
-			local speed, turn = BoatMotion.drive(boat.speed, measuredSpeed, boat.turn or 0, throttle, steer, boat.spec, dt)
+			local speed, turn = BoatMotion.step(boat.speed, boat.turn or 0, throttle, steer, boat.spec, dt)
+			if not wantsMotion and speed == 0 and turn == 0 then
+				-- Preserve normal coasting and steering decay before holding still.
+				setParked(boat, true)
+				continue
+			end
 			boat.turn = turn
 			boat.yaw -= turn * math.min(dt, 0.1)
-			-- Force needs headroom for water resistance and the seated character.
-			-- The commanded velocity ramp controls acceleration in clear water.
-			boat.velocity.MaxForce = boat.root.AssemblyMass * boat.spec.DriveForcePerMass
 			-- Seat welds change assembly mass when passengers board or leave.
 			updateSuspension(boat)
 			local wave = Weather.sample(boat.root.Position, serverTime)

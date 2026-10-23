@@ -169,6 +169,11 @@ end
 -- to arrive as one atomic model delays joining even on fast PCs. Its local ground
 -- streams normally; the client already keeps the shell until ground actually arrives.
 function Lod.prepareStreaming(root: Instance)
+	local shells = root:FindFirstChild("Lod")
+	if shells and shells:IsA("Model") then
+		-- Apply to baked maps too, so distant stand-ins cannot stream out/reload.
+		shells.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	end
 	for _, island in islands(root) do
 		island.ModelStreamingMode = if island.Name == "Harbour Isle"
 			then Enum.ModelStreamingMode.Default
