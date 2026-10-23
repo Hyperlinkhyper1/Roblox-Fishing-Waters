@@ -520,10 +520,11 @@ check(
 )
 clickText("Achievements")
 check(contains("First catch") and contains("Complete"), "Achievements derive from saved catches")
-card.BookChrome.BestiaryBookmarkTab.Activated:Fire()
-check(contains("3.25 kg") and not content:FindFirstChild("JournalFindingsPage", true), "Book edge tab switches to the saved bestiary")
-card.BookChrome.JournalBookmarkTab.Activated:Fire()
-check(content:FindFirstChild("JournalFindingsPage", true) and contains("First catch"), "Journal edge tab restores the journal and selected achievements")
+check(
+	card.BookChrome:FindFirstChild("BestiaryBookmarkTab") == nil
+		and card.BookChrome:FindFirstChild("JournalBookmarkTab") == nil,
+	"Book edge tabs are removed"
+)
 open("Settings")
 check(content:FindFirstChild("Shadows", true) ~= nil, "Performance tab exposes shadows")
 clickText("Audio")

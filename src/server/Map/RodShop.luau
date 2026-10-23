@@ -98,7 +98,8 @@ function RodShop.build(plaza: Model, plazaFrame: CFrame): Model
 		part("DoorJamb", Vector3.new(0.25, 8.7, 0.9), x, 4.52, -9.9, TEAL)
 	end
 	part("DoorLintel", Vector3.new(8.25, 0.3, 0.9), 3.5, 8.82, -9.9, TEAL)
-	local window = part("DisplayWindow", Vector3.new(6.5, 5.65, 0.12), -5.75, 6.02, -9.98, rgb(168, 208, 210), M.Glass)
+	local window =
+		part("DisplayWindow", Vector3.new(6.5, 5.65, 0.12), -5.75, 6.02, -9.98, rgb(168, 208, 210), M.SmoothPlastic)
 	window.Transparency = 0.65
 	for _, y in { 3.05, 8.98 } do
 		part("WindowFrame", Vector3.new(7, 0.24, 0.4), -5.75, y, -10.05, TEAL)

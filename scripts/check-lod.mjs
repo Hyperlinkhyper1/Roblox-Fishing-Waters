@@ -31,6 +31,13 @@ local queue = {}
 local task = {defer=function(callback)
   scheduled += 1
   table.insert(queue, callback)
+end, spawn=function() end}
+local clock = 0
+local os = {clock=function() return clock end}
+local RunService = {Heartbeat=signal()}
+local game = {GetService=function(_, name)
+  if name == "RunService" then return RunService end
+  return {LocalPlayer={}}
 end}
 local function flush()
   while #queue > 0 do
@@ -38,10 +45,17 @@ local function flush()
     for _, callback in callbacks do callback() end
   end
 end
+-- Hidden shells fade out over a few frames; run them to the end.
+local function settle()
+  flush()
+  clock += 1
+  RunService.Heartbeat:Fire()
+end
 local methods = {}
 local function object(class, name, parent)
   local item = setmetatable({ClassName=class, Name=name, Parent=parent, children={}, attributes={},
-    ChildAdded=signal(), DescendantAdded=signal(), DescendantRemoving=signal(), AncestryChanged=signal()}, {
+    ChildAdded=signal(), ChildRemoved=signal(), DescendantAdded=signal(), DescendantRemoving=signal(),
+    AncestryChanged=signal()}, {
     __index=function(self, key)
       if key == "LocalTransparencyModifier" then return rawget(self, "modifier") or 0 end
       return methods[key]
@@ -56,6 +70,7 @@ local function object(class, name, parent)
 end
 function methods:IsA(class) return self.ClassName == class end
 function methods:GetAttribute(name) return self.attributes[name] end
+function methods:GetAttributeChangedSignal() return signal() end
 function methods:GetChildren() return table.clone(self.children) end
 function methods:GetDescendants()
   local found = {}
@@ -92,32 +107,32 @@ ${source}
 end)()
 Lod.start()
 check(#queue == 1, "Shell and island initialization must share one refresh")
-flush()
+settle()
 check(shell.Parent == shells and wedge.LocalTransparencyModifier == 1, "Hide loaded island shell without reparenting")
 local beforeWrites, beforeScheduled = writes, scheduled
 for i = 1, 3000 do
   local part = object("BasePart", "GroundPart", ground)
-  island.DescendantAdded:Fire(part)
+  ground.DescendantAdded:Fire(part)
 end
 flush()
 check(scheduled == beforeScheduled and writes == beforeWrites, "Extra ground must not schedule or redraw the shell")
 for _, part in ground:GetChildren() do
-  island.DescendantRemoving:Fire(part)
+  ground.DescendantRemoving:Fire(part)
 end
 check(#queue == 1, "A ground stream-out burst must queue one refresh")
 -- Replace streamed ground in the same scheduler turn.
 ground.children = {}
 local replacement = object("BasePart", "Replacement", ground)
-island.DescendantAdded:Fire(replacement)
+ground.DescendantAdded:Fire(replacement)
 flush()
 check(writes == beforeWrites and shell.Parent == shells, "Transient removal/rearrival must cause no visibility or ancestry churn")
-island.DescendantRemoving:Fire(replacement)
+ground.DescendantRemoving:Fire(replacement)
 ground.children = {}
 flush()
 check(wedge.LocalTransparencyModifier == 0 and shell.Parent == shells, "Real stream-out must reveal the retained shell")
 local returning = object("BasePart", "Returning", ground)
-island.DescendantAdded:Fire(returning)
-flush()
+ground.DescendantAdded:Fire(returning)
+settle()
 check(wedge.LocalTransparencyModifier == 1 and shell.Parent == shells, "Real stream-in must hide the same shell")
 local late = object("BasePart", "LateWedge", shell)
 shell.DescendantAdded:Fire(late)
@@ -132,7 +147,7 @@ flush()
 check(wedge.LocalTransparencyModifier == 0 and writes == beforeWrites + 1, "Whole-island removal must reveal shell and skip removed wedges")
 island.Parent = biome
 island.AncestryChanged:Fire()
-flush()
+settle()
 check(wedge.LocalTransparencyModifier == 1, "Whole-island return must hide shell")
 local otherShell = object("Model", "2", shells)
 local otherWedge = object("BasePart", "Wedge", otherShell)
@@ -143,16 +158,16 @@ local other = object("Model", "Other", biome)
 other.attributes.LodId = 2
 local otherGround = object("Model", "Ground", other)
 object("BasePart", "GroundPart", otherGround)
-map.DescendantAdded:Fire(other)
-flush()
+biome.ChildAdded:Fire(other)
+settle()
 check(otherWedge.LocalTransparencyModifier == 1, "Newly streamed island must hide only its own shell")
 beforeWrites, beforeScheduled = writes, scheduled
-map.DescendantAdded:Fire(other)
+biome.ChildAdded:Fire(other)
 flush()
 check(writes == beforeWrites and scheduled == beforeScheduled, "Duplicate island events must not attach or refresh again")
 local newer = object("Model", "ReplacementIsland", biome)
 newer.attributes.LodId = 2
-map.DescendantAdded:Fire(newer)
+biome.ChildAdded:Fire(newer)
 flush()
 check(otherWedge.LocalTransparencyModifier == 0, "Replacement island without ground must reveal shell")
 beforeScheduled = scheduled

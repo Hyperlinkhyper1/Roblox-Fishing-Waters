@@ -7,7 +7,7 @@ local VERSION = 3
 local rgb = Color3.fromRGB
 local M = Enum.Material
 local APPEARANCE = {
-	obj_0 = { color = rgb(169, 215, 219), material = M.Glass, transparency = 0.58, reflectance = 0.08 },
+	obj_0 = { color = rgb(169, 215, 219), material = M.SmoothPlastic, transparency = 0.58, reflectance = 0.08 },
 	obj_1 = { color = rgb(211, 233, 226), material = M.Ice },
 	obj_2 = { color = rgb(40, 98, 105), material = M.Metal },
 }

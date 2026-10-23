@@ -31,7 +31,7 @@ function CollectionService:GetTagged(tag)
 	return result
 end
 game.GetService = function(_, name)
-	return if name == "CollectionService" then CollectionService else { Heartbeat = heartbeat }
+	return if name == "CollectionService" then CollectionService else { Heartbeat = heartbeat, RenderStepped = heartbeat }
 end
 dependencies.Props = { pick = function() end }
 dependencies.Islands.surface = function(_, x, z) return Vector3.new(x, 0.22, z) end
@@ -124,6 +124,12 @@ assert(wave.Enabled and (after - before):Dot(source:GetAttribute("Inland1")) > 1
 assert(math.abs(wave.Attachment0.CFrame.UpVector.Y) < 1e-5, "Crest must lie flat on the water")
 assert(wave.LocalTransparencyModifier < 1, "Crest must become visible")
 assert(wave.Attachment0.CFrame.Position.Y >= 0.16, "Foam must stay above water")
+local highRefreshBefore = wave.Attachment0.CFrame.Position
+now += 1 / 144
+heartbeat:Fire(1 / 144)
+assert((wave.Attachment0.CFrame.Position - highRefreshBefore).Magnitude > 0.001,
+	"Shore foam must advance on every rendered frame, including 144 Hz displays")
+assert(wave.ZOffset > 0, "Foam must be separated from coplanar shoreline surfaces")
 camera.CFrame = source.CFrame + Vector3.new(1000, 0, 0)
 heartbeat:Fire(1 / 30)
 assert(not wave.Enabled, "Distant surf must be culled")

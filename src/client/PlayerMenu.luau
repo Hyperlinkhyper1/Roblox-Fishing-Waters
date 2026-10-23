@@ -522,22 +522,22 @@ function Menu.start()
 			end
 		end)
 	end
-	local bookTabs = {}
-	for index, name in { "Journal", "Bestiary" } do
-		local tab = button(bookChrome, name, function()
-			active = name
-			render()
-		end, {
-			Name = name .. "BookmarkTab", Position = UDim2.new(1, -25, 0, 112 + (index - 1) * 118),
-			Size = UDim2.fromOffset(25, 108), ZIndex = 3, TextSize = 15,
-		})
-		tab.ThemeCaption.Rotation = 90
-		tab.ThemeCaption.Position = UDim2.fromOffset(-40, 40)
-		tab.ThemeCaption.Size = UDim2.fromOffset(104, 26)
-		bookTabs[name] = tab
-	end
 	local function bestiary()
 		local search = input(content, "Search fish or mutations…")
+		local searchEdge = search:FindFirstChild("ThemeBorder")
+		search.BackgroundTransparency = 0.24
+		if searchEdge and searchEdge:IsA("UIStroke") then
+			searchEdge.Color = Book.Edge
+			searchEdge.Transparency = 0.72
+			search.Focused:Connect(function()
+				search.BackgroundTransparency = 0.1
+				searchEdge.Transparency = 0.28
+			end)
+			search.FocusLost:Connect(function()
+				search.BackgroundTransparency = 0.24
+				searchEdge.Transparency = 0.72
+			end)
+		end
 		search.Size = UDim2.new(if narrow then 1 else 0.5, if narrow then -8 else -32, 0, 42)
 		if not narrow then
 			text(content, "SPECIMENS & FIELD NOTES", 20, Book.Ink, {
@@ -1045,10 +1045,6 @@ function Menu.start()
 		Theme.button(closeButton, "Danger")
 		if isBook then
 			styleBookItem(closeButton)
-		end
-		for name, tab in bookTabs do
-			Theme.button(tab, if name == active then "Selected" else "Normal")
-			styleBookItem(tab)
 		end
 		card.ThemeBorder.Color = if isBook then Book.Edge else Theme.Colors.Border
 		card.ThemeInnerRim.Visible = not isBook

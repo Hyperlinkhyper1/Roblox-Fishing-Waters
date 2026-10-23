@@ -16,6 +16,8 @@ local BiomeAtmosphere = {}
 local WEATHER_BLEND = TweenInfo.new(0.65, Enum.EasingStyle.Linear)
 local DIVE_BLEND = TweenInfo.new(0.3, Enum.EasingStyle.Sine)
 local UNDERWATER_BLUE = Color3.fromRGB(65, 150, 210)
+local UNDERWATER_FOG_DEEP = Color3.fromRGB(20, 70, 115)
+local UNDERWATER_FOG_DENSITY = 0.3
 local FADE = TweenInfo.new(1.5, Enum.EasingStyle.Sine)
 local LEAVE_MARGIN = 1.1 -- stay in a biome until this far past its edge, so the title doesn't flicker
 
@@ -93,22 +95,24 @@ function BiomeAtmosphere.start()
 		local look = biome.look
 		local weather = Weather.getState(workspace:GetServerTimeNow())
 		local rain, storm = weather.rain, weather.storm
-		-- Terrain water supplies real distance fog underwater. A high transparency
-		-- keeps nearby scenery clear while the blue colour softens distant objects.
+		-- Terrain water keeps nearby scenery clear, while the Atmosphere below adds a
+		-- blue fog that swallows distant objects.
 		blend(terrain, {
 			WaterColor = if underwater then UNDERWATER_BLUE else look.waterColor,
 			WaterTransparency = if underwater then 0.9 else 0.55,
 		})
 		blend(atmosphere, {
-			-- Atmosphere owns surface distance fog; terrain water owns it below.
+			-- Underwater fog starts at the camera; surface haze (sky glow) stays off.
 			Offset = if underwater then 0 else Biomes.DistanceFogOffset,
 			Color = if underwater
 				then UNDERWATER_BLUE
 				else look.atmosphereColor:Lerp(Color3.fromRGB(112, 125, 142), rain * 0.65),
 			Decay = if underwater
-				then UNDERWATER_BLUE
+				then UNDERWATER_FOG_DEEP
 				else look.atmosphereDecay:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5),
-			Density = if underwater then 0 else math.min(0.5, look.density + rain * 0.13),
+			Density = if underwater
+				then UNDERWATER_FOG_DENSITY
+				else math.min(0.5, look.density + rain * 0.13),
 			Haze = if underwater then 0 else look.haze + rain * 1.8,
 			Glare = if underwater then 0 else look.glare * (1 - rain),
 		})

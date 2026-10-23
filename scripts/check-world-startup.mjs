@@ -35,7 +35,8 @@ local instanceMt = {
   end,
 }
 local Instance = {new = function(class)
-  return setmetatable({ClassName=class, _children={}, _attributes={}}, instanceMt)
+  return setmetatable({ClassName=class, _children={}, _attributes={},
+    ChildAdded={Connect=function() return {Disconnect=function() end} end}}, instanceMt)
 end}
 function methods:IsA(class)
   return self.ClassName == class or (class == "BasePart" and self.ClassName == "SpawnLocation")

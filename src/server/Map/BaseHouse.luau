@@ -217,6 +217,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 	block(shell, "StorePassageLintel", Vector3.new(0.55, 3, 6), 3, 10, -7, PLASTER, M.Plaster)
 
 	-- Recessed shop windows, divided lights, deep stone sills, and opened shutters.
+	-- Avoid refractive Glass so the sea remains visible through the glazing.
 	for _, z in { -15, 15 } do
 		local front = z > 0
 		local width = if front then 10 else 7
@@ -230,7 +231,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 				(bottom + top) / 2,
 				z,
 				rgb(105, 165, 175),
-				M.Glass,
+				M.SmoothPlastic,
 				nil,
 				true
 			)

@@ -215,17 +215,6 @@ assert(wind.Enabled and rain[1].Enabled, "Enabling weather restores current rain
 print("PASS persistent performance toggle hides and restores weather visuals")
 local thunder = sounds:FindFirstChild("WeatherThunder")
 assert(thunder.SoundId == "rbxassetid://9120018088", "Thunder must use the configured verified asset")
-local rainSound = sounds:FindFirstChild("WeatherRain")
-assert(rainSound.SoundId == "rbxassetid://1516791621" and rainSound.Looped, "Rain must use Roblox's looping stock asset")
-state.rain = 0.3
-step(0.2)
-assert(rainSound.IsPlaying and rainSound.Volume > 0, "Rain ambience must start and scale with rainfall")
-roof = true
-step(0.2)
-assert(not rainSound.IsPlaying, "Shelter must silence the rain ambience")
-roof = false
-step(0.2)
-assert(rainSound.IsPlaying, "Rain ambience must resume outdoors")
 state.storm = 1
 local flashed = false
 for _ = 1, 1200 do

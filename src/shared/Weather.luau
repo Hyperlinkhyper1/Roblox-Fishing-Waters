@@ -150,7 +150,7 @@ function Weather.getState(serverTime: number?): State
 		cloudCover = mix("cloudCover"),
 		windSpeed = wind,
 		windDirection = Vector3.new(math.cos(angle), 0, math.sin(angle)),
-		waveAmplitude = 0.06 + (Weather.MaxWaveAmplitude - 0.06) * (wind / 52) ^ 1.65,
+		waveAmplitude = 0.16 + (Weather.MaxWaveAmplitude - 0.16) * (wind / 52) ^ 1.65,
 	}
 end
 

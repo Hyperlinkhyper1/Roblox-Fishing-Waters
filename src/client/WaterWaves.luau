@@ -93,6 +93,7 @@ function WaterWaves.start()
 	local elapsed, checkedAt, coloredAt = 0, -math.huge, -math.huge
 	local lastCamera: Vector3? = nil
 	local lastGrid: Vector3? = nil
+	local coastalExposure = 1
 	RunService.Heartbeat:Connect(function(dt: number)
 		elapsed += dt
 		if elapsed < UPDATE_INTERVAL then
@@ -111,11 +112,12 @@ function WaterWaves.start()
 		local state = Weather.getState(now)
 		local cameraPosition = camera.CFrame.Position
 		local _, cameraAmplitude = Weather.heightAt(cameraPosition, now, state)
-		-- Native waves are micro-ripples. Regional swell height comes from the
-		-- shared field below, retaining the sheltered lake's smaller waves.
-		local ripple = math.clamp(cameraAmplitude * 0.18, 0.04, 0.4)
+		-- Let the actual water surface visibly roll, alongside the shared crests.
+		-- Exposure still keeps the inner lake much calmer than the open sea.
+		local ripple = math.clamp(cameraAmplitude * 1.3 * coastalExposure, 0, 1)
 		terrain.WaterWaveSize += (ripple - terrain.WaterWaveSize) * (1 - math.exp(-step * 3))
-		terrain.WaterWaveSpeed = math.clamp(4 + state.windSpeed * 0.65, 4, 30)
+		-- Broad rolling motion rather than rapid oscillation against the land.
+		terrain.WaterWaveSpeed = (6 + state.windSpeed * 0.16) * (0.7 + coastalExposure * 0.3)
 		local direction = Vector3.new(state.windDirection.X, 0, state.windDirection.Z)
 		direction = if direction.Magnitude > 0.001 then direction.Unit else Vector3.xAxis
 		local across = Vector3.new(-direction.Z, 0, direction.X)
@@ -136,6 +138,19 @@ function WaterWaves.start()
 				then { root, Players.LocalPlayer.Character }
 				else { root }
 			checkedAt, lastCamera, lastGrid = now, cameraPosition, gridOrigin
+			-- Sample the actual coast, including the smaller islands. Breaking waves
+			-- settle in the shallows while exposed water retains its larger swells.
+			local wet = 0
+			for index = 0, 7 do
+				local angle = index * math.pi / 4
+				if isWater(projected + Vector3.new(math.cos(angle) * 64, 0, math.sin(angle) * 64)) then
+					wet += 1
+				end
+			end
+			-- Native ripples repeatedly cut through the land and thin foam sheets.
+			-- Remove those at the coast; the shoreward wash supplies its motion.
+			-- Only fully exposed viewpoints retain the large native oscillations.
+			coastalExposure = math.clamp((wet - 6) / 2, 0, 1) ^ 2
 		end
 		local recolor = now - coloredAt >= 0.5
 		if recolor then
@@ -173,12 +188,12 @@ function WaterWaves.start()
 			ribbon.b.CFrame =
 				surfaceFrame(Vector3.new(b.X, Biomes.WaterLevel + sampleB.height + 0.06, b.Z), across, sampleB.normal)
 			ribbon.body.Width0, ribbon.body.Width1 = width, width
-			ribbon.edge.Width0, ribbon.edge.Width1 = 0.4 + amplitude * 0.18, 0.3 + amplitude * 0.12
+			ribbon.edge.Width0, ribbon.edge.Width1 = 1.1 + amplitude * 0.9, 0.9 + amplitude * 0.7
 			local distanceFade = math.clamp((GRID * CELL * 0.65 - (center - projected).Magnitude) / CELL, 0, 1)
-			ribbon.body.LocalTransparencyModifier = 1 - fade * distanceFade * 0.42
-			ribbon.edge.LocalTransparencyModifier = 1 - fade * distanceFade * (0.12 + state.storm * 0.32)
+			ribbon.body.LocalTransparencyModifier = 1 - fade * distanceFade * 0.68
+			ribbon.edge.LocalTransparencyModifier = 1 - fade * distanceFade * (0.32 + state.rain * 0.48)
 			if recolor then
-				ribbon.body.Color = ColorSequence.new(terrain.WaterColor:Lerp(Color3.fromRGB(160, 205, 210), 0.16))
+				ribbon.body.Color = ColorSequence.new(terrain.WaterColor:Lerp(Color3.fromRGB(160, 205, 210), 0.32))
 				ribbon.edge.Color = ColorSequence.new(Color3.fromRGB(205, 229, 230))
 			end
 		end
