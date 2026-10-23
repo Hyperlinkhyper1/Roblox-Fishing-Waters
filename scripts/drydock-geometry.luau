@@ -147,6 +147,30 @@ end
 function instanceMethods:GetAttribute(key)
 	return self._attributes[key]
 end
+function instanceMethods:ApplyDescriptionAsync(description)
+	self._appliedDescription = description
+	local character = self.Parent or self
+	local shirt = Instance.new("Shirt")
+	shirt.Name = "Shirt"
+	shirt.ShirtTemplate = "rbxassetid://" .. tostring(description.Shirt)
+	shirt.Parent = character
+	local pants = Instance.new("Pants")
+	pants.Name = "Pants"
+	pants.PantsTemplate = "rbxassetid://" .. tostring(description.Pants)
+	pants.Parent = character
+	for _, id in string.split(description.HatAccessory or "", ",") do
+		local accessory = Instance.new("Accessory")
+		accessory.Name = "HatAccessory"
+		accessory:SetAttribute("AssetId", tonumber(id))
+		accessory.Parent = character
+	end
+	for _, id in string.split(description.WaistAccessory or "", ",") do
+		local accessory = Instance.new("Accessory")
+		accessory.Name = "WaistAccessory"
+		accessory:SetAttribute("AssetId", tonumber(id))
+		accessory.Parent = character
+	end
+end
 function instanceMethods:GetChildren()
 	return table.clone(self._children)
 end
@@ -574,6 +598,7 @@ do
 end
 local npc = shop:FindFirstChild("Shipwright")
 check(npc and npc:IsA("Model") and npc:FindFirstChild("Humanoid"), "Shop must contain a humanoid shipwright")
+check(npc:GetAttribute("CosmeticsVersion") == 3, "Shipwright must wear the Marketplace outfit")
 local talk = npc and npc:FindFirstChild("TalkToShipwrightPrompt", true)
 check(
 	talk and talk:IsA("ProximityPrompt") and talk.ActionText == "Talk",

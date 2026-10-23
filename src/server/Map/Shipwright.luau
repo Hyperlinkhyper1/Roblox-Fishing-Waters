@@ -1,14 +1,37 @@
--- A self-contained Roblox rig so the shipwright is available without avatar or asset requests.
+-- Mara is a locally built R6 rig dressed in genuine Roblox Marketplace items.
+-- HumanoidDescription applies the catalog shirt, pants, hard hat and tool belt,
+-- so those are the real catalog models instead of hand-sculpted lookalikes.
+-- Classic faces are no longer sold in the Marketplace, so the head keeps the
+-- engine's built-in smile texture. Building the rig locally keeps the shipwright
+-- present even when an asset request is slow or unavailable.
+
 local Shipwright = {}
 
-local rgb = Color3.fromRGB
-local COVERALLS = rgb(40, 98, 113)
-local SLEEVE = rgb(50, 116, 126)
-local SKIN = rgb(216, 164, 119)
-local BOOTS = rgb(57, 47, 38)
-local BELT = rgb(87, 65, 44)
-local HARDHAT = rgb(237, 177, 50)
-local METAL = rgb(177, 188, 186)
+local COSMETICS_VERSION = 3
+local SKIN = Color3.fromRGB(216, 164, 119)
+
+-- Verified Marketplace assets (all currently for sale):
+--   Shirt  "Mechanic Coveralls +" (navy short-sleeved coverall top)
+--   Pants  "Mechanic Coveralls -" (matching trousers and work boots)
+--   Hat    "Hard Hat" (yellow construction helmet)
+--   Waist  "Tool Belt" (hammer, wrenches and tape measure)
+local COSMETICS = {
+	Shirt = 6500613508,
+	Pants = 6500616492,
+	Hat = 9667880157,
+	Waist = 12127743738,
+}
+Shipwright.COSMETICS = COSMETICS
+
+local BODY_PARTS = {
+	HumanoidRootPart = true,
+	Torso = true,
+	Head = true,
+	["Right Arm"] = true,
+	["Left Arm"] = true,
+	["Right Leg"] = true,
+	["Left Leg"] = true,
+}
 
 -- Also repair baked NPCs without rebuilding the workshop or launch equipment.
 function Shipwright.ensureInteraction(model: Model): ProximityPrompt?
@@ -44,6 +67,116 @@ function Shipwright.ensureInteraction(model: Model): ProximityPrompt?
 	return prompt
 end
 
+local function createDescription(): HumanoidDescription
+	local description = Instance.new("HumanoidDescription")
+	description.Name = "ShipwrightAppearance"
+	description.Shirt = COSMETICS.Shirt
+	description.Pants = COSMETICS.Pants
+	description.HatAccessory = tostring(COSMETICS.Hat)
+	description.WaistAccessory = tostring(COSMETICS.Waist)
+	description.HeadColor = SKIN
+	description.TorsoColor = SKIN
+	description.LeftArmColor = SKIN
+	description.RightArmColor = SKIN
+	description.LeftLegColor = SKIN
+	description.RightLegColor = SKIN
+	return description
+end
+
+-- Classic faces are retired from the Marketplace, so restore the same built-in
+-- smile the previous hand-built Mara used.
+local function ensureFace(model: Model)
+	local head = model:FindFirstChild("Head")
+	if not head or not head:IsA("BasePart") then
+		return
+	end
+	local face = head:FindFirstChild("face")
+	if face and face:IsA("Decal") then
+		return
+	end
+	local decal = Instance.new("Decal")
+	decal.Name = "face"
+	decal.Face = Enum.NormalId.Front
+	decal.Texture = "rbxasset://textures/face.png"
+	decal.Parent = head
+end
+
+-- Older baked maps carried the previous hand-modelled costume. Remove those
+-- pieces before applying the catalog outfit, otherwise both hats would render.
+local function stripLegacyDetails(model: Model)
+	for _, item in model:GetDescendants() do
+		if item:IsA("Accessory") or item:IsA("Shirt") or item:IsA("Pants") then
+			item:Destroy()
+		elseif item:IsA("BasePart") and not BODY_PARTS[item.Name] then
+			item:Destroy()
+		elseif item:IsA("Decal") and item.Name == "face" then
+			item:Destroy()
+		end
+	end
+end
+
+-- Applies the Marketplace outfit to a fresh or previously baked shipwright.
+-- Returns true once the description has been applied and remembered on the
+-- model, so repeated world upgrades do not reload the avatar assets.
+function Shipwright.ensureAppearance(model: Model): boolean
+	if model:GetAttribute("CosmeticsVersion") == COSMETICS_VERSION then
+		return true
+	end
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return false
+	end
+	-- Baked shipwrights predate the explicit rig type; keep descriptions on R6.
+	humanoid.RigType = Enum.HumanoidRigType.R6
+
+	stripLegacyDetails(model)
+
+	local description = createDescription()
+	local applied, reason = pcall(function()
+		humanoid:ApplyDescriptionAsync(description)
+	end)
+	description:Destroy()
+	-- Keep a readable face even if the catalog request failed.
+	ensureFace(model)
+	if not applied then
+		warn("Shipwright Marketplace cosmetics failed to load: " .. tostring(reason))
+		return false
+	end
+
+	-- Applying before the model is parented can silently skip the accessories.
+	-- Report that as unfinished so the caller's post-parent retry runs.
+	local hasShirt, hasPants, hasAccessory = false, false, false
+	for _, item in model:GetDescendants() do
+		if item:IsA("Shirt") then
+			hasShirt = true
+		elseif item:IsA("Pants") then
+			hasPants = true
+		elseif item:IsA("Accessory") then
+			hasAccessory = true
+		end
+	end
+	if not (hasShirt and hasPants and hasAccessory) then
+		warn("Shipwright Marketplace cosmetics did not fully attach; retrying after parenting")
+		return false
+	end
+
+	for _, item in model:GetDescendants() do
+		if item:IsA("BasePart") then
+			item.CanCollide = false
+			item.CanTouch = false
+			item.Massless = true
+			item.Anchored = item.Name == "HumanoidRootPart"
+			if item.Name == "HumanoidRootPart" then
+				item.CanQuery = false
+				item.CastShadow = false
+			end
+		end
+	end
+
+	model:SetAttribute("CosmeticsVersion", COSMETICS_VERSION)
+	return true
+end
+
 -- frame is at the soles of the boots. The rig looks along its local -Z axis.
 function Shipwright.build(frame: CFrame): Model
 	local model = Instance.new("Model")
@@ -67,27 +200,46 @@ function Shipwright.build(frame: CFrame): Model
 		return p
 	end
 
-	local root = part("HumanoidRootPart", Vector3.new(2, 2, 1), CFrame.new(0, 3, 0), COVERALLS)
+	local root = part("HumanoidRootPart", Vector3.new(2, 2, 1), CFrame.new(0, 3, 0), SKIN)
 	root.Transparency = 1
 	root.CanQuery = false
 	root.Anchored = true
 	root.CastShadow = false
-	local torso = part("Torso", Vector3.new(2, 2, 1), CFrame.new(0, 3, 0), COVERALLS)
+	local torso = part("Torso", Vector3.new(2, 2, 1), CFrame.new(0, 3, 0), SKIN)
 	local head = part("Head", Vector3.new(2, 1, 1), CFrame.new(0, 4.5, 0), SKIN)
 	local headMesh = Instance.new("SpecialMesh")
 	headMesh.MeshType = Enum.MeshType.Head
 	headMesh.Scale = Vector3.new(1.1, 1.1, 1.1)
 	headMesh.Parent = head
-	local face = Instance.new("Decal")
-	face.Name = "face"
-	face.Face = Enum.NormalId.Front
-	face.Texture = "rbxasset://textures/face.png"
-	face.Parent = head
 
 	local rightArm = part("Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.5, 3, 0), SKIN)
 	local leftArm = part("Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.5, 3, 0), SKIN)
-	local rightLeg = part("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.5, 1, 0), COVERALLS)
-	local leftLeg = part("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.5, 1, 0), COVERALLS)
+	local rightLeg = part("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.5, 1, 0), SKIN)
+	local leftLeg = part("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.5, 1, 0), SKIN)
+
+	-- Standard R6 attachment points, copied from Roblox's own R6 character.
+	-- Humanoid:ApplyDescription welds catalog accessories to the attachment that
+	-- shares their name, so the hard hat and tool belt land in the right place.
+	local function attach(bodyPart: BasePart, name: string, offset: Vector3)
+		local point = Instance.new("Attachment")
+		point.Name = name
+		point.CFrame = CFrame.new(offset.X, offset.Y, offset.Z)
+		point.Parent = bodyPart
+	end
+	attach(head, "FaceCenterAttachment", Vector3.new(0, 0, 0))
+	attach(head, "FaceFrontAttachment", Vector3.new(0, 0, -0.6))
+	attach(head, "HairAttachment", Vector3.new(0, 0.6, 0))
+	attach(head, "HatAttachment", Vector3.new(0, 0.6, 0))
+	attach(torso, "BodyBackAttachment", Vector3.new(0, 0, 0.5))
+	attach(torso, "BodyFrontAttachment", Vector3.new(0, 0, -0.5))
+	attach(torso, "LeftCollarAttachment", Vector3.new(-1, 1, 0))
+	attach(torso, "NeckAttachment", Vector3.new(0, 1, 0))
+	attach(torso, "RightCollarAttachment", Vector3.new(1, 1, 0))
+	attach(torso, "WaistBackAttachment", Vector3.new(0, -1, 0.5))
+	attach(torso, "WaistCenterAttachment", Vector3.new(0, -1, 0))
+	attach(torso, "WaistFrontAttachment", Vector3.new(0, -1, -0.5))
+	attach(rightArm, "RightShoulderAttachment", Vector3.new(0, 1, 0))
+	attach(leftArm, "LeftShoulderAttachment", Vector3.new(0, 1, 0))
 
 	-- Standard R6 joint names and positions keep all six body parts on one rig.
 	local function motor(name: string, a: BasePart, b: BasePart, offset: CFrame)
@@ -107,49 +259,9 @@ function Shipwright.build(frame: CFrame): Model
 	motor("Right Hip", torso, rightLeg, CFrame.new(0.5, 2, 0))
 	motor("Left Hip", torso, leftLeg, CFrame.new(-0.5, 2, 0))
 
-	local function detail(name: string, size: Vector3, offset: CFrame, color: Color3, body: BasePart): Part
-		local p = part(name, size, offset, color)
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = body
-		weld.Part1 = p
-		weld.Parent = p
-		return p
-	end
-
-	-- Rolled sleeves and a pocketed bib make her read as a working dockhand.
-	for _, side in { -1, 1 } do
-		local arm = if side == -1 then leftArm else rightArm
-		local leg = if side == -1 then leftLeg else rightLeg
-		detail("CoverallSleeve", Vector3.new(1.04, 1.05, 1.04), CFrame.new(side * 1.5, 3.49, 0), SLEEVE, arm)
-		detail("RolledCuff", Vector3.new(1.08, 0.18, 1.08), CFrame.new(side * 1.5, 3.01, 0), COVERALLS, arm)
-		detail("WorkBoot", Vector3.new(0.98, 0.58, 1.2), CFrame.new(side * 0.5, 0.29, -0.08), BOOTS, leg)
-		detail("BootSole", Vector3.new(1, 0.12, 1.22), CFrame.new(side * 0.5, 0.06, -0.08), rgb(38, 37, 34), leg)
-		detail("BibStrap", Vector3.new(0.22, 1.25, 0.07), CFrame.new(side * 0.64, 3.32, -0.54), SLEEVE, torso)
-		detail("StrapBuckle", Vector3.new(0.25, 0.13, 0.1), CFrame.new(side * 0.64, 3.62, -0.59), METAL, torso)
-	end
-	detail("BibPocket", Vector3.new(0.78, 0.45, 0.12), CFrame.new(0, 3.13, -0.58), SLEEVE, torso)
-	detail("PocketSeam", Vector3.new(0.75, 0.04, 0.04), CFrame.new(0, 3.34, -0.66), rgb(99, 155, 158), torso)
-	detail("Toolbelt", Vector3.new(2.08, 0.28, 1.09), CFrame.new(0, 2.42, 0), BELT, torso)
-	detail("BeltBuckle", Vector3.new(0.35, 0.26, 0.1), CFrame.new(0, 2.42, -0.6), METAL, torso)
-	detail("ToolPouch", Vector3.new(0.47, 0.63, 0.28), CFrame.new(-0.73, 2.21, -0.61), BELT, torso)
-	detail("HammerHandle", Vector3.new(0.12, 0.75, 0.12), CFrame.new(0.83, 2.38, -0.65), rgb(157, 113, 67), torso)
-	detail("HammerHead", Vector3.new(0.46, 0.18, 0.22), CFrame.new(0.83, 2.77, -0.65), METAL, torso)
-
-	-- A rounded yellow hardhat, rather than a plain colored head block.
-	local helmet = detail("HardhatCrown", Vector3.new(2.12, 0.85, 1.65), CFrame.new(0, 5.07, 0), HARDHAT, head)
-	helmet.Shape = Enum.PartType.Ball
-	local brim = detail(
-		"HardhatBrim",
-		Vector3.new(0.13, 2.35, 1.85),
-		CFrame.new(0, 4.97, -0.08) * CFrame.Angles(0, 0, math.pi / 2),
-		HARDHAT,
-		head
-	)
-	brim.Shape = Enum.PartType.Cylinder
-	detail("HardhatRidge", Vector3.new(0.13, 0.12, 1.15), CFrame.new(0, 5.48, 0), rgb(249, 196, 67), head)
-
 	local humanoid = Instance.new("Humanoid")
 	humanoid.DisplayName = "Mara · Shipwright"
+	humanoid.RigType = Enum.HumanoidRigType.R6
 	humanoid.WalkSpeed = 0
 	humanoid.JumpPower = 0
 	humanoid.JumpHeight = 0
@@ -160,6 +272,7 @@ function Shipwright.build(frame: CFrame): Model
 	humanoid.Parent = model
 
 	model.PrimaryPart = root
+	Shipwright.ensureAppearance(model)
 	Shipwright.ensureInteraction(model)
 	return model
 end
