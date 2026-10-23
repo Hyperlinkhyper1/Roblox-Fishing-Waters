@@ -66,9 +66,14 @@ workspace:SetAttribute("WeatherSeed", 1847)
 local lighting = Instance.new("Folder")
 local sounds = Instance.new("Folder")
 local weatherEnabled = true
-local players = { LocalPlayer = { Character = Instance.new("Model"), GetAttribute = function(_, key)
-	return if key == "WeatherEffectsEnabled" then weatherEnabled else nil
-end } }
+local players = {
+	LocalPlayer = {
+		Character = Instance.new("Model"),
+		GetAttribute = function(_, key)
+			return if key == "WeatherEffectsEnabled" then weatherEnabled else nil
+		end,
+	},
+}
 local callbacks = {}
 local bindCount = 0
 local runService = {}
@@ -129,8 +134,16 @@ for _, emitter in rain do
 	assert(not emitter.Enabled, "Clear weather must not rain")
 end
 local clearWindRate = wind.Rate
+local rainSound = sounds:FindFirstChild("WeatherRain")
+assert(
+	rainSound.SoundId == "rbxassetid://1516791621" and rainSound.Looped,
+	"Rain must loop the stock Roblox rain asset"
+)
+assert(rainSound.Volume == 0 and not rainSound.IsPlaying, "Clear weather must keep rain audio silent")
 state.rain, state.windSpeed = 0.3, 18
 step(0.2)
+local lightRainVolume = rainSound.Volume
+assert(rainSound.IsPlaying and lightRainVolume > 0, "Light rain must start audible rainfall")
 local lightRainRate, lightWindRate = rain[1].Rate, wind.Rate
 for _, emitter in rain do
 	assert(
@@ -142,6 +155,10 @@ assert(lightWindRate > clearWindRate, "Light rain must strengthen visible wind")
 state.rain, state.windSpeed = 1, 52
 step(0.2)
 assert(
+	rainSound.Volume > lightRainVolume and rainSound.PlayCount == 1,
+	"Heavier rain must grow louder without restarting the loop"
+)
+assert(
 	rain[1].Rate > lightRainRate and wind.Rate > lightWindRate and wind.Speed.Min > 40,
 	"Worse weather must increase rain and wind amount and wind speed"
 )
@@ -149,14 +166,18 @@ assert(rain[1].Acceleration.X > 70, "Heavy rain must drift with stronger wind")
 print("PASS bounded/idempotent weather startup, rain intensity, wind speed and water-limited lifetime")
 
 roof = true
+local outdoorRainVolume = rainSound.Volume
 step(0.2)
+assert(rainSound.Volume < outdoorRainVolume and rainSound.IsPlaying, "Shelter must soften the rain audio")
 assert(not wind.Enabled, "Shelter must suppress indoor wind streaks")
 for _, emitter in rain do
 	assert(not emitter.Enabled and emitter.ClearCount > 0, "Shelter must clear rain before it passes through a roof")
 end
 roof = false
 camera.CFrame = CFrame.new(0, -2, 0)
+local shelteredRainVolume = rainSound.Volume
 step(0.2)
+assert(rainSound.Volume < shelteredRainVolume, "Diving must further soften rain audio")
 assert(not wind.Enabled and not rain[1].Enabled, "Submerged cameras must not show rain or wind")
 camera.CFrame = CFrame.new(100, 12, 20)
 step(0.2)
@@ -170,9 +191,11 @@ assert(rain[1].Parent.Position.X - firstPosition.X == 10, "Rain must follow the 
 assert(raycasts == raysBefore, "Roof raycasts must be throttled separately from camera motion")
 workspace.CurrentCamera = nil
 step(0.2)
+assert(not rainSound.IsPlaying and rainSound.Volume == 0, "Missing camera must stop rain audio")
 assert(not wind.Enabled and not rain[1].Enabled, "Missing camera must disable all weather particles")
 workspace.CurrentCamera = camera
 step(0.2)
+assert(rainSound.IsPlaying, "Camera recovery must restore rain audio")
 local count = #effects:GetDescendants()
 for _ = 1, 120 do
 	step(1 / 60)
@@ -183,6 +206,7 @@ print("PASS roof shelter, underwater suppression, camera following/loss/recovery
 local flash = lighting:FindFirstChild("WeatherLightning")
 weatherEnabled = false
 step(0.2)
+assert(rainSound.IsPlaying and rainSound.Volume > 0, "Disabling weather visuals must preserve weather audio")
 assert(not wind.Enabled and not rain[1].Enabled and not flash.Enabled, "Performance setting disables weather visuals")
 assert(state.rain == 1 and state.windSpeed == 52, "Visual settings must preserve shared weather")
 weatherEnabled = true
@@ -232,3 +256,18 @@ assert(
 	"Delayed thunder must play once and honor the sound override"
 )
 print("PASS storm lightning, delayed thunder, clear-weather cancellation and sound override")
+state.rain, state.storm = 0, 0
+step(5)
+assert(not rainSound.IsPlaying and rainSound.Volume == 0, "Clear weather must fade out and stop rain audio")
+workspace:SetAttribute("WeatherRainSoundId", 123456)
+state.rain = 0.5
+step(0.2)
+assert(rainSound.IsPlaying and rainSound.SoundId == "rbxassetid://123456", "Rain must honor numeric audio overrides")
+workspace:SetAttribute("WeatherRainSoundId", "invalid")
+step(0.2)
+assert(
+	rainSound.IsPlaying and rainSound.SoundId == "rbxassetid://1516791621",
+	"Invalid rain overrides must restore stock audio"
+)
+assert(#sounds:GetChildren() == 2, "Weather must reuse its two sound instances")
+print("PASS stock rain loop, intensity, shelter/diving, camera recovery, clear-weather fade and audio override")

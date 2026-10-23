@@ -157,6 +157,13 @@ function Islands.build(spec: Spec): Model
 		materials.shore
 	)
 
+	-- Store the generated coast without consuming RNG or depending on streaming.
+	local coast = {}
+	for _, point in rings[#rings] do
+		table.insert(coast, { point.X, point.Z })
+	end
+	model:SetAttribute("ChartCoast", game:GetService("HttpService"):JSONEncode(coast))
+	model:SetAttribute("ChartAtoll", spec.shape == "atoll")
 	return model
 end
 

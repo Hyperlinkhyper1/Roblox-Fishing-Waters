@@ -1529,12 +1529,26 @@ end
 
 ----------------------------------------------------------------------------------------------------
 
+-- Also available to charts of places baked before coast metadata was saved.
+function Harbour.chartCoast(center: Vector2): { { number } }
+	local coast = {}
+	for _, point in makeShape(center).coast do
+		table.insert(coast, { point.X, point.Y })
+	end
+	return coast
+end
+
 function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	local island = Instance.new("Model")
 	island.Name = "Harbour Isle"
 	island.Parent = parent
 
 	local shape = makeShape(center)
+	local coast = {}
+	for _, point in shape.coast do
+		table.insert(coast, { point.X, point.Y })
+	end
+	island:SetAttribute("ChartCoast", game:GetService("HttpService"):JSONEncode(coast))
 	buildGround(shape, island, rng)
 
 	local village = Instance.new("Model")

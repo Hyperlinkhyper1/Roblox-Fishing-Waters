@@ -168,6 +168,7 @@ Lod.build(map)
 check(harbour.ModelStreamingMode == Enum.ModelStreamingMode.Default, "Even baked atomic harbour must stream nearby parts independently")
 check(island.ModelStreamingMode == Enum.ModelStreamingMode.Atomic, "Small islands must retain atomic streaming")
 check(map:FindFirstChild("Lod") == shells, "Existing baked shells must remain intact")
+check(shells.ModelStreamingMode == Enum.ModelStreamingMode.Persistent, "Baked shells must never stream out/reload")
 print("Baked streaming policy: " .. checks .. " checks passed")
 `);
 

@@ -7,6 +7,7 @@ local modules = {
 	"Boating",
 	"Fishing",
 	"PlayerMenu",
+	"WorldMap",
 	"RodPhysics",
 	"RowingAnimation",
 	"ShoreWaves",
