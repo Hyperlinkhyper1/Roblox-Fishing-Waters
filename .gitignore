@@ -1,0 +1,10 @@
+# Rojo build outputs
+/*.rbxl
+/*.rbxlx
+/*.rbxm
+/*.rbxmx
+/*.rbxl.lock
+/*.rbxlx.lock
+
+# Generated sourcemap
+sourcemap.json

@@ -1,0 +1,303 @@
+-- Small, independently streamed underwater gardens. Sample the finished ground so
+-- plants follow island slopes and shelves as well as the deep ocean floor.
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Biomes = require(ReplicatedStorage.Shared.Biomes)
+local LowPoly = require(script.Parent.LowPoly)
+local Props = require(script.Parent.Props)
+
+local SeabedDetails = {}
+local VERSION = 1
+local TAU = math.pi * 2
+local M = Enum.Material
+local rgb = Color3.fromRGB
+
+type Style = {
+	count: number,
+	stone: Color3,
+	weed: Color3,
+	sand: Color3?,
+	coral: { Color3 }?,
+	vegetation: number,
+}
+
+local STYLES: { [string]: Style } = {
+	normal = {
+		count = 150,
+		stone = rgb(158, 151, 130),
+		weed = rgb(67, 103, 61),
+		sand = rgb(218, 202, 162),
+		coral = { rgb(192, 67, 61), rgb(215, 116, 76), rgb(178, 99, 134), rgb(221, 179, 98) },
+		vegetation = 1,
+	},
+	swamp = { count = 55, stone = rgb(91, 89, 67), weed = rgb(77, 91, 40), vegetation = 1 },
+	tropical = {
+		count = 90,
+		stone = rgb(180, 172, 139),
+		weed = rgb(54, 128, 92),
+		sand = rgb(233, 220, 181),
+		coral = { rgb(232, 113, 101), rgb(234, 173, 89), rgb(160, 114, 186), rgb(85, 174, 158) },
+		vegetation = 0.8,
+	},
+	volcanic = { count = 45, stone = rgb(61, 58, 55), weed = rgb(72, 79, 54), vegetation = 0.15 },
+	ice = { count = 45, stone = rgb(110, 133, 141), weed = rgb(65, 94, 81), vegetation = 0.35 },
+	open = { count = 100, stone = rgb(93, 105, 108), weed = rgb(69, 96, 66), vegetation = 0.55 },
+}
+
+local function model(name: string, parent: Instance): Model
+	local result = Instance.new("Model")
+	result.Name = name
+	result.Parent = parent
+	return result
+end
+
+local function sample(params: RaycastParams, x: number, z: number): RaycastResult?
+	-- Start above the tallest island: a ray from below sea level can put plants
+	-- inside the land above it. Only ground and Terrain participate in these rays.
+	local hit = workspace:Raycast(Vector3.new(x, 600, z), Vector3.new(0, -720, 0), params)
+	if hit and hit.Position.Y < Biomes.WaterLevel - 8 and hit.Normal.Y > 0.78 then
+		return hit
+	end
+	return nil
+end
+
+-- Low sand drifts with a buried rim. Skip uneven ground rather than bridging it.
+local function sandDrift(parent: Model, ground: Vector3, rng: Random, color: Color3, params: RaycastParams)
+	local ring = {}
+	local radius, spin = rng:NextNumber(9, 19), rng:NextNumber(0, TAU)
+	for i = 1, 7 do
+		local angle = spin + i / 7 * TAU
+		local hit = sample(params, ground.X + math.cos(angle) * radius, ground.Z + math.sin(angle) * radius * 0.7)
+		if not hit or math.abs(hit.Position.Y - ground.Y) > 0.5 then
+			return
+		end
+		ring[i] = hit.Position - Vector3.new(0, 0.12, 0)
+	end
+	local drift = model("SandDrift", parent)
+	local top = ground + Vector3.new(0, rng:NextNumber(0.3, 0.65), 0)
+	for i, point in ring do
+		LowPoly.triangle(point, ring[i % #ring + 1], top, ground - Vector3.yAxis * 2, color, drift, M.Sand, 0.18)
+	end
+end
+
+local function stones(parent: Model, ground: Vector3, rng: Random, color: Color3)
+	local cluster = model("SeabedStones", parent)
+	local radius = rng:NextNumber(1.3, 3.8)
+	LowPoly.boulder(
+		ground + Vector3.new(0, -radius * 0.15, 0),
+		radius,
+		rng,
+		Props.shade(color, rng, 0.1),
+		cluster,
+		M.Rock
+	)
+	return radius
+end
+
+local function pebbles(parent: Model, ground: Vector3, rng: Random, color: Color3)
+	local cluster = model("SeabedPebbles", parent)
+	for _ = 1, 3 do
+		local size = rng:NextNumber(0.5, 1.3)
+		local center = ground + Vector3.new(rng:NextNumber(-0.8, 0.8), size * 0.15, rng:NextNumber(-0.8, 0.8))
+		local pebble = Props.ball(cluster, center, size, Props.shade(color, rng, 0.12), M.Rock)
+		pebble.Size = Vector3.new(size * 1.4, size * 0.65, size)
+		pebble.CFrame *= CFrame.Angles(0, rng:NextNumber(0, TAU), 0)
+	end
+end
+
+-- Curving ribbons rooted in the bottom, distinct from the washed-up beach weed.
+local function seaweed(parent: Model, ground: Vector3, rng: Random, color: Color3)
+	local weed = model("UnderwaterSeaweed", parent)
+	for _ = 1, rng:NextInteger(3, 5) do
+		local angle = rng:NextNumber(0, TAU)
+		local direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local base = ground + direction * rng:NextNumber(0, 1.3) - Vector3.yAxis * 0.35
+		local height = rng:NextNumber(2.5, 6.2)
+		local tint = Props.shade(color, rng, 0.18)
+		local bend = rng:NextNumber(0.5, 1.5)
+		local previous = base
+		for step = 1, 2 do
+			local t = step / 2
+			local tip = base + Vector3.yAxis * height * t + direction * bend * t * t
+			Props.beam(weed, previous, tip, 0.45 * (1 - t * 0.6), tint, 0.12, M.Grass)
+			previous = tip
+		end
+	end
+end
+
+-- Mediterranean red/orange branching coral, with occasional rounded sponges.
+local function coral(parent: Model, ground: Vector3, rng: Random, colors: { Color3 })
+	local reef = model("BranchingCoral", parent)
+	local color = Props.pick(rng, colors)
+	local base = ground - Vector3.yAxis * 0.2
+	local height = rng:NextNumber(1.7, 3.5)
+	local fork = base + Vector3.new(0.1, height * 0.55, 0)
+	Props.beam(reef, base, fork, 0.38, color, nil, M.Pebble)
+	local spin = rng:NextNumber(0, TAU)
+	for branch = 1, 4 do
+		local angle = spin + branch / 4 * TAU
+		local direction = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local elbow = fork + direction * height * 0.38 + Vector3.yAxis * height * 0.15
+		local tip = elbow + direction * 0.25 + Vector3.yAxis * height * rng:NextNumber(0.25, 0.5)
+		Props.beam(reef, fork, elbow, 0.25, color, nil, M.Pebble)
+		Props.beam(reef, elbow, tip, 0.17, color, nil, M.Pebble)
+	end
+	if rng:NextNumber() < 0.35 then
+		Props.ball(reef, ground + Vector3.new(0.8, 0.35, 0.2), 1.1, Props.pick(rng, colors), M.Pebble)
+	end
+end
+
+local function garden(parent: Instance, hit: RaycastResult, style: Style, rng: Random, params: RaycastParams)
+	local patch = model("SeabedGarden", parent)
+	local ground = hit.Position
+	if style.sand and hit.Normal.Y > 0.98 then
+		sandDrift(patch, ground, rng, Props.shade(style.sand, rng, 0.035), params)
+	end
+	local radius = stones(patch, ground, rng, style.stone)
+	for _ = 1, rng:NextInteger(4, 7) do
+		local angle, distance = rng:NextNumber(0, TAU), rng:NextNumber(radius + 1.5, 13)
+		local point = sample(params, ground.X + math.cos(angle) * distance, ground.Z + math.sin(angle) * distance)
+		if point and math.abs(point.Position.Y - ground.Y) < 4 then
+			if style.coral and rng:NextNumber() < 0.42 then
+				coral(patch, point.Position, rng, style.coral)
+			elseif rng:NextNumber() < style.vegetation then
+				seaweed(patch, point.Position, rng, style.weed)
+			else
+				pebbles(patch, point.Position, rng, style.stone)
+			end
+		end
+	end
+	for _, part in patch:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+			part.CanTouch = false
+			part.CanQuery = false
+			part.CastShadow = false
+		end
+	end
+	patch.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+end
+
+-- Give the harbour's swimming coves and underwater apron a denser belt of life.
+-- Query its actual mesh bounds so this follows the coastline when the map moves.
+local function harbourGardens(parent: Instance, root: Instance, params: RaycastParams)
+	local harbour = root:FindFirstChild("Harbour Isle", true)
+	local ground = harbour and harbour:FindFirstChild("Ground")
+	if not ground or not ground:IsA("Model") then
+		return
+	end
+	local frame, size = ground:GetBoundingBox()
+	local rng = Random.new(Biomes.Seed + 700)
+	local candidates: { RaycastResult } = {}
+	for x = frame.Position.X - size.X / 2, frame.Position.X + size.X / 2, 48 do
+		for z = frame.Position.Z - size.Z / 2, frame.Position.Z + size.Z / 2, 48 do
+			local hit = sample(params, x + rng:NextNumber(-5, 5), z + rng:NextNumber(-5, 5))
+			if hit and hit.Position.Y > Biomes.WaterLevel - 34 and Biomes.at(hit.Position) == Biomes.Normal then
+				table.insert(candidates, hit)
+			end
+		end
+		task.wait()
+	end
+	for i = #candidates, 2, -1 do
+		local j = rng:NextInteger(1, i)
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	end
+	for index = 1, math.min(#candidates, 90) do
+		garden(parent, candidates[index], STYLES.normal, rng, params)
+		if index % 15 == 0 then
+			task.wait()
+		end
+	end
+end
+
+local function scatter(parent: Instance, biome: Biomes.Biome, style: Style, params: RaycastParams, seed: number)
+	local rng = Random.new(seed)
+	local placed: { Vector2 } = {}
+	for attempt = 1, style.count * 5 do
+		if #placed >= style.count then
+			break
+		end
+		local angle = rng:NextNumber(0, TAU)
+		local position: Vector2
+		if biome == Biomes.OpenSea then
+			local half = Biomes.MapHalfSize - 40
+			position = Vector2.new(rng:NextNumber(-half, half), rng:NextNumber(-half, half))
+		else
+			position = biome.center
+				+ Vector2.new(math.cos(angle), math.sin(angle)) * (biome.radius - 35) * math.sqrt(rng:NextNumber())
+		end
+		local world = Vector3.new(position.X, 0, position.Y)
+		if Biomes.at(world) ~= biome then
+			continue
+		end
+		local clear = true
+		for _, other in placed do
+			if (other - position).Magnitude < 36 then
+				clear = false
+				break
+			end
+		end
+		if clear then
+			local hit = sample(params, position.X, position.Y)
+			if hit then
+				garden(parent, hit, style, rng, params)
+				table.insert(placed, position)
+			end
+		end
+		if attempt % 20 == 0 then
+			task.wait()
+		end
+	end
+end
+
+function SeabedDetails.ensure(root: Instance)
+	local old = root:FindFirstChild("SeabedDetails")
+	if old and old:GetAttribute("Version") == VERSION then
+		return
+	end
+	if old then
+		old:Destroy()
+	end
+
+	-- Replace only the existing floor layer beneath the Mediterranean region.
+	-- The top stays at SeaFloor, preserving ocean depth and all island geometry.
+	local home = Biomes.Normal
+	workspace.Terrain:SetMaterialColor(M.Sand, home.seabedColor)
+	workspace.Terrain:FillCylinder(
+		CFrame.new(home.center.X, Biomes.SeaFloor - 4, home.center.Y),
+		8,
+		home.radius,
+		M.Sand
+	)
+
+	local details = Instance.new("Folder")
+	details.Name = "SeabedDetails"
+	details.Parent = root
+	local surfaces: { Instance } = { workspace.Terrain }
+	for _, descendant in root:GetDescendants() do
+		if descendant:IsA("Model") and (descendant.Name == "Ground" or descendant.Name == "SeabedSlope") then
+			table.insert(surfaces, descendant)
+		end
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = surfaces
+	params.IgnoreWater = true
+
+	for index, biome in Biomes.list do
+		local folder = Instance.new("Folder")
+		folder.Name = biome.name
+		folder.Parent = details
+		if biome == Biomes.Normal then
+			harbourGardens(folder, root, params)
+		end
+		scatter(folder, biome, STYLES[biome.id], params, Biomes.Seed + 600 + index)
+	end
+	local open = Instance.new("Folder")
+	open.Name = Biomes.OpenSea.name
+	open.Parent = details
+	scatter(open, Biomes.OpenSea, STYLES.open, params, Biomes.Seed + 606)
+	details:SetAttribute("Version", VERSION)
+end
+
+return SeabedDetails

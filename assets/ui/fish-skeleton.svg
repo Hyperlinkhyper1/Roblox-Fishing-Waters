@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="72" viewBox="0 0 120 72" fill="none">
+  <title>Curved fish skeleton</title>
+  <g stroke="#f3f5f5" stroke-linecap="round" stroke-linejoin="round">
+    <path id="tail" stroke-width="2.6" d="M24 44 C19 43 13 36 7 34 L11 45 L7 57 C14 55 20 49 24 44 Z"/>
+    <path id="backbone" stroke-width="2.6" d="M24 44 C42 49 58 27 88 29"/>
+    <g stroke-width="2.3">
+      <path id="rib-1-upper" d="M32.02 44.6 C29.8 41.8 29 37.8 30.4 34.3"/>
+      <path id="rib-1-lower" d="M32.02 44.6 C32.5 49 35.3 52.6 39 53.8"/>
+      <path id="rib-2-upper" d="M41.19 42.18 C37.5 38.3 35.1 31.7 36 26.8"/>
+      <path id="rib-2-lower" d="M41.19 42.18 C42.1 48.2 47.2 54 52.6 55.2"/>
+      <path id="rib-3-upper" d="M50.9 37.9 C46.5 33.4 44.4 25.2 46.3 20.1"/>
+      <path id="rib-3-lower" d="M50.9 37.9 C53.1 44.4 60 50.1 66 50.6"/>
+      <path id="rib-4-upper" d="M61.63 33.28 C56.8 28.9 54.5 21.1 57.1 15.8"/>
+      <path id="rib-4-lower" d="M61.63 33.28 C65 39.7 72.5 44.8 78.2 44.6"/>
+      <path id="rib-5-upper" d="M72.31 30.11 C68.1 26.3 66.5 20.3 69.7 16.4"/>
+      <path id="rib-5-lower" d="M72.31 30.11 C75.4 35.3 81.5 38.6 87 37.2"/>
+    </g>
+    <path id="skull" stroke-width="2.5" d="M88 29 C90 21 96 17 103 19 C109 21 113 25 114 29 L107 30 L112 35 C105 39 97 40 89 35 C88 33 88 31 88 29 Z"/>
+    <path id="eye" stroke-width="1.8" d="M103.5 26 C103.5 27.38 102.38 28.5 101 28.5 C99.62 28.5 98.5 27.38 98.5 26 C98.5 24.62 99.62 23.5 101 23.5 C102.38 23.5 103.5 24.62 103.5 26 Z"/>
+  </g>
+</svg>
