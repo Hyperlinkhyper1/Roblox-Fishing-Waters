@@ -18,6 +18,7 @@ local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
+local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local CustomerService = {}
@@ -86,9 +87,16 @@ local function ownerPrompt(parent: Instance, name: string, action: string, objec
 	return prompt
 end
 
-local function frozenCount(owner: Player?): number
+-- Fish still on the ice; a customer's fish stays in the save until it is sold.
+local function frozenCount(shop, owner: Player?): number
 	local profile = owner and BoatService.getProfile(owner)
-	return if profile then #profile.Angler.Freezer else 0
+	local count = if profile then #profile.Angler.Freezer else 0
+	for _, customer in shop.customers do
+		if customer.taken then
+			count -= 1
+		end
+	end
+	return math.max(0, count)
 end
 
 local function describeFish(record): string
@@ -152,7 +160,7 @@ local function bubble(customer, text: string)
 end
 
 local function spawnCustomer(position: Vector3, staffRole: string?): Model
-	local description = if staffRole then Instance.new("HumanoidDescription") else randomAvatar()
+	local description = if staffRole then StaffCatalog.description(staffRole) else randomAvatar()
 	local model = Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
 	description:Destroy()
 	model.Name = "Customer"
@@ -829,7 +837,12 @@ local function stock(player: Player, shop, prompt: ProximityPrompt)
 		notify(player, "Equip a fish from your hotbar and carry it to the freezer. Pick up boat cargo one fish at a time.")
 		return
 	elseif #profile.Angler.Freezer >= AnglerData.freezerCapacity(profile.Angler) then
-		notify(player, "Your freezers are full. Sell some fish or put it on a storage rack.")
+		notify(
+			player,
+			if frozenCount(shop, player) < #profile.Angler.Freezer
+				then "A customer is still holding a fish from your freezer. Sell it to free the spot."
+				else "Your freezers are full. Sell some fish or put it on a storage rack."
+		)
 		return
 	end
 	stocking[player] = true
@@ -1018,7 +1031,7 @@ function CustomerService.start()
 				end
 				local label = string.format(
 					"Freezer · %d/%d fish",
-					frozenCount(owner),
+					frozenCount(shop, owner),
 					if profile then AnglerData.freezerCapacity(profile.Angler) else AnglerData.FREEZER_CAPACITY
 				)
 				shop.freezerPrompt.ObjectText = label

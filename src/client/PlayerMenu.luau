@@ -8,6 +8,7 @@ local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Settings = require(script.Parent.PlayerSettings)
+local StaffPreview = require(script.Parent.StaffPreview)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Menu = {}
 local started = false
@@ -561,7 +562,6 @@ function Menu.start()
 	local settingTab, journalTab = "Performance", "Stats"
 	local homeTab = "Staff"
 	local freezerCapacity = 0
-	local goHome = ReplicatedStorage:WaitForChild("GoHome") :: RemoteEvent
 	local busy = false
 	local render
 	local narrow = false
@@ -730,6 +730,9 @@ function Menu.start()
 		end
 	end
 	local function close()
+		if active == "Home" then
+			content:ClearAllChildren()
+		end
 		active = nil
 		overlay.Visible = false
 		player:SetAttribute("PlayerMenuOpen", false)
@@ -1599,19 +1602,17 @@ function Menu.start()
 		end
 	end
 	local function home()
-		text(content, "Cash · $" .. commas(profile.Cash), 17, gold, {
-			Size = UDim2.new(1, -150, 0, 34),
+		text(content, "AVAILABLE CASH", 11, muted, { Size = UDim2.new(1, 0, 0, 18) })
+		text(content, "$" .. commas(profile.Cash), 22, cream, {
+			Position = UDim2.fromOffset(0, 20),
+			Size = UDim2.new(1, 0, 0, 28),
 			Font = Enum.Font.GothamBold,
 		})
-		button(content, "Go home", function()
-			goHome:FireServer()
-			close()
-		end, { Name = "GoHome", Position = UDim2.new(1, -136, 0, 0), Size = UDim2.fromOffset(128, 34) })
 		local tabs = make("Frame", content, {
 			Name = "HomeTabs",
 			BackgroundTransparency = 1,
-			Position = UDim2.fromOffset(0, 44),
-			Size = if narrow then UDim2.new(1, 0, 0, 88) else UDim2.new(0, 180, 1, -44),
+			Position = UDim2.fromOffset(0, 64),
+			Size = if narrow then UDim2.new(1, 0, 0, 96) else UDim2.new(0, 200, 1, -64),
 		})
 		for index, name in { "Staff", "Upgrades", "Overview", "Achievements" } do
 			button(tabs, name, function()
@@ -1619,20 +1620,21 @@ function Menu.start()
 				render()
 			end, {
 				Name = name .. "Tab",
-				TextSize = if narrow then 13 else 16,
+				TextSize = if narrow then 13 else 18,
 				Position = if narrow
-					then UDim2.new((index - 1) % 2 / 2, 0, 0, math.floor((index - 1) / 2) * 44)
-					else UDim2.fromOffset(0, (index - 1) * 56),
-				Size = if narrow then UDim2.new(0.5, -4, 0, 40) else UDim2.new(1, -10, 0, 46),
+					then UDim2.new((index - 1) % 2 / 2, 0, 0, math.floor((index - 1) / 2) * 48)
+					else UDim2.fromOffset(0, (index - 1) * 66),
+				Size = if narrow then UDim2.new(0.5, -4, 0, 44) else UDim2.new(1, -10, 0, 56),
 				BackgroundColor3 = if homeTab == name then gold else paper,
 			})
 		end
 		local body = scroll(content, {
 			Name = "HomeBody",
-			Position = if narrow then UDim2.fromOffset(0, 142) else UDim2.fromOffset(196, 44),
-			Size = if narrow then UDim2.new(1, 0, 1, -142) else UDim2.new(1, -196, 1, -44),
+			Position = if narrow then UDim2.fromOffset(0, 170) else UDim2.fromOffset(220, 64),
+			Size = if narrow then UDim2.new(1, 0, 1, -170) else UDim2.new(1, -220, 1, -64),
 		})
-		list(body, 10)
+		list(body, 12)
+		make("UIPadding", body, { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 12) })
 		local order = 0
 		local function line(value, size, color, height)
 			order += 1
@@ -1643,7 +1645,14 @@ function Menu.start()
 		end
 		line(homeTab, 24, cream, 38).Font = Enum.Font.GothamBold
 		if homeTab == "Staff" then
-			line("One permanent hire per role. Pay once; your staff return whenever you join.", 14, muted, 52)
+			local hiredCount = 0
+			for _, id in StaffCatalog.Order do
+				if profile.Angler.Staff and profile.Angler.Staff[id] then
+					hiredCount += 1
+				end
+			end
+			line(string.format("Your crew · %d/%d hired", hiredCount, #StaffCatalog.Order), 15, cream, 26)
+			line("Meet your crew. Pay once to hire; they return whenever you join.", 14, muted, if narrow then 58 else 42)
 			for _, id in StaffCatalog.Order do
 				local role = StaffCatalog.Roles[id]
 				local hired = profile.Angler.Staff and profile.Angler.Staff[id] == true
@@ -1652,31 +1661,77 @@ function Menu.start()
 					Name = id .. "Staff",
 					BackgroundColor3 = paper,
 					BorderSizePixel = 0,
-					Size = UDim2.new(1, -10, 0, 182),
+					Size = UDim2.new(1, -10, 0, if narrow then 442 else 264),
 					LayoutOrder = order,
 				})
+				local portrait = make("Frame", row, {
+					Name = id .. "Portrait",
+					BackgroundColor3 = navy,
+					Position = UDim2.fromOffset(14, 14),
+					Size = if narrow then UDim2.new(1, -28, 0, 202) else UDim2.fromOffset(156, 236),
+				})
+				local view = make("ViewportFrame", portrait, {
+					Name = id .. "Preview",
+					BackgroundTransparency = 1,
+					Size = UDim2.new(1, 0, 1, -42),
+				})
+				local loading = text(portrait, "Loading preview…", 13, muted, {
+					Name = "PreviewStatus",
+					Position = UDim2.fromOffset(8, 8),
+					Size = UDim2.new(1, -16, 1, -58),
+					TextXAlignment = Enum.TextXAlignment.Center,
+				})
+				local turn = StaffPreview.show(view, id, loading)
+				for _, direction in { -1, 1 } do
+					button(portrait, if direction == -1 then "‹" else "›", function()
+						turn(direction)
+					end, {
+						Name = id .. (if direction == -1 then "TurnLeft" else "TurnRight"),
+						Position = if direction == -1 then UDim2.new(0, 6, 1, -42) else UDim2.new(1, -50, 1, -42),
+						Size = UDim2.fromOffset(44, 38),
+						TextSize = 26,
+					})
+				end
+				text(portrait, "Turn", 11, muted, {
+					Position = UDim2.new(0, 50, 1, -42),
+					Size = UDim2.new(1, -100, 0, 38),
+					TextXAlignment = Enum.TextXAlignment.Center,
+				})
+				local left = if narrow then 14 else 188
+				local inset = left + 14
 				text(row, role.Name .. (if hired then " · Hired" else ""), 19, if hired then green else cream, {
-					Position = UDim2.fromOffset(14, 10),
-					Size = UDim2.new(1, -28, 0, 28),
+					Position = UDim2.fromOffset(left, if narrow then 230 else 14),
+					Size = UDim2.new(1, -inset, 0, 28),
 					Font = Enum.Font.GothamBold,
 				})
 				text(row, role.Description, 14, muted, {
-					Position = UDim2.fromOffset(14, 44),
-					Size = UDim2.new(1, -28, 0, 80),
+					Position = UDim2.fromOffset(left, if narrow then 266 else 52),
+					Size = UDim2.new(1, -inset, 0, if narrow then 66 else 86),
+					TextYAlignment = Enum.TextYAlignment.Top,
 				})
 				local afford = profile.Cash >= role.Price
+				text(row, "Permanent hire · $" .. commas(role.Price), 14, cream, {
+					Position = UDim2.fromOffset(left, if narrow then 336 else 148),
+					Size = UDim2.new(1, -inset, 0, 24),
+				})
+				text(row, if hired then "Part of your crew" elseif afford then "One payment. No daily wages."
+					else "$" .. commas(role.Price - profile.Cash) .. " more needed", 12, muted, {
+					Position = UDim2.fromOffset(left, if narrow then 362 else 176),
+					Size = UDim2.new(1, -inset, 0, 24),
+				})
 				local hire = button(row, if hired then "Hired" else "Hire · $" .. commas(role.Price), function()
 					if not hired and afford then
 						request("HireStaff", id)
 					end
 				end, {
 					Name = "Hire" .. id,
-					Position = UDim2.new(0, 14, 1, -48),
-					Size = UDim2.new(1, -28, 0, 36),
+					Position = UDim2.new(0, left, 1, -54),
+					Size = UDim2.new(1, -inset, 0, 40),
 					Active = not hired and afford,
 					AutoButtonColor = not hired and afford,
 					BackgroundColor3 = if hired then green elseif afford then gold else navy,
 				})
+				Theme.glassButton(hire, if hired or not afford then "Disabled" else "Selected")
 				hire.Selectable = not hired and afford
 			end
 		elseif homeTab == "Overview" then
@@ -1726,21 +1781,28 @@ function Menu.start()
 			end
 			for _, item in stock do
 				local record = item.Record
-				line(
-					fishName(record)
-						.. string.format(
-							" · %.2f kg · $%s\n",
-							record.Kg,
-							commas(math.max(1, math.floor(record.Value)))
-						)
-						.. item.Location,
-					14,
-					cream,
-					72
-				)
+				order += 1
+				local stockCard = make("Frame", body, {
+					Name = "StockItem",
+					BackgroundColor3 = paper,
+					Size = UDim2.new(1, -10, 0, 108),
+					LayoutOrder = order,
+				})
+				text(stockCard, fishName(record), 17, cream, {
+					Position = UDim2.fromOffset(14, 10), Size = UDim2.new(1, -28, 0, 28),
+				})
+				text(stockCard, string.format("%.2f kg · $%s", record.Kg,
+					commas(math.max(1, math.floor(record.Value)))), 14, cream, {
+					Position = UDim2.fromOffset(14, 42), Size = UDim2.new(1, -28, 0, 24),
+				})
+				text(stockCard, item.Location, 12, muted, {
+					Position = UDim2.fromOffset(14, 72), Size = UDim2.new(1, -28, 0, 26),
+				})
 			end
 		else
 			line(if homeTab == "Upgrades" then "No upgrades yet." else "No achievements yet.", 18, muted, 56)
+			line(if homeTab == "Upgrades" then "Future home improvements will appear here."
+				else "Your future milestones will appear here.", 14, muted, 56)
 		end
 	end
 	local function settings()
@@ -1866,7 +1928,7 @@ function Menu.start()
 	render = function()
 		content:ClearAllChildren()
 		local isBook = active == "Bestiary" or active == "Journal"
-		local glass = active == "Settings" or active == "Equipment bag" or active == "Shop"
+		local glass = active == "Home" or active == "Settings" or active == "Equipment bag" or active == "Shop"
 		card:SetAttribute("BookSurface", isBook)
 		card:SetAttribute("GlassSurface", glass)
 		bookChrome.Visible = isBook

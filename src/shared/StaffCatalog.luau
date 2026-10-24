@@ -1,5 +1,5 @@
 -- One permanent hire per role; prices are charged by the server once.
-return {
+local Staff = {
 	Order = { "Seller", "Porter" },
 	Roles = {
 		Seller = {
@@ -14,3 +14,12 @@ return {
 		},
 	},
 }
+
+-- Keep the shop NPC and its hiring preview identical. Staff currently use the
+-- default R15 appearance; future uniforms belong here, rather than in either UI.
+function Staff.description(role: string): HumanoidDescription
+	assert(Staff.Roles[role], "Unknown staff role")
+	return Instance.new("HumanoidDescription")
+end
+
+return Staff

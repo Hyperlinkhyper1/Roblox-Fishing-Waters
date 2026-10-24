@@ -36,10 +36,19 @@ local Vector2 = {
 		return { X = x, Y = y }
 	end,
 }
+local vectorMeta = {
+	__add = function(a, b)
+		return { X = a.X + b.X, Y = a.Y + b.Y, Z = a.Z + b.Z }
+	end,
+}
 local Vector3 = {
 	new = function(x, y, z)
-		return { X = x, Y = y, Z = z }
+		return setmetatable({ X = x, Y = y, Z = z }, vectorMeta)
 	end,
+}
+local CFrame = {
+	new = function() return { Position = Vector3.new(0, 0, 0) } end,
+	lookAt = function(position, target) return { Position = position, Target = target } end,
 }
 local UDim = {
 	new = function(scale, offset)
@@ -152,6 +161,7 @@ function Instance.new(kind)
 end
 function methods:IsA(kind)
 	return self.ClassName == kind
+		or (kind == "BasePart" and self.ClassName == "Part")
 		or (
 			kind == "GuiObject"
 			and table.find(
@@ -219,6 +229,24 @@ function methods:Destroy()
 	self:ClearAllChildren()
 	self.Parent = nil
 end
+function methods:Clone()
+	local copy = Instance.new(self.ClassName)
+	for key, value in self.props do
+		if key ~= "Parent" and type(value) ~= "table" then
+			copy[key] = value
+		end
+	end
+	for _, child in self:GetChildren() do
+		child:Clone().Parent = copy
+	end
+	return copy
+end
+function methods:PivotTo(frame)
+	self.PivotFrame = frame
+end
+function methods:GetBoundingBox()
+	return CFrame.new(), Vector3.new(4, 6, 2)
+end
 function methods:IsDescendantOf(parent)
 	local current = self.Parent
 	while current do
@@ -278,6 +306,18 @@ end
 function Players:GetUserThumbnailAsync()
 	return "mock-thumbnail"
 end
+local previewLoads, failPreview = 0, false
+function Players:CreateHumanoidModelFromDescriptionAsync(description, rig)
+	previewLoads += 1
+	assert(not failPreview, "Avatar service unavailable")
+	check(description.ClassName == "HumanoidDescription" and rig == Enum.HumanoidRigType.R15,
+		"Preview uses the shared staff description and the live NPC rig")
+	local model = Instance.new("Model")
+	Instance.new("Part").Parent = model
+	Instance.new("Humanoid").Parent = model
+	Instance.new("LocalScript").Parent = model
+	return model
+end
 local ReplicatedStorage = Instance.new("ReplicatedStorage")
 local workspace = Instance.new("Workspace")
 local Lighting = Instance.new("Lighting")
@@ -318,6 +358,9 @@ local Catalog = (function()
 end)()
 local StaffCatalog = (function()
 	-- STAFF_SOURCE --
+end)()
+local StaffPreview = (function()
+	-- PREVIEW_SOURCE --
 end)()
 local BoatCatalog = (function()
 	-- BOAT_SOURCE --
@@ -423,9 +466,6 @@ function methods:FindFirstChildOfClass(class)
 	end
 	return nil
 end
-local goHome = Instance.new("RemoteEvent")
-goHome.Name, goHome.Parent = "GoHome", ReplicatedStorage
-function goHome:FireServer() end
 local Menu = (function()
 	-- MENU_SOURCE --
 end)()

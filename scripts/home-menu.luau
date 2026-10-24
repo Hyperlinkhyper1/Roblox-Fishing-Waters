@@ -36,13 +36,53 @@ for index = 1, Data.FREEZER_CAPACITY do caught.Freezer[index] = record end
 check(not Data.unloadFish(caught, "Rowboat", 2, record) and #caught.Holds.Rowboat == 2,
 	"Full freezer preserves boat cargo")
 
+-- Exercise the actual asynchronous preview loader before the menu fills its cache.
+local function previewSurface()
+	local holder = Instance.new("Frame")
+	holder.Parent = playerGui
+	local view, status = Instance.new("ViewportFrame"), Instance.new("TextLabel")
+	view.Parent, status.Parent = holder, holder
+	view.AbsoluteSize = Vector2.new(150, 200)
+	return holder, view, status
+end
+failPreview = true
+local failedHolder, failedView, failedStatus = previewSurface()
+StaffPreview.show(failedView, "Seller", failedStatus)
+check(string.find(failedStatus.Text, "unavailable") and not failedView:FindFirstChildOfClass("WorldModel"),
+	"Avatar failure shows a recoverable message without breaking the menu")
+failPreview = false
+local holder, view, status = previewSurface()
+local rotate = StaffPreview.show(view, "Seller", status)
+local model = view:FindFirstChildOfClass("WorldModel"):FindFirstChildOfClass("Model")
+check(not status.Visible and model ~= nil, "Retry loads the staff into a viewport WorldModel")
+check(model:FindFirstChildOfClass("Part").Anchored and not model:FindFirstChildOfClass("Part").CanCollide
+	and not model:FindFirstChildOfClass("LocalScript"), "Preview clones are inert and have no executable scripts")
+local beforeTurn = view.CurrentCamera.CFrame.Position.X
+rotate(1)
+check(view.CurrentCamera.CFrame.Position.X ~= beforeTurn, "Turn controls orbit the preview camera")
+local beforeResize = view.CurrentCamera.CFrame.Position.Z
+view.AbsoluteSize = Vector2.new(70, 200)
+check(view.CurrentCamera.CFrame.Position.Z ~= beforeResize, "Camera refits the avatar in narrow previews")
+local spawn = task.spawn
+local deferred
+task.spawn = function(callback) deferred = callback end
+local staleHolder, staleView, staleStatus = previewSurface()
+StaffPreview.show(staleView, "Porter", staleStatus)
+local liveHolder, liveView, liveStatus = previewSurface()
+StaffPreview.show(liveView, "Porter", liveStatus)
+staleHolder:Destroy()
+task.spawn = spawn
+deferred()
+check(#staleView:GetChildren() == 0 and not liveStatus.Visible,
+	"An in-flight load skips destroyed views and serves the remaining waiting preview")
+local cachedLoads = previewLoads
+for _, item in { failedHolder, holder, liveHolder } do item:Destroy() end
+
 Menu.start()
 advance(1)
 local gui = playerGui.PlayerMenu
 local sidebar, card = gui.LeftNavigation, gui.MenuOverlay.MenuWindow
 local content = card.Content
-local homeCalls = 0
-function goHome:FireServer() homeCalls += 1 end
 local function click(name)
 	now += 1
 	assert(content:FindFirstChild(name, true), "Missing Home control: " .. name).Activated:Fire()
@@ -62,11 +102,22 @@ for _, width in { 1020, 362 } do
 	now += 1
 	sidebar.Home.Activated:Fire()
 	check(gui.MenuOverlay.Visible and player:GetAttribute("PlayerMenuOpen"), "Home opens management GUI")
-	check(homeCalls == 0, "Opening Home does not teleport")
+	check(content:FindFirstChild("GoHome", true) == nil, "Home has no teleport button")
 	for _, tab in { "Staff", "Upgrades", "Overview", "Achievements" } do
 		check(content:FindFirstChild(tab .. "Tab", true) ~= nil, "Home includes " .. tab)
 	end
 	click("StaffTab")
+	check(card:GetAttribute("GlassSurface") and card.BackgroundTransparency == 0.2,
+		"Home uses the same glass window as Settings")
+	check(contains("Your crew · 2/2 hired"), "Staff summary counts owned hires")
+	for _, id in { "Seller", "Porter" } do
+		local preview = content:FindFirstChild(id .. "Preview", true)
+		check(preview and preview.CurrentCamera and preview:FindFirstChildOfClass("WorldModel"),
+			"Staff card displays its 3D NPC before any hiring interaction")
+		local x = preview.CurrentCamera.CFrame.Position.X
+		click(id .. "TurnRight")
+		check(preview.CurrentCamera.CFrame.Position.X ~= x, "Staff turn button drives the preview")
+	end
 	check(contains("Seller · Hired") and contains("Porter · Hired"), "Staff shows saved hires")
 	check(not content:FindFirstChild("HireSeller", true).Active, "Already hired control is inactive")
 	click("OverviewTab")
@@ -84,6 +135,7 @@ for _, width in { 1020, 362 } do
 	check(contains("No achievements yet."), "Achievements remains empty")
 	card.CloseMenu.Activated:Fire()
 	check(not gui.MenuOverlay.Visible and sidebar.Visible, "Home closes and restores sidebar")
+	check(#content:GetDescendants() == 0, "Closing Home releases hidden viewport worlds")
 	profile.Angler.Freezer, profile.Angler.Hand, profile.Angler.Cooler = { record }, record, { record }
 	profile.Angler.Holds.Rowboat = caught.Holds.Rowboat
 end
@@ -95,12 +147,12 @@ player:SetAttribute("AnglerRevision", (player:GetAttribute("AnglerRevision") or 
 advance(1)
 click("StaffTab")
 check(not content:FindFirstChild("HirePorter", true).Active, "Insufficient cash disables the hire control")
+check(contains("$300 more needed"), "Hire card explains exactly how much more cash is required")
 profile.Cash = 400
 player:SetAttribute("AnglerRevision", (player:GetAttribute("AnglerRevision") or 0) + 1)
 advance(1)
 check(content:FindFirstChild("HirePorter", true).Active, "Funds refresh enables hiring")
 click("HirePorter")
 check(profile.Angler.Staff.Porter and profile.Cash == 0 and contains("Porter · Hired"), "Hire button saves and updates the visible staff card")
-click("GoHome")
-check(homeCalls == 1 and not gui.MenuOverlay.Visible, "Separate Go home control teleports and closes menu")
+check(previewLoads == cachedLoads, "Tab changes, resizes and profile refreshes reuse cached staff models")
 print("Home menu: " .. checks .. " hiring, inventory and desktop/mobile recording checks passed.")

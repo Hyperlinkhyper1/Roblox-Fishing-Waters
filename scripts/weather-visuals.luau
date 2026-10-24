@@ -214,7 +214,7 @@ step(0.2)
 assert(wind.Enabled and rain[1].Enabled, "Enabling weather restores current rain and wind")
 print("PASS persistent performance toggle hides and restores weather visuals")
 local thunder = sounds:FindFirstChild("WeatherThunder")
-assert(thunder.SoundId == "rbxassetid://9120018088", "Thunder must use the configured verified asset")
+assert(thunder.SoundId == "rbxassetid://9120019553", "Thunder must use the Roblox library Thunder Lightning 1 asset")
 state.storm = 1
 local flashed = false
 for _ = 1, 1200 do

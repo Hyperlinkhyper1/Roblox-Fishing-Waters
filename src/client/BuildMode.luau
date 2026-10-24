@@ -1,5 +1,5 @@
 -- Build mode: at home, press B (or the Build button) to look straight down into
--- your house with the roof hidden. Pick bought furniture from the panel, turn it
+-- your house with the roof hidden. Pick bought furniture from the bottom bar, turn it
 -- with R and click a floor spot to place it; click placed furniture to move it or
 -- pick it back up. Allowed rooms glow green while you hold an item. The preview
 -- uses the shared placement rules, and the server re-checks every placement.
@@ -48,7 +48,6 @@ function BuildMode.start()
 	end
 	started = true
 	local player = Players.LocalPlayer
-	local camera = workspace.CurrentCamera
 	local remotes = ReplicatedStorage:WaitForChild("Furniture")
 	local request = remotes:WaitForChild("Request") :: RemoteFunction
 	local update = remotes:WaitForChild("Update") :: RemoteEvent
@@ -85,9 +84,9 @@ function BuildMode.start()
 	local panel = make("Frame", gui, {
 		Name = "BuildPanel",
 		Active = true,
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 14, 0.5, 0),
-		Size = UDim2.fromOffset(250, 420),
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -12),
+		Size = UDim2.new(1, -24, 0, 190),
 		Visible = false,
 	})
 	Theme.window(panel)
@@ -116,44 +115,67 @@ function BuildMode.start()
 	end
 	label(panel, "Build mode", { Position = UDim2.fromOffset(16, 12), Size = UDim2.new(1, -32, 0, 26), TextSize = 20 })
 	local hint = label(panel, "", {
-		Position = UDim2.fromOffset(16, 42),
-		Size = UDim2.new(1, -32, 0, 64),
+		Position = UDim2.fromOffset(16, 38),
+		Size = UDim2.new(1, -32, 0, 32),
 		TextSize = 12,
 		Font = Enum.Font.Gotham,
 		TextColor3 = Theme.Colors.Muted,
 	})
+	local function horizontalStrip(name: string, y: number, height: number): ScrollingFrame
+		local strip = make("ScrollingFrame", panel, {
+			Name = name,
+			Position = UDim2.fromOffset(16, y),
+			Size = UDim2.new(1, -32, 0, height),
+			BackgroundTransparency = 1,
+			CanvasSize = UDim2.fromOffset(0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
+			ScrollingDirection = Enum.ScrollingDirection.X,
+			Active = true,
+		})
+		Theme.scroll(strip)
+		strip.ScrollBarThickness = 4
+		make("UIListLayout", strip, {
+			FillDirection = Enum.FillDirection.Horizontal,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 8),
+		})
+		return strip
+	end
+	local catalogue = horizontalStrip("Placeables", 76, 60)
+	local actions = horizontalStrip("BuildActions", 144, 36)
 	local itemButtons = {}
 	for index, id in Furniture.Order do
-		itemButtons[id] = button(panel, "", {
+		itemButtons[id] = button(catalogue, "", {
 			Name = "Hold" .. id,
-			Position = UDim2.fromOffset(16, 110 + (index - 1) * 48),
-			Size = UDim2.new(1, -32, 0, 40),
+			LayoutOrder = index,
+			Size = UDim2.fromOffset(196, 52),
+			TextWrapped = true,
 		})
 	end
-	local rotate = button(panel, "Rotate [R]", {
+	local rotate = button(actions, "Rotate [R]", {
 		Name = "Rotate",
-		Position = UDim2.fromOffset(16, 260),
-		Size = UDim2.new(0.5, -20, 0, 38),
+		LayoutOrder = 1,
+		Size = UDim2.fromOffset(110, 30),
 	})
-	local cancel = button(panel, "Cancel [Q]", {
+	local cancel = button(actions, "Cancel [Q]", {
 		Name = "Cancel",
-		Position = UDim2.new(0.5, 4, 0, 260),
-		Size = UDim2.new(0.5, -20, 0, 38),
+		LayoutOrder = 2,
+		Size = UDim2.fromOffset(110, 30),
 	})
-	local move = button(panel, "Move", {
+	local move = button(actions, "Move", {
 		Name = "MoveSelected",
-		Position = UDim2.fromOffset(16, 306),
-		Size = UDim2.new(0.5, -20, 0, 38),
+		LayoutOrder = 3,
+		Size = UDim2.fromOffset(90, 30),
 	})
-	local pickUp = button(panel, "Pick up", {
+	local pickUp = button(actions, "Pick up", {
 		Name = "PickUpSelected",
-		Position = UDim2.new(0.5, 4, 0, 306),
-		Size = UDim2.new(0.5, -20, 0, 38),
+		LayoutOrder = 4,
+		Size = UDim2.fromOffset(90, 30),
 	})
-	local done = button(panel, "Done [B]", {
+	local done = button(actions, "Done [B]", {
 		Name = "ExitBuildMode",
-		Position = UDim2.new(0, 16, 1, -54),
-		Size = UDim2.new(1, -32, 0, 40),
+		LayoutOrder = 5,
+		Size = UDim2.fromOffset(100, 30),
 	})
 
 	local function ownHouse(): (Model?, CFrame?)
@@ -186,7 +208,7 @@ function BuildMode.start()
 			local full = state ~= nil and Furniture.count(state.Placed, id) >= item.MaxPlaced
 			setButton(
 				itemButtons[id],
-				string.format("%s · %d", item.Name, stock),
+				string.format("%s\n%d available", item.Name, stock),
 				stock > 0 and not full and not pending,
 				held ~= nil and held.From == id
 			)
@@ -334,7 +356,11 @@ function BuildMode.start()
 
 	-- The floor spot under the pointer, snapped to the placement grid.
 	local function pointerSpot(position: Vector2)
-		local ray = camera:ViewportPointToRay(position.X, position.Y)
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return nil
+		end
+		local ray = camera:ScreenPointToRay(position.X, position.Y)
 		local floor = houseFrame * CFrame.new(0, FLOOR_Y, 0)
 		local normal = houseFrame.UpVector
 		local denominator = ray.Direction:Dot(normal)
@@ -342,6 +368,9 @@ function BuildMode.start()
 			return nil
 		end
 		local t = (floor.Position - ray.Origin):Dot(normal) / denominator
+		if t < 0 then
+			return nil
+		end
 		local point = houseFrame:PointToObjectSpace(ray.Origin + ray.Direction * t)
 		return math.round(point.X / Furniture.GRID) * Furniture.GRID, math.round(point.Z / Furniture.GRID) * Furniture.GRID
 	end
@@ -406,11 +435,12 @@ function BuildMode.start()
 	end
 
 	local function clickFurniture(position: Vector2)
+		local camera = workspace.CurrentCamera
 		local folder = house and house:FindFirstChild("Furniture")
-		if not folder or not state then
+		if not camera or not folder or not state then
 			return
 		end
-		local ray = camera:ViewportPointToRay(position.X, position.Y)
+		local ray = camera:ScreenPointToRay(position.X, position.Y)
 		local parameters = RaycastParams.new()
 		parameters.FilterType = Enum.RaycastFilterType.Include
 		parameters.FilterDescendantsInstances = { folder }
@@ -473,13 +503,30 @@ function BuildMode.start()
 	end
 
 	local function updateCamera()
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.FieldOfView = 50
+		camera.FieldOfViewMode = Enum.FieldOfViewMode.Vertical
 		local viewport = camera.ViewportSize
-		local aspect = if viewport.Y > 0 then viewport.X / viewport.Y else 16 / 9
+		if viewport.X <= 0 or viewport.Y <= 0 then
+			return
+		end
+		local inset = game:GetService("GuiService"):GetGuiInset()
+		local top = inset.Y + 12
+		local bottom = panel.AbsolutePosition.Y + inset.Y - 12
+		local available = math.max(1, bottom - top)
+		local aspect = viewport.X / viewport.Y
 		local half = math.tan(math.rad(camera.FieldOfView / 2))
-		-- Fit the 46 x 30 house plus a margin; the panel covers the left edge.
-		local height = math.max(19 / half, 30 / (half * aspect))
-		local center = houseFrame * CFrame.new(-3, FLOOR_Y, 0)
-		camera.CFrame = CFrame.lookAt(center.Position + houseFrame.UpVector * height, center.Position, houseFrame.LookVector)
+		-- Fit the 46 x 30 house with a margin inside the area ABOVE the bar.
+		local height = math.max(18 * viewport.Y / (half * available), 26 / (half * aspect))
+		local center = (houseFrame * CFrame.new(0, FLOOR_Y, 0)).Position
+		local shift = ((top + bottom) / 2 - viewport.Y / 2) * (2 * height * half / viewport.Y)
+		local target = center + houseFrame.LookVector * shift
+		camera.CFrame = CFrame.lookAt(target + houseFrame.UpVector * height, target, houseFrame.LookVector)
+		camera.Focus = CFrame.new(center)
 	end
 
 	local exit
@@ -491,17 +538,25 @@ function BuildMode.start()
 			return
 		end
 		local model, frame = ownHouse()
-		if not model or not frame then
+		local camera = workspace.CurrentCamera
+		if not camera or not model or not frame then
 			return
 		end
 		active, house, houseFrame = true, model, frame
-		saved = { Type = camera.CameraType, FieldOfView = camera.FieldOfView }
+		saved = {
+			Type = camera.CameraType,
+			FieldOfView = camera.FieldOfView,
+			FieldOfViewMode = camera.FieldOfViewMode,
+			Frame = camera.CFrame,
+			Focus = camera.Focus,
+		}
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.FieldOfView = 50
 		controls(false)
 		hideRoof()
 		panel.Visible, toggle.Visible = true, false
 		player:SetAttribute("BuildModeOpen", true)
+		updateCamera()
 		RunService:BindToRenderStep("FurnitureBuildCamera", Enum.RenderPriority.Camera.Value + 1, updateCamera)
 		render()
 		task.spawn(function()
@@ -521,9 +576,13 @@ function BuildMode.start()
 		choose(nil)
 		RunService:UnbindFromRenderStep("FurnitureBuildCamera")
 		showRoof()
-		if saved then
+		local camera = workspace.CurrentCamera
+		if saved and camera then
 			camera.CameraType = saved.Type
+			camera.FieldOfViewMode = saved.FieldOfViewMode
 			camera.FieldOfView = saved.FieldOfView
+			camera.CFrame = saved.Frame
+			camera.Focus = saved.Focus
 		end
 		controls(true)
 		panel.Visible = false
@@ -585,8 +644,6 @@ function BuildMode.start()
 			or input.UserInputType == Enum.UserInputType.Touch
 		then
 			local position = Vector2.new(input.Position.X, input.Position.Y)
-			-- Input positions exclude the top bar inset; viewport rays include it.
-			position += game:GetService("GuiService"):GetGuiInset()
 			if held then
 				aim(position)
 				placeHeld()

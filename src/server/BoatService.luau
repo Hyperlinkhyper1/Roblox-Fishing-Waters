@@ -76,6 +76,31 @@ local function publish(player: Player, state)
 	player:SetAttribute("Level", level)
 	player:SetAttribute("LevelXP", levelXP)
 	player:SetAttribute("LevelXPRequired", requiredXP)
+
+	-- The built-in player list sorts by its first stat. Keep Level primary and
+	-- mirror committed profile values here alongside the gameplay attributes.
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if not leaderstats then
+		leaderstats = Instance.new("Folder")
+		leaderstats.Name = "leaderstats"
+	end
+	local levelStat = leaderstats:FindFirstChild("Level")
+	if not levelStat then
+		levelStat = Instance.new("IntValue")
+		levelStat.Name = "Level"
+		local primary = Instance.new("BoolValue")
+		primary.Name, primary.Value = "IsPrimary", true
+		primary.Parent = levelStat
+	end
+	levelStat.Value, levelStat.Parent = level, leaderstats
+	local moneyStat = leaderstats:FindFirstChild("Money")
+	if not moneyStat then
+		moneyStat = Instance.new("IntValue")
+		moneyStat.Name = "Money"
+	end
+	moneyStat.Value, moneyStat.Parent = state.profile.Cash, leaderstats
+	leaderstats.Parent = player
+
 	player:SetAttribute("AnglerRevision", (player:GetAttribute("AnglerRevision") or 0) + 1)
 end
 

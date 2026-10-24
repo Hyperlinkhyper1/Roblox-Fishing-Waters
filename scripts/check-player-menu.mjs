@@ -50,11 +50,13 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
   for (const [marker, file] of [
     ['DATA', 'src/server/AnglerData.luau'], ['CATALOG', 'src/shared/AnglerCatalog.luau'],
     ['STAFF', 'src/shared/StaffCatalog.luau'], ['BOAT', 'src/shared/BoatCatalog.luau'],
-    ['THEME', 'src/first/UITheme.luau'], ['MENU', 'src/client/PlayerMenu.luau'], ['SETTINGS', 'src/client/PlayerSettings.luau'], ['SERVICE', 'src/server/AnglerService.luau'],
+    ['THEME', 'src/first/UITheme.luau'], ['PREVIEW', 'src/client/StaffPreview.luau'], ['MENU', 'src/client/PlayerMenu.luau'], ['SETTINGS', 'src/client/PlayerSettings.luau'], ['SERVICE', 'src/server/AnglerService.luau'],
   ]) {
     let source = await readFile(join(root, file), 'utf8');
     source = source.replace(/require\(ReplicatedStorage.Shared.AnglerCatalog\)/g, 'Catalog')
       .replace(/require\(ReplicatedStorage.Shared.StaffCatalog\)/g, 'StaffCatalog')
+      .replace(/require\(game:GetService\("ReplicatedStorage"\).Shared.StaffCatalog\)/g, 'StaffCatalog')
+      .replace(/require\(script.Parent.StaffPreview\)/g, 'StaffPreview')
       .replace(/require\(ReplicatedStorage.Shared.BoatCatalog\)/g, 'BoatCatalog')
       .replace(/require\(ReplicatedStorage.Shared.FishModels\)/g, 'nil')
       .replace(/require\(script.Parent.PlayerSettings\)/g, 'Settings')

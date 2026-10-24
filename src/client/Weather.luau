@@ -17,7 +17,8 @@ local UPDATE_INTERVAL = 0.2
 local LIGHTNING_INTERVAL = 9
 -- Roblox Creator Store: Rain Effect by Roblox; thunder by Pro Sound Effects.
 local RAIN_SOUND = "rbxassetid://1516791621"
-local THUNDER_SOUND = "rbxassetid://9120018088"
+-- Thunder Lightning 1 (SFX): https://create.roblox.com/store/asset/9120019553
+local THUNDER_SOUND = "rbxassetid://9120019553"
 local STREAK_TEXTURE = "rbxasset://textures/particles/sparkles_main.dds"
 
 type RainCell = {

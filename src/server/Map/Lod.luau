@@ -5,6 +5,8 @@
 -- Shells are shrink-wrapped from the finished geometry: spherecasts on a polar lattice over
 -- the island pick up the ground and any trees or buildings, so forests read as raised canopy.
 
+local GeometryService = game:GetService("GeometryService")
+
 local LowPoly = require(script.Parent.LowPoly)
 
 local Lod = {}
@@ -150,6 +152,50 @@ local function shell(island: Model, parent: Instance): Model
 	return model
 end
 
+-- Welds a shell's wedges into one union. The renderer stops drawing small parts on the horizon
+-- whenever graphics quality steps down (automatic quality does that on every frame-rate dip),
+-- which blinked whole shells out of the sea; a single island-sized part survives that culling.
+local function merge(model: Instance)
+	local parts = {}
+	for _, d in model:GetChildren() do
+		if d:IsA("BasePart") then
+			table.insert(parts, d)
+		end
+	end
+	if #parts < 2 then
+		return
+	end
+	local others = table.move(parts, 2, #parts, 1, {})
+	local ok, result = pcall(GeometryService.UnionAsync, GeometryService, parts[1], others, {
+		CollisionFidelity = Enum.CollisionFidelity.Box,
+		RenderFidelity = Enum.RenderFidelity.Precise,
+		SplitApart = false,
+	})
+	if not ok or not result[1] then
+		-- The loose wedges still work as a shell, just one that culls more eagerly
+		warn(string.format("[Lod] Could not merge shell %s: %s", model.Name, tostring(result)))
+		return
+	end
+	local union = result[1] :: BasePart
+	union.Name = "Shell"
+	union.Anchored = true
+	union.CanCollide = false
+	union.CanQuery = false
+	union.CanTouch = false
+	union.CastShadow = false
+	union.Parent = model
+	for _, part in parts do
+		part:Destroy()
+	end
+end
+
+local function mergeAll(container: Instance)
+	for _, model in container:GetChildren() do
+		merge(model)
+		task.wait()
+	end
+end
+
 -- Islands are the models directly inside each biome folder that have a Ground mesh.
 local function islands(root: Instance): { Model }
 	local found = {}
@@ -189,7 +235,10 @@ end
 -- stream as a whole, so the client never sees half an island next to its shell.
 function Lod.build(root: Instance)
 	Lod.prepareStreaming(root)
-	if root:FindFirstChild("Lod") then
+	local baked = root:FindFirstChild("Lod")
+	if baked then
+		-- Shells baked before they were merged still arrive as loose wedges
+		mergeAll(baked)
 		return
 	end
 	local started = os.clock()
@@ -207,6 +256,8 @@ function Lod.build(root: Instance)
 		task.wait()
 	end
 	container.Parent = root
+	-- Merge once the shells are in the world, so CSG runs on parts it can see
+	mergeAll(container)
 
 	print(string.format("[Lod] Built %d shell parts in %.1fs", parts, os.clock() - started))
 end

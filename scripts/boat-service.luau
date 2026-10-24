@@ -606,10 +606,24 @@ check(
 	"New players start with $0 and no boat"
 )
 check(fresh:GetAttribute("BoatDataStatus") == "Ready", "Fresh player profile must load")
+local freshStats = fresh:FindFirstChild("leaderstats")
+check(
+	freshStats and freshStats:FindFirstChild("Level").Value == 1 and freshStats:FindFirstChild("Money").Value == 0,
+	"The player list shows a new player's numeric level and money"
+)
+check(
+	freshStats:FindFirstChild("Level"):IsA("IntValue")
+		and freshStats:FindFirstChild("Money"):IsA("IntValue")
+		and freshStats:FindFirstChild("Level"):FindFirstChild("IsPrimary").Value == true,
+	"Level is the primary numeric stat used to rank players"
+)
 Service.purchase(fresh)
 check(store.updates == 0 and fresh:GetAttribute("Cash") == 0, "Insufficient funds must not write or award money")
 
 local rich, richRoot, richHumanoid = makePlayer(2, 1000)
+local richStats = rich:FindFirstChild("leaderstats")
+local richMoney = richStats:FindFirstChild("Money")
+check(richMoney.Value == 1000, "The player list loads the saved wallet balance")
 richRoot.Position = Vector3.new(13, 0, 0)
 request.OnServerEvent:Fire(rich, "PurchaseRowboat")
 check(store.updates == 0, "Remote purchase must validate server-side distance")
@@ -663,6 +677,11 @@ check(
 check(
 	rich:GetAttribute("Cash") == 500 and rich:GetAttribute("OwnsRowboat"),
 	"Confirmed progress must be mirrored to attributes"
+)
+check(
+	rich:FindFirstChild("leaderstats") == richStats and richStats:FindFirstChild("Money") == richMoney
+		and richMoney.Value == 500 and #richStats:GetDescendants() == 3,
+	"Purchases update the existing leaderboard values without duplicate stats"
 )
 Service.purchase(rich)
 check(store.updates == before + 1 and rich:GetAttribute("Cash") == 500, "Repeated purchase must not charge twice")
@@ -1282,6 +1301,12 @@ check(
 )
 store.retryTransform = false
 local awarded = store.data.Player_91.Angler
+local menuStats = menuPlayer:FindFirstChild("leaderstats")
+check(
+	menuStats:FindFirstChild("Money").Value == store.data.Player_91.Cash
+		and menuStats:FindFirstChild("Level").Value == 1,
+	"Committed gameplay earnings update the player list"
+)
 check(
 	menuPlayer:GetAttribute("Level") == 1
 		and menuPlayer:GetAttribute("LevelXP") == 100
@@ -1297,11 +1322,17 @@ check(
 )
 store.updateFailures = 1
 check(not Service.updateProgress(menuPlayer, function(profile)
-	profile.Angler.Stats.TotalXP += 100
+	profile.Angler.Stats.TotalXP += 1000
+	profile.Cash += 100
 end), "Failed XP award reports failure")
 check(
 	store.data.Player_91.Angler.Stats.TotalXP == 100 and store.data.Player_91.Angler.Weekly.XP == 100,
 	"Failed awards change neither lifetime XP nor weekly XP"
+)
+check(
+	menuStats:FindFirstChild("Level").Value == 1
+		and menuStats:FindFirstChild("Money").Value == store.data.Player_91.Cash,
+	"Failed saves cannot publish uncommitted money or levels on the leaderboard"
 )
 check(
 	Service.updateProgress(menuPlayer, function(profile)
@@ -1314,6 +1345,10 @@ check(
 		and menuPlayer:GetAttribute("LevelXP") == 1500
 		and menuPlayer:GetAttribute("LevelXPRequired") == 3000,
 	"Level bar and saved-profile leaderboard share progressive XP thresholds"
+)
+check(
+	menuPlayer:FindFirstChild("leaderstats") == menuStats and menuStats:FindFirstChild("Level").Value == 3,
+	"Saved XP immediately updates the primary player-list ranking stat"
 )
 
 -- Fishing boat uses the same saved wallet, but its own inventory and driving spec.
