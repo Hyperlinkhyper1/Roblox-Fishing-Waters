@@ -45,7 +45,8 @@ const modules = {
   FISHINGBOAT: 'src/server/FishingBoat.luau',
   SHIPWRIGHT: 'src/server/Map/Shipwright.luau',
   DRYDOCKINTERIOR: 'src/server/Map/DrydockInterior.luau', DRYDOCK: 'src/server/Map/Drydock.luau',
-  RODSHOP: 'src/server/Map/RodShop.luau', HARBOUR: 'src/server/Map/Harbour.luau',
+  PLAZAHOUSES: 'src/server/Map/PlazaHouses.luau', RODSHOP: 'src/server/Map/RodShop.luau',
+  STORAGERACK: 'src/server/Map/StorageRack.luau', FURNITURESHOP: 'src/server/Map/FurnitureShop.luau', HARBOUR: 'src/server/Map/Harbour.luau',
   BIOMES: 'src/shared/Biomes.luau',
 };
 for (const [name, path] of Object.entries(modules)) {

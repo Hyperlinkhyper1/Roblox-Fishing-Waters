@@ -26,6 +26,7 @@ local spawnTimes = {}
 local launching = {}
 local launchPurchased
 local started = false
+local COMMAND_USER_ID = 2541746813 -- hyperlinkhyper
 -- Studio tests use their own store; failed loads never overwrite saved data.
 local studioSession = RunService:IsStudio() and game.GameId == 0
 local store
@@ -231,7 +232,7 @@ end
 
 -- This handler is server-only; the sender comes from TextChatCommand's TextSource.
 function BoatService.setCashFromCommand(player: Player, message: string)
-	if player.UserId ~= 2541746813 then
+	if player.UserId ~= COMMAND_USER_ID then
 		return
 	end
 	local digits = message:match("^/set%s+cash%s+(%d+)%s*$")
@@ -269,6 +270,37 @@ function BoatService.setCashFromCommand(player: Player, message: string)
 	state.profile = profile
 	publish(player, state)
 	notify(player, "Cash set to $" .. tostring(profile.Cash) .. ".")
+end
+
+local function setFromCommand(player: Player, message: string)
+	if player.UserId ~= COMMAND_USER_ID then
+		return
+	end
+	local normalized = string.lower(message)
+	local subject = normalized:match("^/set%s+(%S+)")
+	if subject ~= "weather" then
+		BoatService.setCashFromCommand(player, message)
+		return
+	end
+	local argument = normalized:match("^/set%s+weather%s+(.+)") or ""
+	argument = argument:gsub("%s+", "")
+	local kinds = {}
+	local selected
+	for kind in Weather.Presets do
+		table.insert(kinds, kind)
+		if string.lower(kind) == argument then
+			selected = kind
+		end
+	end
+	table.sort(kinds)
+	if argument == "list" then
+		notify(player, "Weather types: " .. table.concat(kinds, ", ") .. ".")
+	elseif selected then
+		workspace:SetAttribute("WeatherOverride", selected)
+		notify(player, "Weather set to " .. selected .. ".")
+	else
+		notify(player, "Usage: /set weather <type>. Use /set weather list for available types.")
+	end
 end
 
 local function boatOccupied(player: Player): boolean
@@ -416,8 +448,18 @@ local function removeBoat(player: Player)
 	local boat = active[player]
 	if boat then
 		active[player] = nil
+		player:SetAttribute("ActiveBoatId", nil)
 		boat.model:Destroy()
 	end
+end
+
+-- The player's launched boat, whose cargo hold they can reach.
+function BoatService.activeBoat(player: Player): (string?, Model?)
+	local boat = active[player]
+	if boat and boat.model.Parent then
+		return boat.model:GetAttribute("BoatId"), boat.model
+	end
+	return nil, nil
 end
 
 local function waterAhead(boat, direction: Vector3): boolean
@@ -480,7 +522,17 @@ local function setParked(boat, parked: boolean)
 		end
 		boat.model:SetAttribute("RowThrottle", 0)
 		boat.model:SetAttribute("RowSteer", 0)
+		-- Clients bob the anchored hull locally from this pose and swell clock.
+		boat.model:SetAttribute("ParkedFrame", boat.root.CFrame)
+		boat.model:SetAttribute("ParkedAt", workspace:GetServerTimeNow())
 	else
+		-- Release from the pose clients have bobbed it to, so riders see no snap.
+		local rest, parkedAt = boat.model:GetAttribute("ParkedFrame"), boat.model:GetAttribute("ParkedAt")
+		if rest and parkedAt then
+			boat.model:PivotTo(
+				Weather.parkedOffset(rest, parkedAt, workspace:GetServerTimeNow()) * boat.model:GetPivot()
+			)
+		end
 		for _, piece in boat.model:GetDescendants() do
 			if piece:IsA("BasePart") then
 				piece.Anchored = false
@@ -603,6 +655,7 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 	updateSuspension(boat)
 	setParked(boat, true)
 	active[player] = boat
+	player:SetAttribute("ActiveBoatId", id)
 	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
 		boat.throttle, boat.steer = 0, 0
 		local humanoid = seat.Occupant
@@ -747,13 +800,13 @@ function BoatService.start()
 	feedback.Parent = remotes
 
 	local setCommand = Instance.new("TextChatCommand")
-	setCommand.Name = "SetCashCommand"
+	setCommand.Name = "SetCommand"
 	setCommand.PrimaryAlias = "/set"
 	setCommand.AutocompleteVisible = false
 	setCommand.Triggered:Connect(function(source, message)
 		local player = source and Players:GetPlayerByUserId(source.UserId)
 		if player then
-			BoatService.setCashFromCommand(player, message)
+			setFromCommand(player, message)
 		end
 	end)
 	setCommand.Parent = TextChatService
@@ -821,6 +874,7 @@ function BoatService.start()
 		for player, boat in active do
 			if not boat.model.Parent then
 				active[player] = nil
+				player:SetAttribute("ActiveBoatId", nil)
 				continue
 			end
 			local rowing = boat.seat.Occupant

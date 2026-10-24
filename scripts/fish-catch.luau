@@ -61,6 +61,29 @@ check(hard.needleSpeed > easy.needleSpeed and hard.zoneSize < easy.zoneSize, "Ha
 check(hard.gain < easy.gain and hard.drain > easy.drain and hard.erratic, "Hard fights need more hits and pull back")
 check(FishCatch.minimumFightSeconds(1) > FishCatch.minimumFightSeconds(0), "Harder fights take longer to land")
 
+-- Open sea: its own species, still clustered around a normal weight, worth more.
+local sea = Catalog.Pools.OpenSea
+check(sea and #sea.Fish == 9, "Open sea lists all nine species")
+local function averageValue(fishPool)
+	local total, seen = 0, {}
+	for _ = 1, 50000 do
+		local roll = FishCatch.roll(fishPool, Catalog.Fish, Catalog.Rarities, rng)
+		total += roll.Value
+		seen[roll.FishId] = true
+	end
+	return total / 50000, seen
+end
+local lakeAverage = averageValue(pool)
+local seaAverage, seaSeen = averageValue(sea)
+for _, id in sea.Fish do
+	local fish = Catalog.Fish[id]
+	check(fish ~= nil and fish.Shapes ~= nil, "Sea species is fully defined: " .. id)
+	check(fish.MinKg < fish.AverageKg and fish.AverageKg < fish.MaxKg, "Normal weight sits inside the range: " .. id)
+	check(seaSeen[id], "Every sea species can be caught: " .. id)
+	check(table.find(pool.Fish, id) == nil, "Sea species stay out of the lake: " .. id)
+end
+check(seaAverage > lakeAverage * 1.5, "Sea catches are worth clearly more on average")
+
 local function percent(value)
 	return string.format("%.2f%%", value / rolls * 100)
 end
@@ -78,4 +101,5 @@ print(
 		hardest
 	)
 )
+print(string.format("Average catch value: lake $%.1f, open sea $%.1f", lakeAverage, seaAverage))
 print("Fish catch rules: " .. checks .. " checks passed (pure data; no Roblox runtime).")

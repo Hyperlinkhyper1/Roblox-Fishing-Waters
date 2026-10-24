@@ -41,6 +41,12 @@ local function vectorType(dimensions)
 		assert(dimensions == 3)
 		return new(self.Y * b.Z - self.Z * b.Y, self.Z * b.X - self.X * b.Z, self.X * b.Y - self.Y * b.X)
 	end
+	function methods:Min(b)
+		return new(math.min(self.X, b.X), math.min(self.Y, b.Y), math.min(self.Z, b.Z))
+	end
+	function methods:Max(b)
+		return new(math.max(self.X, b.X), math.max(self.Y, b.Y), math.max(self.Z, b.Z))
+	end
 	function methods:Lerp(b, t)
 		return self + (b - self) * t
 	end
@@ -184,6 +190,7 @@ end
 local dependencies = {
 	BaseHouse = { ensure = noop },
 	RodShop = { build = noop, ensure = noop },
+	FurnitureShop = { build = noop, ensure = noop },
 	Drydock = {
 		build = noop,
 		ensureDock = noop,

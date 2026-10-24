@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BoatService = require(script.Parent.BoatService)
 local Data = require(script.Parent.AnglerData)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
+local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Service = {}
 local started = false
@@ -58,6 +59,25 @@ function Service.start()
 				assert(key == "" or current.Angler.Titles[key], "Title is not unlocked")
 				current.Angler.EquippedTitle = key
 			end)
+		elseif action == "HireStaff" then
+			local role = if type(key) == "string" then StaffCatalog.Roles[key] else nil
+			if not role then
+				return { Ok = false, Message = "Choose a staff role from the Staff tab." }
+			elseif profile.Angler.Staff[key] then
+				return { Ok = false, Message = "You already hired a " .. role.Name .. "." }
+			elseif profile.Cash < role.Price then
+				return { Ok = false, Message = "You need $" .. role.Price .. " to hire a " .. role.Name .. "." }
+			end
+			ok, message = BoatService.updateProgress(player, function(current)
+				assert(not current.Angler.Staff[key], "Staff already hired")
+				assert(current.Cash >= role.Price, "Not enough cash to hire staff")
+				current.Cash -= role.Price
+				current.Angler.Stats.CoinsSpent += role.Price
+				current.Angler.Staff[key] = true
+			end)
+			if ok then
+				message = role.Name .. " hired! They will work at your home base."
+			end
 		elseif action == "Code" then
 			if type(key) ~= "string" or #key > 64 then
 				return { Ok = false, Message = "Enter a valid code." }
@@ -79,7 +99,14 @@ function Service.start()
 		elseif action ~= "Get" then
 			return { Ok = false, Message = "That menu action is unavailable." }
 		end
-		return { Ok = ok, Message = message, Profile = BoatService.getProfile(player) }
+		local current = BoatService.getProfile(player)
+		return {
+			Ok = ok,
+			Message = message,
+			Profile = current,
+			FreezerCapacity = if current then Data.freezerCapacity(current.Angler) else Data.FREEZER_CAPACITY,
+		}
+
 	end
 	local function bind(player)
 		local function updateTitle()

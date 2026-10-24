@@ -1,222 +1,726 @@
--- A walk-in tackle shop on the quiet south-west corner of the piazza.
--- The same versioned builder also adds it to saved Studio maps at startup.
+-- Tide & Tackle, the rod store on the west side of the piazza. Outside it is one of the plaza's
+-- two-tone townhouses with a shopfront; its street door leads into a two-level hall built away
+-- from the map, with a gallery round three sides under open roof trusses. The hall's exit leads
+-- back out onto the square. The same versioned builder repairs saved Studio maps at startup.
 local CollectionService = game:GetService("CollectionService")
 
+local LowPoly = require(script.Parent.LowPoly)
+local PlazaHouses = require(script.Parent.PlazaHouses)
 local Props = require(script.Parent.Props)
 
 local RodShop = {}
-local LAYOUT_VERSION = 1
+local LAYOUT_VERSION = 2
+local INTERIOR_VERSION = 2
+local TAU = math.pi * 2
 local rgb = Color3.fromRGB
 local M = Enum.Material
-local PLASTER = rgb(242, 231, 208)
-local TEAL = rgb(42, 113, 115)
-local DARK_TEAL = rgb(31, 73, 77)
-local WOOD = rgb(140, 104, 67)
-local OAK = rgb(190, 152, 100)
-local CREAM = rgb(255, 245, 213)
-local TERRACOTTA = rgb(172, 82, 51)
-local IRON = rgb(50, 57, 57)
 
-local function boardText(board: BasePart, value: string, color: Color3?, face: Enum.NormalId?)
-	local gui = Instance.new("SurfaceGui")
-	gui.Face = face or Enum.NormalId.Front
-	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 45
-	gui.Parent = board
-	local text = Instance.new("TextLabel")
-	text.Size = UDim2.fromScale(1, 1)
-	text.BackgroundTransparency = 1
-	text.Font = Enum.Font.GothamBold
-	text.TextScaled = true
-	text.TextColor3 = color or CREAM
-	text.Text = value
-	text.Parent = gui
+-- 1500 studs past the ocean's edge (Biomes.MapHalfSize is 5200), where nothing else is ever built
+local INTERIOR_ORIGIN = CFrame.new(6700, 300, 0)
+local W, D = 56, 44 -- inner floor of the hall
+local GALLERY = 12 -- height of the gallery deck
+local EAVES = 24 -- top of the side walls
+local RIDGE = 34
+
+local YELLOW = rgb(244, 196, 76)
+local MINT = rgb(156, 214, 192)
+local FLOOR_WOOD = rgb(150, 104, 64)
+local WOOD = rgb(184, 132, 72)
+local BEAM = rgb(150, 100, 52)
+local DARK_WOOD = rgb(102, 70, 44)
+local GREEN_DOOR = rgb(84, 160, 70)
+local DOOR_FRAME = rgb(214, 196, 150)
+local WINDOW_FRAME = rgb(58, 112, 52)
+local DAYLIGHT = rgb(255, 238, 176)
+local CREAM = rgb(255, 245, 213)
+local IRON = rgb(50, 57, 57)
+local LAMP = rgb(255, 214, 150)
+local LEAF = { rgb(86, 170, 60), rgb(110, 196, 70), rgb(70, 146, 52) }
+
+local function interiorFolder(): Folder
+	local folder = workspace:FindFirstChild("Interiors")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "Interiors"
+		folder.Parent = workspace
+	end
+	return folder :: Folder
 end
 
--- Local -Z is the storefront. Rotating it west-to-east keeps the door facing
--- the fountain, with a clear approach south of the existing cafe tables.
-function RodShop.build(plaza: Model, plazaFrame: CFrame): Model
-	local existing = plaza:FindFirstChild("FishingRodShop")
-	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == LAYOUT_VERSION then
-		existing:SetAttribute("RodId", "StarterRod")
-		existing:SetAttribute("Price", 0)
+local function doorPrompt(parent: BasePart, action: string, destination: CFrame): ProximityPrompt
+	local prompt = parent:FindFirstChild("RodStoreDoorPrompt") :: ProximityPrompt?
+	if not prompt then
+		prompt = Instance.new("ProximityPrompt")
+		prompt.Name = "RodStoreDoorPrompt"
+		prompt.ObjectText = "Tide & Tackle"
+		prompt.MaxActivationDistance = 9
+		prompt.RequiresLineOfSight = false
+		prompt.HoldDuration = 0
+		prompt.Parent = parent
+	end
+	local p = prompt :: ProximityPrompt
+	p.ActionText = action
+	p:SetAttribute("TeleportTo", destination)
+	return p
+end
+
+----------------------------------------------------------------------------------------------------
+-- Interior
+
+local function buildInterior(): Model
+	local o = INTERIOR_ORIGIN
+	local hall = Instance.new("Model")
+	hall.Name = "RodStoreInterior"
+	hall:SetAttribute("LayoutVersion", INTERIOR_VERSION)
+	hall:SetAttribute("RodId", "StarterRod")
+	hall:SetAttribute("Price", 0)
+	hall:SetAttribute("InteriorFrame", o * CFrame.new(0, RIDGE / 2, 0))
+	hall:SetAttribute("InteriorSize", Vector3.new(W, RIDGE, D))
+	hall:SetAttribute("ArrivalFrame", o * CFrame.new(0, 3.2, -D / 2 + 5) * CFrame.Angles(0, math.pi, 0))
+	-- Stream the whole hall in at once so nobody arrives on a half-loaded floor
+	hall.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	local rng = Random.new(2811)
+
+	local function part(name: string, size: Vector3, cf: CFrame, color: Color3, material: Enum.Material?): Part
+		local piece = Props.part(hall, size, o * cf, color, material or M.Wood)
+		piece.Name = name
+		return piece
+	end
+	local function deco(name: string, size: Vector3, cf: CFrame, color: Color3, material: Enum.Material?): Part
+		local piece = part(name, size, cf, color, material)
+		piece.CanCollide = false
+		return piece
+	end
+	local function beam(name: string, a: Vector3, b: Vector3, width: number, color: Color3, thickness: number?): Part
+		local piece = Props.beam(hall, o * a, o * b, width, color, thickness, M.Wood)
+		piece.Name = name
+		return piece
+	end
+	local function glow(piece: BasePart, color: Color3, range: number, brightness: number)
+		Props.light(piece, color, range, brightness)
+	end
+	-- Frame on a wall's inner face at `pos`, with +Z pointing into the room along `normal`
+	local function onWall(pos: Vector3, normal: Vector3): CFrame
+		return CFrame.lookAt(pos, pos - normal)
+	end
+	local function disc(name: string, face: CFrame, diameter: number, thickness: number, color: Color3, material)
+		local piece = part(
+			name,
+			Vector3.new(thickness, diameter, diameter),
+			face * CFrame.Angles(0, math.pi / 2, 0),
+			color,
+			material
+		)
+		piece.Shape = Enum.PartType.Cylinder
+		piece.CanCollide = false
+		return piece
+	end
+
+	-- Shell: plank floor, yellow lower walls, mint upper walls, gables and a tiled roof
+	part("Floor", Vector3.new(W + 2, 1, D + 2), CFrame.new(0, -0.5, 0), FLOOR_WOOD, M.WoodPlanks)
+	for i = -3, 3 do
+		deco("FloorBoardLine", Vector3.new(0.12, 0.02, D), CFrame.new(i * 8, 0.01, 0), DARK_WOOD, M.Wood)
+	end
+	for _, side in { -1, 1 } do
+		part(
+			"SideWallLower",
+			Vector3.new(1, GALLERY, D + 2),
+			CFrame.new(side * (W / 2 + 0.5), GALLERY / 2, 0),
+			YELLOW,
+			M.Plaster
+		)
+		part(
+			"SideWallUpper",
+			Vector3.new(1, EAVES - GALLERY, D + 2),
+			CFrame.new(side * (W / 2 + 0.5), (GALLERY + EAVES) / 2, 0),
+			MINT,
+			M.Plaster
+		)
+		part(
+			"EndWallLower",
+			Vector3.new(W, GALLERY, 1),
+			CFrame.new(0, GALLERY / 2, side * (D / 2 + 0.5)),
+			YELLOW,
+			M.Plaster
+		)
+		part(
+			"EndWallUpper",
+			Vector3.new(W, EAVES - GALLERY, 1),
+			CFrame.new(0, (GALLERY + EAVES) / 2, side * (D / 2 + 0.5)),
+			MINT,
+			M.Plaster
+		)
+		for _, x in { -1, 1 } do
+			LowPoly.triangle(
+				(o * Vector3.new(x * (W / 2 + 1), EAVES, side * (D / 2 + 0.5))),
+				(o * Vector3.new(0, RIDGE + 0.5, side * (D / 2 + 0.5))),
+				(o * Vector3.new(0, EAVES, side * (D / 2 + 0.5))),
+				o * Vector3.new(0, EAVES, 0),
+				MINT,
+				hall,
+				M.Plaster,
+				1
+			)
+		end
+		-- Wainscot and the dado rail round the ground floor
+		part("Wainscot", Vector3.new(0.2, 3, D), CFrame.new(side * (W / 2 - 0.1), 1.5, 0), WOOD, M.WoodPlanks)
+		part("Wainscot", Vector3.new(W, 3, 0.2), CFrame.new(0, 1.5, side * (D / 2 - 0.1)), WOOD, M.WoodPlanks)
+		local slope = math.atan2(RIDGE - EAVES, W / 2)
+		local run = math.sqrt((W / 2 + 2) ^ 2 + (RIDGE - EAVES) ^ 2)
+		part(
+			"Roof",
+			Vector3.new(run, 1, D + 4),
+			CFrame.new(side * W / 4, (EAVES + RIDGE) / 2 + 0.8, 0) * CFrame.Angles(0, 0, -side * slope),
+			rgb(176, 98, 64),
+			M.WoodPlanks
+		)
+	end
+
+	-- Exposed trusses: tie beam, king post, rafters and struts, with purlins along the slopes
+	for _, z in { -16, -5.5, 5.5, 16 } do
+		beam("TieBeam", Vector3.new(-W / 2, EAVES, z), Vector3.new(W / 2, EAVES, z), 1.1, BEAM)
+		beam("KingPost", Vector3.new(0, EAVES, z), Vector3.new(0, RIDGE, z), 0.9, BEAM)
+		for _, side in { -1, 1 } do
+			beam("Rafter", Vector3.new(side * W / 2, EAVES, z), Vector3.new(0, RIDGE, z), 1, BEAM)
+			beam(
+				"Strut",
+				Vector3.new(0, EAVES + 1, z),
+				Vector3.new(side * W / 4, EAVES + (RIDGE - EAVES) / 2, z),
+				0.6,
+				BEAM
+			)
+		end
+	end
+	beam("Ridge", Vector3.new(0, RIDGE, -D / 2), Vector3.new(0, RIDGE, D / 2), 1.1, BEAM)
+	for _, side in { -1, 1 } do
+		for _, t in { 0.35, 0.7 } do
+			local x, y = side * W / 2 * (1 - t), EAVES + (RIDGE - EAVES) * t
+			beam("Purlin", Vector3.new(x, y, -D / 2), Vector3.new(x, y, D / 2), 0.7, BEAM)
+		end
+	end
+
+	-- Gallery decks round the back and sides, held up on posts and edge beams
+	local inner = W / 2 - 7
+	local backEdge = D / 2 - 8
+	part("GalleryBack", Vector3.new(W, 0.8, 8), CFrame.new(0, GALLERY - 0.4, D / 2 - 4), WOOD, M.WoodPlanks)
+	for _, side in { -1, 1 } do
+		part(
+			"GallerySide",
+			Vector3.new(7, 0.8, backEdge + 6),
+			CFrame.new(side * (inner + 3.5), GALLERY - 0.4, (backEdge - 6) / 2),
+			WOOD,
+			M.WoodPlanks
+		)
+		beam(
+			"GalleryEdgeBeam",
+			Vector3.new(side * inner, GALLERY - 1.2, -6),
+			Vector3.new(side * inner, GALLERY - 1.2, backEdge),
+			1,
+			BEAM
+		)
+		for _, z in { -6, 4, backEdge } do
+			part(
+				"GalleryPost",
+				Vector3.new(1, GALLERY - 0.8, 1),
+				CFrame.new(side * inner, (GALLERY - 0.8) / 2, z),
+				BEAM
+			)
+		end
+	end
+	beam(
+		"GalleryEdgeBeam",
+		Vector3.new(-inner, GALLERY - 1.2, backEdge),
+		Vector3.new(inner, GALLERY - 1.2, backEdge),
+		1,
+		BEAM
+	)
+	for _, x in { -11, 11 } do
+		part("GalleryPost", Vector3.new(1, GALLERY - 0.8, 1), CFrame.new(x, (GALLERY - 0.8) / 2, backEdge), BEAM)
+	end
+	-- Turned balusters under a handrail along every open edge
+	local function balustrade(a: Vector3, b: Vector3)
+		local length = (b - a).Magnitude
+		local dir = (b - a).Unit
+		for k = 0, math.floor(length / 1.25) do
+			local p = a + dir * (k * 1.25) + Vector3.new(0, GALLERY + 1.5, 0)
+			part("Baluster", Vector3.new(0.4, 3, 0.4), CFrame.new(p), WOOD)
+			deco("BalusterBulb", Vector3.new(0.65, 0.7, 0.65), CFrame.new(p + Vector3.new(0, -0.3, 0)), WOOD)
+		end
+		beam("Handrail", a + Vector3.new(0, GALLERY + 3.2, 0), b + Vector3.new(0, GALLERY + 3.2, 0), 0.6, BEAM, 0.45)
+		beam("BottomRail", a + Vector3.new(0, GALLERY + 0.2, 0), b + Vector3.new(0, GALLERY + 0.2, 0), 0.5, BEAM, 0.3)
+	end
+	balustrade(Vector3.new(-inner, 0, backEdge), Vector3.new(inner, 0, backEdge))
+	for _, side in { -1, 1 } do
+		balustrade(Vector3.new(side * inner, 0, -6), Vector3.new(side * inner, 0, backEdge))
+	end
+	balustrade(Vector3.new(-W / 2, 0, -6), Vector3.new(-inner, 0, -6))
+
+	-- Stairs up the right-hand wall arrive at the open front end of that gallery
+	local steps = 15
+	local rise = GALLERY / steps
+	for i = 1, steps do
+		part(
+			"Stair",
+			Vector3.new(6.5, i * rise, 1),
+			CFrame.new(inner + 3.5, i * rise / 2, -6 - (steps - i) - 0.5),
+			WOOD,
+			M.WoodPlanks
+		)
+		deco(
+			"StairNosing",
+			Vector3.new(6.5, 0.15, 0.2),
+			CFrame.new(inner + 3.5, i * rise + 0.02, -6 - (steps - i) - 0.95),
+			DARK_WOOD
+		)
+	end
+	beam("StairRail", Vector3.new(inner, 3.2, -6 - steps), Vector3.new(inner, GALLERY + 3.2, -6), 0.5, BEAM, 0.45)
+	for k = 0, steps - 1, 2 do
+		local y = (k + 1) * rise
+		part("StairBaluster", Vector3.new(0.35, 3, 0.35), CFrame.new(inner, y + 1.5, -6 - steps + k + 0.5), WOOD)
+	end
+
+	-- Windows of small green panes and arched green doors, as on a harbour warehouse
+	local function gridWindow(face: CFrame, width: number, height: number)
+		deco(
+			"WindowSurround",
+			Vector3.new(width + 1, height + 1, 0.2),
+			face * CFrame.new(0, 0, 0.1),
+			DOOR_FRAME,
+			M.Limestone
+		)
+		deco(
+			"WindowArch",
+			Vector3.new(0.2, width + 1, width + 1),
+			face * CFrame.new(0, height / 2, 0.1) * CFrame.Angles(0, math.pi / 2, 0),
+			DOOR_FRAME,
+			M.Limestone
+		).Shape =
+			Enum.PartType.Cylinder
+		local pane =
+			deco("WindowLight", Vector3.new(width, height, 0.2), face * CFrame.new(0, 0, 0.22), DAYLIGHT, M.Neon)
+		disc("WindowLightArch", face * CFrame.new(0, height / 2, 0.22), width, 0.2, DAYLIGHT, M.Neon)
+		for i = 1, 3 do
+			deco(
+				"WindowBar",
+				Vector3.new(0.18, height + width / 2, 0.3),
+				face * CFrame.new(-width / 2 + i * width / 4, width / 4, 0.36),
+				WINDOW_FRAME
+			)
+		end
+		for j = 1, 4 do
+			deco(
+				"WindowBar",
+				Vector3.new(width, 0.18, 0.3),
+				face * CFrame.new(0, -height / 2 + j * height / 4, 0.36),
+				WINDOW_FRAME
+			)
+		end
+		deco(
+			"WindowSill",
+			Vector3.new(width + 1.6, 0.35, 0.9),
+			face * CFrame.new(0, -height / 2 - 0.5, 0.4),
+			DOOR_FRAME,
+			M.Limestone
+		)
+		return pane
+	end
+	local function archDoor(face: CFrame, width: number, height: number): Part
+		deco(
+			"DoorSurround",
+			Vector3.new(width + 1.6, height, 0.25),
+			face * CFrame.new(0, height / 2, 0.12),
+			DOOR_FRAME,
+			M.Limestone
+		)
+		disc("DoorSurroundArch", face * CFrame.new(0, height, 0.12), width + 1.6, 0.25, DOOR_FRAME, M.Limestone)
+		local leaf = part(
+			"DoorLeaf",
+			Vector3.new(width, height, 0.3),
+			face * CFrame.new(0, height / 2, 0.35),
+			GREEN_DOOR,
+			M.WoodPlanks
+		)
+		disc("DoorLeafArch", face * CFrame.new(0, height, 0.35), width, 0.3, GREEN_DOOR, M.WoodPlanks)
+		for i = 1, 3 do
+			deco(
+				"DoorPlank",
+				Vector3.new(0.12, height + width / 2 - 0.4, 0.4),
+				face * CFrame.new(-width / 2 + i * width / 4, height / 2 + width / 4 - 0.2, 0.42),
+				rgb(64, 130, 54)
+			)
+		end
+		for _, y in { 0.25, 0.75 } do
+			deco(
+				"DoorStrap",
+				Vector3.new(width * 0.7, 0.4, 0.45),
+				face * CFrame.new(-width * 0.12, height * y, 0.45),
+				DOOR_FRAME,
+				M.Metal
+			)
+		end
+		deco(
+			"DoorHandle",
+			Vector3.new(0.4, 1.4, 0.35),
+			face * CFrame.new(width * 0.3, height * 0.45, 0.62),
+			DOOR_FRAME,
+			M.Metal
+		)
+		return leaf
+	end
+
+	-- Front wall: the way out between two tall windows, and windows above the gallery line
+	local front = onWall(Vector3.new(0, 0, -D / 2), Vector3.new(0, 0, 1))
+	local exit = archDoor(front, 6, 9)
+	for _, x in { -14, 14 } do
+		local glass = gridWindow(front * CFrame.new(x, 6, 0), 5, 6)
+		glow(glass, DAYLIGHT, 16, 0.6)
+		gridWindow(front * CFrame.new(x, GALLERY + 5, 0), 4, 4.5)
+	end
+	gridWindow(front * CFrame.new(-24, 6, 0), 3, 5)
+	-- Left wall (its local +X runs toward the front): a green door on each level and windows between
+	local left = onWall(Vector3.new(-W / 2, 0, 0), Vector3.new(1, 0, 0))
+	archDoor(left * CFrame.new(3, 0, 0), 5, 8)
+	archDoor(left * CFrame.new(-4, GALLERY, 0), 4.4, 7.4)
+	gridWindow(left * CFrame.new(18, 6, 0), 4, 5.5)
+	for _, x in { -11, 14 } do
+		gridWindow(left * CFrame.new(x, GALLERY + 5, 0), 4, 4.5)
+	end
+	-- Right wall (local +X runs toward the back): windows above the stairs and along the gallery
+	local right = onWall(Vector3.new(W / 2, 0, 0), Vector3.new(-1, 0, 0))
+	for _, x in { -14, 0, 12 } do
+		gridWindow(right * CFrame.new(x, GALLERY + 5, 0), 4, 4.5)
+	end
+	gridWindow(right * CFrame.new(9.5, 6, 0), 4, 5.5)
+	-- Back wall upstairs
+	local back = onWall(Vector3.new(0, 0, D / 2), Vector3.new(0, 0, -1))
+	archDoor(back * CFrame.new(0, GALLERY, 0), 4.4, 7.4)
+	for _, x in { -14, 14 } do
+		gridWindow(back * CFrame.new(x, GALLERY + 5, 0), 4, 4.5)
+	end
+
+	-- Glowing brick alcove at the back, where the store keeps its prize rod
+	local alcove = back
+	for _, x in { -4.2, 4.2 } do
+		part("AlcovePier", Vector3.new(1.6, 9, 1.6), alcove * CFrame.new(x, 4.5, 0.8), rgb(196, 176, 150), M.Brick)
+	end
+	part("AlcoveHeader", Vector3.new(10, 1.6, 1.6), alcove * CFrame.new(0, 9.8, 0.8), rgb(196, 176, 150), M.Brick)
+	local alcoveGlow =
+		deco("AlcoveGlow", Vector3.new(6.8, 8.8, 0.2), alcove * CFrame.new(0, 4.4, 0.15), rgb(214, 96, 196), M.Neon)
+	glow(alcoveGlow, rgb(232, 110, 214), 14, 0.6)
+	part("AlcovePlinth", Vector3.new(3, 2.4, 2), alcove * CFrame.new(0, 1.2, 1.4), rgb(120, 110, 130), M.Slate)
+	local prizeBase = alcove * CFrame.new(0, 2.4, 1.4)
+	beam(
+		"PrizeRodBlank",
+		(prizeBase * CFrame.new(-0.4, 0.3, 0)).Position,
+		(prizeBase * CFrame.new(0.8, 6.6, 0)).Position,
+		0.18,
+		rgb(255, 196, 60)
+	).Material =
+		M.Neon
+	beam(
+		"PrizeRodGrip",
+		(prizeBase * CFrame.new(-0.6, 0, 0)).Position,
+		(prizeBase * CFrame.new(-0.3, 1.6, 0)).Position,
+		0.35,
+		DARK_WOOD
+	)
+
+	-- The counter, with racks of rods behind it under the back gallery
+	part("CounterBase", Vector3.new(16, 3.2, 2.6), CFrame.new(0, 1.6, backEdge - 6), rgb(70, 126, 110), M.WoodPlanks)
+	local counter = part("CounterTop", Vector3.new(16.6, 0.35, 3.2), CFrame.new(0, 3.37, backEdge - 6), WOOD)
+	for _, x in { -6, -2, 2, 6 } do
+		deco(
+			"CounterPanel",
+			Vector3.new(3.2, 2.2, 0.12),
+			CFrame.new(x, 1.6, backEdge - 7.35),
+			rgb(58, 104, 92),
+			M.WoodPlanks
+		)
+	end
+	local menu =
+		deco("RodPriceBoard", Vector3.new(6, 1.4, 0.15), CFrame.new(0, 5.4, backEdge - 4.2), DARK_WOOD, M.WoodPlanks)
+	PlazaHouses.boardText(menu, "STARTER ROD  |  FREE", Enum.NormalId.Front)
+	for _, x in { -2.9, 2.9 } do
+		deco("BoardHanger", Vector3.new(0.12, 5.1, 0.12), CFrame.new(x, 8.65, backEdge - 4.2), IRON, M.Metal)
+	end
+	local browse = Instance.new("ProximityPrompt")
+	browse.Name = "BuyFishingRodPrompt"
+	browse.ActionText = "Browse rods"
+	browse.ObjectText = "Tide & Tackle"
+	browse.MaxActivationDistance = 9
+	browse.RequiresLineOfSight = false
+	browse.HoldDuration = 0
+	browse.Parent = counter
+	-- A brass bell and a ledger on the counter
+	deco("CounterBell", Vector3.new(0.8, 0.6, 0.8), CFrame.new(5.5, 3.85, backEdge - 6), rgb(214, 170, 70), M.Metal).Shape =
+		Enum.PartType.Ball
+	deco(
+		"Ledger",
+		Vector3.new(1.8, 0.25, 1.3),
+		CFrame.new(-5, 3.67, backEdge - 6) * CFrame.Angles(0, 0.25, 0),
+		rgb(120, 40, 36),
+		M.Fabric
+	)
+
+	local rodColors = { rgb(64, 103, 89), rgb(183, 81, 51), rgb(47, 81, 118), rgb(175, 134, 62), rgb(120, 70, 140) }
+	local function rodRack(face: CFrame, count: number)
+		local width = count * 1.6 + 1
+		part("RackBase", Vector3.new(width, 1.2, 1.4), face * CFrame.new(0, 0.6, 0.8), DARK_WOOD)
+		deco("RackRail", Vector3.new(width, 0.35, 0.5), face * CFrame.new(0, 7.2, 0.35), DARK_WOOD)
+		for _, x in { -width / 2, width / 2 } do
+			part("RackSide", Vector3.new(0.4, 8, 1.4), face * CFrame.new(x, 4, 0.8), DARK_WOOD)
+		end
+		for i = 1, count do
+			local x = -width / 2 + 0.5 + (i - 0.5) * 1.6
+			local color = rodColors[(i - 1) % #rodColors + 1]
+			local foot = face * Vector3.new(x, 1.2, 0.9)
+			local tip = face * Vector3.new(x + 0.3, 10.5, 0.35)
+			Props.beam(hall, o * foot, o * tip, 0.14, color, nil, M.SmoothPlastic).CanCollide = false
+			Props.beam(hall, o * foot, o * (face * Vector3.new(x + 0.05, 3, 0.85)), 0.3, rgb(196, 150, 96), nil, M.Wood).CanCollide =
+				false
+			deco("RackReel", Vector3.new(0.45, 0.6, 0.4), face * CFrame.new(x, 3.4, 1.15), IRON, M.Metal)
+		end
+	end
+	rodRack(back * CFrame.new(-11.5, 0, 0), 7)
+	rodRack(back * CFrame.new(11.5, 0, 0), 7)
+	rodRack(left * CFrame.new(-16.5, 0, 0), 6)
+	rodRack(right * CFrame.new(0, 0, 0), 6)
+
+	-- Tackle shelves and a bookcase of fishing almanacs
+	local function shelves(face: CFrame, width: number, height: number, tiers: number)
+		for _, x in { -width / 2, width / 2 } do
+			part("ShelfSide", Vector3.new(0.35, height, 1.8), face * CFrame.new(x, height / 2, 0.9), DARK_WOOD)
+		end
+		deco("ShelfBack", Vector3.new(width, height, 0.15), face * CFrame.new(0, height / 2, 0.08), WOOD, M.WoodPlanks)
+		for t = 0, tiers do
+			local y = 0.3 + t * (height - 0.6) / tiers
+			part("Shelf", Vector3.new(width, 0.25, 1.8), face * CFrame.new(0, y, 0.9), DARK_WOOD)
+			if t == tiers then
+				continue
+			end
+			local x = -width / 2 + 0.5
+			while x < width / 2 - 0.6 do
+				local roll = rng:NextNumber()
+				if roll < 0.55 then
+					local bookW = rng:NextNumber(0.35, 0.6)
+					local bookH = rng:NextNumber(1.2, 1.8)
+					deco(
+						"Book",
+						Vector3.new(bookW, bookH, 1.3),
+						face * CFrame.new(x + bookW / 2, y + 0.12 + bookH / 2, 0.9),
+						Props.pick(rng, rodColors),
+						M.Fabric
+					)
+					x += bookW + 0.05
+				elseif roll < 0.8 then
+					deco(
+						"TackleTin",
+						Vector3.new(1.1, 0.7, 1.2),
+						face * CFrame.new(x + 0.55, y + 0.47, 0.9),
+						Props.pick(rng, { rgb(70, 126, 110), rgb(190, 152, 100), rgb(170, 70, 50) }),
+						M.SmoothPlastic
+					)
+					x += 1.2
+				else
+					local coins = deco(
+						"GoldCoins",
+						Vector3.new(0.4, 1, 1),
+						face * CFrame.new(x + 0.5, y + 0.3, 0.9) * CFrame.Angles(0, 0, math.pi / 2),
+						rgb(244, 198, 60),
+						M.Metal
+					)
+					coins.Shape = Enum.PartType.Cylinder
+					x += 1.1
+				end
+			end
+		end
+	end
+	shelves(right * CFrame.new(16, 0, 0), 5, 7.5, 4)
+	shelves(left * CFrame.new(11, 0, 0), 4.5, 6, 3)
+
+	-- Floor props: a bench, barrels, crate stacks, display pedestals and a long rug down the aisle
+	local function at(x: number, z: number, y: number?): Vector3
+		return o * Vector3.new(x, y or 0, z)
+	end
+	Props.bench(hall, at(-W / 2 + 2.2, 4.5), math.pi / 2)
+	for _, p in { { -W / 2 + 2, 9.2 }, { -W / 2 + 4.4, 10 }, { inner - 2, -16 } } do
+		Props.barrel(hall, at(p[1], p[2]), rng)
+	end
+	Props.crates(hall, at(inner - 2, 10), rng)
+	Props.crates(hall, at(-inner + 2, -19), rng)
+	deco("AisleRug", Vector3.new(7, 0.06, 24), CFrame.new(0, 0.03, -8), rgb(170, 66, 52), M.Fabric)
+	deco("AisleRugBorder", Vector3.new(8, 0.04, 25), CFrame.new(0, 0.02, -8), rgb(222, 180, 90), M.Fabric)
+	for _, x in { -10, 10 } do
+		local stand = CFrame.new(x, 0, -6)
+		part("PedestalBase", Vector3.new(3, 0.8, 3), stand * CFrame.new(0, 0.4, 0), rgb(120, 116, 112), M.Slate)
+		part("PedestalColumn", Vector3.new(1.6, 3, 1.6), stand * CFrame.new(0, 2.3, 0), rgb(150, 146, 140), M.Slate)
+		part("PedestalTop", Vector3.new(2.6, 0.5, 2.6), stand * CFrame.new(0, 4, 0), rgb(120, 116, 112), M.Slate)
+		local color = if x < 0 then rgb(255, 220, 90) else rgb(120, 220, 255)
+		local tip = o * (stand * Vector3.new(1.2, 10, 0))
+		Props.beam(hall, o * (stand * Vector3.new(-0.3, 4.3, 0)), tip, 0.2, color, nil, M.Neon).CanCollide = false
+		local gem = deco("PedestalGlow", Vector3.new(1, 1, 1), stand * CFrame.new(-0.3, 4.8, 0), color, M.Neon)
+		gem.Shape = Enum.PartType.Ball
+		glow(gem, color, 12, 0.6)
+	end
+
+	-- Up on the gallery: potted palms, barrels and crates
+	local function pottedPalm(x: number, z: number)
+		local base = at(x, z, GALLERY)
+		Props.cylinder(hall, base + Vector3.new(0, 1, 0), 2, 2.6, rgb(184, 96, 60), M.Sandstone)
+		local top = base + Vector3.new(rng:NextNumber(-0.6, 0.6), 7, rng:NextNumber(-0.6, 0.6))
+		Props.beam(hall, base + Vector3.new(0, 1.5, 0), top, 0.6, rgb(130, 100, 70), nil, M.Wood).CanCollide = false
+		for f = 1, 7 do
+			local a = f / 7 * TAU + rng:NextNumber(-0.2, 0.2)
+			local dir = Vector3.new(math.cos(a), 0, math.sin(a))
+			local mid = top + dir * 2.4 + Vector3.new(0, 0.8, 0)
+			local tip = top + dir * 4.6 + Vector3.new(0, -1.2, 0)
+			Props.beam(hall, top, mid, 1.3, Props.pick(rng, LEAF), 0.15, M.LeafyGrass).CanCollide = false
+			Props.beam(hall, mid, tip, 1.1, Props.pick(rng, LEAF), 0.15, M.LeafyGrass).CanCollide = false
+		end
+	end
+	for _, p in { { -18, D / 2 - 3 }, { 18, D / 2 - 3 }, { -W / 2 + 3, 0 }, { W / 2 - 3, 8 } } do
+		pottedPalm(p[1], p[2])
+	end
+	for _, p in { { -8, D / 2 - 2.5 }, { -5.5, D / 2 - 2 }, { 24, D / 2 - 2.5 }, { -W / 2 + 2.5, 9 } } do
+		Props.barrel(hall, at(p[1], p[2], GALLERY), rng)
+	end
+	Props.crates(hall, at(8, D / 2 - 3, GALLERY), rng)
+	Props.crates(hall, at(-24, D / 2 - 3, GALLERY), rng)
+	Props.crates(hall, at(W / 2 - 3, -2, GALLERY), rng)
+
+	-- Hanging lanterns from the tie beams, and a lamp under each gallery post
+	for _, z in { -16, -5.5, 5.5 } do
+		for _, x in { -10, 10 } do
+			local hook = Vector3.new(x, EAVES - 0.5, z)
+			deco("LanternChain", Vector3.new(0.12, 5, 0.12), CFrame.new(hook - Vector3.new(0, 2.5, 0)), IRON, M.Metal)
+			local lantern = Props.lantern(hall, o * CFrame.new(hook - Vector3.new(0, 6.6, 0)), 14, 0.6)
+			for _, piece in lantern:GetChildren() do
+				if piece:IsA("BasePart") then
+					piece.CanCollide = false
+				end
+			end
+		end
+	end
+	for _, p in { { -inner, -6 }, { inner, 4 }, { -inner, 4 }, { -11, backEdge }, { 11, backEdge } } do
+		local lantern = Props.lantern(hall, o * CFrame.new(p[1], GALLERY - 3, p[2] - 0.9), 14, 0.6)
+		for _, piece in lantern:GetChildren() do
+			if piece:IsA("BasePart") then
+				piece.CanCollide = false
+			end
+		end
+	end
+
+	-- The exit leads back through the green door; RodShop.build links it to the square
+	exit.Name = "ExitDoor"
+	CollectionService:AddTag(hall, "FishingRodShop")
+	hall.Parent = interiorFolder()
+	return hall
+end
+
+local function ensureInterior(): Model
+	local existing = interiorFolder():FindFirstChild("RodStoreInterior")
+	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == INTERIOR_VERSION then
 		CollectionService:AddTag(existing, "FishingRodShop")
 		return existing
 	elseif existing then
 		existing:Destroy()
 	end
-	local shop = Instance.new("Model")
-	shop.Name = "FishingRodShop"
-	shop:SetAttribute("LayoutVersion", LAYOUT_VERSION)
-	shop:SetAttribute("RodId", "StarterRod")
-	shop:SetAttribute("Price", 0)
-	local frame = plazaFrame * CFrame.new(-43, 0, 34) * CFrame.Angles(0, -math.pi / 2, 0)
-	shop:SetAttribute("InteriorFrame", frame * CFrame.new(0, 6.17, 0))
-	shop:SetAttribute("InteriorSize", Vector3.new(20.7, 12, 18.7))
-	shop.Parent = plaza
-	local function at(x: number, y: number, z: number): CFrame
-		return frame * CFrame.new(x, y, z)
-	end
-	local function part(
-		name: string,
-		size: Vector3,
-		x: number,
-		y: number,
-		z: number,
-		color: Color3,
-		material: Enum.Material?,
-		spin: CFrame?
-	): Part
-		local piece = Props.part(shop, size, at(x, y, z) * (spin or CFrame.new()), color, material or M.Wood)
-		piece.Name = name
-		return piece
-	end
-	local function beam(name: string, a: Vector3, b: Vector3, width: number, color: Color3): Part
-		local piece = Props.beam(shop, frame * a, frame * b, width, color, nil, M.Wood)
-		piece.Name = name
-		piece.CanCollide = false
-		return piece
-	end
-	local floor = part("ShopFloor", Vector3.new(22, 0.7, 20), 0, -0.18, 0, rgb(221, 202, 167), M.Limestone)
-	shop.PrimaryPart = floor
-	-- The paving and shop floor meet with a low sill; there is no invisible
-	-- facade block or door across the eight-stud-wide opening.
-	part("EntranceThreshold", Vector3.new(8, 0.15, 2.1), 3.5, 0.12, -10.25, OAK)
-	for _, x in { -10.7, 10.7 } do
-		part("SideWall", Vector3.new(0.6, 12, 20), x, 6.17, 0, PLASTER, M.Plaster)
-		part("WallSkirting", Vector3.new(0.14, 0.75, 19.4), x - math.sign(x) * 0.35, 0.55, 0, TEAL)
-	end
-	part("BackWall", Vector3.new(21.4, 12, 0.6), 0, 6.17, 9.7, PLASTER, M.Plaster)
-	part("WindowLowWall", Vector3.new(10.5, 2.9, 0.6), -5.75, 1.62, -9.7, PLASTER, M.Plaster)
-	part("WindowHighWall", Vector3.new(10.5, 3.2, 0.6), -5.75, 10.57, -9.7, PLASTER, M.Plaster)
-	for _, x in { -10, -1.5 } do
-		part("WindowPier", Vector3.new(2, 5.9, 0.6), x, 6.02, -9.7, PLASTER, M.Plaster)
-	end
-	part("FrontRightWall", Vector3.new(3.5, 12, 0.6), 9.25, 6.17, -9.7, PLASTER, M.Plaster)
-	part("EntranceHeader", Vector3.new(8, 3.2, 0.7), 3.5, 10.57, -9.7, PLASTER, M.Plaster)
-	for _, x in { -0.5, 7.5 } do
-		part("DoorJamb", Vector3.new(0.25, 8.7, 0.9), x, 4.52, -9.9, TEAL)
-	end
-	part("DoorLintel", Vector3.new(8.25, 0.3, 0.9), 3.5, 8.82, -9.9, TEAL)
-	local window =
-		part("DisplayWindow", Vector3.new(6.5, 5.65, 0.12), -5.75, 6.02, -9.98, rgb(168, 208, 210), M.SmoothPlastic)
-	window.Transparency = 0.65
-	for _, y in { 3.05, 8.98 } do
-		part("WindowFrame", Vector3.new(7, 0.24, 0.4), -5.75, y, -10.05, TEAL)
-	end
-	for _, x in { -9.12, -5.75, -2.38 } do
-		part("WindowFrame", Vector3.new(0.2, 6.15, 0.4), x, 6.02, -10.05, TEAL)
-	end
-	part("WindowSill", Vector3.new(7.3, 0.2, 1), -5.75, 2.94, -10.12, OAK)
-	part("Roof", Vector3.new(23.5, 0.6, 21.4), 0, 12.4, 0, TERRACOTTA, M.Brick)
-	part("Ceiling", Vector3.new(21.3, 0.14, 19.3), 0, 12.04, 0, PLASTER, M.Plaster)
-	for _, z in { -7.5, 0, 7.5 } do
-		part("CeilingBeam", Vector3.new(21.4, 0.45, 0.5), 0, 11.75, z, WOOD)
-	end
-	for _, z in { -10.35, 10.35 } do
-		part("RoofCornice", Vector3.new(23, 0.38, 0.35), 0, 11.9, z, OAK)
-	end
-	for index = 1, 10 do
-		part(
-			"StripedAwning",
-			Vector3.new(2.2, 0.18, 2.5),
-			-12.1 + index * 2.2,
-			9.2,
-			-11.1,
-			if index % 2 == 0 then TEAL else CREAM,
-			M.Fabric,
-			CFrame.Angles(-0.14, 0, 0)
-		)
-	end
-	local sign = part("TackleShopSign", Vector3.new(19.4, 1.55, 0.2), 0, 10.88, -10.14, DARK_TEAL)
-	boardText(sign, "TIDE & TACKLE")
-	local welcome = part("StarterRodSign", Vector3.new(2.8, 1.8, 0.16), 9.25, 5.8, -10.07, DARK_TEAL)
-	boardText(welcome, "FREE\nSTARTER ROD")
+	return buildInterior()
+end
 
-	-- A counter at the back makes browsing an indoor interaction. The clear
-	-- central aisle reaches it directly from the open doorway.
-	part("CounterBase", Vector3.new(13, 3.05, 2.4), 0, 1.7, 5.9, TEAL, M.WoodPlanks)
-	local counter = part("CounterTop", Vector3.new(13.5, 0.28, 3), 0, 3.36, 5.9, OAK)
-	for _, x in { -5.6, 0, 5.6 } do
-		part("CounterTrim", Vector3.new(0.16, 2.8, 0.12), x, 1.7, 4.64, OAK)
-	end
-	-- Keep the sign below the tabletop so every customer in the aisle has
-	-- a clear sightline to the purchase prompt on the counter itself.
-	local menu = part("RodPriceBoard", Vector3.new(5, 1.25, 0.15), 0, 1.9, 4.62, DARK_TEAL)
-	boardText(menu, "STARTER ROD  |  FREE")
-	local browse = Instance.new("ProximityPrompt")
-	browse.Name = "BuyFishingRodPrompt"
-	browse.ActionText = "Browse rods"
-	browse.ObjectText = "Tide & Tackle"
-	browse.MaxActivationDistance = 8
-	browse.RequiresLineOfSight = false
-	browse.HoldDuration = 0
-	browse.Parent = counter
-	part("BackDisplayRail", Vector3.new(15.5, 0.22, 0.45), -1, 2, 8.86, WOOD)
-	part("BackDisplayRail", Vector3.new(15.5, 0.22, 0.45), -1, 6.5, 8.86, WOOD)
-	local rodColors = { rgb(64, 103, 89), rgb(183, 81, 51), rgb(47, 81, 118), rgb(175, 134, 62) }
-	for index, color in rodColors do
-		local x = -6.1 + (index - 1) * 3.2
-		beam("DisplayRodBlank", Vector3.new(x, 2.6, 8.5), Vector3.new(x + 0.5, 10.4, 8.5), 0.1, color)
-		beam("DisplayRodGrip", Vector3.new(x, 1.5, 8.5), Vector3.new(x + 0.1, 3.2, 8.5), 0.22, OAK)
-		part("DisplayReel", Vector3.new(0.4, 0.55, 0.35), x + 0.12, 2.8, 8.15, IRON, M.Metal).CanCollide = false
-		for _, y in { 4.4, 6.7, 9 } do
-			part("DisplayRodGuide", Vector3.new(0.2, 0.17, 0.12), x + (y - 2.6) * 0.064, y, 8.38, IRON, M.Metal).CanCollide =
-				false
+----------------------------------------------------------------------------------------------------
+-- Storefront on the square
+
+-- Front on local +Z; turned so the door faces the fountain, clear of the cafe tables to the south.
+function RodShop.build(plaza: Model, plazaFrame: CFrame): Model
+	local hall = ensureInterior()
+	local existing = plaza:FindFirstChild("FishingRodShop")
+	local shop: Model
+	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == LAYOUT_VERSION then
+		shop = existing
+	else
+		if existing then
+			existing:Destroy()
 		end
-	end
-	-- Side shelving stays out of the entrance and counter approach.
-	for _, y in { 0.7, 3.2, 5.6 } do
-		part("TackleShelf", Vector3.new(1.8, 0.22, 11), -9.25, y, -0.5, WOOD)
-		for index = 1, 5 do
-			local z = -5.1 + (index - 1) * 2.15
-			local box = part(
-				"TackleTin",
-				Vector3.new(1.15, 0.8, 1.45),
-				-9.18,
-				y + 0.5,
-				z,
-				if index % 2 == 0 then OAK else TEAL,
-				M.SmoothPlastic
+		local base = plazaFrame * CFrame.new(-45, 0, 35) * CFrame.Angles(0, math.pi / 2, 0)
+		local rng = Random.new(4242)
+		local doorFace, leaf
+		shop, doorFace, leaf = PlazaHouses.house(plaza, base, {
+			width = 22,
+			depth = 18,
+			stories = 2,
+			lower = rgb(244, 232, 206),
+			upper = rgb(86, 146, 200),
+			trim = rgb(250, 242, 224),
+			shutter = rgb(120, 80, 52),
+			roof = rgb(170, 84, 52),
+			door = rgb(176, 70, 52),
+			balcony = true,
+			shop = "TIDE & TACKLE",
+			blade = "RODS",
+			signColor = CREAM,
+			-- The door takes the end nearer the bay, clear of the cafe tables
+			doorSide = -1,
+		}, rng)
+		shop.Name = "FishingRodShop"
+		shop:SetAttribute("LayoutVersion", LAYOUT_VERSION)
+		-- A promenade palm this close would push its fronds through the walls
+		for _, palm in plaza:GetChildren() do
+			local trunk = palm:IsA("Model") and palm.Name == "Palm" and palm:FindFirstChildWhichIsA("BasePart")
+			if trunk then
+				local p = base:PointToObjectSpace(trunk.Position)
+				local dx, dz = math.max(math.abs(p.X) - 11, 0), math.max(math.abs(p.Z) - 9, 0)
+				if dx * dx + dz * dz < 100 then
+					palm:Destroy()
+				end
+			end
+		end
+		leaf.Name = "StreetDoor"
+		shop:SetAttribute("ExitFrame", doorFace * CFrame.new(0, 3.2, 4.5) * CFrame.Angles(0, math.pi, 0))
+		-- A chalkboard on the step tells new anglers what is inside
+		local board = doorFace * CFrame.new(-5, 0, 4)
+		local panel
+		for _, side in { -1, 1 } do
+			-- The two leaves lean together at the top
+			panel = Props.part(
+				shop,
+				Vector3.new(2.6, 3.6, 0.2),
+				board * CFrame.new(0, 1.7, side * 0.55) * CFrame.Angles(-side * 0.3, 0, 0),
+				rgb(60, 52, 44),
+				M.Wood
 			)
-			box.CanCollide = false
-			part("TackleTinLabel", Vector3.new(0.05, 0.35, 0.7), -8.58, y + 0.5, z, CREAM, M.SmoothPlastic).CanCollide =
-				false
 		end
+		local slate = Props.part(
+			shop,
+			Vector3.new(2.2, 2.6, 0.06),
+			panel.CFrame * CFrame.new(0, 0.2, 0.13),
+			rgb(36, 44, 40),
+			M.Slate
+		)
+		slate.CanCollide = false
+		PlazaHouses.boardText(slate, "FREE\nSTARTER\nROD\ninside", Enum.NormalId.Back)
 	end
-	for _, z in { -5.8, 4.8 } do
-		part("ShelfUpright", Vector3.new(0.2, 6, 0.3), -9.25, 3.17, z, DARK_TEAL)
+	-- Link both doors every startup, so a rebuilt square and a saved hall always agree
+	local leaf = shop:FindFirstChild("StreetDoor", true)
+	local arrival = hall:GetAttribute("ArrivalFrame")
+	local exitFrame = shop:GetAttribute("ExitFrame")
+	if leaf and leaf:IsA("BasePart") and typeof(arrival) == "CFrame" then
+		doorPrompt(leaf, "Enter", arrival)
 	end
-	local rug = part("WovenWelcomeMat", Vector3.new(5.7, 0.04, 2.4), 3.5, 0.21, -7.7, rgb(182, 139, 82), M.Fabric)
-	rug.CanCollide = false
-	for _, z in { -3, 4 } do
-		local light = part("ShopLight", Vector3.new(1.4, 0.2, 1.4), 0, 11.32, z, CREAM, M.Neon)
-		light.CanCollide = false
-		local glow = Instance.new("PointLight")
-		glow.Color, glow.Brightness, glow.Range, glow.Shadows = rgb(255, 227, 171), 1.1, 20, false
-		glow.Parent = light
+	local exit = hall:FindFirstChild("ExitDoor", true)
+	if exit and exit:IsA("BasePart") and typeof(exitFrame) == "CFrame" then
+		doorPrompt(exit, "Leave", exitFrame)
 	end
-	CollectionService:AddTag(shop, "FishingRodShop")
+	CollectionService:RemoveTag(shop, "FishingRodShop")
 	return shop
 end
 
 function RodShop.ensure(root: Instance)
 	for _, plaza in root:GetDescendants() do
-		if not plaza:IsA("Model") or plaza.Name ~= "Plaza" then
-			continue
-		end
-		-- Current paving is 116 studs wide; older baked maps used 120.
-		-- Read its frame so the shop follows the saved island's actual position.
-		for _, slab in plaza:GetChildren() do
-			if
-				slab:IsA("BasePart")
-				and slab.Size.X >= 115.9
-				and slab.Size.X <= 120.1
-				and math.abs(slab.Size.X - slab.Size.Z) < 0.01
-				and slab.Size.Y <= 1
-			then
-				RodShop.build(plaza, slab.CFrame * CFrame.new(0, slab.Size.Y / 2, 0))
-				break
+		if plaza:IsA("Model") and plaza.Name == "Plaza" then
+			local frame = PlazaHouses.pavingFrame(plaza)
+			if frame then
+				RodShop.build(plaza, frame)
 			end
 		end
 	end

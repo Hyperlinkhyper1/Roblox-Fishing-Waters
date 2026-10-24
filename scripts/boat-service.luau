@@ -79,6 +79,11 @@ end
 function frameMeta.__add(frame, offset)
 	return CFrame.new(frame.Position + offset)
 end
+-- Only the identity parked offset is composed; it leaves the pose unchanged.
+function frameMeta.__mul(offset, frame)
+	assert(offset.identity, "Mock CFrames only compose the identity offset")
+	return frame
+end
 function frameMeta.__index(frame, key)
 	if key == "Rotation" then
 		return frame
@@ -207,6 +212,9 @@ function methods:GetDescendants()
 end
 function methods:PivotTo(frame)
 	self.lastPivot = frame
+end
+function methods:GetPivot()
+	return self.lastPivot or CFrame.new()
 end
 function methods:RequestStreamAroundAsync(position)
 	self.streamPosition = position
@@ -442,6 +450,7 @@ local FishingBoat = {
 }
 local waveHeight, waveNormal = 0, Vector3.new(0, 1, 0)
 local waveSampleTime, waveSamplePosition
+local parkedRelease
 local launchReservations, launchRuns, launchReleases = {}, 0, 0
 local launchBlocked, launchFails, duringLaunch = false, false, nil
 local DrydockLaunch = {
@@ -512,9 +521,16 @@ local dependencies = {
 	BoatCatalog = BoatCatalog,
 	Biomes = { WaterLevel = 0 },
 	Weather = {
+		Presets = { Clear = {}, LightRain = {}, Rain = {}, Storm = {} },
 		sample = function(position, time)
 			waveSamplePosition, waveSampleTime = position, time
 			return { height = waveHeight, normal = waveNormal }
+		end,
+		parkedOffset = function(rest, parkedAt, time)
+			parkedRelease = { rest = rest, parkedAt = parkedAt, time = time }
+			local offset = CFrame.new()
+			offset.identity = true
+			return offset
 		end,
 	},
 }
@@ -826,6 +842,11 @@ checkSuspension(floatingBoat, "Released rowboat")
 check(not floatingBoat.root.Anchored and not floatingBoat.parked and floatingBoat.velocity.Enabled, "Owner input must release the boat and enable driving")
 check(floatingBoat.root.ownerAssignments == 2, "Release must explicitly restore server ownership after unanchoring")
 check(
+	parkedRelease and parkedRelease.rest == heldFrame and parkedRelease.time == workspace.serverTime
+		and floatingBoat.model:GetAttribute("ParkedAt") == parkedRelease.parkedAt,
+	"Release must start from the pose clients bobbed the parked hull to"
+)
+check(
 	math.abs(floatingBoat.float.Position.Y - 1.1) < 0.00001,
 	"A moving boat must follow waves while preserving its root offset"
 )
@@ -971,12 +992,48 @@ check(
 	"A returning save must not recreate a departed rod buyer"
 )
 local admin = makePlayer(2541746813, 700, true)
-local setCommand = TextChatService:FindFirstChild("SetCashCommand")
+local setCommand = TextChatService:FindFirstChild("SetCommand")
 check(setCommand and setCommand.PrimaryAlias == "/set", "The server must register the /set chat command")
 store.data.Player_2541746813.OwnedRods = { StarterRod = true }
 local function command(player, message)
 	setCommand.Triggered:Fire({ UserId = player.UserId }, message)
 end
+local weatherMessages = #feedback.messages
+fresh.Name, fresh.DisplayName = "hyperlinkhyper", "hyperlinkhyper"
+command(fresh, "/set weather Storm")
+command(fresh, "/set weather list")
+check(
+	workspace:GetAttribute("WeatherOverride") == nil and #feedback.messages == weatherMessages,
+	"Only hyperlinkhyper's user ID may set or list weather, even if another player spoofs the name"
+)
+setCommand.Triggered:Fire(nil, "/set weather Storm")
+setCommand.Triggered:Fire({ UserId = -999 }, "/set weather Storm")
+check(workspace:GetAttribute("WeatherOverride") == nil, "Missing or unknown senders cannot change weather")
+before = store.updates
+for _, kind in { "Clear", "LightRain", "Rain", "Storm" } do
+	command(admin, "/set weather " .. kind)
+	check(workspace:GetAttribute("WeatherOverride") == kind, "Each weather preset must be selectable")
+end
+command(admin, "/SET WEATHER light rain  ")
+check(workspace:GetAttribute("WeatherOverride") == "LightRain", "Weather input accepts casing and spaced light rain")
+command(admin, "/set weather list")
+local weatherNotice = feedback.messages[#feedback.messages]
+check(
+	weatherNotice.player == admin
+		and weatherNotice.values[1] == "Notice"
+		and weatherNotice.values[2] == "Weather types: Clear, LightRain, Rain, Storm.",
+	"The weather list must privately show every available type"
+)
+check(workspace:GetAttribute("WeatherOverride") == "LightRain", "Listing weather must preserve the current override")
+for _, invalid in { "/set weather", "/set weather snow", "/set weather Storm extra", "/set weather list extra" } do
+	command(admin, invalid)
+	check(
+		workspace:GetAttribute("WeatherOverride") == "LightRain",
+		"Invalid weather input must preserve the current override"
+	)
+end
+check(store.updates == before, "Weather commands must work independently of wallet saves")
+workspace:SetAttribute("WeatherOverride", nil)
 before = store.updates
 command(fresh, "/set cash 9999")
 check(store.updates == before and fresh:GetAttribute("Cash") == 0, "Only the allowed user ID may set cash")
@@ -1342,8 +1399,14 @@ RunService.Heartbeat:Fire(1 / 60)
 check(workingFisher.velocity.PlaneVelocity.Y == 14, "Fishing boat reaches its faster reverse top speed")
 workingFisher.throttle, workingFisher.steer = 0, 1
 RunService.Heartbeat:Fire(0.1)
-check(math.abs(workingFisher.yaw + 0.004) < 0.00001, "Fishing boat steering eases into its reduced turn rate")
-check(workingFisher.velocity.ForceLimitsEnabled == false, "Velocity ramp must have enough solver force to overcome water drag")
+check(
+	math.abs(workingFisher.yaw - 0.018) < 0.00001,
+	"Fishing boat steering responds faster while easing into its reverse turn rate"
+)
+check(
+	workingFisher.velocity.ForceLimitsEnabled == false,
+	"Velocity ramp must have enough solver force to overcome water drag"
+)
 request.OnServerEvent:Fire(otherBuyer, "Row", 1, 1)
 check(workingFisher.steer == 1, "Other players cannot send controls to this boat")
 workingFisher.seat.Occupant = nil

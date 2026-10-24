@@ -160,4 +160,95 @@ function Theme.scroll(item: ScrollingFrame)
 	item.BorderSizePixel = 0
 end
 
+-- The collection menus use smoked glass, with a quiet woven/grid finish.
+-- Native GUI geometry avoids an external texture download on first open.
+function Theme.glassPanel(item: GuiObject, inset: boolean?)
+	Theme.panel(item, inset, 1)
+	item.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
+	item.BackgroundTransparency = if inset then 0.38 else 0.52
+	item.ThemeBorder.Color = Color3.fromRGB(122, 122, 122)
+	item.ThemeBorder.Transparency = 0.65
+end
+
+function Theme.glassButton(item: TextButton, state: string?)
+	Theme.button(item, state)
+	local selected, danger, disabled = state == "Selected", state == "Danger", state == "Disabled"
+	Theme.corner(item, 1)
+	Theme.corner(item.ThemeFace, 1)
+	item.BackgroundColor3 = Color3.new()
+	item.BackgroundTransparency = 1
+	local face = item.ThemeFace
+	face.BackgroundTransparency = if danger then 0.45 elseif selected then 0.3 else 0.6
+	face.ThemeFinish.Color = ColorSequence.new(
+		if danger
+			then Color3.fromRGB(74, 20, 22)
+			elseif selected then Color3.fromRGB(35, 35, 35)
+			else Color3.fromRGB(16, 16, 16),
+		Color3.fromRGB(5, 5, 5)
+	)
+	item.ThemeBorder.Color = if danger
+		then Color3.fromRGB(218, 70, 75)
+		elseif selected then Color3.fromRGB(173, 173, 173)
+		else Color3.fromRGB(100, 100, 100)
+	item.ThemeBorder.Transparency = if selected or danger then 0.12 else 0.5
+	Theme.text(
+		item.ThemeCaption,
+		if danger
+			then Color3.fromRGB(255, 91, 96)
+			elseif disabled then Color3.fromRGB(150, 150, 150)
+			else Theme.Colors.Text
+	)
+end
+
+function Theme.glassWindow(item: GuiObject)
+	Theme.glassPanel(item)
+	item.BackgroundTransparency = 0.2
+	item.ThemeBorder.Transparency = 0.25
+	item.ThemeBorder.Thickness = 1
+	local rim = item:FindFirstChild("ThemeInnerRim")
+	if rim then
+		Theme.corner(rim, 1)
+		rim.ThemeBorder.Transparency = 0.78
+	end
+	local texture = item:FindFirstChild("GlassTexture")
+	if texture then
+		texture.Visible = true
+		return
+	end
+	texture = component(item, "Frame", "GlassTexture")
+	texture.Size = UDim2.fromScale(1, 1)
+	texture.BackgroundTransparency = 1
+	texture.BorderSizePixel = 0
+	texture.ClipsDescendants = true
+	texture.Active = false
+	-- Draw behind the content, including the empty shop/loading states.
+	texture.ZIndex = 0
+	local function mark(name, position, size, transparency)
+		local line = Instance.new("Frame")
+		line.Name = name
+		line.BackgroundColor3 = Color3.fromRGB(172, 172, 172)
+		line.BackgroundTransparency = transparency
+		line.BorderSizePixel = 0
+		line.Position, line.Size = position, size
+		line.Active = false
+		line.ZIndex = 0
+		line.Parent = texture
+	end
+	for index = 1, 36 do
+		mark("WeaveVertical" .. index, UDim2.new(0, index * 28, 0, 0), UDim2.new(0, 1, 1, 0), 0.97)
+	end
+	for index = 1, 24 do
+		mark("WeaveHorizontal" .. index, UDim2.new(0, 0, 0, index * 28), UDim2.new(1, 0, 0, 1), 0.97)
+	end
+	for index = 1, 48 do
+		mark(
+			"Grain" .. index,
+			UDim2.fromScale(((index * 37) % 97) / 100, ((index * 61) % 97) / 100),
+			UDim2.fromOffset(1 + index % 3, 1),
+			0.91
+		)
+	end
+	mark("HeaderRule", UDim2.fromOffset(0, 91), UDim2.new(1, 0, 0, 1), 0.7)
+end
+
 return Theme

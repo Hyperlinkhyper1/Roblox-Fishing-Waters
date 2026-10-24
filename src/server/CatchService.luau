@@ -5,11 +5,11 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local AnglerData = require(script.Parent.AnglerData)
 local AnglerService = require(script.Parent.AnglerService)
 local BoatService = require(script.Parent.BoatService)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
+local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local CatchService = {}
 local MAX_CAST_DISTANCE = 64
@@ -43,12 +43,10 @@ local function send(player: Player, kind: string, payload: any?)
 	end
 end
 
-local function cooler(player: Player)
+local function holding(player: Player, roll): boolean
 	local profile = BoatService.getProfile(player)
-	return {
-		Fish = if profile then profile.Angler.Cooler else {},
-		Capacity = AnglerData.COOLER_CAPACITY,
-	}
+	local hand = profile and profile.Angler.Hand
+	return hand ~= nil and hand.FishId == roll.FishId and hand.Kg == roll.Kg
 end
 
 local function clear(player: Player, reason: string?)
@@ -93,6 +91,11 @@ local function cast(player: Player, target: any)
 	if not tool or not root then
 		return
 	end
+	local profile = BoatService.getProfile(player)
+	if profile and profile.Angler.Hand then
+		send(player, "Cancelled", "Your hands are full. Stow the fish in your boat's hold or your shop freezer first.")
+		return
+	end
 	local offset = target - root.Position
 	if Vector3.new(offset.X, 0, offset.Z).Magnitude > MAX_CAST_DISTANCE + 4 or math.abs(offset.Y) > 60 then
 		send(player, "Cancelled", "That's too far to cast.")
@@ -113,7 +116,7 @@ local function cast(player: Player, target: any)
 		if casts[player] ~= state then
 			return
 		end
-		local pool = Catalog.Pools[Catalog.DefaultPool]
+		local pool = Catalog.Pools[if Weather.inLake(state.target) then Catalog.DefaultPool else "OpenSea"]
 		local roll = FishCatch.roll(pool, Catalog.Fish, Catalog.Rarities, function()
 			return random:NextNumber()
 		end)
@@ -124,7 +127,6 @@ local function cast(player: Player, target: any)
 end
 
 local function award(player: Player, roll)
-	local before = #cooler(player).Fish
 	local saved = false
 	for attempt = 1, 4 do
 		saved = AnglerService.recordCatch(player, roll.FishId, "Normal", roll.Kg, roll.Value, roll.Size)
@@ -133,15 +135,13 @@ local function award(player: Player, roll)
 		end
 		task.wait(attempt)
 	end
-	local current = cooler(player)
 	send(player, "Caught", {
 		FishId = roll.FishId,
 		Kg = roll.Kg,
 		Size = roll.Size,
 		Value = roll.Value,
 		Saved = saved,
-		Stored = saved and #current.Fish > before,
-		Cooler = current,
+		Stored = saved and holding(player, roll),
 	})
 end
 
@@ -186,21 +186,8 @@ function CatchService.start()
 			cast(player, value)
 		elseif action == "Reel" then
 			reel(player, value)
-		elseif action == "Cooler" then
-			send(player, "Cooler", cooler(player))
 		end
 	end)
-	local function bind(player: Player)
-		player:GetAttributeChangedSignal("BoatDataStatus"):Connect(function()
-			if player:GetAttribute("BoatDataStatus") == "Ready" then
-				send(player, "Cooler", cooler(player))
-			end
-		end)
-	end
-	Players.PlayerAdded:Connect(bind)
-	for _, player in Players:GetPlayers() do
-		bind(player)
-	end
 	Players.PlayerRemoving:Connect(function(player)
 		clear(player)
 		lastRequest[player] = nil

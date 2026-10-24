@@ -153,7 +153,7 @@ local function door(
 	color: Color3,
 	frame: Color3,
 	arched: boolean
-)
+): Part
 	part(
 		m,
 		Vector3.new(width + 1, height + 0.5, 0.12),
@@ -161,13 +161,15 @@ local function door(
 		frame,
 		M.Plaster
 	)
-	part(m, Vector3.new(width, height, 0.3), face * CFrame.new(0, height / 2, 0.15), color, M.WoodPlanks)
+	local leaf =
+		part(m, Vector3.new(width, height, 0.3), face * CFrame.new(0, height / 2, 0.15), color, M.WoodPlanks)
 	if arched then
 		disc(m, face * CFrame.new(0, height + 0.5, 0.14), width + 1, 0.12, frame, M.Plaster)
 		disc(m, face * CFrame.new(0, height, 0.25), width, 0.26, color, M.WoodPlanks)
 	end
 	ball(m, (face * CFrame.new(width * 0.3, height * 0.45, 0.4)).Position, 0.35, BRASS, M.Metal)
 	part(m, Vector3.new(width + 2.2, 0.5, 1.8), face * CFrame.new(0, 0.25, 0.9), STONE, M.Limestone)
+	return leaf
 end
 
 -- Balcony whose floor is level with `face`, with a wrought-iron railing.
@@ -301,6 +303,9 @@ local function chimney(m: Model, at: CFrame)
 		part(m, Vector3.new(0.4, 0.8, 2), at * CFrame.new(side * 0.8, 3.1, 0), WHITEWASH, M.Plaster)
 	end
 end
+
+-- Facade pieces shared with the piazza's bespoke houses.
+Med.window, Med.door, Med.balcony, Med.flowerBox, Med.gableRoof = window, door, balcony, flowerBox, gableRoof
 
 -- Little blue dome on a drum, topped with a cross.
 local function dome(m: Model, at: Vector3, diameter: number, drum: number)

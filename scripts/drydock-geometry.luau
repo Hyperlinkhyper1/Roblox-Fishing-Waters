@@ -201,12 +201,33 @@ end
 function instanceMethods:GetFullName()
 	return if self.Parent then self.Parent:GetFullName() .. "." .. self.Name else self.Name
 end
+function instanceMethods:IsDescendantOf(ancestor)
+	local parent = self.Parent
+	while parent do
+		if parent == ancestor then
+			return true
+		end
+		parent = parent.Parent
+	end
+	return false
+end
+function instanceMethods:FindFirstChildWhichIsA(class)
+	for _, item in self._children do
+		if item:IsA(class) then
+			return item
+		end
+	end
+	return nil
+end
 function instanceMethods:Destroy()
 	self.Parent = nil
 end
 local CollectionService = {}
 function CollectionService:AddTag(item, tag)
 	item._tags[tag] = true
+end
+function CollectionService:RemoveTag(item, tag)
+	item._tags[tag] = nil
 end
 function CollectionService:HasTag(item, tag)
 	return item._tags[tag] == true
@@ -220,7 +241,13 @@ local game = {
 		return CollectionService
 	end,
 }
-local workspace = { Terrain = { FillBlock = function() end } }
+local workspace = { Terrain = { FillBlock = function() end }, Name = "Workspace", _children = {} }
+workspace.FindFirstChild = instanceMethods.FindFirstChild
+workspace.GetChildren = instanceMethods.GetChildren
+workspace.GetDescendants = instanceMethods.GetDescendants
+function workspace:GetFullName()
+	return "Workspace"
+end
 local task = { wait = function() end }
 local warn = print
 local dependencies = { Islands = {} }
@@ -293,10 +320,23 @@ local function loadDrydock()
 	-- DRYDOCK_SOURCE --
 end
 dependencies.Drydock = loadDrydock()
+local function loadPlazaHouses()
+	-- PLAZAHOUSES_SOURCE --
+end
+dependencies.PlazaHouses = loadPlazaHouses()
 local function loadRodShop()
 	-- RODSHOP_SOURCE --
 end
 dependencies.RodShop = loadRodShop()
+local function loadStorageRack()
+	-- STORAGERACK_SOURCE --
+end
+dependencies.StorageRack = loadStorageRack()
+local function loadFurnitureShop()
+	-- FURNITURESHOP_SOURCE --
+end
+dependencies.FurnitureShop = loadFurnitureShop()
+
 local function loadBiomes()
 	-- BIOMES_SOURCE --
 end

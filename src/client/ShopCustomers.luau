@@ -38,13 +38,6 @@ function ShopCustomers.start()
 				Text = message,
 				Duration = 5,
 			})
-		elseif kind == "Stocked" then
-			-- Refresh the cooler display now that its fish are in the freezer.
-			local catch = ReplicatedStorage:FindFirstChild("Catch")
-			local request = catch and catch:FindFirstChild("Request")
-			if request and request:IsA("RemoteEvent") then
-				request:FireServer("Cooler")
-			end
 		end
 	end)
 end

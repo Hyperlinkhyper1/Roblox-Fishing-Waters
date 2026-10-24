@@ -6,7 +6,7 @@ local function check(value, message)
 	assert(value, message)
 end
 for id, spec in Catalog do
-	check(math.abs(spec.TurnRate / (if id == "Rowboat" then 0.9 else 0.65) - 0.85) < 1e-8, "Steering must be exactly 85 percent of the original rate")
+	check(spec.TurnRate > (if id == "Rowboat" then 0.9 else 0.65), "Boats must turn faster than the original rate")
 	check(spec.ForwardSpeed / spec.Acceleration == 2, "Cruise speed must take two seconds")
 	for _, fps in { 30, 60, 144 } do
 		local speed, turn = 0, 0
@@ -16,7 +16,18 @@ for id, spec in Catalog do
 			check(speed - previous <= spec.Acceleration / fps + 1e-8, id .. " acceleration spike")
 		end
 		check(math.abs(speed - spec.Acceleration * 2) < 1e-8, "Acceleration depends on frame rate")
-		check(turn > 0 and turn <= spec.TurnRate, "Steering must stay within its reduced limit")
+		check(turn > 0 and turn <= spec.TurnRate, "Steering must stay within its limit")
+		local responsiveTurn = 0
+		for _ = 1, fps / 2 do
+			local _speed
+			_speed, responsiveTurn = Motion.step(spec.ForwardSpeed, responsiveTurn, 1, 1, spec, 1 / fps)
+		end
+		check(math.abs(responsiveTurn - spec.TurnRate) < 1e-8, "Full steering must respond within half a second")
+		for _ = 1, fps do
+			local _speed
+			_speed, responsiveTurn = Motion.step(spec.ForwardSpeed, responsiveTurn, 1, -1, spec, 1 / fps)
+		end
+		check(math.abs(responsiveTurn + spec.TurnRate) < 1e-8, "Steering must change direction within one second")
 		for _ = 1, fps * 10 do speed = Motion.step(speed, 0, 1, 0, spec, 1 / fps) end
 		check(speed == spec.ForwardSpeed, "Forward speed cap")
 		local slower = Motion.step(speed, 0, 0, 0, spec, 1 / fps)

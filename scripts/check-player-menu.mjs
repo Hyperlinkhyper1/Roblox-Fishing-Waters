@@ -8,12 +8,54 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const folder = await mkdtemp(join(tmpdir(), 'fishing-menu-'));
 try {
   let program = await readFile(join(root, 'scripts/player-menu.luau'), 'utf8');
+  if (process.argv.includes('--home-only')) {
+    program = program.slice(0, program.indexOf('Menu.start()'))
+      + await readFile(join(root, 'scripts/home-menu.luau'), 'utf8');
+  }
+  if (process.argv.includes('--settings-only')) {
+    program = program.slice(0, program.indexOf('Menu.start()')) + `
+Menu.start()
+advance(1)
+local gui = playerGui.PlayerMenu
+local sidebar, card = gui.LeftNavigation, gui.MenuOverlay.MenuWindow
+local content = card.Content
+local function click(name)
+  local item = assert(content:FindFirstChild(name, true), "Missing settings control: " .. name)
+  now += 1
+  item.Activated:Fire()
+end
+for _, width in {1020, 362} do
+  card.AbsoluteSize = Vector2.new(width, 600)
+  sidebar.Settings.Activated:Fire()
+  check(gui.MenuOverlay.Visible and #content:GetChildren() > 0, "Settings opens with content")
+  check(sidebar.Equipmentbag.ThemeFace.NavDecor:FindFirstChild("Strap") ~= nil, "Equipment bag styling matches its generated name")
+  click("PerformanceTab")
+  click("Shadows")
+  check(not profile.Angler.Settings.Shadows, "Shadows toggle saves")
+  click("Shadows")
+  click("AudioTab")
+  local before = profile.Angler.Settings.MasterVolume
+  click("MasterVolumeDown")
+  check(profile.Angler.Settings.MasterVolume == before - 10, "Audio volume saves")
+  click("CodesTab")
+  check(content:FindFirstChild("CodeInput", true) ~= nil, "Codes input renders")
+  click("TitlesTab")
+  check(#content:GetChildren() > 0, "Titles renders")
+  card.CloseMenu.Activated:Fire()
+  check(not gui.MenuOverlay.Visible and sidebar.Visible, "Close restores navigation")
+end
+print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks passed (recording mocks).")
+`;
+  }
   for (const [marker, file] of [
     ['DATA', 'src/server/AnglerData.luau'], ['CATALOG', 'src/shared/AnglerCatalog.luau'],
+    ['STAFF', 'src/shared/StaffCatalog.luau'], ['BOAT', 'src/shared/BoatCatalog.luau'],
     ['THEME', 'src/first/UITheme.luau'], ['MENU', 'src/client/PlayerMenu.luau'], ['SETTINGS', 'src/client/PlayerSettings.luau'], ['SERVICE', 'src/server/AnglerService.luau'],
   ]) {
     let source = await readFile(join(root, file), 'utf8');
     source = source.replace(/require\(ReplicatedStorage.Shared.AnglerCatalog\)/g, 'Catalog')
+      .replace(/require\(ReplicatedStorage.Shared.StaffCatalog\)/g, 'StaffCatalog')
+      .replace(/require\(ReplicatedStorage.Shared.BoatCatalog\)/g, 'BoatCatalog')
       .replace(/require\(ReplicatedStorage.Shared.FishModels\)/g, 'nil')
       .replace(/require\(script.Parent.PlayerSettings\)/g, 'Settings')
       .replace(/require\(game:GetService\("ReplicatedFirst"\):WaitForChild\("UITheme"\)\)/g, 'Theme')

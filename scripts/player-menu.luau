@@ -56,12 +56,16 @@ end
 function UDim2.fromScale(x, y)
 	return UDim2.new(x, 0, y, 0)
 end
+local colorMethods = {}
+function colorMethods:Lerp(other, alpha)
+	return setmetatable({ self[1] + (other[1] - self[1]) * alpha, self[2] + (other[2] - self[2]) * alpha, self[3] + (other[3] - self[3]) * alpha }, { __index = colorMethods })
+end
 local Color3 = {
 	new = function(...)
-		return { ... }
+		return setmetatable({ ... }, { __index = colorMethods })
 	end,
 	fromRGB = function(...)
-		return { ... }
+		return setmetatable({ ... }, { __index = colorMethods })
 	end,
 }
 local ColorSequence = {
@@ -97,6 +101,7 @@ function Instance.new(kind)
 			Volume = 0.5,
 			Text = "",
 			Visible = true,
+			DescendantAdded = signal(),
 			ChildAdded = signal(),
 			ChildRemoved = signal(),
 			Activated = signal(),
@@ -129,6 +134,11 @@ function Instance.new(kind)
 				if value then
 					table.insert(value.children, item)
 					value.ChildAdded:Fire(item)
+					local ancestor = value
+					while ancestor do
+						ancestor.DescendantAdded:Fire(item)
+						ancestor = ancestor.Parent
+					end
 					if game then
 						game.DescendantAdded:Fire(item)
 					end
@@ -269,6 +279,7 @@ function Players:GetUserThumbnailAsync()
 	return "mock-thumbnail"
 end
 local ReplicatedStorage = Instance.new("ReplicatedStorage")
+local workspace = Instance.new("Workspace")
 local Lighting = Instance.new("Lighting")
 local SoundService = Instance.new("SoundService")
 local GuiService = {}
@@ -304,6 +315,12 @@ local Data = (function()
 end)()
 local Catalog = (function()
 	-- CATALOG_SOURCE --
+end)()
+local StaffCatalog = (function()
+	-- STAFF_SOURCE --
+end)()
+local BoatCatalog = (function()
+	-- BOAT_SOURCE --
 end)()
 local profile = { Cash = 0, OwnedRods = {}, OwnedBoats = {}, Angler = Data.decode(nil) }
 local failSave = false
@@ -406,6 +423,9 @@ function methods:FindFirstChildOfClass(class)
 	end
 	return nil
 end
+local goHome = Instance.new("RemoteEvent")
+goHome.Name, goHome.Parent = "GoHome", ReplicatedStorage
+function goHome:FireServer() end
 local Menu = (function()
 	-- MENU_SOURCE --
 end)()

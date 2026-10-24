@@ -9,9 +9,11 @@ local CollectionService = game:GetService("CollectionService")
 local BaseHouse = require(script.Parent.BaseHouse)
 local BeachDetails = require(script.Parent.BeachDetails)
 local Drydock = require(script.Parent.Drydock)
+local FurnitureShop = require(script.Parent.FurnitureShop)
 local Islands = require(script.Parent.Islands)
 local LowPoly = require(script.Parent.LowPoly)
 local Med = require(script.Parent.Mediterranean)
+local PlazaHouses = require(script.Parent.PlazaHouses)
 local Props = require(script.Parent.Props)
 local RodShop = require(script.Parent.RodShop)
 local Seabed = require(script.Parent.Seabed)
@@ -1173,6 +1175,7 @@ local function buildPlaza(parent: Instance, center: Vector2, rng: Random)
 	festoon("-56,22", "56,22", 2)
 	Drydock.build(model, CFrame.new(at(0, 0, 0.8)))
 	RodShop.build(model, CFrame.new(at(0, 0, 0.8)))
+	FurnitureShop.build(model, CFrame.new(at(0, 0, 0.8)))
 end
 
 local HOUSE_HALF = { cube = 14, town = 10, villa = 15, green = 9 } -- half the frontage along the street
@@ -1652,6 +1655,8 @@ function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	buildHouses(shape, village, road, lanes, spots, rng)
 	buildHilltops(shape, island, spots, rng)
 	buildForest(shape, island, spots, rng)
+	-- The piazza's own terraces go in last, clearing any generated house or tree off their plots
+	PlazaHouses.build(village:FindFirstChild("Plaza") :: Model, CFrame.new(ground(plaza, 0.8)))
 	buildBoats(shape, island, rng, baseShores)
 	Harbour.ensureLaunchClearance(island)
 
@@ -1768,9 +1773,12 @@ function Harbour.ensureBoating(root: Instance)
 	Harbour.ensureLaunchClearance(root)
 end
 
--- Saved maps also receive the enterable tackle shop and its purchase counter.
+-- Saved maps also receive the enterable tackle shop, its purchase counter and the furniture shop.
 function Harbour.ensureFishing(root: Instance)
 	RodShop.ensure(root)
+	FurnitureShop.ensure(root)
+
+	PlazaHouses.ensure(root)
 end
 
 -- Saved maps keep their terrain and docks while receiving the current base house.

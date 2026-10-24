@@ -307,6 +307,8 @@ check(
 	"Tool identity"
 )
 check(tool.CanBeDropped == false and tool.RequiresHandle and handle:IsA("BasePart"), "Tool equipment settings")
+local heldShaft = tool.Grip:Inverse():VectorToWorldSpace(vector(0, 1, 0))
+check(heldShaft.Z < -0.7 and heldShaft.Y > 0, "held rod must point forward and above the water")
 local parts, hinges, welds, beams = {}, {}, {}, {}
 for _, item in tool:GetDescendants() do
 	if item:IsA("BasePart") then

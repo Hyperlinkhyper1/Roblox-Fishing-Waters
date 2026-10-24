@@ -89,10 +89,11 @@ for _, p in Weather.BaySketch do
 end
 table.insert(bay, sketchPoint(Weather.MouthSketch[2]))
 
-function Weather.lakeExposure(position: Vector3): number
+-- True inside the main island's lake/bay outline, mouth included.
+function Weather.inLake(position: Vector3): boolean
 	-- Main island is centered on Biomes.Normal.center (0, 0).
 	if position.X < -620 or position.X > 530 or position.Z < -560 or position.Z > 400 then
-		return 1
+		return false
 	end
 	local inside = false
 	local j = #bay
@@ -106,7 +107,11 @@ function Weather.lakeExposure(position: Vector3): number
 		end
 		j = i
 	end
-	if not inside then
+	return inside
+end
+
+function Weather.lakeExposure(position: Vector3): number
+	if not Weather.inLake(position) then
 		return 1
 	end
 	-- Blend through the western mouth; the inner lake only receives short ripples.
@@ -150,7 +155,8 @@ function Weather.getState(serverTime: number?): State
 		cloudCover = mix("cloudCover"),
 		windSpeed = wind,
 		windDirection = Vector3.new(math.cos(angle), 0, math.sin(angle)),
-		waveAmplitude = 0.16 + (Weather.MaxWaveAmplitude - 0.16) * (wind / 52) ^ 1.65,
+		-- Even a calm sea keeps a gentle, visible swell under idle hulls.
+		waveAmplitude = 0.3 + (Weather.MaxWaveAmplitude - 0.3) * (wind / 52) ^ 1.65,
 	}
 end
 
@@ -201,5 +207,19 @@ end
 
 -- Cheap height-only variant for the many points in a visible crest.
 Weather.heightAt = heightAt
+
+-- Parked hulls stay anchored on the server. This world-space transform carries a
+-- hull from the pose it parked in (at parkedAt) to the same swell's pose now, so
+-- every client bobs it identically and the server can release it without a snap.
+function Weather.parkedOffset(rest: CFrame, parkedAt: number, now: number): CFrame
+	local from = Weather.sample(rest.Position, parkedAt)
+	local to = Weather.sample(rest.Position, now)
+	local axis = from.normal:Cross(to.normal)
+	local tilt = if axis.Magnitude > 1e-6
+		then CFrame.fromAxisAngle(axis.Unit, math.acos(math.clamp(from.normal:Dot(to.normal), -1, 1)))
+		else CFrame.identity
+	local pivot = rest.Position
+	return CFrame.new(pivot + Vector3.new(0, to.height - from.height, 0)) * tilt * CFrame.new(-pivot)
+end
 
 return Weather

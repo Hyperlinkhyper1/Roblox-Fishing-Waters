@@ -778,6 +778,225 @@ function builders.Stingray(b)
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.35, 1, 0.55))
 end
 
+function builders.Clownfish(b)
+	local colors = { back = rgb(222, 92, 20), side = rgb(240, 122, 32), belly = rgb(246, 158, 72) }
+	local fin = rgb(236, 112, 30)
+	local white, edge = rgb(250, 250, 246), rgb(22, 18, 16)
+	b:fishBody(0.36, 0.14, colors, 0.06)
+	b:edgeFin(0.12, -0.26, { 0.06, 0.07, 0.06, 0.08, 0.09, 0.08 }, fin)
+	b:edgeFin(-0.06, -0.24, { 0.06, 0.08, 0.06 }, fin, true)
+	b:edgeFin(0.08, 0, { 0.07, 0.05 }, fin, true)
+	b:roundTail(0.13, fin)
+	b:pectoral(0.18, -0.04, 0.11, 0.05, fin)
+	-- White bands with thin black borders.
+	for _, x in { 0.2, -0.02, -0.3 } do
+		local width = if x < -0.2 then 0.03 else 0.045
+		b:stroke({ v2(x, b:top(x) - 0.008), v2(x - 0.01, b:bottom(x) + 0.008) }, width, white)
+		for _, offset in { -1, 1 } do
+			local bx = x + offset * (width / 2 + 0.008)
+			b:stroke({ v2(bx, b:top(bx) - 0.008), v2(bx - 0.01, b:bottom(bx) + 0.008) }, 0.009, edge)
+		end
+	end
+	b:face(0.38, 0.04, 0.05, rgb(232, 120, 40), edge)
+end
+
+function builders.Sardine(b)
+	local colors = { back = rgb(40, 96, 112), side = rgb(176, 192, 196), belly = rgb(240, 242, 242) }
+	local fin = rgb(150, 164, 166)
+	b:fishBody(0.18, 0.1, colors, 0.04)
+	b:edgeFin(0.06, -0.05, { 0.06, 0.05, 0.03 }, fin, false, 0.15)
+	b:edgeFin(-0.14, -0.22, { 0.03, 0.02 }, fin, true, 0.15)
+	b:edgeFin(0, -0.05, { 0.03 }, fin, true, 0.15)
+	b:forkTail(0.12, 0.08, fin, 0.1)
+	b:pectoral(0.21, -0.04, 0.07, 0.025, fin, 0.15)
+	b:stroke({ v2(0.26, 0.02), v2(-0.3, 0.01) }, 0.008, rgb(120, 150, 160))
+	for x = 0.18, -0.2, -0.065 do
+		b:marks(x, 0.035, 0.016, 0.016, rgb(26, 40, 48))
+	end
+	b:face(0.37, 0.015, 0.05, rgb(210, 214, 210), rgb(110, 130, 136))
+end
+
+function builders.Anchovy(b)
+	local colors = { back = rgb(70, 112, 104), side = rgb(196, 204, 196), belly = rgb(236, 238, 232) }
+	local fin = rgb(176, 184, 176)
+	b:fishBody(0.15, 0.09, colors, 0.02)
+	b:edgeFin(0.04, -0.06, { 0.05, 0.04, 0.025 }, fin, false, 0.25)
+	b:edgeFin(-0.06, -0.2, { 0.025, 0.025, 0.02 }, fin, true, 0.25)
+	b:forkTail(0.11, 0.08, fin, 0.2)
+	b:pectoral(0.22, -0.035, 0.06, 0.02, fin, 0.25)
+	b:stroke({ v2(0.24, 0), v2(-0.32, 0) }, 0.016, rgb(214, 224, 228))
+	-- Rounded snout overhanging a long jaw.
+	b:ellipsoid("Snout", CFrame.new(0.47, 0.012, 0), Vector3.new(0.07, 0.05, 0.05), colors.back)
+	b:face(0.39, 0.015, 0.058, rgb(200, 206, 200), rgb(130, 140, 134))
+	b:stroke({ v2(0.46, -0.012), v2(0.34, -0.028) }, 0.006, rgb(40, 40, 36))
+end
+
+function builders.Catfish(b)
+	local colors = { back = rgb(70, 74, 78), side = rgb(130, 132, 128), belly = rgb(226, 222, 210) }
+	local fin, whisker = rgb(96, 98, 98), rgb(60, 60, 62)
+	b:fishBody(0.2, 0.18, colors, 0.12)
+	local dorsal = b:edgeFin(0.14, 0.03, { 0.1, 0.07, 0.04 }, fin, false, 0.05)
+	b:rays(dorsal[1], { dorsal[3] }, rgb(52, 54, 56))
+	b:ellipsoid("AdiposeFin", CFrame.new(-0.22, b:top(-0.22) + 0.006, 0), Vector3.new(0.09, 0.03, 0.012), fin)
+	b:edgeFin(-0.04, -0.3, { 0.04, 0.05, 0.05, 0.045, 0.04 }, fin, true)
+	b:edgeFin(0.06, 0, { 0.04 }, fin, true)
+	b:forkTail(0.11, 0.05, fin)
+	b:pectoral(0.24, -0.06, 0.11, 0.035, fin)
+	for _, side in { 1, -1 } do
+		local bend = Vector3.new(0.36, -0.06, side * 0.14)
+		b:limb(Vector3.new(0.46, -0.01, side * 0.035), bend, 0.009, whisker, "Barbel")
+		b:limb(bend, Vector3.new(0.22, -0.12, side * 0.17), 0.006, whisker, "Barbel")
+		for _, z in { 0.015, 0.04 } do
+			local chin = b:bottom(0.44)
+			b:limb(
+				Vector3.new(0.44, chin + 0.006, side * z),
+				Vector3.new(0.41, chin - 0.05, side * z * 1.6),
+				0.006,
+				rgb(200, 196, 186),
+				"Barbel"
+			)
+		end
+	end
+	b:face(0.4, 0.02, 0.03, rgb(150, 140, 100), rgb(90, 92, 92))
+end
+
+function builders.Pufferfish(b)
+	local colors = { back = rgb(150, 132, 76), side = rgb(196, 180, 120), belly = rgb(240, 236, 214) }
+	local fin = rgb(190, 170, 110)
+	b:layered("Body", Vector3.new(0.06, 0, 0), Vector3.new(0.74, 0.58, 0.54), colors)
+	b:layered("TailStalk", Vector3.new(-0.3, 0, 0), Vector3.new(0.18, 0.12, 0.1), colors)
+	b:edgeFin(-0.2, -0.27, { 0.06, 0.05 }, fin, false, 0.2)
+	b:edgeFin(-0.2, -0.27, { 0.06, 0.05 }, fin, true, 0.2)
+	b:roundTail(0.11, fin, 0.15)
+	b:pectoral(0.18, 0, 0.08, 0.06, fin, 0.25)
+	b:speckle(40, v2(-0.25, 0.38), v2(0, 0.26), v2(0.016, 0.03), rgb(70, 60, 36))
+	-- Inflated: short spines stand out all over the body.
+	for _ = 1, 60 do
+		local x, y = b.random(-0.24, 0.36), b.random(-0.25, 0.25)
+		local side = if b.random(0, 1) > 0.5 then 1 else -1
+		local position, normal = b:surface(x, y, side)
+		if position and normal then
+			b:limb(position - normal * 0.004, position + normal * 0.04, 0.007, rgb(226, 218, 186), "Spine")
+		end
+	end
+	b:ellipsoid("Beak", CFrame.new(0.43, -0.04, 0), Vector3.new(0.05, 0.05, 0.07), rgb(232, 226, 200))
+	b:face(0.3, 0.07, 0.085, rgb(64, 140, 120), rgb(160, 144, 90))
+end
+
+function builders.YellowfinTuna(b)
+	local colors = { back = rgb(24, 40, 82), side = rgb(150, 160, 176), belly = rgb(232, 234, 236) }
+	local fin, yellow = rgb(40, 52, 84), rgb(242, 196, 40)
+	b:fishBody(0.27, 0.2, colors, 0.03)
+	b:edgeFin(0.14, 0.02, { 0.08, 0.06, 0.03 }, fin, false, 0.05)
+	-- Long yellow sickle fins, the species' trademark.
+	b:fin({ v2(0, b:top(0) - 0.008), v2(-0.14, b:top(0) + 0.22), v2(-0.09, b:top(-0.09) - 0.008) }, yellow)
+	b:fin(
+		{ v2(-0.02, b:bottom(-0.02) + 0.008), v2(-0.16, b:bottom(-0.02) - 0.2), v2(-0.1, b:bottom(-0.1) + 0.008) },
+		yellow
+	)
+	for index = 0, 5 do
+		local x = -0.15 - index * 0.03
+		for _, below in { false, true } do
+			local edge = if below then b:bottom(x) else b:top(x)
+			local sign = if below then -1 else 1
+			b:fin({
+				v2(x + 0.008, edge - sign * 0.004),
+				v2(x - 0.012, edge + sign * 0.022),
+				v2(x - 0.014, edge - sign * 0.004),
+			}, yellow)
+		end
+	end
+	b:forkTail(0.24, 0.18, fin)
+	b:pectoral(0.21, 0.01, 0.2, 0.03, fin)
+	b:stroke({ v2(0.28, 0.035), v2(0, 0.04), v2(-0.28, 0.012) }, 0.018, yellow)
+	for x = 0.1, -0.24, -0.05 do
+		b:stroke({ v2(x, -0.03), v2(x - 0.01, b:bottom(x) * 0.7) }, 0.006, rgb(200, 206, 214))
+	end
+	b:face(0.37, 0.03, 0.05, rgb(180, 170, 120), rgb(70, 80, 100))
+end
+
+function builders.Sailfish(b)
+	local colors = { back = rgb(28, 50, 96), side = rgb(110, 140, 176), belly = rgb(226, 230, 234) }
+	local fin, sail = rgb(34, 56, 104), rgb(40, 72, 150)
+	b:fishBody(0.16, 0.1, colors, 0.02)
+	local base = b:edgeFin(0.24, -0.16, { 0.2, 0.3, 0.33, 0.32, 0.28, 0.24, 0.18, 0.1 }, sail, false, 0.12)
+	for index = 3, #base - 1 do
+		local tip = base[index]
+		local root = v2(tip.X, b:top(tip.X))
+		b:rays(root, { tip }, rgb(24, 40, 90))
+		b:finSpot(tip.X + 0.02, root.Y + (tip.Y - root.Y) * b.random(0.3, 0.7), 0.024, rgb(18, 26, 56))
+	end
+	b:edgeFin(-0.18, -0.25, { 0.04, 0.03 }, fin)
+	b:edgeFin(-0.06, -0.2, { 0.08, 0.05, 0.03 }, fin, true)
+	for _, side in { 1, -1 } do
+		local belly = b:bottom(0.18)
+		b:limb(
+			Vector3.new(0.18, belly + 0.005, side * 0.01),
+			Vector3.new(-0.06, belly - 0.12, side * 0.02),
+			0.007,
+			fin,
+			"Filament"
+		)
+	end
+	b:forkTail(0.2, 0.16, fin)
+	b:pectoral(0.22, -0.03, 0.12, 0.025, fin)
+	for x = 0.16, -0.26, -0.05 do
+		b:stroke({ v2(x, b:top(x) * 0.8), v2(x - 0.01, 0) }, 0.008, rgb(150, 190, 226))
+	end
+	b:limb(Vector3.new(0.44, 0.005, 0), Vector3.new(0.82, 0, 0), 0.022, colors.back, "Bill")
+	b:face(0.36, 0.02, 0.045, rgb(170, 180, 190), rgb(60, 80, 120))
+end
+
+function builders.Swordfish(b)
+	local colors = { back = rgb(54, 46, 66), side = rgb(126, 118, 132), belly = rgb(214, 208, 204) }
+	local fin = rgb(60, 52, 70)
+	b:fishBody(0.2, 0.16, colors, 0.02)
+	local crest = b:top(0.12)
+	b:fin({ v2(0.24, b:top(0.24) - 0.008), v2(0.08, crest + 0.2), v2(0.1, crest + 0.04), v2(0.12, crest - 0.008) }, fin)
+	local keel = b:bottom(0)
+	b:fin(
+		{ v2(0.04, keel + 0.008), v2(-0.08, keel - 0.12), v2(-0.06, keel - 0.03), v2(-0.04, b:bottom(-0.04) + 0.008) },
+		fin
+	)
+	b:edgeFin(-0.24, -0.29, { 0.03 }, fin)
+	b:edgeFin(-0.24, -0.29, { 0.03 }, fin, true)
+	b:ellipsoid("Keel", CFrame.new(-0.33, 0, 0), Vector3.new(0.08, 0.03, b:top(-0.33) * 1.4), colors.back)
+	b:forkTail(0.22, 0.17, fin)
+	b:pectoral(0.22, -0.05, 0.14, 0.03, fin)
+	-- The flat sword is about a third of the fish's whole length.
+	b:ellipsoid("Sword", CFrame.new(0.72, 0.005, 0), Vector3.new(0.58, 0.028, 0.055), rgb(40, 34, 46))
+	b:face(0.36, 0.025, 0.065, rgb(60, 70, 90), rgb(80, 70, 90))
+end
+
+function builders.Yellowshark(b)
+	local colors = { back = rgb(196, 150, 32), side = rgb(232, 196, 70), belly = rgb(246, 238, 210) }
+	local fin = rgb(204, 160, 40)
+	b:fishBody(0.2, 0.19, colors, 0)
+	b:layered("Snout", Vector3.new(0.43, 0.01, 0), Vector3.new(0.16, 0.1, 0.13), colors)
+	b:fin({
+		v2(0.12, b:top(0.12) - 0.008),
+		v2(0, b:top(0) + 0.17),
+		v2(-0.03, b:top(0) + 0.15),
+		v2(-0.04, b:top(-0.04) - 0.008),
+	}, fin)
+	b:edgeFin(-0.22, -0.28, { 0.04, 0.025 }, fin)
+	b:edgeFin(-0.2, -0.26, { 0.035, 0.02 }, fin, true)
+	b:edgeFin(-0.04, -0.1, { 0.04, 0.03 }, fin, true)
+	b:pectoral(0.18, -0.06, 0.2, 0.06, fin)
+	-- Shark tail: the upper lobe reaches much further than the lower one.
+	local stalk = b:top(-0.36)
+	local upper, lower = v2(-0.34, stalk * 0.9), v2(-0.34, -stalk * 0.9)
+	b:fin({ upper, v2(-0.6, 0.26), v2(-0.56, 0.2), v2(-0.42, 0), lower }, fin)
+	b:fin({ lower, v2(-0.44, 0), v2(-0.52, -0.15) }, fin)
+	b:speckle(24, v2(-0.3, 0.3), v2(0.02, 0.09), v2(0.015, 0.03), rgb(176, 128, 24))
+	for index = 0, 4 do
+		local x = 0.27 - index * 0.028
+		b:stroke({ v2(x, 0.035), v2(x - 0.008, -0.04) }, 0.007, rgb(150, 110, 24))
+	end
+	b:stroke({ v2(0.43, -0.035), v2(0.38, -0.055), v2(0.32, -0.06) }, 0.008, rgb(60, 40, 20))
+	b:eye(0.4, 0.03, 0.03, rgb(20, 20, 20))
+end
+
 function FishModels.has(fishId: string): boolean
 	return builders[fishId] ~= nil
 end
@@ -824,6 +1043,21 @@ function FishModels.create(fishId: string): Model?
 		templates[fishId] = model
 	end
 	return template:Clone()
+end
+
+-- One world size for a catch in the player's hand, freezer and customer hands.
+function FishModels.catchLength(kg: number): number
+	local size = math.max(kg, 0.01) ^ (1 / 3)
+	-- Smoothly compress record weights while retaining differences between
+	-- catches. The longest side stays below the freezer's 3.54-stud ice depth.
+	return 0.6 + 2.6 * size / (size + 0.75)
+end
+
+function FishModels.scaleCatch(model: Model, kg: number): Vector3
+	local bounds = model:GetAttribute("BoundsSize") :: Vector3
+	local scale = FishModels.catchLength(kg) / math.max(bounds.X, bounds.Y, bounds.Z, 0.1)
+	model:ScaleTo(scale)
+	return bounds * scale
 end
 
 function FishModels.silhouette(model: Model)

@@ -10,6 +10,7 @@ const temporary = await mkdtemp(join(tmpdir(), 'fishing-startup-'));
 try {
   const anglerData = await readFile(join(root, 'src/server/AnglerData.luau'), 'utf8');
   const catalog = await readFile(join(root, 'src/shared/BoatCatalog.luau'), 'utf8');
+  const motion = await readFile(join(root, 'src/shared/BoatMotion.luau'), 'utf8');
   const data = (await readFile(join(root, 'src/server/BoatData.luau'), 'utf8')).replace(
     'local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")',
     `local AnglerData = (function()\n${anglerData}\nend)()`,
@@ -22,6 +23,7 @@ try {
     .replace('require(script.Parent.DrydockLaunch)', 'dependencies.DrydockLaunch')
     .replace('require(script.Parent.BoatLaunchCollision)', 'dependencies.BoatLaunchCollision')
     .replace('require(ReplicatedStorage.Shared.BoatCatalog)', 'dependencies.BoatCatalog')
+    .replace('require(ReplicatedStorage.Shared.BoatMotion)', `(function()\n${motion}\nend)()`)
     .replace('require(ReplicatedStorage.Shared.Biomes)', 'dependencies.Biomes')
     .replace('require(ReplicatedStorage.Shared.Weather)', 'dependencies.Weather')
     .replace(/return BoatService\s*$/, 'return { start = BoatService.start, loadPlayer = loadPlayer, purchaseRod = BoatService.purchaseRod }');
@@ -92,8 +94,8 @@ print("Client startup: shop/equipment run while LOD is streaming; loading screen
   await writeFile(path, program);
   run(path);
   // A required module failure must surface to the loader; optional visuals may fail independently.
-  for (const failedModule of ['Boating', 'Fishing', 'Oxygen', 'RodPhysics', 'PlayerMenu', 'Weather']) {
-    const critical = failedModule !== 'Weather';
+  for (const failedModule of ['Boating', 'Fishing', 'Oxygen', 'RodPhysics', 'PlayerMenu', 'Weather', 'BoatAudio']) {
+    const critical = !['Weather', 'BoatAudio'].includes(failedModule);
     const failureProgram = `
 local attributes, warnings = {}, {}
 local player = {SetAttribute = function(_, key, value) attributes[key] = value end}

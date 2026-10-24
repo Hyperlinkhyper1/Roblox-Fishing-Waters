@@ -3,12 +3,15 @@
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BASE_TAG = "PlayerBase"
+local HOME_COOLDOWN = 5
 
 local BaseService = {}
 
 local owned: { [Player]: Model } = {}
+local lastHome: { [Player]: number } = {}
 
 local function setBoard(base: Model, text: string)
 	local board = base:FindFirstChild("NameBoard")
@@ -57,6 +60,7 @@ local function claim(player: Player)
 end
 
 local function release(player: Player)
+	lastHome[player] = nil
 	local base = owned[player]
 	if base then
 		owned[player] = nil
@@ -100,7 +104,34 @@ local function onPlayer(player: Player)
 	end
 end
 
+-- The menu's Home button. The server picks the destination, so a client can only
+-- ever ask to return to its own dock (or the plaza when every base is taken).
+local function goHome(player: Player)
+	if os.clock() - (lastHome[player] or -math.huge) < HOME_COOLDOWN then
+		return
+	end
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local base = owned[player]
+	local point = if base then spawnPoint(base) else harbourSpawn()
+	if not character or not humanoid or humanoid.Health <= 0 or not point then
+		return
+	end
+	lastHome[player] = os.clock()
+	-- Leave any boat seat first, or the seat weld would drag the boat along.
+	local seat = humanoid.SeatPart
+	local weld = seat and seat:FindFirstChild("SeatWeld")
+	if weld then
+		weld:Destroy()
+	end
+	humanoid.Sit = false
+	character:PivotTo(point.CFrame + Vector3.new(0, 4, 0))
+end
+
 function BaseService.start()
+	local home = Instance.new("RemoteEvent")
+	home.Name, home.Parent = "GoHome", ReplicatedStorage
+	home.OnServerEvent:Connect(goHome)
 	Players.PlayerRemoving:Connect(release)
 	Players.PlayerAdded:Connect(onPlayer)
 	for _, player in Players:GetPlayers() do

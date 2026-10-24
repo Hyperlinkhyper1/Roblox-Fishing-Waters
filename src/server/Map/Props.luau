@@ -1043,13 +1043,13 @@ function Props.lampPost(parent: Instance, ground: Vector3): Model
 end
 
 -- Small hanging lantern centred on `cframe`.
-function Props.lantern(parent: Instance, cframe: CFrame): Model
+function Props.lantern(parent: Instance, cframe: CFrame, range: number?, brightness: number?): Model
 	local m = newModel("Lantern", parent)
 	part(m, Vector3.new(0.2, 1, 0.2), cframe * CFrame.new(0, 1.1, 0), IRON, M.Metal)
 	part(m, Vector3.new(1.2, 0.3, 1.2), cframe * CFrame.new(0, 0.6, 0), IRON, M.Metal)
 	part(m, Vector3.new(1.2, 0.2, 1.2), cframe * CFrame.new(0, -0.6, 0), IRON, M.Metal)
 	local glow = part(m, Vector3.new(0.9, 1, 0.9), cframe, LAMP, M.Neon)
-	light(glow, LAMP, 14, 1)
+	light(glow, LAMP, range or 14, brightness or 1)
 	return m
 end
 

@@ -1,7 +1,7 @@
 -- The hooked-fish panel: a needle sweeps one of two arc gauges and every Pull
 -- inside the green zone reels the fish closer to the surface. Rarer and heavier
 -- fish sweep faster, shrink and drift the zone, and pull back harder. The same
--- panel shows the landed catch, with the cooler grid underneath.
+-- panel shows the landed catch.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -27,9 +27,6 @@ local CENTER = Vector2.new(190, 135)
 local RADIUS = 100
 local THICKNESS = 16
 local SEGMENTS = 28
-local COOLER_COLUMNS = 6
-local SLOT = 54
-local GAP = 6
 -- Screen angles in degrees, clockwise from +X (y points down).
 local GAUGES = { { 200, 320 }, { 340, 440 } }
 
@@ -122,12 +119,11 @@ end
 function Reel.new(gui: ScreenGui)
 	local self = setmetatable({}, Reel)
 	self.random = Random.new()
-	self.coolerOpen = false
 	local root = make("Frame", gui, {
 		Name = "ReelMinigame",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -18),
-		Size = UDim2.fromOffset(PANEL_SIZE.X, PANEL_SIZE.Y + 12 + 226),
+		Size = UDim2.fromOffset(PANEL_SIZE.X, PANEL_SIZE.Y),
 		BackgroundTransparency = 1,
 		Visible = false,
 	})
@@ -397,44 +393,6 @@ function Reel.new(gui: ScreenGui)
 		TextYAlignment = Enum.TextYAlignment.Top,
 	})
 
-	-- Cooler grid.
-	local coolerWidth = COOLER_COLUMNS * SLOT + (COOLER_COLUMNS - 1) * GAP + 34
-	local cooler = make("Frame", root, {
-		Name = "Cooler",
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, 0),
-		Size = UDim2.fromOffset(coolerWidth, 226),
-		BackgroundColor3 = INK,
-		BackgroundTransparency = 0.04,
-		BorderSizePixel = 0,
-	})
-	round(cooler, 4)
-	stroke(cooler, BRONZE, 3)
-	self.coolerTitle = text(cooler, "COOLER", {
-		Position = UDim2.fromOffset(16, 8),
-		Size = UDim2.new(1, -32, 0, 22),
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		TextColor3 = MUTED,
-	})
-	local grid = make("ScrollingFrame", cooler, {
-		Position = UDim2.fromOffset(12, 34),
-		Size = UDim2.new(1, -18, 1, -44),
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		CanvasSize = UDim2.new(),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		ScrollBarThickness = 5,
-		ScrollBarImageColor3 = BRONZE,
-	})
-	make("UIGridLayout", grid, {
-		CellSize = UDim2.fromOffset(SLOT, SLOT),
-		CellPadding = UDim2.fromOffset(GAP, GAP),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	})
-	self.cooler, self.grid = cooler, grid
-	self:setCooler({ Fish = {}, Capacity = 60 })
-
 	UserInputService.InputBegan:Connect(function(input, processed)
 		if
 			not processed
@@ -464,83 +422,7 @@ end
 function Reel:refreshVisibility()
 	local panelShown = self.state ~= nil or self.showingResult
 	self.panel.Visible = panelShown
-	self.cooler.Visible = panelShown or self.coolerOpen
-	self.root.Visible = self.panel.Visible or self.cooler.Visible
-end
-
-function Reel:toggleCooler(open: boolean?)
-	if open == nil then
-		self.coolerOpen = not self.coolerOpen
-	else
-		self.coolerOpen = open
-	end
-	self:refreshVisibility()
-end
-
-function Reel:setCooler(data)
-	local fish = if type(data) == "table" and type(data.Fish) == "table" then data.Fish else {}
-	local capacity = if type(data) == "table" and type(data.Capacity) == "number" then data.Capacity else 60
-	self.coolerTitle.Text = string.format("COOLER  ·  %d / %d", #fish, capacity)
-		.. (if #fish >= capacity then "  ·  FULL — selling coming soon" else "")
-	-- Slots keep their 3D fish while the same record stays at the same index, so a
-	-- new catch only builds one model. Newer records sort first.
-	self.slots = self.slots or {}
-	local wanted = math.max(COOLER_COLUMNS * 3, math.ceil(#fish / COOLER_COLUMNS) * COOLER_COLUMNS)
-	for index = 1, math.max(wanted, #self.slots) do
-		local record = fish[index]
-		local key = if type(record) == "table"
-			then string.format("%s|%s|%s", tostring(record.FishId), tostring(record.Kg), tostring(record.CaughtAt))
-			else ""
-		local existing = self.slots[index]
-		if existing and (index > wanted or existing:GetAttribute("Record") ~= key) then
-			existing:Destroy()
-			existing = nil
-			self.slots[index] = nil
-		end
-		if existing or index > wanted then
-			continue
-		end
-		local slot = make("Frame", self.grid, {
-			Name = "Slot" .. index,
-			LayoutOrder = if record then -index else index,
-			BackgroundColor3 = rgb(22, 22, 22),
-			BorderSizePixel = 0,
-		})
-		slot:SetAttribute("Record", key)
-		self.slots[index] = slot
-		round(slot, 3)
-		local species = record and Catalog.Fish[record.FishId]
-		local rarity = species and Catalog.Rarities[species.Rarity]
-		stroke(slot, if rarity then rarity.Color else rgb(66, 66, 62), if rarity then 2 else 1)
-		if record and species then
-			local view = make("ViewportFrame", slot, {
-				Size = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 1,
-			})
-			FishModels.show(view, record.FishId)
-			text(slot, FishCatch.formatKg(record.Kg), {
-				AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.new(0.5, 0, 1, -1),
-				Size = UDim2.new(1, -4, 0, 12),
-				TextSize = 10,
-				Font = Enum.Font.GothamBold,
-				TextXAlignment = Enum.TextXAlignment.Center,
-				TextStrokeTransparency = 0.2,
-				ZIndex = 2,
-			})
-			if record.Size == "Huge" then
-				text(slot, "HUGE", {
-					Position = UDim2.fromOffset(3, 1),
-					Size = UDim2.fromOffset(40, 11),
-					TextSize = 9,
-					Font = Enum.Font.GothamBlack,
-					TextColor3 = rgb(255, 196, 70),
-					TextStrokeTransparency = 0.2,
-					ZIndex = 2,
-				})
-			end
-		end
-	end
+	self.root.Visible = panelShown
 end
 
 function Reel:newRound()
@@ -721,15 +603,10 @@ function Reel:showCatch(payload)
 	self.sizeLabel.Text = if payload.Size == "Huge" then "HUGE!" else "BIG"
 	self.weight.Text = FishCatch.formatKg(payload.Kg)
 	self.worth.Text = "Worth $" .. tostring(payload.Value)
-	local cooler = payload.Cooler or {}
 	self.footer.Text = if not payload.Saved
 		then "Your catch couldn't be saved. Please try again."
-		elseif payload.Stored then string.format(
-			"Added to your cooler (%d/%d). Selling is coming soon.",
-			#(cooler.Fish or {}),
-			cooler.Capacity or 60
-		)
-		else "Your cooler is full, so you released it. It still counts in your bestiary."
+		elseif payload.Stored then "Added to your hotbar. Stow it in your boat's hold or take it to your freezer."
+		else "Your hands were full, so you released it. It still counts in your bestiary."
 	holdResult(self, 5)
 	local spin = resultId
 	local camera = self.trophy.CurrentCamera

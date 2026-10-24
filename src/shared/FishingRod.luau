@@ -16,7 +16,9 @@ function FishingRod.build(): Tool
 	tool.ToolTip = "A flexible starter rod from the plaza tackle shop."
 	tool.CanBeDropped = false
 	tool.RequiresHandle = true
-	tool.Grip = CFrame.new(0, -0.18, 0) * CFrame.Angles(math.rad(-35), 0, 0)
+	-- RightGrip applies the inverse of Tool.Grip. Positive pitch leans the
+	-- shaft's local +Y toward the angler's forward (-Z), above the water.
+	tool.Grip = CFrame.new(0, -0.18, 0) * CFrame.Angles(math.rad(55), 0, 0)
 	tool:SetAttribute("RodId", "StarterRod")
 	tool:SetAttribute("RodSegmentCount", #LENGTHS)
 	tool:SetAttribute("RodLineLength", 1.25)

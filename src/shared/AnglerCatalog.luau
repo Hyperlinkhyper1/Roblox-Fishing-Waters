@@ -3,6 +3,8 @@
 -- RarityDenominator is the base encounter odds (e.g. 100 means 1 in 100).
 -- MinKg/MaxKg bound the weight roll (MaxKg is the rare HUGE record size), BaseValue
 -- is the cash worth of an average-weight fish and Fight nudges the reel difficulty.
+-- Shapes is the cargo-hold footprint per size class ("#" fills a cell, see
+-- Shared.Cargo), so bigger catches take more room.
 local Catalog = {}
 
 -- Ordered tiers. Difficulty is the reel minigame's starting point for that tier.
@@ -14,7 +16,7 @@ Catalog.Rarities = {
 	Legendary = { Name = "Legendary", Order = 5, Color = Color3.fromRGB(240, 176, 64), Difficulty = 0.84 },
 }
 
-local function species(name, rarity, denominator, minKg, averageKg, maxKg, baseValue, fight)
+local function species(name, rarity, denominator, minKg, averageKg, maxKg, baseValue, fight, shapes)
 	return {
 		Name = name,
 		Image = "",
@@ -25,23 +27,111 @@ local function species(name, rarity, denominator, minKg, averageKg, maxKg, baseV
 		MaxKg = maxKg,
 		BaseValue = baseValue,
 		Fight = fight,
+		Shapes = shapes,
 	}
 end
 
 Catalog.Fish = {
-	Trout = species("Trout", "Common", 4, 0.3, 1.2, 9, 10, 0.04),
-	Carp = species("Carp", "Common", 4, 0.8, 3.5, 30, 9, 0.02),
-	BlueMackerel = species("Blue Mackerel", "Common", 4, 0.2, 0.6, 2.5, 11, 0.05),
-	Cod = species("Cod", "Uncommon", 9, 1, 4, 40, 24, 0.02),
-	Bluegill = species("Bluegill", "Uncommon", 9, 0.1, 0.35, 2, 20, 0),
-	Angelfish = species("Angelfish", "Uncommon", 9, 0.08, 0.25, 1.2, 28, 0.03),
-	ArrowSquid = species("Arrow Squid", "Rare", 20, 0.3, 1, 6, 60, 0.04),
-	GreyEel = species("Grey Eel", "Rare", 20, 0.5, 2, 12, 65, 0.06),
-	GulfFlounder = species("Gulf Flounder", "Epic", 50, 0.4, 1.5, 10, 160, 0.03),
-	Stingray = species("Stingray", "Legendary", 150, 6, 25, 180, 500, 0.06),
+	Trout = species("Trout", "Common", 4, 0.3, 1.2, 9, 10, 0.04, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "###", "###" },
+	}),
+	Carp = species("Carp", "Common", 4, 0.8, 3.5, 30, 9, 0.02, {
+		Normal = { "##", "##" },
+		Big = { "###", "###" },
+		Huge = { "####", "####" },
+	}),
+	BlueMackerel = species("Blue Mackerel", "Common", 4, 0.2, 0.6, 2.5, 11, 0.05, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "####" },
+	}),
+	Cod = species("Cod", "Uncommon", 9, 1, 4, 40, 24, 0.02, {
+		Normal = { "###" },
+		Big = { "###", "###" },
+		Huge = { "####", "####" },
+	}),
+	Bluegill = species("Bluegill", "Uncommon", 9, 0.1, 0.35, 2, 20, 0, {
+		Normal = { "#" },
+		Big = { "##" },
+		Huge = { "##", "##" },
+	}),
+	Angelfish = species("Angelfish", "Uncommon", 9, 0.08, 0.25, 1.2, 28, 0.03, {
+		Normal = { "#" },
+		Big = { "#", "#" },
+		Huge = { "#.", "##", "#." },
+	}),
+	ArrowSquid = species("Arrow Squid", "Rare", 20, 0.3, 1, 6, 60, 0.04, {
+		Normal = { "#.", "##" },
+		Big = { "#..", "###" },
+		Huge = { "#...", "####", "#..." },
+	}),
+	GreyEel = species("Grey Eel", "Rare", 20, 0.5, 2, 12, 65, 0.06, {
+		Normal = { "###" },
+		Big = { "####", "#..." },
+		Huge = { "#####", "#...#" },
+	}),
+	GulfFlounder = species("Gulf Flounder", "Epic", 50, 0.4, 1.5, 10, 160, 0.03, {
+		Normal = { "##", "##" },
+		Big = { "###", "##." },
+		Huge = { "###", "###" },
+	}),
+	Stingray = species("Stingray", "Legendary", 150, 6, 25, 180, 500, 0.06, {
+		Normal = { "##.", "###", "##." },
+		Big = { "###.", "####", "###." },
+		Huge = { "####.", "#####", "####." },
+	}),
+
+	-- Open sea species are worth roughly double their lake tier.
+	Clownfish = species("Clownfish", "Common", 4, 0.03, 0.09, 0.45, 16, 0.03, {
+		Normal = { "#" },
+		Big = { "##" },
+		Huge = { "##", "##" },
+	}),
+	Sardine = species("Sardine", "Common", 4, 0.04, 0.12, 0.5, 15, 0.04, {
+		Normal = { "#" },
+		Big = { "##" },
+		Huge = { "###" },
+	}),
+	Anchovy = species("Anchovy", "Common", 4, 0.01, 0.04, 0.18, 14, 0.05, {
+		Normal = { "#" },
+		Big = { "#" },
+		Huge = { "##" },
+	}),
+	Catfish = species("Catfish", "Uncommon", 9, 0.6, 3, 28, 40, 0.04, {
+		Normal = { "###" },
+		Big = { "###", "###" },
+		Huge = { "####", "####" },
+	}),
+	Pufferfish = species("Pufferfish", "Uncommon", 9, 0.2, 0.9, 6, 44, 0.02, {
+		Normal = { "#" },
+		Big = { "##", "##" },
+		Huge = { ".#.", "###", ".#." },
+	}),
+	YellowfinTuna = species("Yellowfin Tuna", "Rare", 20, 6, 35, 200, 125, 0.08, {
+		Normal = { "###", "###" },
+		Big = { "####", "####" },
+		Huge = { ".####.", "######", ".####." },
+	}),
+	Sailfish = species("Sailfish", "Epic", 50, 12, 40, 150, 310, 0.07, {
+		Normal = { ".##.", "####" },
+		Big = { ".###.", "#####" },
+		Huge = { ".####.", "######" },
+	}),
+	Swordfish = species("Swordfish", "Epic", 50, 20, 90, 600, 340, 0.06, {
+		Normal = { "####" },
+		Big = { "#####", ".###." },
+		Huge = { "#######", ".#####." },
+	}),
+	Yellowshark = species("Yellowshark", "Legendary", 150, 40, 180, 1100, 1050, 0.08, {
+		Normal = { "..#..", "#####", "#####" },
+		Big = { "...#..", "######", "######", ".####." },
+		Huge = { "...#...", "#######", "#######", "#######", ".#####." },
+	}),
 }
 
--- Every water without its own list currently falls back to the main lake.
+-- CatchService picks MainLake inside the sheltered bay and OpenSea everywhere else.
 Catalog.Pools = {
 	MainLake = {
 		Name = "Main Lake",
@@ -56,6 +146,20 @@ Catalog.Pools = {
 			"GreyEel",
 			"GulfFlounder",
 			"Stingray",
+		},
+	},
+	OpenSea = {
+		Name = "Open Sea",
+		Fish = {
+			"Clownfish",
+			"Sardine",
+			"Anchovy",
+			"Catfish",
+			"Pufferfish",
+			"YellowfinTuna",
+			"Sailfish",
+			"Swordfish",
+			"Yellowshark",
 		},
 	},
 }

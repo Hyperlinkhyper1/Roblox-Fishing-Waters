@@ -296,7 +296,7 @@ function Casting.start()
 		end
 		request:FireServer("Reel", outcome == "Landed")
 		if outcome == "Landed" then
-			reel:showMessage("REELING IT IN…", "Getting your catch into the cooler.")
+			reel:showMessage("REELING IT IN…", "Bringing your catch aboard.")
 		else
 			reel:showMessage("IT GOT AWAY", "The fish slipped the hook. Cast again!")
 		end
@@ -332,14 +332,6 @@ function Casting.start()
 			return
 		end
 		phase, sentAt = "Sent", os.clock()
-		if rod then
-			local animation = Instance.new("StringValue")
-			animation.Name, animation.Value = "toolanim", "Slash"
-			animation.Parent = rod
-			task.delay(0.5, function()
-				animation:Destroy()
-			end)
-		end
 		request:FireServer("Cast", target)
 		refreshHud()
 	end
@@ -416,21 +408,10 @@ function Casting.start()
 			end
 			reel:showMessage("IT GOT AWAY", "The fish slipped the hook. Cast again!")
 		elseif kind == "Caught" and type(payload) == "table" then
-			reel:setCooler(payload.Cooler)
 			reel:showCatch(payload)
-		elseif kind == "Cooler" then
-			reel:setCooler(payload)
 		end
 		refreshHud()
 	end)
-	request:FireServer("Cooler")
-
-	UserInputService.InputBegan:Connect(function(input, processed)
-		if not processed and input.KeyCode == Enum.KeyCode.C and rod then
-			reel:toggleCooler()
-		end
-	end)
-
 	local lines = {}
 	RunService.RenderStepped:Connect(function()
 		local now = os.clock()

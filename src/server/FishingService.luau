@@ -70,6 +70,42 @@ local function shopPrompt(player: Player): ProximityPrompt?
 	return nil
 end
 
+-- The rod store's street door and its exit lead between the plaza and the interior,
+-- which stands away from the map. Stream the far side in before moving the character.
+local function walkThroughDoor(player: Player, prompt: ProximityPrompt)
+	local destination = prompt:GetAttribute("TeleportTo")
+	local character, humanoid, root = livingCharacter(player)
+	local door = prompt.Parent
+	local state = states[player]
+	if
+		typeof(destination) ~= "CFrame"
+		or not character
+		or not humanoid
+		or not root
+		or humanoid.SeatPart
+		or not state
+		or not door
+		or not door:IsA("BasePart")
+		or (root.Position - door.Position).Magnitude > prompt.MaxActivationDistance + 4
+		or os.clock() - state.lastDoor < 1.5
+	then
+		return
+	end
+	local trip = os.clock()
+	state.lastDoor = trip
+	feedback:FireClient(player, "DoorFade", trip)
+	task.spawn(function()
+		pcall(player.RequestStreamAroundAsync, player, destination.Position, 4)
+		task.wait(0.25)
+		if states[player] == state and character.Parent and humanoid.Health > 0 then
+			character:PivotTo(destination)
+			root.AssemblyLinearVelocity = Vector3.zero
+		end
+		-- Sent even when the move was skipped, so the client's fade always lifts.
+		feedback:FireClient(player, "DoorArrived", trip)
+	end)
+end
+
 local function ownsRod(player: Player): boolean
 	return player:GetAttribute("BoatDataStatus") == "Ready" and player:GetAttribute("OwnsStarterRod") == true
 end
@@ -134,6 +170,7 @@ local function bindPlayer(player: Player)
 		backpackConnections = {},
 		queued = false,
 		lastRequest = -math.huge,
+		lastDoor = -math.huge,
 	}
 	states[player] = state
 	player:SetAttribute("RodEquipped", false)
@@ -250,6 +287,8 @@ function FishingService.start()
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 		if prompt.Name == "BuyFishingRodPrompt" and shopPrompt(player) == prompt then
 			feedback:FireClient(player, "OpenShop")
+		elseif prompt.Name == "RodStoreDoorPrompt" then
+			walkThroughDoor(player, prompt)
 		end
 	end)
 	Players.PlayerAdded:Connect(bindPlayer)

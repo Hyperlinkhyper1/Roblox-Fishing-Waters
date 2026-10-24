@@ -112,6 +112,38 @@ assert(enabledCount() > 0, "Open water must show crests")
 local seaRipple = workspace.Terrain.WaterWaveSize
 assert(seaRipple > 0.7 and seaRipple <= 1, "Storm surface must visibly roll within the engine wave-height limit")
 assert(strongestCrestOpacity > 0.5, "Storm crests must have clearly visible contrast")
+local FULL_RIBBON_LENGTH = 19 * 2 - 0.5
+-- A boat beside the camera: no ribbon may draw inside its hull footprint.
+local boats = Instance.new("Folder")
+boats.Name = "PlayerBoats"
+boats.Parent = workspace
+local boat = Instance.new("Model")
+boat.Parent = boats
+local hullSize = Vector3.new(12, 6, 30)
+function boat:GetBoundingBox()
+	return CFrame.new(1500, 2, 0), hullSize
+end
+local function insideHull(position)
+	return math.abs(position.X - 1500) < hullSize.X / 2 and math.abs(position.Z) < hullSize.Z / 2
+end
+local cut = false
+for _ = 1, 90 do
+	tick(1 / 30)
+	for _, beam in pool do
+		if not beam.Enabled then
+			continue
+		end
+		local a, b = beam.Attachment0.CFrame.Position, beam.Attachment1.CFrame.Position
+		if (b - a).Magnitude < FULL_RIBBON_LENGTH then
+			cut = true
+		end
+		for step = 0, 20 do
+			assert(not insideHull(a:Lerp(b, step / 20)), "Swell ribbons must not draw inside a boat's hull")
+		end
+	end
+end
+assert(cut and enabledCount() > 0, "Ribbons next to a boat must be shortened, not all hidden")
+boats.Parent = nil
 dry = true
 tick(1)
 tick(1)

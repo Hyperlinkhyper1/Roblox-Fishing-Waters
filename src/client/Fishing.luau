@@ -3,6 +3,7 @@ local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
@@ -283,10 +284,45 @@ function Fishing.start()
 	if player.Character then
 		task.spawn(characterAdded, player.Character)
 	end
+	-- Covers the jump between a shop's street door and its interior, which is built away from the map.
+	-- Its own top layer, so it hides the HUD and reaches under the top bar.
+	local fadeGui = Instance.new("ScreenGui")
+	fadeGui.Name = "DoorFadeLayer"
+	fadeGui.IgnoreGuiInset = true
+	fadeGui.DisplayOrder = 100
+	fadeGui.ResetOnSpawn = false
+	fadeGui.Parent = player:WaitForChild("PlayerGui")
+	local fade = Instance.new("Frame")
+	fade.Name = "DoorFade"
+	fade.Size = UDim2.fromScale(1, 1)
+	fade.BackgroundColor3 = Color3.new(0, 0, 0)
+	fade.BackgroundTransparency = 1
+	fade.BorderSizePixel = 0
+	fade.Parent = fadeGui
+	-- Each trip is tagged by the server, so a late signal from an earlier trip can't lift this fade.
+	local fadeTrip: number? = nil
+	local function fadeOut()
+		fadeTrip = nil
+		TweenService:Create(fade, TweenInfo.new(0.4), { BackgroundTransparency = 1 }):Play()
+	end
+	local function fadeIn(trip: number)
+		fadeTrip = trip
+		TweenService:Create(fade, TweenInfo.new(0.2), { BackgroundTransparency = 0 }):Play()
+		-- Failsafe: lift the fade if the arrival signal never comes, so the screen can't stay black.
+		task.delay(15, function()
+			if fadeTrip == trip then
+				fadeOut()
+			end
+		end)
+	end
 	feedback.OnClientEvent:Connect(function(kind, message)
 		if kind == "OpenShop" and alive() and insideShop() and not player:GetAttribute("PlayerMenuOpen") then
 			overlay.Visible = true
 			refresh()
+		elseif kind == "DoorFade" and typeof(message) == "number" then
+			fadeIn(message)
+		elseif kind == "DoorArrived" and message == fadeTrip then
+			fadeOut()
 		elseif kind == "Notice" and type(message) == "string" then
 			notice(message)
 			-- Let replicated attributes arrive before releasing the pending button.
