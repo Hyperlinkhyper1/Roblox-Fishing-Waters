@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
+local FishingAudio = require(script.Parent.FishingAudio)
 
 local Reel = {}
 Reel.__index = Reel
@@ -444,12 +445,14 @@ function Reel:pull()
 		state.flash, state.flashColor = 0.25, ZONE
 		state.lockUntil = os.clock() + 0.12
 		state.jolt = 1
+		FishingAudio.pull()
 		self:newRound()
 	else
 		state.progress -= state.tuning.missPenalty
 		state.flash, state.flashColor = 0.35, rgb(226, 72, 60)
 		state.lockUntil = os.clock() + 0.4
 		state.shake = 0.3
+		FishingAudio.miss()
 	end
 end
 

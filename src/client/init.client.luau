@@ -8,6 +8,7 @@ local modules = {
 	"BoatAudio",
 	"ParkedBoats",
 	"Fishing",
+	"FishingAudio",
 	"Casting",
 	"CargoHold",
 	"Sprint",

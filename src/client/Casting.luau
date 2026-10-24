@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
+local FishingAudio = require(script.Parent.FishingAudio)
 local Reel = require(script.Parent.ReelMinigame)
 
 local Casting = {}
@@ -73,6 +74,7 @@ local function newLine(tool: Tool)
 		splash = splash,
 		beam = beam,
 		start = nil :: Vector3?,
+		late = false,
 		landed = false,
 		nextNibble = os.clock() + math.random() * 2 + 1,
 		nibble = 0,
@@ -112,6 +114,7 @@ local function updateLine(line, target: Vector3, castAt: number, phase: string, 
 	local position
 	if not line.start then
 		-- Late arrivals (or streamed-in rods) skip straight to the floating bobber.
+		line.late = progress >= 1
 		line.start = if progress < 1 then tipPosition else target
 	end
 	if progress < 1 and not line.landed then
@@ -122,6 +125,9 @@ local function updateLine(line, target: Vector3, castAt: number, phase: string, 
 			line.landed = true
 			line.splashPoint.WorldPosition = target
 			line.splash:Emit(14)
+			if not line.late then
+				FishingAudio.splash(target)
+			end
 		end
 		local float = math.sin(now * 2.3) * 0.05
 		if phase == "Hooked" then
@@ -298,6 +304,7 @@ function Casting.start()
 		if outcome == "Landed" then
 			reel:showMessage("REELING IT IN…", "Bringing your catch aboard.")
 		else
+			FishingAudio.fail()
 			reel:showMessage("IT GOT AWAY", "The fish slipped the hook. Cast again!")
 		end
 		refreshHud()
@@ -324,13 +331,15 @@ function Casting.start()
 		if phase ~= "Charging" then
 			return
 		end
-		local target = findWater(charge())
+		local strength = charge()
+		local target = findWater(strength)
 		if not target then
 			phase = "Idle"
 			refreshHud()
 			notice("Aim at open water to cast.")
 			return
 		end
+		FishingAudio.cast(strength)
 		phase, sentAt = "Sent", os.clock()
 		request:FireServer("Cast", target)
 		refreshHud()
@@ -391,6 +400,8 @@ function Casting.start()
 				phase = "Waiting"
 			end
 		elseif kind == "Bite" and type(payload) == "table" and rod then
+			local target = rod:GetAttribute("CastTarget")
+			FishingAudio.bite(if typeof(target) == "Vector3" then target else nil)
 			task.spawn(fight, payload)
 		elseif kind == "Cancelled" then
 			reel:abort()
@@ -406,8 +417,10 @@ function Casting.start()
 				reel:abort()
 				phase = "Idle"
 			end
+			FishingAudio.fail()
 			reel:showMessage("IT GOT AWAY", "The fish slipped the hook. Cast again!")
 		elseif kind == "Caught" and type(payload) == "table" then
+			FishingAudio.catch()
 			reel:showCatch(payload)
 		end
 		refreshHud()
