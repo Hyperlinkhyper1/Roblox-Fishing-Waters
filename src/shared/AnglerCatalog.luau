@@ -1,8 +1,66 @@
 -- Add each new species here once; the bestiary and journal read this registry.
 -- Fish entries: { Name, Image = "rbxassetid://...", AverageKg, RarityDenominator }.
 -- RarityDenominator is the base encounter odds (e.g. 100 means 1 in 100).
+-- MinKg/MaxKg bound the weight roll (MaxKg is the rare HUGE record size), BaseValue
+-- is the cash worth of an average-weight fish and Fight nudges the reel difficulty.
 local Catalog = {}
-Catalog.Fish = {}
+
+-- Ordered tiers. Difficulty is the reel minigame's starting point for that tier.
+Catalog.Rarities = {
+	Common = { Name = "Common", Order = 1, Color = Color3.fromRGB(196, 196, 196), Difficulty = 0.12 },
+	Uncommon = { Name = "Uncommon", Order = 2, Color = Color3.fromRGB(111, 202, 125), Difficulty = 0.3 },
+	Rare = { Name = "Rare", Order = 3, Color = Color3.fromRGB(82, 163, 229), Difficulty = 0.48 },
+	Epic = { Name = "Epic", Order = 4, Color = Color3.fromRGB(176, 108, 230), Difficulty = 0.66 },
+	Legendary = { Name = "Legendary", Order = 5, Color = Color3.fromRGB(240, 176, 64), Difficulty = 0.84 },
+}
+
+local function species(name, rarity, denominator, minKg, averageKg, maxKg, baseValue, fight)
+	return {
+		Name = name,
+		Image = "",
+		Rarity = rarity,
+		RarityDenominator = denominator,
+		MinKg = minKg,
+		AverageKg = averageKg,
+		MaxKg = maxKg,
+		BaseValue = baseValue,
+		Fight = fight,
+	}
+end
+
+Catalog.Fish = {
+	Trout = species("Trout", "Common", 4, 0.3, 1.2, 9, 10, 0.04),
+	Carp = species("Carp", "Common", 4, 0.8, 3.5, 30, 9, 0.02),
+	BlueMackerel = species("Blue Mackerel", "Common", 4, 0.2, 0.6, 2.5, 11, 0.05),
+	Cod = species("Cod", "Uncommon", 9, 1, 4, 40, 24, 0.02),
+	Bluegill = species("Bluegill", "Uncommon", 9, 0.1, 0.35, 2, 20, 0),
+	Angelfish = species("Angelfish", "Uncommon", 9, 0.08, 0.25, 1.2, 28, 0.03),
+	ArrowSquid = species("Arrow Squid", "Rare", 20, 0.3, 1, 6, 60, 0.04),
+	GreyEel = species("Grey Eel", "Rare", 20, 0.5, 2, 12, 65, 0.06),
+	GulfFlounder = species("Gulf Flounder", "Epic", 50, 0.4, 1.5, 10, 160, 0.03),
+	Stingray = species("Stingray", "Legendary", 150, 6, 25, 180, 500, 0.06),
+}
+
+-- Every water without its own list currently falls back to the main lake.
+Catalog.Pools = {
+	MainLake = {
+		Name = "Main Lake",
+		Fish = {
+			"Trout",
+			"Carp",
+			"BlueMackerel",
+			"Cod",
+			"Bluegill",
+			"Angelfish",
+			"ArrowSquid",
+			"GreyEel",
+			"GulfFlounder",
+			"Stingray",
+		},
+	},
+}
+Catalog.DefaultPool = "MainLake"
+
 Catalog.Mutations = { Normal = { Name = "Normal", RarityMultiplier = 1 } }
 Catalog.Equipment = {
 	StarterRod = {

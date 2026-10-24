@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
+local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Settings = require(script.Parent.PlayerSettings)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Menu = {}
@@ -315,6 +316,9 @@ local function picture(parent, id, props)
 			Image = species.Image,
 			ScaleType = Enum.ScaleType.Fit,
 		})
+	elseif species and FishModels and FishModels.has(id) then
+		local view = make("ViewportFrame", holder, { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) })
+		FishModels.show(view, id)
 	else
 		text(
 			holder,

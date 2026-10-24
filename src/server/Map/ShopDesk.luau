@@ -45,6 +45,16 @@ function ShopDesk.build(parent: Instance, frame: CFrame): Model
 	return desk
 end
 
+ShopDesk.WIDTH = DESK_WIDTH
+ShopDesk.HEIGHT = DESK_HEIGHT
+ShopDesk.DEPTH = 65 * DESK_WIDTH / 160
+-- Turn counterclockwise as seen from above. The end meets the front
+-- window sill's inside edge (z=14.425) without clipping its stone lip.
+-- Customers stand on the desk's local -Z side, facing the shopkeeper.
+function ShopDesk.frame(houseFrame: CFrame): CFrame
+	return houseFrame * CFrame.new(16, 0.16, 14.425 - DESK_WIDTH / 2) * CFrame.Angles(0, math.pi / 2, 0)
+end
+
 function ShopDesk.ensure(shop: Model, houseFrame: CFrame)
 	local existing = shop:FindFirstChild("ShopDesk")
 	local register = existing and existing:FindFirstChild("CashRegister")
@@ -63,9 +73,7 @@ function ShopDesk.ensure(shop: Model, houseFrame: CFrame)
 	if existing then
 		existing:Destroy()
 	end
-	-- Turn counterclockwise as seen from above. The end meets the front
-	-- window sill's inside edge (z=14.425) without clipping its stone lip.
-	ShopDesk.build(shop, houseFrame * CFrame.new(16, 0.16, 14.425 - DESK_WIDTH / 2) * CFrame.Angles(0, math.pi / 2, 0))
+	ShopDesk.build(shop, ShopDesk.frame(houseFrame))
 end
 
 return ShopDesk

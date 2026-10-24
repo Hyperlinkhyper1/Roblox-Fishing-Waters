@@ -11,11 +11,20 @@ local requests = {}
 local codes = {}
 
 -- Call only after server gameplay has validated and awarded a catch. Never remote-exposed.
-function Service.recordCatch(player: Player, fishId: string, mutation: string, kg: number, value: number)
+function Service.recordCatch(player: Player, fishId: string, mutation: string, kg: number, value: number, size: string?)
 	local caughtAt = os.time()
 	return BoatService.updateProgress(player, function(profile)
-		profile.Angler =
-			Data.recordCatch(profile.Angler, fishId, mutation, kg, value, caughtAt, Catalog.Fish, Catalog.Mutations)
+		profile.Angler = Data.recordCatch(
+			profile.Angler,
+			fishId,
+			mutation,
+			kg,
+			value,
+			caughtAt,
+			Catalog.Fish,
+			Catalog.Mutations,
+			size
+		)
 	end)
 end
 

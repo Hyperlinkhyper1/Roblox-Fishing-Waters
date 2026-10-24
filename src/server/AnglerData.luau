@@ -3,6 +3,10 @@ local Data = {}
 Data.XP_PER_CATCH = 100
 Data.XP_LEVEL_STEP = 1000
 Data.WEEK_SECONDS = 7 * 24 * 60 * 60
+-- Caught fish wait in the cooler until stocked in the shop freezer; a full cooler
+-- releases new catches. Shop customers buy fish out of the freezer.
+Data.COOLER_CAPACITY = 60
+Data.FREEZER_CAPACITY = 120
 
 -- Unix epoch was a Thursday; offset to a Monday at 00:00 UTC.
 function Data.weekStart(now)
@@ -71,6 +75,7 @@ local function recordValid(record)
 		and record.Rarity >= 1
 		and number(record.Relative, false)
 		and number(record.CaughtAt, true)
+		and (record.Size == nil or type(record.Size) == "string")
 end
 function Data.validSetting(key, value)
 	local default = Data.DefaultSettings[key]
@@ -80,7 +85,7 @@ end
 function Data.decode(raw)
 	assert(raw == nil or type(raw) == "table", "Invalid angler progress")
 	local data = copy(raw or {})
-	for _, name in { "Stats", "Settings", "Catches", "Findings", "Titles", "RedeemedCodes" } do
+	for _, name in { "Stats", "Settings", "Catches", "Findings", "Titles", "RedeemedCodes", "Cooler", "Freezer" } do
 		assert(data[name] == nil or type(data[name]) == "table", "Invalid angler " .. name)
 		data[name] = data[name] or {}
 	end
@@ -119,6 +124,12 @@ function Data.decode(raw)
 	for _, record in data.Findings do
 		assert(recordValid(record), "Invalid finding")
 	end
+	for index, record in data.Cooler do
+		assert(type(index) == "number" and recordValid(record), "Invalid cooler fish")
+	end
+	for index, record in data.Freezer do
+		assert(type(index) == "number" and recordValid(record), "Invalid freezer fish")
+	end
 	for _, name in { "Titles", "RedeemedCodes" } do
 		for id, owned in data[name] do
 			assert(type(id) == "string" and type(owned) == "boolean", "Invalid unlock")
@@ -130,7 +141,7 @@ function Data.decode(raw)
 	assert(type(data.EquippedTitle) == "string", "Invalid equipped title")
 	return data
 end
-function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations)
+function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size)
 	assert(type(fishId) == "string" and species[fishId], "Unknown fish")
 	assert(type(mutation) == "string" and mutations[mutation], "Unknown mutation")
 	local fish = species[fishId]
@@ -146,6 +157,7 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 		CaughtAt = caughtAt,
 		Rarity = fish.RarityDenominator * rarityMultiplier,
 		Relative = kg / fish.AverageKg,
+		Size = size,
 	}
 	assert(recordValid(record), "Invalid catch")
 	local data = Data.decode(raw)
@@ -154,6 +166,9 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 	entry.Count += 1
 	entry.BiggestKg = math.max(entry.BiggestKg, kg)
 	entry.Mutations[mutation] = (entry.Mutations[mutation] or 0) + 1
+	if #data.Cooler < Data.COOLER_CAPACITY then
+		table.insert(data.Cooler, copy(record))
+	end
 	data.Stats.TotalCaught += 1
 	data.Stats.TotalXP += Data.XP_PER_CATCH
 	data.Stats.CatchStreak += 1
@@ -164,6 +179,36 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 		end
 	end
 	return data
+end
+
+-- Moves cooler fish into the shop freezer, oldest first, until the freezer is full.
+function Data.stockFreezer(raw)
+	local data = Data.decode(raw)
+	local moved = 0
+	while #data.Cooler > 0 and #data.Freezer < Data.FREEZER_CAPACITY do
+		table.insert(data.Freezer, table.remove(data.Cooler, 1))
+		moved += 1
+	end
+	return data, moved
+end
+
+local function sameFish(a, b)
+	return a.FishId == b.FishId and a.Kg == b.Kg and a.CaughtAt == b.CaughtAt and a.Value == b.Value
+end
+
+-- A customer pays the fish's value. Returns nil when that fish is no longer frozen;
+-- the caller credits Cash in the same profile transaction.
+function Data.sellFrozen(raw, record)
+	local data = Data.decode(raw)
+	for index, frozen in data.Freezer do
+		if sameFish(frozen, record) then
+			table.remove(data.Freezer, index)
+			local price = math.max(1, math.floor(frozen.Value))
+			data.Stats.CoinsEarned += price
+			return data, price
+		end
+	end
+	return nil, 0
 end
 
 -- Run inside the same wallet UpdateAsync as the award. Retried callbacks derive

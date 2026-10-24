@@ -14,6 +14,7 @@ try {
   ]) {
     let source = await readFile(join(root, file), 'utf8');
     source = source.replace(/require\(ReplicatedStorage.Shared.AnglerCatalog\)/g, 'Catalog')
+      .replace(/require\(ReplicatedStorage.Shared.FishModels\)/g, 'nil')
       .replace(/require\(script.Parent.PlayerSettings\)/g, 'Settings')
       .replace(/require\(game:GetService\("ReplicatedFirst"\):WaitForChild\("UITheme"\)\)/g, 'Theme')
       .replace(/require\(script.Parent.BoatService\)/g, 'BoatService')

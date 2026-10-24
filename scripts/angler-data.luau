@@ -91,4 +91,34 @@ check(
 )
 rod.Angler.Catches.Trout.Mutations.Albino = 900
 check(purchased.Angler.Catches.Trout.Mutations.Albino == 1, "Nested progress never aliases between transactions")
+check(#c.Cooler == 3 and c.Cooler[3].FishId == "Shark" and c.Cooler[1].Kg == 3, "Catches wait in the cooler in order")
+c.Cooler[1].Kg = 999
+check(a.Cooler[1].Kg == 3 and c.Findings.Largest.Kg == 110, "Cooler fish never alias previous saves or findings")
+local huge = Data.recordCatch(nil, "Trout", "Normal", 9, 90, 100, fish, mutations, "Huge")
+check(huge.Cooler[1].Size == "Huge" and huge.Findings.Largest.Size == "Huge", "Size class is stored with the catch")
+local full = Data.decode(nil)
+for index = 1, Data.COOLER_CAPACITY do
+	full.Cooler[index] = table.clone(huge.Cooler[1])
+end
+local overflow = Data.recordCatch(full, "Shark", "Normal", 100, 1, 1, fish, mutations)
+check(
+	#overflow.Cooler == Data.COOLER_CAPACITY and overflow.Catches.Shark.Count == 1,
+	"A full cooler releases the fish but still records the bestiary catch"
+)
+local stocked, moved = Data.stockFreezer(c)
+check(moved == 3 and #stocked.Cooler == 0 and #stocked.Freezer == 3, "Stocking empties the cooler into the freezer")
+check(stocked.Freezer[1].FishId == "Trout" and #c.Cooler == 3, "Stocking keeps order and is copy-on-write")
+local packed = Data.decode(nil)
+for index = 1, Data.FREEZER_CAPACITY - 1 do
+	packed.Freezer[index] = table.clone(huge.Cooler[1])
+end
+local _, fitted = Data.stockFreezer({ Cooler = c.Cooler, Freezer = packed.Freezer })
+check(fitted == 1, "A full freezer leaves the rest in the cooler")
+local sold, price = Data.sellFrozen(stocked, stocked.Freezer[3])
+check(sold and price == 1000 and #sold.Freezer == 2, "Customers buy the exact frozen fish")
+check(sold.Stats.CoinsEarned == c.Stats.CoinsEarned + 1000 and #stocked.Freezer == 3, "Sales count as earnings")
+check(Data.sellFrozen(sold, stocked.Freezer[3]) == nil, "A fish can only be sold once")
+rejects({ Freezer = { { FishId = "Trout" } } })
+rejects({ Cooler = { { FishId = "Trout" } } })
+rejects({ Cooler = { Bad = huge.Cooler[1] } })
 print("Angler progress: " .. checks .. " checks passed (pure data; no Roblox runtime).")

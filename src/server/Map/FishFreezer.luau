@@ -31,6 +31,28 @@ function FishFreezer.build(parent: Instance, frame: CFrame): Model
 end
 
 -- The left wall keeps both entrances and the central shop aisle clear.
+-- Local +Z faces into the shop; the cabinet reaches DEPTH / 2 towards it.
+FishFreezer.DEPTH = 3.6
+FishFreezer.HEIGHT = 4
+function FishFreezer.frame(houseFrame: CFrame): CFrame
+	return houseFrame * CFrame.new(-19, 0.16, 7) * CFrame.Angles(0, math.pi / 2, 0)
+end
+
+-- The sloped ice bed under the glass (source obj_1) is 40 units high at the
+-- front (source y=-15) and rises to 57 at the back (y=44). Source units scale
+-- by width / 150 about the build origin (-2, 15, 0).
+local UNIT = 9 / 150
+local ICE_SLOPE = math.atan2(57 - 40, 44 + 15)
+FishFreezer.ICE_X = Vector2.new((-74 + 2) * UNIT, (72 + 2) * UNIT) -- left, right
+FishFreezer.ICE_Z = Vector2.new(-(44 - 15) * UNIT, (15 + 15) * UNIT) -- back, front
+
+-- The ice surface at freezer-local (x, z); UpVector is the surface normal.
+function FishFreezer.iceSurface(frame: CFrame, x: number, z: number): CFrame
+	local back, front = FishFreezer.ICE_Z.X, FishFreezer.ICE_Z.Y
+	local height = (40 + (57 - 40) * (front - z) / (front - back)) * UNIT
+	return frame * CFrame.new(x, height, z) * CFrame.Angles(ICE_SLOPE, 0, 0)
+end
+
 function FishFreezer.ensure(shop: Model, houseFrame: CFrame)
 	local existing = shop:FindFirstChild("FishFreezer")
 	if existing and existing:IsA("Model") and existing:GetAttribute("ModelVersion") == VERSION then
@@ -39,7 +61,7 @@ function FishFreezer.ensure(shop: Model, houseFrame: CFrame)
 	if existing then
 		existing:Destroy()
 	end
-	FishFreezer.build(shop, houseFrame * CFrame.new(-19, 0.16, 7) * CFrame.Angles(0, math.pi / 2, 0))
+	FishFreezer.build(shop, FishFreezer.frame(houseFrame))
 end
 
 return FishFreezer
