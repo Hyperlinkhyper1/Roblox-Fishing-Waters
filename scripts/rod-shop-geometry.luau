@@ -207,11 +207,43 @@ local afterTerraces = #plaza:GetDescendants()
 check(dependencies.PlazaHouses.build(plaza, plazaFrame) == terraces, "Terrace build is not idempotent")
 check(#plaza:GetDescendants() == afterTerraces, "Terrace rebuild duplicated parts")
 
--- Harbour Home, the furniture shop across the fountain: a tagged counter, nothing built into it,
--- and room to stand at the counter
+-- Harbour Home: a linked showroom with full-size displays and reachable purchase prompts.
 local furnitureShop = plaza:FindFirstChild("FurnitureShop")
 check(furnitureShop ~= nil, "Plaza lacks its furniture shop")
-local counterTop = furnitureShop and furnitureShop:FindFirstChild("CounterTop")
+check(not furnitureShop:FindFirstChild("SalesCounter"), "Old pavement counter must be removed")
+check(not furnitureShop:FindFirstChild("BrowseFurniturePrompt", true), "Streetfront must not sell furniture")
+local furnitureDoor = furnitureShop:FindFirstChild("StreetDoor", true)
+local furnitureEnter = furnitureDoor and furnitureDoor:FindFirstChild("FurnitureStoreDoorPrompt")
+check(furnitureEnter and furnitureEnter.ActionText == "Enter", "Furniture street door lacks Enter prompt")
+local showroom = interiors:FindFirstChild("FurnitureStoreInterior")
+check(showroom and CollectionService:HasTag(showroom, "FurnitureShowroom"), "Furniture showroom is missing or untagged")
+check(showroom.ModelStreamingMode == Enum.ModelStreamingMode.Atomic, "Showroom must stream as one model")
+local showroomFrame = showroom:GetAttribute("InteriorFrame") * CFrame.new(0, -9, 0)
+local showroomArrival = showroom:GetAttribute("ArrivalFrame")
+check((furnitureEnter:GetAttribute("TeleportTo").Position - showroomArrival.Position).Magnitude < EPS, "Furniture door leads to wrong interior")
+check(showroomArrival.LookVector:Dot(showroomFrame.ZVector) > 0.99, "Furniture arrival must face into showroom")
+local furnitureLeave = showroom:FindFirstChild("ExitDoor"):FindFirstChild("FurnitureStoreDoorPrompt")
+local furnitureExit = furnitureShop:GetAttribute("ExitFrame")
+check(furnitureLeave and furnitureLeave.ActionText == "Leave", "Furniture showroom lacks Leave prompt")
+check((furnitureLeave:GetAttribute("TeleportTo").Position - furnitureExit.Position).Magnitude < EPS, "Showroom exit must return to storefront")
+for _, piece in plazaSolids do
+	check(not overlaps(avatarAt(furnitureExit), piece), "Furniture exit lands inside " .. piece:GetFullName())
+end
+local showroomSolids = solids(showroom)
+for _, id in dependencies.FurnitureCatalog.Order do
+	local display = showroom:FindFirstChild(id .. "Display")
+	local sample = display and display:FindFirstChild("Sample" .. id)
+	check(sample and sample:IsA("Model") and #sample:GetDescendants() > 5, "Missing full-size furniture sample: " .. id)
+	local prompt = display and display:FindFirstChild("BrowseFurniturePrompt", true)
+	check(prompt and prompt:GetAttribute("ItemId") == id, "Display must offer its own item: " .. id)
+	local label = prompt.Parent:FindFirstChildWhichIsA("SurfaceGui"):FindFirstChildWhichIsA("TextLabel")
+	check(string.find(label.Text, "$" .. dependencies.FurnitureCatalog.Items[id].Price, 1, true) ~= nil, "Display price disagrees with catalogue: " .. id)
+	local p = showroomFrame:PointToObjectSpace(prompt.Parent.Position)
+	local customer = Vector3.new(p.X, 3.2, 1.5)
+	walk({ showroomFrame:PointToObjectSpace(showroomArrival.Position), Vector3.new(0, 3.2, 1.5), customer }, showroomFrame, showroomSolids, "Route to " .. id .. " display")
+	check(((showroomFrame * customer) - prompt.Parent.Position).Magnitude < prompt.MaxActivationDistance, "Display prompt out of reach: " .. id)
+end
+local counterTop = showroom:FindFirstChild("CounterTop")
 check(counterTop and CollectionService:HasTag(counterTop, "FurnitureShop"), "Furniture counter is untagged")
 local browse = counterTop and counterTop:FindFirstChild("BrowseFurniturePrompt")
 check(browse and browse:IsA("ProximityPrompt"), "Furniture counter lacks its browse prompt")
@@ -224,15 +256,11 @@ for _, piece in plaza:GetDescendants() do
 		end
 	end
 end
-local keeperFrame = furnitureShop:GetAttribute("KeeperFrame")
+local keeperFrame = showroom:GetAttribute("KeeperFrame")
 local customerSpot = keeperFrame * CFrame.new(0, 2.9, -dependencies.ShopDesk.DEPTH - 2.9)
-local obstacles = {}
-for _, piece in plaza:GetDescendants() do
-	if piece:IsA("BasePart") and piece.CanCollide and piece.Size.Y > 1 then
-		table.insert(obstacles, piece)
-	end
-end
-walk({ Vector3.new(0, 0, 0), Vector3.new(0, 0, -8) }, customerSpot, obstacles, "Furniture counter approach")
+walk({ showroomFrame:PointToObjectSpace(showroomArrival.Position), Vector3.new(0, 3.2, -11), showroomFrame:PointToObjectSpace(customerSpot.Position) }, showroomFrame, showroomSolids, "Indoor furniture counter approach")
+local furnitureDoorLocal = plazaFrame:PointToObjectSpace(furnitureExit.Position)
+walk({ Vector3.new(15, 3.4, furnitureDoorLocal.Z), Vector3.new(furnitureDoorLocal.X, 3.4, furnitureDoorLocal.Z) }, plazaFrame, plazaSolids, "Plaza route to furniture shop")
 local afterFurniture = #plaza:GetDescendants()
 check(dependencies.FurnitureShop.build(plaza, plazaFrame) == furnitureShop, "Furniture shop build is not idempotent")
 check(#plaza:GetDescendants() == afterFurniture, "Furniture shop rebuild duplicated parts")
@@ -274,6 +302,18 @@ for _, width in { 116, 120 } do
 	local afterFurnitureEnsure = #saved:GetDescendants()
 	dependencies.FurnitureShop.ensure(saved)
 	check(#saved:GetDescendants() == afterFurnitureEnsure, "Furniture shop saved-map upgrade is not idempotent")
+	check(interiors:FindFirstChild("FurnitureStoreInterior") == showroom, "Furniture showroom rebuilt needlessly")
+	CollectionService:RemoveTag(showroom, "FurnitureShowroom")
+	CollectionService:RemoveTag(counterTop, "FurnitureShop")
+	savedFurniture:SetAttribute("LayoutVersion", 1)
+	local oldCounter = Instance.new("Part")
+	oldCounter.Name, oldCounter.Parent = "CounterTop", savedFurniture
+	dependencies.FurnitureShop.ensure(saved)
+	local upgradedFurniture = savedPlaza:FindFirstChild("FurnitureShop")
+	check(savedFurniture.Parent == nil and upgradedFurniture ~= savedFurniture, "Old pavement furniture shop did not upgrade")
+	check(not upgradedFurniture:FindFirstChild("CounterTop"), "Pavement purchase anchor survived upgrade")
+	check(CollectionService:HasTag(showroom, "FurnitureShowroom") and CollectionService:HasTag(counterTop, "FurnitureShop"), "Furniture shop tags were not restored")
+	check((furnitureLeave:GetAttribute("TeleportTo").Position - upgradedFurniture:GetAttribute("ExitFrame").Position).Magnitude < EPS, "Showroom exit not relinked after upgrade")
 
 	result:SetAttribute("LayoutVersion", 0)
 	dependencies.RodShop.ensure(saved)

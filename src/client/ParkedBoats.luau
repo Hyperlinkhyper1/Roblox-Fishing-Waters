@@ -27,12 +27,23 @@ function ParkedBoats.start()
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local avatarRoot = character and character:FindFirstChild("HumanoidRootPart")
 		local ground
-		if humanoid and avatarRoot and avatarRoot:IsA("BasePart") and humanoid.Health > 0
-			and not avatarRoot.Anchored and not humanoid.SeatPart and not humanoid.Sit and not humanoid.Jump
-			and humanoid.FloorMaterial ~= Enum.Material.Air then
+		if
+			humanoid
+			and avatarRoot
+			and avatarRoot:IsA("BasePart")
+			and humanoid.Health > 0
+			and not avatarRoot.Anchored
+			and not humanoid.SeatPart
+			and not humanoid.Sit
+			and not humanoid.Jump
+			and humanoid.FloorMaterial ~= Enum.Material.Air
+		then
 			local state = humanoid:GetState()
-			if state == Enum.HumanoidStateType.Running or state == Enum.HumanoidStateType.RunningNoPhysics
-				or state == Enum.HumanoidStateType.Landed then
+			if
+				state == Enum.HumanoidStateType.Running
+				or state == Enum.HumanoidStateType.RunningNoPhysics
+				or state == Enum.HumanoidStateType.Landed
+			then
 				local parameters = RaycastParams.new()
 				parameters.FilterType = Enum.RaycastFilterType.Exclude
 				parameters.FilterDescendantsInstances = { character }
@@ -65,8 +76,13 @@ function ParkedBoats.start()
 					if humanoid.MoveDirection.Magnitude < 0.01 then
 						-- CFrame animation supplies no platform velocity. Keep an idle
 						-- rider at their deck position instead of accumulating slope slip.
-						if heldRoot ~= avatarRoot or heldBoat ~= model or heldAt ~= parkedAt
-							or not heldPosition or (position - heldPosition).Magnitude > 3 then
+						if
+							heldRoot ~= avatarRoot
+							or heldBoat ~= model
+							or heldAt ~= parkedAt
+							or not heldPosition
+							or (position - heldPosition).Magnitude > 3
+						then
 							heldPosition = position
 						end
 						heldRoot, heldBoat, heldAt = avatarRoot, model, parkedAt

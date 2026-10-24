@@ -7,13 +7,14 @@
 -- Shared.Cargo), so bigger catches take more room.
 local Catalog = {}
 
--- Ordered tiers. Difficulty is the reel minigame's starting point for that tier.
+-- Ordered tiers. XP is awarded per landed fish; Difficulty starts the reel minigame.
 Catalog.Rarities = {
-	Common = { Name = "Common", Order = 1, Color = Color3.fromRGB(196, 196, 196), Difficulty = 0.12 },
-	Uncommon = { Name = "Uncommon", Order = 2, Color = Color3.fromRGB(111, 202, 125), Difficulty = 0.3 },
-	Rare = { Name = "Rare", Order = 3, Color = Color3.fromRGB(82, 163, 229), Difficulty = 0.48 },
-	Epic = { Name = "Epic", Order = 4, Color = Color3.fromRGB(176, 108, 230), Difficulty = 0.66 },
-	Legendary = { Name = "Legendary", Order = 5, Color = Color3.fromRGB(240, 176, 64), Difficulty = 0.84 },
+	Junk = { Name = "Junk", Order = 0, Color = Color3.fromRGB(157, 133, 104), Difficulty = 0.05, XP = 5 },
+	Common = { Name = "Common", Order = 1, Color = Color3.fromRGB(196, 196, 196), Difficulty = 0.12, XP = 50 },
+	Uncommon = { Name = "Uncommon", Order = 2, Color = Color3.fromRGB(111, 202, 125), Difficulty = 0.3, XP = 100 },
+	Rare = { Name = "Rare", Order = 3, Color = Color3.fromRGB(82, 163, 229), Difficulty = 0.48, XP = 200 },
+	Epic = { Name = "Epic", Order = 4, Color = Color3.fromRGB(176, 108, 230), Difficulty = 0.66, XP = 400 },
+	Legendary = { Name = "Legendary", Order = 5, Color = Color3.fromRGB(240, 176, 64), Difficulty = 0.84, XP = 800 },
 }
 
 local function species(name, rarity, denominator, minKg, averageKg, maxKg, baseValue, fight, shapes)
@@ -21,6 +22,7 @@ local function species(name, rarity, denominator, minKg, averageKg, maxKg, baseV
 		Name = name,
 		Image = "",
 		Rarity = rarity,
+		CatchXP = Catalog.Rarities[rarity].XP,
 		RarityDenominator = denominator,
 		MinKg = minKg,
 		AverageKg = averageKg,
@@ -32,6 +34,13 @@ local function species(name, rarity, denominator, minKg, averageKg, maxKg, baseV
 end
 
 Catalog.Fish = {
+	-- Junk uses the same carrying, cargo and selling path as other catches.
+	WoodenBranch = species("Wooden Branch", "Junk", 50, 0.2, 0.5, 1, 1, 0, {
+		Normal = { "###" },
+	}),
+	LeatherBoot = species("Leather Boot", "Junk", 50, 0.4, 0.8, 1.2, 1, 0, {
+		Normal = { "#.", "##" },
+	}),
 	Trout = species("Trout", "Common", 4, 0.3, 1.2, 9, 10, 0.04, {
 		Normal = { "##" },
 		Big = { "###" },
@@ -135,6 +144,7 @@ Catalog.Fish = {
 Catalog.Pools = {
 	MainLake = {
 		Name = "Main Lake",
+		Junk = { "WoodenBranch", "LeatherBoot" },
 		Fish = {
 			"Trout",
 			"Carp",
@@ -150,6 +160,7 @@ Catalog.Pools = {
 	},
 	OpenSea = {
 		Name = "Open Sea",
+		Junk = { "WoodenBranch", "LeatherBoot" },
 		Fish = {
 			"Clownfish",
 			"Sardine",

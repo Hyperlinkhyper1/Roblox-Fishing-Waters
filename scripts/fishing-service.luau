@@ -49,6 +49,7 @@ local CFrame = {}
 function CFrame.new(position)
 	return {
 		_kind = "CFrame",
+		Position = position or Vector3.zero,
 		PointToObjectSpace = function(_, point)
 			return point - (position or Vector3.zero)
 		end,
@@ -177,6 +178,7 @@ end
 
 local deferred = {}
 local task = {
+	wait = function() end,
 	defer = function(callback)
 		table.insert(deferred, callback)
 	end,
@@ -393,6 +395,52 @@ check(
 	"Remote stow must move the rod to Backpack"
 )
 check(builds == 1 and rodCount(fresh) == 1, "Stowing must not create a replacement Tool")
+
+-- Furniture uses the same streamed, faded doorway trip as the tackle shop.
+local door = Instance.new("Part")
+door.Position, door.Parent = Vector3.zero, workspace
+local enterFurniture = Instance.new("ProximityPrompt")
+enterFurniture.Name, enterFurniture.MaxActivationDistance, enterFurniture.Parent = "FurnitureStoreDoorPrompt", 9, door
+local destination = CFrame.new(Vector3.new(6700, 303.2, 145))
+enterFurniture:SetAttribute("TeleportTo", destination)
+local streamed
+function fresh:RequestStreamAroundAsync(position)
+	streamed = position
+end
+function character:PivotTo(frame)
+	self.lastPivot = frame
+	root.Position = frame.Position
+end
+now += 2
+ProximityPromptService.PromptTriggered:Fire(enterFurniture, fresh)
+check(feedback.messages[#feedback.messages].values[1] == "DoorFade", "Furniture door must fade before moving")
+flush()
+check(streamed == destination.Position and character.lastPivot == destination, "Furniture door must stream and enter the showroom")
+check(root.AssemblyLinearVelocity == Vector3.zero, "Furniture arrival must stop the character's velocity")
+check(feedback.messages[#feedback.messages].values[1] == "DoorArrived", "Furniture arrival must lift the fade")
+root.Position = Vector3.zero
+beforeMessages = #feedback.messages
+ProximityPromptService.PromptTriggered:Fire(enterFurniture, fresh)
+flush()
+check(#feedback.messages == beforeMessages, "Furniture door must respect the trip cooldown")
+now += 2
+root.Position = Vector3.new(100, 0, 0)
+ProximityPromptService.PromptTriggered:Fire(enterFurniture, fresh)
+flush()
+check(#feedback.messages == beforeMessages, "Distant furniture door activations must be rejected")
+root.Position = Vector3.zero
+humanoid.SeatPart = Instance.new("Part")
+ProximityPromptService.PromptTriggered:Fire(enterFurniture, fresh)
+flush()
+check(#feedback.messages == beforeMessages, "Seated players must not enter furniture shop")
+humanoid.SeatPart = nil
+door.Position, root.Position = destination.Position, destination.Position
+local returnFrame = CFrame.new(Vector3.zero)
+enterFurniture:SetAttribute("TeleportTo", returnFrame)
+ProximityPromptService.PromptTriggered:Fire(enterFurniture, fresh)
+flush()
+check(character.lastPivot == returnFrame and root.Position == Vector3.zero, "Furniture exit must return to the plaza")
+
 humanoid:EquipTool(rod)
 flush()
 check(fresh:GetAttribute("RodEquipped") == true, "Native Backpack equip must synchronize the attribute")

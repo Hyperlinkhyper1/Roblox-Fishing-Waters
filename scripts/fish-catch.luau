@@ -26,6 +26,27 @@ end
 
 local pool = Catalog.Pools[Catalog.DefaultPool]
 check(#pool.Fish == 10, "Main lake lists all ten species")
+for _, catchPool in Catalog.Pools do
+	check(#catchPool.Junk == 2, "Both junk catches are available in " .. catchPool.Name)
+	for _, sample in
+		{ { 0, "WoodenBranch" }, { 0.019999, "WoodenBranch" }, { 0.02, "LeatherBoot" }, { 0.039999, "LeatherBoot" } }
+	do
+		local roll = FishCatch.roll(catchPool, Catalog.Fish, Catalog.Rarities, function()
+			return sample[1]
+		end)
+		check(roll.FishId == sample[2], "Each junk catch occupies exactly 2% of the roll")
+		check(
+			roll.Size == "Normal" and roll.Value == 1 and roll.Difficulty == 0.05,
+			"Junk stays cheap, normal-sized and easy to reel"
+		)
+	end
+	for _, boundary in { FishCatch.JUNK_CHANCE, 0.999999 } do
+		local id = FishCatch.pickSpecies(catchPool, Catalog.Fish, function()
+			return boundary
+		end)
+		check(table.find(catchPool.Fish, id) ~= nil, "Non-junk rolls still select a fish")
+	end
+end
 local counts, sizes, tiers = {}, { Normal = 0, Big = 0, Huge = 0 }, {}
 local hardest, easiest = 0, 1
 local rolls = 200000
@@ -42,6 +63,9 @@ for _ = 1, rolls do
 end
 for _, id in pool.Fish do
 	check((counts[id] or 0) > 0, "Every species can be caught: " .. id)
+end
+for _, id in pool.Junk do
+	check(math.abs((counts[id] or 0) / rolls - 0.02) < 0.002, "Junk appears in about 2% of catches: " .. id)
 end
 check(tiers.Common > tiers.Uncommon and tiers.Uncommon > tiers.Rare, "Commoner tiers appear more often")
 check(tiers.Rare > tiers.Epic and tiers.Epic > tiers.Legendary, "Rarer tiers appear less often")
@@ -81,6 +105,9 @@ for _, id in sea.Fish do
 	check(fish.MinKg < fish.AverageKg and fish.AverageKg < fish.MaxKg, "Normal weight sits inside the range: " .. id)
 	check(seaSeen[id], "Every sea species can be caught: " .. id)
 	check(table.find(pool.Fish, id) == nil, "Sea species stay out of the lake: " .. id)
+end
+for _, id in sea.Junk do
+	check(seaSeen[id], "Every junk item can be caught at sea: " .. id)
 end
 check(seaAverage > lakeAverage * 1.5, "Sea catches are worth clearly more on average")
 

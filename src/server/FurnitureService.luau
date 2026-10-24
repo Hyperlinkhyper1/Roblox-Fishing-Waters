@@ -19,7 +19,6 @@ local FurnitureService = {}
 local BASE_TAG = "PlayerBase"
 local SHOP_TAG = "FurnitureShop"
 local OWNER_PROMPT_TAG = "ShopOwnerPrompt"
-local SHOP_DISTANCE = 18
 local HOME_DISTANCE = 90
 local started = false
 local requests = {}
@@ -70,10 +69,27 @@ local function notify(player: Player, message: string)
 	end
 end
 
-local function atShop(player: Player): boolean
-	for _, counter in CollectionService:GetTagged(SHOP_TAG) do
-		if counter:IsA("BasePart") and near(player, counter.Position, SHOP_DISTANCE) then
-			return true
+local function atShop(player: Player, itemId: string): boolean
+	local root = rootOf(player)
+	if not root then return false end
+	for _, hall in CollectionService:GetTagged("FurnitureShowroom") do
+		if not hall:IsDescendantOf(workspace) then continue end
+		local frame, size = hall:GetAttribute("InteriorFrame"), hall:GetAttribute("InteriorSize")
+		if typeof(frame) ~= "CFrame" or typeof(size) ~= "Vector3" then continue end
+		local p = frame:PointToObjectSpace(root.Position)
+		if math.abs(p.X) > size.X / 2 or math.abs(p.Y) > size.Y / 2 or math.abs(p.Z) > size.Z / 2 then
+			continue
+		end
+		for _, prompt in hall:GetDescendants() do
+			if not prompt:IsA("ProximityPrompt") or prompt.Name ~= "BrowseFurniturePrompt" or not prompt.Enabled then
+				continue
+			end
+			local displayItem = prompt:GetAttribute("ItemId")
+			local anchor = prompt.Parent
+			if (displayItem == nil or displayItem == itemId) and anchor and anchor:IsA("BasePart")
+				and near(player, anchor.Position, prompt.MaxActivationDistance + 2) then
+				return true
+			end
 		end
 	end
 	return false
@@ -257,8 +273,8 @@ local function buy(player: Player, itemId: any): (boolean, string)
 	local item = if type(itemId) == "string" then Furniture.Items[itemId] else nil
 	if not item then
 		return false, "That isn't for sale."
-	elseif not atShop(player) then
-		return false, "Visit the furniture shop on the plaza to buy furniture."
+	elseif not atShop(player, itemId) then
+		return false, "Step inside Harbour Home and approach a display or the counter to buy furniture."
 	end
 	local ok, message = run(player, function(profile)
 		if profile.Cash < item.Price then

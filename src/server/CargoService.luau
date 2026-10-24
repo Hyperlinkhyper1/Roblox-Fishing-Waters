@@ -82,7 +82,7 @@ local function buildFishTool(record): Tool
 	handle.Parent = tool
 	local model = FishModels.create(record.FishId)
 	if model then
-		FishModels.scaleCatch(model, record.Kg)
+		FishModels.scaleHeldCatch(model, record.Kg)
 		handle.CFrame = model:GetPivot()
 		for _, piece in model:GetDescendants() do
 			if piece:IsA("BasePart") then

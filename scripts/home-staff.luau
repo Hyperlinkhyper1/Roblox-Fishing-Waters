@@ -55,6 +55,7 @@ local SERVE_DISTANCE, PORTER_DOCK_DISTANCE, CARRY_LENGTH = 14, 32, 1.8
 local ShopDesk = { frame = function() return CFrame.new() end }
 local FishFreezer = { DEPTH = 3.6, frame = function() return CFrame.new() end }
 local StorageRack = { DEPTH = 2 }
+local NpcNavigation = { clearance = function() return 2 end }
 local function fixtureFrames() return { CFrame.new(10, 0, -8) } end
 local manualNear = false
 local function near() return manualNear end

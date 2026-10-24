@@ -997,6 +997,68 @@ function builders.Yellowshark(b)
 	b:eye(0.4, 0.03, 0.03, rgb(20, 20, 20))
 end
 
+function builders.WoodenBranch(b)
+	local bark, wood = rgb(91, 61, 36), rgb(184, 145, 91)
+	local points = {
+		Vector3.new(-0.5, -0.04, 0),
+		Vector3.new(-0.18, 0.01, 0.01),
+		Vector3.new(0.15, -0.015, 0),
+		Vector3.new(0.5, 0.06, -0.025),
+	}
+	for index = 1, #points - 1 do
+		local part = b:limb(points[index], points[index + 1], 0.11 - index * 0.014, bark, "Bark")
+		part.Material = Enum.Material.Wood
+	end
+	for _, twig in
+		{
+			{ points[2], Vector3.new(-0.02, 0.28, 0.025) },
+			{ points[3], Vector3.new(0.3, -0.19, 0.06) },
+		}
+	do
+		local part = b:limb(twig[1], twig[2], 0.045, bark, "Twig")
+		part.Material = Enum.Material.Wood
+		b:ellipsoid("BrokenTip", CFrame.new(twig[2]), Vector3.one * 0.034, wood)
+	end
+	for _, index in { 1, #points } do
+		local tip = b:part("ExposedWood", "Part", Vector3.new(0.012, 0.065, 0.065), CFrame.new(points[index]), wood)
+		tip.Shape = Enum.PartType.Cylinder
+	end
+	-- Thin ridges give the wet bark a rough, split surface.
+	for index = 1, 5 do
+		local x = -0.38 + index * 0.13
+		b:limb(Vector3.new(x, 0.015, 0.04), Vector3.new(x + 0.09, 0.02, 0.04), 0.009, rgb(62, 43, 27), "BarkSplit")
+	end
+end
+
+function builders.LeatherBoot(b)
+	local leather, dark, sole = rgb(112, 70, 42), rgb(70, 44, 29), rgb(38, 32, 27)
+	b:part("Sole", "Part", Vector3.new(0.82, 0.07, 0.32), CFrame.new(0.02, -0.28, 0), sole)
+	b:part("Heel", "Part", Vector3.new(0.25, 0.08, 0.3), CFrame.new(-0.23, -0.33, 0), sole)
+	b:ellipsoid("Toe", CFrame.new(0.24, -0.15, 0), Vector3.new(0.44, 0.24, 0.33), leather)
+	b:ellipsoid("Foot", CFrame.new(-0.02, -0.13, 0), Vector3.new(0.55, 0.28, 0.31), leather)
+	b:ellipsoid("Ankle", CFrame.new(-0.21, 0.06, 0), Vector3.new(0.29, 0.48, 0.29), leather)
+	-- A dark inset and raised cuff make the boot's open top readable.
+	b:part("Opening", "Part", Vector3.new(0.22, 0.018, 0.22), CFrame.new(-0.21, 0.29, 0), rgb(25, 20, 17))
+	for _, side in { -1, 1 } do
+		b:part("CuffSide", "Part", Vector3.new(0.31, 0.07, 0.035), CFrame.new(-0.21, 0.32, side * 0.135), dark)
+		b:part("CuffEnd", "Part", Vector3.new(0.035, 0.07, 0.27), CFrame.new(-0.21 + side * 0.137, 0.32, 0), dark)
+		b:limb(
+			Vector3.new(-0.3, -0.2, side * 0.15),
+			Vector3.new(0.26, -0.22, side * 0.15),
+			0.009,
+			rgb(164, 125, 81),
+			"Stitching"
+		)
+	end
+	for index = 0, 3 do
+		local y = -0.02 + index * 0.065
+		b:limb(Vector3.new(-0.055, y, -0.075), Vector3.new(-0.055, y + 0.04, 0.075), 0.012, sole, "Lace")
+		b:limb(Vector3.new(-0.05, y, 0.075), Vector3.new(-0.05, y + 0.04, -0.075), 0.012, sole, "Lace")
+	end
+	b:ellipsoid("ToeScuff", CFrame.new(0.39, -0.11, 0.09), Vector3.new(0.06, 0.055, 0.12), rgb(149, 112, 73))
+	b.model:SetAttribute("ViewDirection", Vector3.new(0.7, 0.4, 1))
+end
+
 function FishModels.has(fishId: string): boolean
 	return builders[fishId] ~= nil
 end
@@ -1045,7 +1107,7 @@ function FishModels.create(fishId: string): Model?
 	return template:Clone()
 end
 
--- One world size for a catch in the player's hand, freezer and customer hands.
+-- Compact display size for the freezer and customer hands.
 function FishModels.catchLength(kg: number): number
 	local size = math.max(kg, 0.01) ^ (1 / 3)
 	-- Smoothly compress record weights while retaining differences between
@@ -1053,11 +1115,25 @@ function FishModels.catchLength(kg: number): number
 	return 0.6 + 2.6 * size / (size + 0.75)
 end
 
-function FishModels.scaleCatch(model: Model, kg: number): Vector3
+-- Held catches keep their weight differences without the freezer's size limit.
+-- Weight grows with volume, so doubling the length takes eight times the kg.
+function FishModels.heldLength(kg: number): number
+	return 1.6 * math.max(kg, 0.01) ^ (1 / 3)
+end
+
+local function scaleToLength(model: Model, length: number): Vector3
 	local bounds = model:GetAttribute("BoundsSize") :: Vector3
-	local scale = FishModels.catchLength(kg) / math.max(bounds.X, bounds.Y, bounds.Z, 0.1)
+	local scale = length / math.max(bounds.X, bounds.Y, bounds.Z, 0.1)
 	model:ScaleTo(scale)
 	return bounds * scale
+end
+
+function FishModels.scaleCatch(model: Model, kg: number): Vector3
+	return scaleToLength(model, FishModels.catchLength(kg))
+end
+
+function FishModels.scaleHeldCatch(model: Model, kg: number): Vector3
+	return scaleToLength(model, FishModels.heldLength(kg))
 end
 
 function FishModels.silhouette(model: Model)

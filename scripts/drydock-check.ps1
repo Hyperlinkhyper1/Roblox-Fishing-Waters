@@ -26,6 +26,7 @@ $modules = [ordered]@{
     'RODSHOP' = 'src/server/Map/RodShop.luau'
     'STORAGERACK' = 'src/server/Map/StorageRack.luau'
     'FURNITURESHOP' = 'src/server/Map/FurnitureShop.luau'
+    'FURNITURECATALOG' = 'src/shared/FurnitureCatalog.luau'
     'SEABED' = 'src/server/Map/Seabed.luau'
     'HARBOUR' = 'src/server/Map/Harbour.luau'
     'BIOMES' = 'src/shared/Biomes.luau'

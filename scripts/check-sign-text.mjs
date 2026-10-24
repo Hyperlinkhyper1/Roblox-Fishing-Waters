@@ -47,10 +47,12 @@ const modules = {
   DRYDOCKINTERIOR: 'src/server/Map/DrydockInterior.luau', DRYDOCK: 'src/server/Map/Drydock.luau',
   PLAZAHOUSES: 'src/server/Map/PlazaHouses.luau', RODSHOP: 'src/server/Map/RodShop.luau',
   STORAGERACK: 'src/server/Map/StorageRack.luau', FURNITURESHOP: 'src/server/Map/FurnitureShop.luau', HARBOUR: 'src/server/Map/Harbour.luau',
+  FURNITURECATALOG: 'src/shared/FurnitureCatalog.luau',
   BIOMES: 'src/shared/Biomes.luau',
 };
 for (const [name, path] of Object.entries(modules)) {
   let source = (await read(path)).replace(/local (\w+) = require\(script\.Parent\.(?:Parent\.)?(\w+)\)/g, 'local $1 = dependencies.$2');
+  source = source.replace(/local (\w+) = require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'local $1 = dependencies.$2');
   if (name === 'HARBOUR') source = source.replace(/return Harbour\s*$/, 'return { makeShape = makeShape, heightAt = heightAt, buildBase = buildBase, buildPlaza = buildPlaza }');
   const marker = '-- ' + name + '_SOURCE --';
   if (!program.includes(marker)) throw new Error('Missing source hook: ' + name);

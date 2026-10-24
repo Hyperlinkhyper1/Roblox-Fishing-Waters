@@ -21,6 +21,7 @@ local function load(role, callback)
 		end)
 		description:Destroy()
 		if ok then
+			Staff.applyAppearance(model, role)
 			for _, item in model:GetDescendants() do
 				if item:IsA("BasePart") then
 					item.Anchored = true

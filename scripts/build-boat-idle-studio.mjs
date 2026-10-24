@@ -25,7 +25,10 @@ const project = {
     $className: 'DataModel',
     ReplicatedStorage: { Shared: { $path: join(root, 'src/shared') } },
     ServerScriptService: server,
-    StarterPlayer: { StarterPlayerScripts: { Regression: { $path: join(root, 'scripts/boat-idle-studio.client.luau') } } },
+    StarterPlayer: { StarterPlayerScripts: {
+      Regression: { $path: join(root, 'scripts/boat-idle-studio.client.luau') },
+      ParkedBoats: { $path: join(root, 'src/client/ParkedBoats.luau') },
+    } },
     Workspace: { $properties: { StreamingEnabled: false } },
   },
 };

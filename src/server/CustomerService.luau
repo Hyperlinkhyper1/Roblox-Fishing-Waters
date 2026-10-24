@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
 local CargoService = require(script.Parent.CargoService)
+local NpcNavigation = require(script.Parent.NpcNavigation)
 local FishFreezer = require(script.Parent.Map.FishFreezer)
 local ShopDesk = require(script.Parent.Map.ShopDesk)
 local StorageRack = require(script.Parent.Map.StorageRack)
@@ -163,6 +164,9 @@ local function spawnCustomer(position: Vector3, staffRole: string?): Model
 	local description = if staffRole then StaffCatalog.description(staffRole) else randomAvatar()
 	local model = Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
 	description:Destroy()
+	if staffRole then
+		StaffCatalog.applyAppearance(model, staffRole)
+	end
 	model.Name = "Customer"
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
@@ -380,24 +384,8 @@ local function putOnCounter(customer, fish: Model, frame: CFrame)
 	fish.Parent = folder
 end
 
--- MoveTo gives up after 8 seconds; a pushed or blocked customer is placed at the
--- waypoint so a shop can never be held up by a stuck NPC.
-local function walk(customer, target: Vector3): boolean
-	local humanoid = customer.humanoid
-	if not customer.active or humanoid.Health <= 0 then
-		return false
-	end
-	humanoid:MoveTo(target)
-	local reached = humanoid.MoveToFinished:Wait()
-	if not customer.active then
-		return false
-	end
-	local root = customer.root
-	local flat = Vector3.new(target.X - root.Position.X, 0, target.Z - root.Position.Z)
-	if not reached and flat.Magnitude > 2 then
-		customer.model:PivotTo(customer.model:GetPivot() + flat)
-	end
-	return true
+local function walk(customer, target: Vector3, allowed: (() -> boolean)?): boolean
+	return NpcNavigation.walk(customer, target, allowed)
 end
 
 local function face(customer, position: Vector3)
@@ -446,14 +434,14 @@ local function visit(shop, customer)
 	end
 	local freezerFrame = customer.freezer
 	local deskFrame = customer.register
-	local freezerSpot = (freezerFrame * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + 1.6)).Position
-	local counterSpot = (deskFrame * CFrame.new(0.15 * ShopDesk.WIDTH, 0, -ShopDesk.DEPTH / 2 - 1.4)).Position
 	local counterTop = deskFrame * CFrame.new(0.2 * ShopDesk.WIDTH, ShopDesk.HEIGHT, -ShopDesk.DEPTH / 4)
 
 	-- Arrive from the street outside the front door when there is ground there.
 	local parameters = RaycastParams.new()
 	parameters.FilterType = Enum.RaycastFilterType.Exclude
 	parameters.FilterDescendantsInstances = { folder }
+	parameters.RespectCanCollide = true
+	parameters.IgnoreWater = true
 	local street = at(0, 24)
 	local hit = workspace:Raycast(street + Vector3.new(0, 10, 0), Vector3.new(0, -20, 0), parameters)
 	local entry = if hit then hit.Position else at(0, 18.6)
@@ -461,6 +449,9 @@ local function visit(shop, customer)
 	customer.model = spawnCustomer(entry)
 	customer.humanoid = customer.model:FindFirstChildOfClass("Humanoid")
 	customer.root = customer.model:FindFirstChild("HumanoidRootPart")
+	local clearance = NpcNavigation.clearance(customer) + 0.4
+	local freezerSpot = (freezerFrame * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + clearance)).Position
+	local counterSpot = (deskFrame * CFrame.new(0.15 * ShopDesk.WIDTH, 0, -ShopDesk.DEPTH / 2 - clearance)).Position
 	local name = describeFish(customer.record)
 	bubble(customer, "Looking for fish…")
 	customer.humanoid.Died:Once(function()
@@ -470,7 +461,9 @@ local function visit(shop, customer)
 	-- Each step stops early if the owner leaves or the customer is dismissed.
 	local function shopping(): boolean
 		local function going(target: Vector3): boolean
-			return not customer.leaving and walk(customer, target) and not customer.leaving
+			return walk(customer, target, function()
+				return not customer.leaving
+			end)
 		end
 		if not (going(at(0, 18.6)) and going(at(0, 11)) and going(freezerSpot)) then
 			return false
@@ -625,11 +618,11 @@ end
 
 -- Through the shop-to-storage doorway to the front of a rack.
 
-local function storageRoute(shop, rack: CFrame): { Vector3 }
+local function storageRoute(shop, rack: CFrame, worker): { Vector3 }
 	local function at(x: number, z: number): Vector3
 		return (shop.frame * CFrame.new(x, 0.16, z)).Position
 	end
-	return { at(12, 4), at(12, -2), (rack * CFrame.new(0, 0, StorageRack.DEPTH / 2 + 1.2)).Position }
+	return { at(12, 4), at(12, -2), (rack * CFrame.new(0, 0, StorageRack.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4)).Position }
 end
 
 -- Boat to the freezer, or to a storage rack once the freezers are full.
@@ -644,7 +637,7 @@ local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Mod
 			and currentId == boatId and currentBoat == boat
 	end
 	local function go(position: Vector3): boolean
-		return valid() and walk(worker, position) and valid()
+		return valid() and walk(worker, position, valid) and valid()
 	end
 	local door = (shop.frame * CFrame.new(0, 0.16, 18.6)).Position
 	local landing = (dock * CFrame.new(17, 4.4, 4)).Position
@@ -662,8 +655,8 @@ local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Mod
 	carry(worker, fish)
 	bubble(worker, if rack then "Porter · Bringing fish to storage" else "Porter · Bringing fish to freezer")
 	local route = if rack
-		then storageRoute(shop, rack)
-		else { (FishFreezer.frame(shop.frame) * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + 1.6)).Position }
+		then storageRoute(shop, rack, worker)
+		else { (FishFreezer.frame(shop.frame) * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4)).Position }
 	if not (go(pier) and go(landing) and go(door) and go((shop.frame * CFrame.new(0, 0.16, 11)).Position)) then
 		return
 	end
@@ -690,10 +683,10 @@ local function restockTrip(shop, worker, owner: Player, record, rack: CFrame)
 			and ownerOf(shop.base) == owner
 	end
 	local function go(position: Vector3): boolean
-		return valid() and walk(worker, position) and valid()
+		return valid() and walk(worker, position, valid) and valid()
 	end
 	bubble(worker, "Porter · Restocking the freezer")
-	local route = storageRoute(shop, rack)
+	local route = storageRoute(shop, rack, worker)
 	for _, position in route do
 		if not go(position) then
 			return
@@ -705,7 +698,7 @@ local function restockTrip(shop, worker, owner: Player, record, rack: CFrame)
 	end
 	worker.fish = fish
 	carry(worker, fish)
-	local freezerSpot = (FishFreezer.frame(shop.frame) * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + 1.6)).Position
+	local freezerSpot = (FishFreezer.frame(shop.frame) * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4)).Position
 	if not (go(route[2]) and go(route[1]) and go(freezerSpot)) then
 		return
 	end

@@ -1,5 +1,13 @@
 local Data = require("../src/server/AnglerData")
 local BoatData = require("../src/server/BoatData")
+local fs = require("@lute/fs")
+local luau = require("@lute/luau")
+local catalogFile = fs.open("src/shared/AnglerCatalog.luau", "r")
+local catalogSource = fs.read(catalogFile)
+fs.close(catalogFile)
+local Catalog = luau.load(luau.compile(catalogSource), "AnglerCatalog", {
+	Color3 = { fromRGB = function(...) return { ... } end },
+})()
 local checks = 0
 local function check(value, message)
 	checks += 1
@@ -7,6 +15,26 @@ local function check(value, message)
 end
 -- Monday 2026-10-19 00:00 UTC.
 local monday = 1792368000
+local expectedXP = { Junk = 5, Common = 50, Uncommon = 100, Rare = 200, Epic = 400, Legendary = 800 }
+for id, species in Catalog.Fish do
+	local before = Data.decode({ Stats = { TotalXP = 950 } })
+	local caught = Data.recordCatch(before, id, "Normal", species.AverageKg, 1, monday, Catalog.Fish, Catalog.Mutations)
+	local trackedCatch = Data.trackProgress(before, caught, monday)
+	local xp = expectedXP[species.Rarity]
+	check(caught.Stats.TotalXP == 950 + xp, "Species awards its rarity XP: " .. id)
+	check(trackedCatch.Weekly.XP == xp and trackedCatch.Weekly.Caught == 1, "Weekly XP matches catch reward: " .. id)
+	check(before.Stats.TotalXP == 950, "Catch reward preserves previous saved data")
+	for _, other in Catalog.Fish do
+		if species.Rarity ~= "Junk" and other.Rarity ~= "Junk" and species.RarityDenominator > other.RarityDenominator then
+			check(species.CatchXP > other.CatchXP, "Rarer fish always award more XP")
+		end
+	end
+end
+for _, invalidXP in { 0, -1, 1.5, math.huge, 0 / 0, "100" } do
+	check(not pcall(Data.recordCatch, nil, "Invalid", "Normal", 1, 1, monday,
+		{ Invalid = { CatchXP = invalidXP, AverageKg = 1, RarityDenominator = 4 } }, Catalog.Mutations),
+		"Invalid XP rewards cannot enter saved progress")
+end
 check(Data.weekStart(monday) == monday, "Monday starts the new UTC week")
 check(Data.weekStart(monday - 1) == monday - 604800, "Sunday belongs to the previous week")
 check(Data.weekStart(monday + 604799) == monday, "Last second of week")

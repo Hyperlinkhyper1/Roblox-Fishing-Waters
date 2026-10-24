@@ -70,8 +70,8 @@ local function shopPrompt(player: Player): ProximityPrompt?
 	return nil
 end
 
--- The rod store's street door and its exit lead between the plaza and the interior,
--- which stands away from the map. Stream the far side in before moving the character.
+-- Shop street doors and exits lead between the plaza and their interiors,
+-- which stand away from the map. Stream the far side in before moving the character.
 local function walkThroughDoor(player: Player, prompt: ProximityPrompt)
 	local destination = prompt:GetAttribute("TeleportTo")
 	local character, humanoid, root = livingCharacter(player)
@@ -287,7 +287,7 @@ function FishingService.start()
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 		if prompt.Name == "BuyFishingRodPrompt" and shopPrompt(player) == prompt then
 			feedback:FireClient(player, "OpenShop")
-		elseif prompt.Name == "RodStoreDoorPrompt" then
+		elseif prompt.Name == "RodStoreDoorPrompt" or prompt.Name == "FurnitureStoreDoorPrompt" then
 			walkThroughDoor(player, prompt)
 		end
 	end)

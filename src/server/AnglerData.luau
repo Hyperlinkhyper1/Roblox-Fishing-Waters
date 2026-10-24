@@ -18,6 +18,7 @@ local function furniture()
 	end
 	return Furniture
 end
+-- Base reward for unconfigured species and migration of old catch totals.
 Data.XP_PER_CATCH = 100
 Data.XP_LEVEL_STEP = 1000
 Data.WEEK_SECONDS = 7 * 24 * 60 * 60
@@ -211,6 +212,8 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 	assert(type(fishId) == "string" and species[fishId], "Unknown fish")
 	assert(type(mutation) == "string" and mutations[mutation], "Unknown mutation")
 	local fish = species[fishId]
+	local catchXP = fish.CatchXP or Data.XP_PER_CATCH
+	assert(number(catchXP, true) and catchXP > 0, "Invalid catch XP")
 	assert(number(fish.AverageKg, false) and fish.AverageKg > 0, "Invalid fish average weight")
 	assert(number(fish.RarityDenominator, false) and fish.RarityDenominator >= 1, "Invalid fish rarity")
 	local rarityMultiplier = mutations[mutation].RarityMultiplier or 1
@@ -236,7 +239,7 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 		data.Hand = copy(record)
 	end
 	data.Stats.TotalCaught += 1
-	data.Stats.TotalXP += Data.XP_PER_CATCH
+	data.Stats.TotalXP += catchXP
 	data.Stats.CatchStreak += 1
 	data.Stats.HighestCatchStreak = math.max(data.Stats.HighestCatchStreak, data.Stats.CatchStreak)
 	for key, field in { HighestValue = "Value", Rarest = "Rarity", Largest = "Kg", RelativeLargest = "Relative" } do

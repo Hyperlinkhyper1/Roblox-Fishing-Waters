@@ -3,6 +3,7 @@
 -- drive it without Roblox's Random.
 local FishCatch = {}
 
+FishCatch.JUNK_CHANCE = 0.04 -- 2% each for the branch and boot, in every stocked pool.
 FishCatch.BIG_CHANCE = 0.06
 FishCatch.HUGE_CHANCE = 0.012
 FishCatch.START_PROGRESS = 0.3
@@ -23,11 +24,19 @@ local function lerp(a: number, b: number, t: number): number
 end
 
 function FishCatch.pickSpecies(pool, species, rng: () -> number): string
+	local pick = rng()
+	if pool.Junk and #pool.Junk > 0 then
+		if pick < FishCatch.JUNK_CHANCE then
+			return pool.Junk[math.floor(pick / FishCatch.JUNK_CHANCE * #pool.Junk) + 1]
+		end
+		-- Keep the existing relative fish odds within the remaining 96%.
+		pick = (pick - FishCatch.JUNK_CHANCE) / (1 - FishCatch.JUNK_CHANCE)
+	end
 	local total = 0
 	for _, id in pool.Fish do
 		total += 1 / species[id].RarityDenominator
 	end
-	local pick = rng() * total
+	pick *= total
 	for _, id in pool.Fish do
 		pick -= 1 / species[id].RarityDenominator
 		if pick < 0 then
@@ -41,6 +50,9 @@ end
 -- approach the species record weight.
 function FishCatch.rollWeight(fish, rng: () -> number): (number, string)
 	local average, minimum, maximum = fish.AverageKg, fish.MinKg, fish.MaxKg
+	if fish.Rarity == "Junk" then
+		return math.floor(lerp(minimum, maximum, rng()) * 100 + 0.5) / 100, "Normal"
+	end
 	local roll = rng()
 	local kg, size
 	if roll < FishCatch.HUGE_CHANCE then
@@ -58,6 +70,9 @@ function FishCatch.rollWeight(fish, rng: () -> number): (number, string)
 end
 
 function FishCatch.value(fish, kg: number, size: string): number
+	if fish.Rarity == "Junk" then
+		return fish.BaseValue
+	end
 	local worth = fish.BaseValue * (kg / fish.AverageKg) ^ 0.9 * (if size == "Huge" then 1.5 else 1)
 	return math.max(1, math.floor(worth + 0.5))
 end
@@ -65,6 +80,9 @@ end
 -- 0 is a lazy minnow, 1 is the hardest fight in the game. Rarity sets the base;
 -- heavier-than-average fish fight noticeably harder.
 function FishCatch.difficulty(fish, rarities, relative: number): number
+	if fish.Rarity == "Junk" then
+		return rarities.Junk.Difficulty
+	end
 	local base = rarities[fish.Rarity].Difficulty + (fish.Fight or 0)
 	local sizeBonus = if relative >= 1
 		then math.min(0.26, 0.14 * math.log(relative, 2))
@@ -108,6 +126,7 @@ function FishCatch.minimumFightSeconds(difficulty: number): number
 end
 
 local titles = {
+	Junk = "SOMETHING ON THE LINE",
 	Common = "RIPPLING WATER",
 	Uncommon = "DISTURBED WATER",
 	Rare = "CHURNING WATER",

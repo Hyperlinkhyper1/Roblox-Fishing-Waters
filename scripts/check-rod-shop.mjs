@@ -30,6 +30,7 @@ const modules = {
   RODSHOP: 'src/server/Map/RodShop.luau',
   STORAGERACK: 'src/server/Map/StorageRack.luau',
   FURNITURESHOP: 'src/server/Map/FurnitureShop.luau',
+  FURNITURECATALOG: 'src/shared/FurnitureCatalog.luau',
   HARBOUR: 'src/server/Map/Harbour.luau',
   BIOMES: 'src/shared/Biomes.luau',
 };
@@ -42,6 +43,7 @@ try {
   for (const [name, path] of Object.entries(modules)) {
     let source = await readFile(join(root, path), 'utf8');
     source = source.replace(/local (\w+) = require\(script\.Parent\.(?:Parent\.)?(\w+)\)/g, 'local $1 = dependencies.$2');
+    source = source.replace(/local (\w+) = require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'local $1 = dependencies.$2');
     if (name === 'HARBOUR') {
       if (!/return Harbour\s*$/.test(source)) throw new Error('Harbour return hook changed');
       source = source.replace(/return Harbour\s*$/, `return {

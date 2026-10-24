@@ -335,6 +335,10 @@ dependencies.StorageRack = loadStorageRack()
 local function loadFurnitureShop()
 	-- FURNITURESHOP_SOURCE --
 end
+local function loadFurnitureCatalog()
+	-- FURNITURECATALOG_SOURCE --
+end
+dependencies.FurnitureCatalog = loadFurnitureCatalog()
 dependencies.FurnitureShop = loadFurnitureShop()
 
 local function loadBiomes()

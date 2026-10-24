@@ -1,10 +1,11 @@
--- Harbour Home's catalogue, opened from the sales counter on the plaza. Bought
+-- Harbour Home's catalogue, opened from showroom displays or the indoor counter. Bought
 -- furniture waits in your stock until you place it from build mode at home.
 -- Prices and stock come from the server; this window only displays them.
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
 
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
@@ -109,6 +110,8 @@ function FurnitureShop.start()
 	local rows = {}
 	local state = nil
 	local pending = false
+	local selectedItem: string? = nil
+	local activePrompt: ProximityPrompt? = nil
 	local function render()
 		local cash = if state then state.Cash else 0
 		status.Text = if not state
@@ -121,6 +124,8 @@ function FurnitureShop.start()
 			)
 		for _, id in Furniture.Order do
 			local item, row = Furniture.Items[id], rows[id]
+			row.frame.Visible = selectedItem == nil or selectedItem == id
+			if selectedItem == id then row.frame.Position = UDim2.fromOffset(18, 118) end
 			local owned = if state then state.Stock[id] or 0 else 0
 			local placed = if state then Furniture.count(state.Placed, id) else 0
 			row.detail.Text = string.format(
@@ -165,7 +170,7 @@ function FurnitureShop.start()
 			TextSize = 15,
 		})
 		buy.Activated:Connect(function()
-			if pending or not buy.Active then
+			if pending or not buy.Active or not overlay.Visible then
 				return
 			end
 			pending = true
@@ -182,7 +187,7 @@ function FurnitureShop.start()
 			end
 			render()
 		end)
-		rows[id] = { detail = detail, buy = buy }
+		rows[id] = { frame = row, detail = detail, buy = buy }
 	end
 
 	local function refresh()
@@ -194,9 +199,14 @@ function FurnitureShop.start()
 	end
 	local function hide()
 		overlay.Visible = false
+		activePrompt = nil
 	end
 	close.Activated:Connect(hide)
 	overlay.Activated:Connect(hide)
+	UserInputService.InputBegan:Connect(function(input)
+		if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB then hide() end
+	end)
+	player.CharacterRemoving:Connect(hide)
 	update.OnClientEvent:Connect(function(kind, payload)
 		if kind == "State" and type(payload) == "table" then
 			state = payload
@@ -207,23 +217,29 @@ function FurnitureShop.start()
 	end)
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, who)
 		if who == player and prompt.Name == "BrowseFurniturePrompt" then
+			local itemId = prompt:GetAttribute("ItemId")
+			selectedItem = if type(itemId) == "string" and Furniture.Items[itemId] then itemId else nil
+			activePrompt = prompt
+			for index, id in Furniture.Order do
+				rows[id].frame.Position = UDim2.fromOffset(18, 118 + (index - 1) * 112)
+			end
+			card.Size = UDim2.new(1, -28, 0, if selectedItem then 238 else 470)
 			overlay.Visible = true
 			render()
 			task.spawn(refresh)
 		end
 	end)
-	-- Walking away closes the catalogue.
+	-- Walking away from the current display or leaving the shop closes the catalogue.
 	task.spawn(function()
 		while true do
 			task.wait(0.5)
 			if overlay.Visible then
 				local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-				local near = false
-				for _, top in game:GetService("CollectionService"):GetTagged("FurnitureShop") do
-					if root and top:IsA("BasePart") and (top.Position - root.Position).Magnitude < 20 then
-						near = true
-					end
-				end
+				local anchor = activePrompt and activePrompt.Parent
+				local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+				local near = root and humanoid and humanoid.Health > 0 and anchor and anchor:IsA("BasePart")
+					and anchor:IsDescendantOf(workspace)
+					and (anchor.Position - root.Position).Magnitude <= (activePrompt :: ProximityPrompt).MaxActivationDistance + 2
 				if not near then
 					hide()
 				end

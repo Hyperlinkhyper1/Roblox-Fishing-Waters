@@ -18,6 +18,7 @@ local finish = assert(string.find(models, "function FishModels.silhouette", star
 local sizing = luau.load(luau.compile("local FishModels = {}\n" .. string.sub(models, start, finish)
 	.. "\nreturn FishModels"), "catch-size")()
 local length = sizing.catchLength
+local heldLength = sizing.heldLength
 local catalog = luau.load(luau.compile(read("src/shared/AnglerCatalog.luau")), "catalog", {
 	Color3 = { fromRGB = function(...) return { ... } end },
 })()
@@ -28,6 +29,7 @@ local function check(ok, message)
 end
 for id, fish in catalog.Fish do
 	local previous = 0
+	local previousHeld = 0
 	-- Include the full record range: even the largest catches must remain
 	-- distinct instead of all hitting the same hard size limit.
 	for step = 0, 100 do
@@ -35,6 +37,9 @@ for id, fish in catalog.Fish do
 		local size = length(kg)
 		check(size > previous, id .. ": heavier catches must look larger")
 		check(size > 0 and size < 3.2, id .. ": fits the full-depth freezer row")
+		local heldSize = heldLength(kg)
+		check(heldSize > previousHeld, id .. ": heavier catches must look larger in hand")
+		previousHeld = heldSize
 		previous = size
 	end
 	check(length(fish.MinKg) < length(fish.AverageKg), id .. ": small catch is smaller than average")
@@ -46,8 +51,12 @@ check(length(catalog.Fish.Clownfish.AverageKg) > length(catalog.Fish.Anchovy.Ave
 	"Small species retain different sizes too")
 check(string.find(source, "FishModels.scaleCatch(model, record.Kg)", 1, true) ~= nil,
 	"Freezer and customers use shared catch sizing")
-check(string.find(cargo, "FishModels.scaleCatch(model, record.Kg)", 1, true) ~= nil,
-	"Player's hand uses the same catch sizing")
+check(string.find(cargo, "FishModels.scaleHeldCatch(model, record.Kg)", 1, true) ~= nil,
+	"Player's hand uses the catch's actual weight without the freezer size limit")
+check(math.abs(heldLength(8) / heldLength(1) - 2) < 1e-9,
+	"Eight times the weight doubles held fish dimensions")
+check(heldLength(1100) > heldLength(35) * 3,
+	"Record catches remain visibly larger than heavy catches in hand")
 -- Exercise the scaling with elongated, tall and wide model bounds: every
 -- orientation must retain its proportions and fit the ice at the same scale.
 for _, dimensions in { {4, 1, 0.5}, {2, 4, 0.5}, {2, 0.5, 4} } do
@@ -62,12 +71,15 @@ for _, dimensions in { {4, 1, 0.5}, {2, 4, 0.5}, {2, 0.5, 4} } do
 	end
 	for _, kg in {0.01, 0.09, 1.2, 35, 1100} do
 		local held, frozen = mock(), mock()
-		local a, b = sizing.scaleCatch(held, kg), sizing.scaleCatch(frozen, kg)
-		check(held.scale == frozen.scale and a.X == b.X and a.Y == b.Y and a.Z == b.Z,
-			"Catch retains exact dimensions between hand and freezer")
-		check(math.abs(math.max(a.X, a.Y, a.Z) - length(kg)) < 1e-9,
-			"Longest axis matches catch length even for rays and tall fish")
-		check(a.X < 3.34, "Catch fits ice depth with clearance")
+		local a, b = sizing.scaleHeldCatch(held, kg), sizing.scaleCatch(frozen, kg)
+		check(math.abs(math.max(a.X, a.Y, a.Z) - heldLength(kg)) < 1e-9,
+			"Held model's longest axis matches its weight-based length")
+		check(math.abs(a.X / a.Y - bounds.X / bounds.Y) < 1e-9
+			and math.abs(a.Z / a.Y - bounds.Z / bounds.Y) < 1e-9,
+			"Held scaling preserves fish proportions")
+		check(math.abs(math.max(b.X, b.Y, b.Z) - length(kg)) < 1e-9,
+			"Freezer's longest axis matches compact catch length")
+		check(b.X < 3.34, "Catch fits ice depth with clearance")
 	end
 end
 print("Freezer fish sizing: " .. checks .. " checks passed (no Roblox runtime).")

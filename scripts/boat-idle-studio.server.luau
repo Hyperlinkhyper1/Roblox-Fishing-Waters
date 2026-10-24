@@ -27,6 +27,14 @@ local function run()
 	workspace:SetAttribute("WeatherEpoch", workspace:GetServerTimeNow())
 	workspace:SetAttribute("WeatherOverride", "Storm")
 	Service.start()
+	-- Test-only telemetry listener; this action is ignored by the production API.
+	game.ReplicatedStorage.Boating.Request.OnServerEvent:Connect(function(player, action, samples, contacts, slip)
+		if action == "IdleRegressionSample" then
+			player:SetAttribute("BoatRegressionIdleSamples", samples)
+			player:SetAttribute("BoatRegressionIdleContacts", contacts)
+			player:SetAttribute("BoatRegressionIdleSlip", slip)
+		end
+	end)
 	check(untilTrue(function() return #Players:GetPlayers() > 0 end, 60), "Start with F5 to create a real player")
 	local player = Players:GetPlayers()[1]
 	local character = player.Character or player.CharacterAdded:Wait()
@@ -35,6 +43,7 @@ local function run()
 	for index, id in { "Rowboat", "FishingBoat" } do
 		workspace:SetAttribute("BoatRegressionPhase", "Stand")
 		local boat = Service.launch(player, CFrame.new((index - 1) * 50 - 25, level, 0), nil, id)
+		workspace:SetAttribute("BoatRegressionBoatName", boat.model.Name)
 		character:PivotTo(boat.root.CFrame * CFrame.new(0, 5, -2))
 		avatarRoot.AssemblyLinearVelocity = Vector3.zero
 		local held = boat.root.CFrame
@@ -77,8 +86,18 @@ local function run()
 		task.wait(0.3)
 		character:PivotTo(boat.root.CFrame * CFrame.new(0, 5, -2))
 		local stopped = boat.root.CFrame
-		task.wait(2)
+		player:SetAttribute("BoatRegressionIdleSamples", 0)
+		player:SetAttribute("BoatRegressionIdleContacts", 0)
+		player:SetAttribute("BoatRegressionIdleSlip", 0)
+		workspace:SetAttribute("BoatRegressionPhase", "IdleAfterDrive")
+		task.wait(30)
 		check(boat.root.CFrame == stopped and boat.root.Anchored, id .. " must stay fixed after dismounting")
+		local samples = player:GetAttribute("BoatRegressionIdleSamples") or 0
+		local contacts = player:GetAttribute("BoatRegressionIdleContacts") or 0
+		local slip = player:GetAttribute("BoatRegressionIdleSlip") or math.huge
+		check(samples > 300, id .. " client must measure idle drift after sailing")
+		check(contacts > samples * 0.95, id .. " idle character must stay standing on the animated deck")
+		check(slip < 0.3, id .. " idle character drifted " .. tostring(slip) .. " studs across the deck")
 		print("[BoatIdleRegression] " .. id .. ": standing, walking, jumping, real client driving, coasting and dismount passed")
 		boat.model:Destroy()
 	end
