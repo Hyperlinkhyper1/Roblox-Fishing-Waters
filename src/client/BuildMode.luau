@@ -1,9 +1,12 @@
--- Build mode: at home, press B (or the Build button) to look straight down into
--- your house with the roof hidden. Pick bought furniture from the bottom bar, turn it
+-- Build mode: at home, press B (or the Build button) for an angled building view
+-- with the roof hidden. Pan the view with WASD / arrows or right-drag; scroll to zoom.
+-- Pick bought furniture from the bottom bar, turn it
 -- with R and click a floor spot to place it; click placed furniture to move it or
 -- pick it back up. Allowed rooms glow green while you hold an item. The preview
 -- uses the shared placement rules, and the server re-checks every placement.
 local CollectionService = game:GetService("CollectionService")
+local ContextActionService = game:GetService("ContextActionService")
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -11,6 +14,7 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
+local FurniturePreview = require(script.Parent.FurniturePreview)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local BuildMode = {}
@@ -22,7 +26,30 @@ local HOME_DISTANCE = 80
 -- Everything above the doorway lintels: roof, gables, ceiling ties and pendant lamps.
 local ROOF_HEIGHT = 8.4
 local FLOOR_Y = 0.16
-local HEIGHTS = { Freezer = 4, Register = 3, StorageRack = 6.6 }
+local HEIGHTS = {
+	Freezer = 4,
+	Register = 3,
+	StorageRack = 6.6,
+	FoodCase = 3.8,
+	GrillStation = 6.3,
+	Smoker = 7.5,
+	SushiBar = 6.3,
+	DiningTable = 4.3,
+}
+-- The Restaurant's dining room extends the floor behind the house to this z.
+local DINING_BACK = -30
+local CAMERA_PITCH = math.rad(55)
+local PAN_LIMIT = Vector2.new(30, 24)
+local PAN_KEYS = {
+	[Enum.KeyCode.W] = Vector2.new(0, -1),
+	[Enum.KeyCode.Up] = Vector2.new(0, -1),
+	[Enum.KeyCode.S] = Vector2.new(0, 1),
+	[Enum.KeyCode.Down] = Vector2.new(0, 1),
+	[Enum.KeyCode.A] = Vector2.new(-1, 0),
+	[Enum.KeyCode.Left] = Vector2.new(-1, 0),
+	[Enum.KeyCode.D] = Vector2.new(1, 0),
+	[Enum.KeyCode.Right] = Vector2.new(1, 0),
+}
 local started = false
 
 local function make(class: string, parent: Instance?, props: { [string]: any }): any
@@ -57,6 +84,8 @@ function BuildMode.start()
 	local house: Model? = nil
 	local houseFrame = CFrame.identity
 	local hidden: { [BasePart]: number } = {}
+	local roofConnection: RBXScriptConnection? = nil
+	local frozen = nil
 	local held = nil -- { ItemId, From (item id or placed index), R }
 	local selected: number? = nil
 	local spot = nil -- { X, Z, Reason }
@@ -64,6 +93,16 @@ function BuildMode.start()
 	local saved = nil
 	local preview: Model? = nil
 	local highlight: Highlight? = nil
+	local grid: Folder? = nil
+	local pan = Vector2.zero
+	local zoom = 1
+	local cameraDistance = 60
+	local panKeys = {}
+	local dragging = false
+	local dragPosition: Vector2? = nil
+	local touch: InputObject? = nil
+	local touchStart = Vector2.zero
+	local touchDragged = false
 
 	-- HUD
 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
@@ -113,7 +152,11 @@ function BuildMode.start()
 		Theme.button(item)
 		return item
 	end
-	label(panel, "Build mode", { Position = UDim2.fromOffset(16, 12), Size = UDim2.new(1, -32, 0, 26), TextSize = 20 })
+	local inventoryTitle = label(panel, "Unplaced furniture", {
+		Position = UDim2.fromOffset(16, 12),
+		Size = UDim2.new(1, -32, 0, 26),
+		TextSize = 20,
+	})
 	local hint = label(panel, "", {
 		Position = UDim2.fromOffset(16, 38),
 		Size = UDim2.new(1, -32, 0, 32),
@@ -144,14 +187,47 @@ function BuildMode.start()
 	local catalogue = horizontalStrip("Placeables", 76, 60)
 	local actions = horizontalStrip("BuildActions", 144, 36)
 	local itemButtons = {}
+	local stockLabels = {}
+	local itemViews, previewStarted = {}, {}
 	for index, id in Furniture.Order do
-		itemButtons[id] = button(catalogue, "", {
+		local card = button(catalogue, "", {
 			Name = "Hold" .. id,
 			LayoutOrder = index,
 			Size = UDim2.fromOffset(196, 52),
 			TextWrapped = true,
+			Visible = false,
+		})
+		itemButtons[id] = card
+		local view = make("ViewportFrame", card, {
+			Name = "FurnitureThumbnail",
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(4, 4),
+			Size = UDim2.fromOffset(64, 44),
+			Active = false,
+			ZIndex = 2,
+		})
+		itemViews[id] = view
+		label(card, Furniture.Items[id].Name, {
+			Position = UDim2.fromOffset(76, 4),
+			Size = UDim2.fromOffset(112, 26),
+			TextSize = 12,
+			ZIndex = 3,
+		})
+		stockLabels[id] = label(card, "", {
+			Position = UDim2.fromOffset(76, 32),
+			Size = UDim2.fromOffset(112, 16),
+			TextSize = 11,
+			ZIndex = 3,
+			TextColor3 = Theme.Colors.Muted,
 		})
 	end
+	local emptyInventory = label(panel, "Loading your furniture…", {
+		Name = "EmptyInventory",
+		Position = UDim2.fromOffset(16, 80),
+		Size = UDim2.new(1, -32, 0, 52),
+		TextSize = 14,
+		TextColor3 = Theme.Colors.Muted,
+	})
 	local rotate = button(actions, "Rotate [R]", {
 		Name = "Rotate",
 		LayoutOrder = 1,
@@ -176,6 +252,41 @@ function BuildMode.start()
 		Name = "ExitBuildMode",
 		LayoutOrder = 5,
 		Size = UDim2.fromOffset(100, 30),
+	})
+	local navigation = make("Frame", gui, {
+		Name = "BuildNavigation",
+		Active = true,
+		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.new(1, -24, 0, 54),
+		Visible = false,
+	})
+	Theme.window(navigation)
+	label(
+		navigation,
+		if UserInputService.TouchEnabled
+			then "Drag to pan · Tap to select / place"
+			else "WASD / arrows: pan · Right-drag: pan · Wheel: zoom",
+		{
+			Position = UDim2.fromOffset(12, 7),
+			Size = UDim2.new(1, -186, 1, -14),
+			TextSize = 12,
+			TextYAlignment = Enum.TextYAlignment.Center,
+		}
+	)
+	local zoomOut = button(navigation, "−", {
+		Name = "ZoomOut",
+		Position = UDim2.new(1, -168, 0, 10),
+		Size = UDim2.fromOffset(36, 34),
+	})
+	local zoomIn = button(navigation, "+", {
+		Name = "ZoomIn",
+		Position = UDim2.new(1, -126, 0, 10),
+		Size = UDim2.fromOffset(36, 34),
+	})
+	local recenter = button(navigation, "Home", {
+		Name = "RecenterView",
+		Position = UDim2.new(1, -84, 0, 10),
+		Size = UDim2.fromOffset(72, 34),
 	})
 
 	local function ownHouse(): (Model?, CFrame?)
@@ -202,17 +313,26 @@ function BuildMode.start()
 		Theme.button(item, if chosen then "Selected" elseif enabled then "Normal" else "Disabled")
 	end
 	local function render()
+		local total = 0
 		for _, id in Furniture.Order do
 			local item = Furniture.Items[id]
 			local stock = if state then state.Stock[id] or 0 else 0
 			local full = state ~= nil and Furniture.count(state.Placed, id) >= item.MaxPlaced
-			setButton(
-				itemButtons[id],
-				string.format("%s\n%d available", item.Name, stock),
-				stock > 0 and not full and not pending,
-				held ~= nil and held.From == id
-			)
+			total += stock
+			itemButtons[id].Visible = stock > 0
+			itemButtons[id].Selectable = stock > 0 and not full and not pending
+			stockLabels[id].Text = string.format("%d unplaced", stock)
+			if stock > 0 and not previewStarted[id] then
+				previewStarted[id] = true
+				FurniturePreview.show(itemViews[id], remotes, id)
+			end
+			setButton(itemButtons[id], "", stock > 0 and not full and not pending, held ~= nil and held.From == id)
 		end
+		inventoryTitle.Text = string.format("Unplaced furniture · %d", total)
+		emptyInventory.Visible = total == 0
+		emptyInventory.Text = if state
+			then "No unplaced furniture. Buy items at Harbour Home, or pick up furniture in your house."
+			else "Loading your furniture…"
 		setButton(rotate, "Rotate [R]", held ~= nil)
 		setButton(cancel, "Cancel [Q]", held ~= nil or selected ~= nil)
 		setButton(move, "Move", selected ~= nil and held == nil and not pending)
@@ -221,7 +341,11 @@ function BuildMode.start()
 			local item = Furniture.Items[held.ItemId]
 			hint.Text = if spot and spot.Reason
 				then spot.Reason
-				else string.format("Click the %s to place your %s.", Furniture.RoomNames[item.Room], string.lower(item.Name))
+				else string.format(
+					"Click the %s to place your %s.",
+					Furniture.RoomNames[item.Room],
+					string.lower(item.Name)
+				)
 		elseif selected and state and state.Placed[selected] then
 			hint.Text = Furniture.Items[state.Placed[selected].ItemId].Name .. " selected. Move it or pick it up."
 		else
@@ -354,8 +478,8 @@ function BuildMode.start()
 		arrow.CFrame = frame * CFrame.new(0, height + 0.2, item.Depth / 2)
 	end
 
-	-- The floor spot under the pointer, snapped to the placement grid.
-	local function pointerSpot(position: Vector2)
+	-- Intersect the pointer with the floor, also used for drag-to-pan at any zoom.
+	local function pointerFloor(position: Vector2): Vector3?
 		local camera = workspace.CurrentCamera
 		if not camera then
 			return nil
@@ -371,8 +495,15 @@ function BuildMode.start()
 		if t < 0 then
 			return nil
 		end
-		local point = houseFrame:PointToObjectSpace(ray.Origin + ray.Direction * t)
-		return math.round(point.X / Furniture.GRID) * Furniture.GRID, math.round(point.Z / Furniture.GRID) * Furniture.GRID
+		return houseFrame:PointToObjectSpace(ray.Origin + ray.Direction * t)
+	end
+	local function pointerSpot(position: Vector2)
+		local point = pointerFloor(position)
+		if not point then
+			return nil
+		end
+		return math.round(point.X / Furniture.GRID) * Furniture.GRID,
+			math.round(point.Z / Furniture.GRID) * Furniture.GRID
 	end
 	local function aim(position: Vector2)
 		if not held or not state then
@@ -444,7 +575,8 @@ function BuildMode.start()
 		local parameters = RaycastParams.new()
 		parameters.FilterType = Enum.RaycastFilterType.Include
 		parameters.FilterDescendantsInstances = { folder }
-		local hit = workspace:Raycast(ray.Origin, ray.Direction * 200, parameters)
+		local reach = (ray.Origin - houseFrame.Position).Magnitude + 80
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * reach, parameters)
 		local model = hit and hit.Instance
 		while model and model.Parent ~= folder do
 			model = model.Parent
@@ -466,43 +598,164 @@ function BuildMode.start()
 		end
 	end
 
-	local function hideRoof()
-		hidden = {}
-		if not house then
+	local function hideRoofPart(part: Instance)
+		if not house or not part:IsA("BasePart") then
 			return
 		end
 		local folder = house:FindFirstChild("Furniture")
-		for _, part in house:GetDescendants() do
-			if part:IsA("BasePart") and not (folder and part:IsDescendantOf(folder)) then
-				if houseFrame:PointToObjectSpace(part.Position).Y > ROOF_HEIGHT and part.Transparency < 1 then
-					hidden[part] = part.Transparency
-					part.Transparency = 1
-				end
+		if folder and part:IsDescendantOf(folder) then
+			return
+		end
+		if houseFrame:PointToObjectSpace(part.Position).Y > ROOF_HEIGHT then
+			if hidden[part] == nil then
+				hidden[part] = part.LocalTransparencyModifier
 			end
+			part.LocalTransparencyModifier = 1
+		end
+	end
+	local function hideRoof()
+		if not house then
+			return
+		end
+		if not roofConnection then
+			local watched = house
+			roofConnection = house.DescendantAdded:Connect(function(part)
+				-- Streamed parts can arrive before their frame; the periodic pass also
+				-- catches late properties and reapplies hiding after replication updates.
+				task.defer(function()
+					if active and house == watched and part:IsDescendantOf(watched) then
+						hideRoofPart(part)
+					end
+				end)
+			end)
+		end
+		for _, part in house:GetDescendants() do
+			hideRoofPart(part)
 		end
 	end
 	local function showRoof()
-		for part, transparency in hidden do
+		if roofConnection then
+			roofConnection:Disconnect()
+			roofConnection = nil
+		end
+		for part, modifier in hidden do
 			if part.Parent then
-				part.Transparency = transparency
+				part.LocalTransparencyModifier = modifier
 			end
 		end
 		hidden = {}
+	end
+	local function showGrid()
+		local folder = make("Folder", workspace, { Name = "BuildGrid" })
+		grid = folder
+		local back = if state and state.Unlocked and state.Unlocked.Restaurant then DINING_BACK else -15
+		for x = -23, 23, Furniture.GRID do
+			local major = x % 2 == 0
+			plate(
+				folder,
+				{ x - 0.012, if x <= -5.5 then back else -15, x + 0.012, 15 },
+				FLOOR_Y + 0.13,
+				rgb(235, 245, 255),
+				if major then 0.3 else 0.65
+			)
+		end
+		for z = back, 15, Furniture.GRID do
+			local major = z % 2 == 0
+			plate(
+				folder,
+				{ -23, z - 0.012, if z < -15 then -5.5 else 23, z + 0.012 },
+				FLOOR_Y + 0.13,
+				rgb(235, 245, 255),
+				if major then 0.3 else 0.65
+			)
+		end
+	end
+
+	local function panBy(delta: Vector2)
+		pan = Vector2.new(
+			math.clamp(pan.X + delta.X, -PAN_LIMIT.X, PAN_LIMIT.X),
+			math.clamp(pan.Y + delta.Y, -PAN_LIMIT.Y, PAN_LIMIT.Y)
+		)
+	end
+	local function dragView(from: Vector2, to: Vector2)
+		local first, last = pointerFloor(from), pointerFloor(to)
+		if first and last then
+			panBy(Vector2.new(first.X - last.X, first.Z - last.Z))
+		end
+	end
+	local function changeZoom(steps: number)
+		zoom = math.clamp(zoom * 0.85 ^ steps, 0.45, 2.5)
+	end
+	local function clearNavigation()
+		table.clear(panKeys)
+		dragging, dragPosition, touch = false, nil, nil
+		touchDragged = false
+	end
+	local function cameraInput(_, inputState: Enum.UserInputState, input: InputObject)
+		if inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
+			panKeys[input.KeyCode] = nil
+		elseif inputState == Enum.UserInputState.Begin and not UserInputService:GetFocusedTextBox() then
+			panKeys[input.KeyCode] = PAN_KEYS[input.KeyCode]
+		end
+		-- Consume movement and jumping before Roblox can move the character.
+		return if UserInputService:GetFocusedTextBox()
+			then Enum.ContextActionResult.Pass
+			else Enum.ContextActionResult.Sink
+	end
+
+	local function freezeCharacter(): boolean
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not root or not root:IsA("BasePart") or not humanoid or humanoid.Health <= 0 then
+			return false
+		end
+		if humanoid.SeatPart then
+			notice("Leave your seat before entering build mode.")
+			return false
+		end
+		frozen = { Root = root, Anchored = root.Anchored, Humanoid = humanoid, AutoRotate = humanoid.AutoRotate }
+		humanoid:Move(Vector3.zero)
+		humanoid.AutoRotate = false
+		root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
+		root.Anchored = true
+		return true
+	end
+	local function releaseCharacter()
+		if not frozen then
+			return
+		end
+		if frozen.Root.Parent then
+			frozen.Root.Anchored = frozen.Anchored
+		end
+		if frozen.Humanoid.Parent then
+			frozen.Humanoid.AutoRotate = frozen.AutoRotate
+		end
+		frozen = nil
 	end
 
 	local function controls(enabled: boolean)
 		pcall(function()
-			local module = require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule") :: ModuleScript)
+			local scripts = player:FindFirstChild("PlayerScripts")
+			local playerModule = scripts and scripts:FindFirstChild("PlayerModule")
+			if not playerModule or not playerModule:IsA("ModuleScript") then
+				return
+			end
+			local module = require(playerModule)
 			local playerControls = module:GetControls()
 			if enabled then
 				playerControls:Enable()
 			else
 				playerControls:Disable()
+				local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid:Move(Vector3.zero)
+				end
 			end
 		end)
 	end
 
-	local function updateCamera()
+	local function updateCamera(dt: number?)
 		local camera = workspace.CurrentCamera
 		if not camera then
 			return
@@ -514,19 +767,51 @@ function BuildMode.start()
 		if viewport.X <= 0 or viewport.Y <= 0 then
 			return
 		end
-		local inset = game:GetService("GuiService"):GetGuiInset()
-		local top = inset.Y + 12
+		local inset = GuiService:GetGuiInset()
+		local top = navigation.AbsolutePosition.Y + navigation.AbsoluteSize.Y + inset.Y + 12
 		local bottom = panel.AbsolutePosition.Y + inset.Y - 12
-		local available = math.max(1, bottom - top)
-		local aspect = viewport.X / viewport.Y
-		local half = math.tan(math.rad(camera.FieldOfView / 2))
-		-- Fit the 46 x 30 house with a margin inside the area ABOVE the bar.
-		local height = math.max(18 * viewport.Y / (half * available), 26 / (half * aspect))
-		local center = (houseFrame * CFrame.new(0, FLOOR_Y, 0)).Position
-		local shift = ((top + bottom) / 2 - viewport.Y / 2) * (2 * height * half / viewport.Y)
-		local target = center + houseFrame.LookVector * shift
-		camera.CFrame = CFrame.lookAt(target + houseFrame.UpVector * height, target, houseFrame.LookVector)
+		local focal = viewport.Y / (2 * math.tan(math.rad(camera.FieldOfView / 2)))
+		local halfArea = math.max(1, bottom - top) / (2 * focal)
+		local upper, lower = (viewport.Y / 2 - top) / focal, (viewport.Y / 2 - bottom) / focal
+		local back = Vector3.new(0, math.sin(CAMERA_PITCH), math.cos(CAMERA_PITCH))
+		local orientation = CFrame.lookAt(Vector3.zero, -back)
+		-- Fit the floor AND room walls in the viewport between the two toolbars.
+		-- Perspective depth matters here: the near corners need more room.
+		local distance = 18
+		for _, x in { -26, 26 } do
+			for _, z in { -18, 18 } do
+				for _, y in { 0, ROOF_HEIGHT } do
+					local point = orientation:PointToObjectSpace(Vector3.new(x, y, z))
+					distance = math.max(
+						distance,
+						math.abs(point.X) * focal / (viewport.X / 2 - 12) + point.Z,
+						(point.Y + upper * point.Z) / halfArea,
+						(-point.Y - lower * point.Z) / halfArea
+					)
+				end
+			end
+		end
+		cameraDistance = math.max(18, distance * zoom)
+		if not UserInputService:GetFocusedTextBox() then
+			local direction = Vector2.zero
+			for _, axis in panKeys do
+				direction += axis
+			end
+			if direction.Magnitude > 0 then
+				panBy(direction.Unit * math.min(cameraDistance, 100) * 0.45 * math.min(dt or 0, 0.1))
+			end
+		end
+		local center = houseFrame * Vector3.new(pan.X, FLOOR_Y, pan.Y)
+		local worldOrientation = houseFrame * orientation
+		local shift = ((top + bottom) / 2 - viewport.Y / 2) * cameraDistance / focal
+		local target = center + worldOrientation.UpVector * shift
+		camera.CFrame =
+			CFrame.lookAt(target + houseFrame:VectorToWorldSpace(back) * cameraDistance, target, houseFrame.UpVector)
 		camera.Focus = CFrame.new(center)
+		-- A stationary pointer must still track its floor tile as the camera moves.
+		if held then
+			aim(if touch then Vector2.new(touch.Position.X, touch.Position.Y) else UserInputService:GetMouseLocation())
+		end
 	end
 
 	local exit
@@ -542,19 +827,49 @@ function BuildMode.start()
 		if not camera or not model or not frame then
 			return
 		end
+		if not freezeCharacter() then
+			return
+		end
 		active, house, houseFrame = true, model, frame
+		clearNavigation()
+		pan, zoom = Vector2.zero, 1
 		saved = {
 			Type = camera.CameraType,
 			FieldOfView = camera.FieldOfView,
 			FieldOfViewMode = camera.FieldOfViewMode,
 			Frame = camera.CFrame,
 			Focus = camera.Focus,
+			MouseBehavior = UserInputService.MouseBehavior,
+			MouseIconEnabled = UserInputService.MouseIconEnabled,
 		}
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.FieldOfView = 50
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		UserInputService.MouseIconEnabled = true
 		controls(false)
+		ContextActionService:BindActionAtPriority(
+			"FurnitureBuildMovement",
+			cameraInput,
+			false,
+			Enum.ContextActionPriority.High.Value + 1,
+			Enum.KeyCode.W,
+			Enum.KeyCode.A,
+			Enum.KeyCode.S,
+			Enum.KeyCode.D,
+			Enum.KeyCode.Up,
+			Enum.KeyCode.Down,
+			Enum.KeyCode.Left,
+			Enum.KeyCode.Right,
+			Enum.KeyCode.Space
+		)
+		for key, axis in PAN_KEYS do
+			if UserInputService:IsKeyDown(key) then
+				panKeys[key] = axis
+			end
+		end
 		hideRoof()
-		panel.Visible, toggle.Visible = true, false
+		showGrid()
+		panel.Visible, navigation.Visible, toggle.Visible = true, true, false
 		player:SetAttribute("BuildModeOpen", true)
 		updateCamera()
 		RunService:BindToRenderStep("FurnitureBuildCamera", Enum.RenderPriority.Camera.Value + 1, updateCamera)
@@ -572,10 +887,16 @@ function BuildMode.start()
 			return
 		end
 		active = false
+		clearNavigation()
+		ContextActionService:UnbindAction("FurnitureBuildMovement")
 		drop()
 		choose(nil)
 		RunService:UnbindFromRenderStep("FurnitureBuildCamera")
 		showRoof()
+		if grid then
+			grid:Destroy()
+			grid = nil
+		end
 		local camera = workspace.CurrentCamera
 		if saved and camera then
 			camera.CameraType = saved.Type
@@ -584,8 +905,13 @@ function BuildMode.start()
 			camera.CFrame = saved.Frame
 			camera.Focus = saved.Focus
 		end
+		if saved then
+			UserInputService.MouseBehavior = saved.MouseBehavior
+			UserInputService.MouseIconEnabled = saved.MouseIconEnabled
+		end
+		releaseCharacter()
 		controls(true)
-		panel.Visible = false
+		panel.Visible, navigation.Visible = false, false
 		player:SetAttribute("BuildModeOpen", false)
 	end
 
@@ -620,9 +946,30 @@ function BuildMode.start()
 	end)
 	done.Activated:Connect(exit)
 	toggle.Activated:Connect(enter)
+	zoomIn.Activated:Connect(function()
+		changeZoom(1)
+	end)
+	zoomOut.Activated:Connect(function()
+		changeZoom(-1)
+	end)
+	recenter.Activated:Connect(function()
+		pan, zoom = Vector2.zero, 1
+	end)
+	UserInputService.WindowFocusReleased:Connect(clearNavigation)
+	UserInputService.TextBoxFocused:Connect(clearNavigation)
+	GuiService.MenuOpened:Connect(clearNavigation)
+
+	local function clickWorld(position: Vector2)
+		if held then
+			aim(position)
+			placeHeld()
+		else
+			clickFurniture(position)
+		end
+	end
 
 	UserInputService.InputBegan:Connect(function(input, processed)
-		if processed then
+		if processed or UserInputService:GetFocusedTextBox() then
 			return
 		end
 		if input.KeyCode == Enum.KeyCode.B then
@@ -636,25 +983,54 @@ function BuildMode.start()
 		elseif input.KeyCode == Enum.KeyCode.R and held then
 			held.R = (held.R + 1) % 4
 			aim(UserInputService:GetMouseLocation())
-		elseif input.KeyCode == Enum.KeyCode.Q or input.UserInputType == Enum.UserInputType.MouseButton2 then
+		elseif input.KeyCode == Enum.KeyCode.Q then
 			drop()
 			choose(nil)
-		elseif
-			input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch
-		then
-			local position = Vector2.new(input.Position.X, input.Position.Y)
-			if held then
-				aim(position)
-				placeHeld()
-			else
-				clickFurniture(position)
-			end
+		elseif input.KeyCode == Enum.KeyCode.Home then
+			pan, zoom = Vector2.zero, 1
+		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+			dragging = true
+			dragPosition = UserInputService:GetMouseLocation()
+		elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+			clickWorld(Vector2.new(input.Position.X, input.Position.Y))
+		elseif input.UserInputType == Enum.UserInputType.Touch and not touch then
+			touch = input
+			touchStart = Vector2.new(input.Position.X, input.Position.Y)
+			dragPosition, touchDragged = touchStart, false
 		end
 	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if active and held and input.UserInputType == Enum.UserInputType.MouseMovement then
-			aim(UserInputService:GetMouseLocation())
+	UserInputService.InputChanged:Connect(function(input, processed)
+		if not active then
+			return
+		end
+		if input.UserInputType == Enum.UserInputType.MouseWheel and not processed then
+			changeZoom(input.Position.Z)
+		elseif dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local position = UserInputService:GetMouseLocation()
+			if dragPosition then
+				dragView(dragPosition, position)
+			end
+			dragPosition = position
+		elseif input == touch then
+			local position = Vector2.new(input.Position.X, input.Position.Y)
+			if (position - touchStart).Magnitude > 8 then
+				touchDragged = true
+			end
+			if touchDragged and dragPosition then
+				dragView(dragPosition, position)
+			end
+			dragPosition = position
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			dragging, dragPosition = false, nil
+		elseif input == touch then
+			if active and not touchDragged and input.UserInputState ~= Enum.UserInputState.Cancel then
+				clickWorld(Vector2.new(input.Position.X, input.Position.Y))
+			end
+			touch, dragPosition = nil, nil
+			touchDragged = false
 		end
 	end)
 	update.OnClientEvent:Connect(function(kind, payload)
@@ -668,6 +1044,7 @@ function BuildMode.start()
 	end)
 	-- Respawning or leaving home ends build mode; the toggle shows only at home.
 	player.CharacterAdded:Connect(exit)
+	player.CharacterRemoving:Connect(exit)
 	task.spawn(function()
 		while true do
 			task.wait(0.5)
@@ -678,6 +1055,7 @@ function BuildMode.start()
 				if not home or not humanoid or humanoid.Health <= 0 then
 					exit()
 				else
+					hideRoof()
 					-- Furniture rebuilt by the server since the last check keeps its highlight.
 					if selected and highlight and not highlight.Parent then
 						setHighlight(placedModel(selected))

@@ -8,7 +8,10 @@ local RunService = game:GetService("RunService")
 local AnglerService = require(script.Parent.AnglerService)
 local BoatService = require(script.Parent.BoatService)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
+local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
+local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
+local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local CatchService = {}
@@ -106,7 +109,9 @@ local function cast(player: Player, target: any)
 		send(player, "Cancelled", "Cast into open water.")
 		return
 	end
-	local state = { tool = tool, target = surface, phase = "Waiting" }
+	-- Upgrades bought mid-cast apply from the next cast, matching the client's fight.
+	local boosts = RodUpgrades.boosts(profile and profile.RodUpgrades)
+	local state = { tool = tool, target = surface, phase = "Waiting", boosts = boosts }
 	casts[player] = state
 	tool:SetAttribute("CastTarget", surface)
 	tool:SetAttribute("CastAt", workspace:GetServerTimeNow())
@@ -117,19 +122,33 @@ local function cast(player: Player, target: any)
 			return
 		end
 		local pool = Catalog.Pools[if Weather.inLake(state.target) then Catalog.DefaultPool else "OpenSea"]
-		local roll = FishCatch.roll(pool, Catalog.Fish, Catalog.Rarities, function()
+		local function rng()
 			return random:NextNumber()
-		end)
+		end
+		local roll = FishCatch.roll(pool, Catalog.Fish, Catalog.Rarities, rng, state.boosts)
+		-- Rolled at the bite, but only revealed once the fish is landed.
+		local traits = FishMutations.roll(Catalog.Fish[roll.FishId], DayNight.isNight(DayNight.clockTime()), rng)
+		roll.Traits = traits
+		roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)
 		state.roll, state.phase, state.hookedAt = roll, "Hooked", os.clock()
 		tool:SetAttribute("CastPhase", "Hooked")
-		send(player, "Bite", { FishId = roll.FishId, Difficulty = roll.Difficulty, Pool = pool.Name })
+		send(player, "Bite", {
+			FishId = roll.FishId,
+			Difficulty = roll.Difficulty,
+			Pool = pool.Name,
+			ReelBoost = state.boosts.reel,
+		})
 	end)
 end
 
 local function award(player: Player, roll)
 	local saved = false
+	local autoStored = false
 	for attempt = 1, 4 do
-		saved = AnglerService.recordCatch(player, roll.FishId, "Normal", roll.Kg, roll.Value, roll.Size)
+		local traits = roll.Traits
+		local message
+		saved, message, autoStored =
+			AnglerService.recordCatch(player, roll.FishId, traits.Mutation, roll.Kg, roll.Value, roll.Size, traits)
 		if saved or player.Parent ~= Players then
 			break
 		end
@@ -140,7 +159,11 @@ local function award(player: Player, roll)
 		Kg = roll.Kg,
 		Size = roll.Size,
 		Value = roll.Value,
+		Mutation = roll.Traits.Mutation,
+		NeonColor = roll.Traits.NeonColor,
+		Corruptions = roll.Traits.Corruptions,
 		Saved = saved,
+		AutoStored = autoStored,
 		Stored = saved and holding(player, roll),
 	})
 end
@@ -156,9 +179,14 @@ local function reel(player: Player, landed: any)
 		return
 	end
 	local roll = state.roll
+	local reelBoost = state.boosts.reel
 	local elapsed = os.clock() - state.hookedAt
 	clear(player)
-	if landed ~= true or elapsed < FishCatch.minimumFightSeconds(roll.Difficulty) or elapsed > MAX_FIGHT_SECONDS then
+	if
+		landed ~= true
+		or elapsed < FishCatch.minimumFightSeconds(roll.Difficulty, reelBoost)
+		or elapsed > MAX_FIGHT_SECONDS
+	then
 		send(player, "Escaped", roll.FishId)
 		return
 	end

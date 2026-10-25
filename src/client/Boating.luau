@@ -3,9 +3,11 @@ local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TextChatService = game:GetService("TextChatService")
 local UserInputService = game:GetService("UserInputService")
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local Weather = require(ReplicatedStorage.Shared.Weather)
 local DrydockCamera = require(script.Parent.DrydockCamera)
 
 local Boating = {}
@@ -62,6 +64,56 @@ function Boating.start()
 	wallet.Size = UDim2.fromOffset(244, 82)
 	wallet.BackgroundTransparency = 1
 	wallet.Parent = gui
+	local weatherIcon = Instance.new("Frame")
+	weatherIcon.Name = "WeatherIcon"
+	weatherIcon.Position = UDim2.fromOffset(0, -44)
+	weatherIcon.Size = UDim2.fromOffset(38, 36)
+	weatherIcon.BackgroundTransparency = 1
+	weatherIcon.Visible = false
+	weatherIcon.ZIndex = 2
+	weatherIcon.Parent = wallet
+	local function weatherPart(name: string, x: number, y: number, width: number, height: number, color: Color3)
+		local part = Instance.new("Frame")
+		part.Name = name
+		part.Position = UDim2.fromOffset(x, y)
+		part.Size = UDim2.fromOffset(width, height)
+		part.BackgroundColor3 = color
+		part.BorderSizePixel = 0
+		part.ZIndex = 2
+		part.Parent = weatherIcon
+		Theme.corner(part, 999)
+		return part
+	end
+	-- Native shapes keep the small HUD icon independent of image downloads.
+	local cloudColor = Color3.fromRGB(234, 240, 247)
+	weatherPart("CloudLeft", 2, 9, 17, 17, cloudColor)
+	weatherPart("CloudTop", 11, 2, 21, 24, cloudColor)
+	weatherPart("CloudRight", 24, 12, 14, 14, cloudColor)
+	weatherPart("CloudBase", 10, 17, 21, 9, cloudColor)
+	local drops = {}
+	for index = 1, 4 do
+		local drop = weatherPart("Rain" .. index, 5 + (index - 1) * 8, 28, 2, 7, Color3.fromRGB(137, 204, 255))
+		drop.Rotation = 25
+		drops[index] = drop
+	end
+	local lightning =
+		label(weatherIcon, "ϟ", UDim2.fromOffset(21, 17), UDim2.fromOffset(17, 22), 25, Color3.fromRGB(255, 219, 109))
+	lightning.Name = "Lightning"
+	lightning.ZIndex = 3
+	local currentWeather: string? = nil
+	local function refreshWeather()
+		local kind = Weather.getState().kind
+		if kind == currentWeather then
+			return
+		end
+		currentWeather = kind
+		weatherIcon.Visible = kind == "LightRain" or kind == "Rain" or kind == "Storm"
+		lightning.Visible = kind == "Storm"
+		for index, drop in drops do
+			drop.Visible = if kind == "Storm" then index <= 2 else kind == "Rain" or index % 2 == 1
+		end
+	end
+	refreshWeather()
 	-- Keep the original floating money/level HUD, independent of the menu theme.
 	for index = 1, 32 do
 		local fraction = index / 32
@@ -521,6 +573,15 @@ function Boating.start()
 			player:SetAttribute("DrydockScreenOpen", overlay.Visible)
 			previewShop = nil
 			DrydockCamera.stop()
+		elseif kind == "CommandNotice" and type(message) == "string" then
+			local channels = TextChatService:FindFirstChild("TextChannels")
+			local channel = channels and (channels:FindFirstChild("RBXSystem") or channels:FindFirstChild("RBXGeneral"))
+			if channel then
+				local escaped = message:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+				channel:DisplaySystemMessage(escaped)
+			else
+				notice(message)
+			end
 		elseif kind == "Notice" and type(message) == "string" then
 			notice(message)
 		end
@@ -571,7 +632,13 @@ function Boating.start()
 
 	local sinceInput, sinceShopCheck = 0, 0
 	local previousSeat: VehicleSeat? = nil
+	local sinceWeatherCheck = 0
 	RunService.Heartbeat:Connect(function(dt)
+		sinceWeatherCheck += dt
+		if sinceWeatherCheck >= 0.5 then
+			sinceWeatherCheck = 0
+			refreshWeather()
+		end
 		local camera = workspace.CurrentCamera
 		if overlay.Visible and camera then
 			local portrait = camera.ViewportSize.X < camera.ViewportSize.Y * 1.2

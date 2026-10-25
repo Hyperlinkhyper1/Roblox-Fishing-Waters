@@ -14,7 +14,7 @@ Catalog.Rarities = {
 	Uncommon = { Name = "Uncommon", Order = 2, Color = Color3.fromRGB(111, 202, 125), Difficulty = 0.3, XP = 100 },
 	Rare = { Name = "Rare", Order = 3, Color = Color3.fromRGB(82, 163, 229), Difficulty = 0.48, XP = 200 },
 	Epic = { Name = "Epic", Order = 4, Color = Color3.fromRGB(176, 108, 230), Difficulty = 0.66, XP = 400 },
-	Legendary = { Name = "Legendary", Order = 5, Color = Color3.fromRGB(240, 176, 64), Difficulty = 0.84, XP = 800 },
+	Legendary = { Name = "Legendary", Order = 5, Color = Color3.fromRGB(240, 176, 64), Difficulty = 0.72, XP = 800 },
 }
 
 local function species(name, rarity, denominator, minKg, averageKg, maxKg, baseValue, fight, shapes)
@@ -176,7 +176,27 @@ Catalog.Pools = {
 }
 Catalog.DefaultPool = "MainLake"
 
-Catalog.Mutations = { Normal = { Name = "Normal", RarityMultiplier = 1 } }
+-- Every key FishMutations can roll. RarityMultiplier is one over the key's
+-- chance per catch (at night for Astral); scripts/fish-mutations.luau keeps
+-- them in step with the roll odds.
+Catalog.Mutations = {
+	Normal = { Name = "Normal", RarityMultiplier = 1 },
+	Neon = { Name = "Neon", RarityMultiplier = 483 },
+	Albino = { Name = "Albino", RarityMultiplier = 1111 },
+	Rainbow = { Name = "Rainbow", RarityMultiplier = 2222 },
+	Astral = { Name = "Astral", RarityMultiplier = 1961 },
+	Corrupted = { Name = "Corrupted", RarityMultiplier = 1429 },
+	["Neon+Albino"] = { Name = "Neon Albino", RarityMultiplier = 3704 },
+	["Rainbow+Neon"] = { Name = "Rainbow Neon", RarityMultiplier = 5556 },
+	["Astral+Rainbow"] = { Name = "Astral Rainbow", RarityMultiplier = 11111 },
+	["Corrupted+Neon"] = { Name = "Corrupted Neon", RarityMultiplier = 4348 },
+	["Corrupted+Albino"] = { Name = "Corrupted Albino", RarityMultiplier = 10000 },
+	["Corrupted+Rainbow"] = { Name = "Corrupted Rainbow", RarityMultiplier = 20000 },
+	["Corrupted+Astral"] = { Name = "Corrupted Astral", RarityMultiplier = 17647 },
+	["Corrupted+Neon+Albino"] = { Name = "Corrupted Neon Albino", RarityMultiplier = 33333 },
+	["Corrupted+Rainbow+Neon"] = { Name = "Corrupted Rainbow Neon", RarityMultiplier = 50000 },
+	["Corrupted+Astral+Rainbow"] = { Name = "Corrupted Astral Rainbow", RarityMultiplier = 100000 },
+}
 Catalog.Equipment = {
 	StarterRod = {
 		Name = "Starter fishing rod",

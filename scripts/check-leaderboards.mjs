@@ -42,12 +42,13 @@ local plaza = Instance.new("Model"); plaza.Name = "Plaza"; plaza.Parent = root
 local paving = Instance.new("Part"); paving.Size = Vector3.new(116, 0.6, 116)
 paving.CFrame = CFrame.new(300, 5.5, -400) * CFrame.Angles(0, 0.4, 0); paving.Parent = plaza
 local legacy = Instance.new("Model"); legacy.Name="Leaderboards"; legacy.Parent=plaza
+legacy:SetAttribute("LayoutVersion", 2)
 local oldTallPanel = Instance.new("Part"); oldTallPanel.Size=Vector3.new(12.4, 23, 0.5); oldTallPanel.Parent=legacy
 Boards.ensure(root)
 local built = plaza:FindFirstChild("Leaderboards")
 check(built ~= nil, "Baked plaza receives leaderboards")
-check(built ~= legacy and legacy.Parent == nil, "Baked maps replace the old stacked wall")
-check(built:GetAttribute("LayoutVersion") == 2, "Compact layout migration is versioned")
+check(built ~= legacy and legacy.Parent == nil, "Baked maps replace the layout that overlaps the furniture shop")
+check(built:GetAttribute("LayoutVersion") == 3, "Relocated layout migration is versioned")
 check(built.ModelStreamingMode == Enum.ModelStreamingMode.Atomic, "Panels stream with their labels")
 Boards.ensure(root)
 check(plaza:FindFirstChild("Leaderboards") == built and #plaza:GetChildren() == 2, "Repeated startup never duplicates boards")
@@ -61,7 +62,12 @@ for _, part in built:GetChildren() do
     local p = paving.CFrame:PointToObjectSpace(part.Position)
     local facing = paving.CFrame:VectorToObjectSpace(part.CFrame.LookVector)
     check(facing:Dot(Vector3.new(-p.X,0,-p.Z).Unit) > 0.6, "All three pairs face into the square on rotated saved maps")
-    check(p.X >= 21.9 and p.X <= 34.1 and p.Z >= -28.1 and p.Z <= 30.1, "Panels stay in the clear eastern plaza area")
+    check(p.X >= 9.9 and p.X <= 34.1 and p.Z >= -28.1 and p.Z <= 40.1, "Panels stay inside the plaza")
+    if part:GetAttribute("LeaderboardId") == "Earned" or part:GetAttribute("LeaderboardId") == "WeeklyEarned" then
+      check(math.abs(p.Z - 40) < 0.001, "Money boards move to the open south side")
+      check(p.X - 4.8 >= 5 and p.X + 4.8 <= 27, "Whole money board frames clear the central path and furniture shop approach")
+      check(p.Z + 0.5 < 51, "Money boards clear the southern palms and benches")
+    end
     check(math.abs(p.Y - paving.Size.Y / 2 - 5.2) < 0.001, "Every leaderboard stands at the same height; none are stacked")
     check(part.Size.X <= 8.7 and part.Size.Y <= 7.3, "Each display is thirty percent smaller")
     check(math.abs(part.Size.X / part.Size.Y - part.Leaderboard.CanvasSize.X / part.Leaderboard.CanvasSize.Y) < 0.001, "Smaller panels preserve canvas proportions")

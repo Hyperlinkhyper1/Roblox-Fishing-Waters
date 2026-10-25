@@ -16,6 +16,8 @@ try {
   for (const [hook, replacement] of [
     ['local BoatService = require(script.Parent.BoatService)', 'local BoatService = dependencies.BoatService'],
     ['local FishingRod = require(ReplicatedStorage.Shared.FishingRod)', 'local FishingRod = dependencies.FishingRod'],
+    ['local BoatData = require(script.Parent.BoatData)', 'local BoatData = dependencies.BoatData'],
+    ['local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)', 'local RodUpgrades = dependencies.RodUpgrades'],
   ]) {
     if (!source.includes(hook)) throw new Error(`FishingService dependency hook changed: ${hook}`);
     source = source.replace(hook, replacement);

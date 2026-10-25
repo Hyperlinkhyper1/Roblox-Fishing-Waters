@@ -7,7 +7,16 @@
 -- own +Z is the side customers or the porter use.
 local Furniture = {}
 
-Furniture.Order = { "Freezer", "Register", "StorageRack" }
+Furniture.Order = {
+	"Freezer",
+	"Register",
+	"StorageRack",
+	"FoodCase",
+	"GrillStation",
+	"Smoker",
+	"SushiBar",
+	"DiningTable",
+}
 Furniture.Items = {
 	Freezer = {
 		Name = "Fish freezer",
@@ -44,6 +53,68 @@ Furniture.Items = {
 		Front = 1.5,
 		Back = 0,
 	},
+	-- Requires names the Paths stage that unlocks buying and placing the item.
+	FoodCase = {
+		Name = "Food display case",
+		Price = 600,
+		Room = "Shop",
+		MaxPlaced = 3,
+		Requires = "Supermarket",
+		Description = "A chilled glass case. Shows 6 cooked dishes for shop customers to buy.",
+		Width = 6,
+		Depth = 2.6,
+		Front = 2.4,
+		Back = 0,
+	},
+	GrillStation = {
+		Name = "Grill station",
+		Price = 2000,
+		Room = "Processing",
+		MaxPlaced = 1,
+		Requires = "Supermarket",
+		Description = "Cooks grilled fish and fish skewers from Uncommon fish and rarer.",
+		Width = 6,
+		Depth = 2.4,
+		Front = 2,
+		Back = 0,
+	},
+	Smoker = {
+		Name = "Smokehouse",
+		Price = 4000,
+		Room = "Processing",
+		MaxPlaced = 1,
+		Requires = "Supermarket",
+		Description = "Slow-smokes Rare fish and rarer into smoked fish.",
+		Width = 6,
+		Depth = 2.4,
+		Front = 2,
+		Back = 0,
+	},
+	SushiBar = {
+		Name = "Sushi bar",
+		Price = 7500,
+		Room = "Processing",
+		MaxPlaced = 1,
+		Requires = "Supermarket",
+		Description = "Turns Epic and Legendary fish into sushi platters and golden sashimi.",
+		Width = 6,
+		Depth = 2.4,
+		Front = 2,
+		Back = 0,
+	},
+	DiningTable = {
+		Name = "Dining table",
+		Price = 400,
+		Room = "Dining",
+		MaxPlaced = 8,
+		Requires = "Restaurant",
+		Description = "A table for two in your dining room. Each seat welcomes one diner.",
+		Width = 4,
+		Depth = 2.6,
+		-- A chair stands on each long side.
+		Front = 1.6,
+		Back = 1.6,
+	},
 }
 Furniture.RACK_CAPACITY = 8
 Furniture.GRID = 0.5
@@ -52,8 +123,16 @@ Furniture.GRID = 0.5
 Furniture.Rooms = {
 	Shop = { -22.6, 1.35, 22.6, 14.6 },
 	Storage = { 3.35, -14.6, 22.6, 0.65 },
+	Processing = { -22.6, -14.6, 2.65, 0.65 },
+	-- The Restaurant's dining room extension behind the processing room.
+	Dining = { -22.4, -29.4, -6.1, -15.35 },
 }
-Furniture.RoomNames = { Shop = "front shop room", Storage = "storage room" }
+Furniture.RoomNames = {
+	Shop = "front shop room",
+	Storage = "storage room",
+	Processing = "processing room",
+	Dining = "dining room",
+}
 -- Walkways, doorways and the built-in fixtures stay clear.
 Furniture.Blocked = {
 	{ -4, 1.35, 4, 14.6 }, -- entrance aisle customers walk along
@@ -62,6 +141,11 @@ Furniture.Blocked = {
 	{ 3.35, -10.5, 6.5, -3.5 }, -- passage from the processing room
 	{ -20.8, 2.5, -15.6, 11.5 }, -- built-in freezer and its customer strip
 	{ 11.5, 6.4, 21, 14.6 }, -- built-in counter, its customers and the seller
+	{ -13.5, -3, -6.5, 1.35 }, -- processing room side of the shop doorway
+	{ -0.5, -10.5, 2.65, -3.5 }, -- processing room side of the storage passage
+	{ -3.5, -14.6, 2.65, -11 }, -- rear door
+	{ -22.6, -14.6, -18, -1 }, -- built-in prep benches and their cooks
+	{ -16, -29.4, -10, -25.5 }, -- dining room entrance
 }
 
 -- The rectangle { x1, z1, x2, z2 } the item covers, including its access strips.
@@ -125,6 +209,16 @@ function Furniture.check(placed, itemId: string, x: number, z: number, r: number
 		if index ~= skip and overlaps(area, Furniture.footprint(other.ItemId, other.X, other.Z, other.R) :: { number }) then
 			return "That spot is taken by other furniture."
 		end
+	end
+	return nil
+end
+
+-- nil when the item can be bought and placed on this profile's path, otherwise why not.
+-- `unlocked` is a Paths stage id → true map.
+function Furniture.locked(itemId: string, unlocked): string?
+	local item = Furniture.Items[itemId]
+	if item and item.Requires and not (unlocked and unlocked[item.Requires]) then
+		return item.Name .. "s unlock with the " .. item.Requires .. " path."
 	end
 	return nil
 end

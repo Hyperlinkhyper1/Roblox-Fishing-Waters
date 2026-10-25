@@ -4,8 +4,10 @@ local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local BoatData = require(script.Parent.BoatData)
 local BoatService = require(script.Parent.BoatService)
 local FishingRod = require(ReplicatedStorage.Shared.FishingRod)
+local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 
 local FishingService = {}
 local states = {}
@@ -28,7 +30,135 @@ local function livingCharacter(player: Player): (Model?, Humanoid?, BasePart?)
 	return character, humanoid, root
 end
 
-local function shopPrompt(player: Player): ProximityPrompt?
+-- Finn wears genuine Roblox Marketplace items, applied by HumanoidDescription.
+-- Asset IDs are catalog items, not clothing-template image IDs.
+local KEEPER_OUTFIT = {
+	Shirt = 733260904, -- Fisherman Shirt
+	Pants = 129459077, -- Black Slacks, including black shoes
+	Hat = "10714423462", -- Green Fisherman Hat
+	Hair = "376548738", -- Brown Charmer Hair
+	Skin = Color3.fromRGB(234, 184, 146),
+}
+local KEEPER_PROMPT = "TalkToRodKeeperPrompt"
+
+local function keeperDescription(): HumanoidDescription
+	local description = Instance.new("HumanoidDescription")
+	description.Name = "RodKeeperAppearance"
+	description.Shirt, description.Pants = KEEPER_OUTFIT.Shirt, KEEPER_OUTFIT.Pants
+	description.HatAccessory, description.HairAccessory = KEEPER_OUTFIT.Hat, KEEPER_OUTFIT.Hair
+	local skin = KEEPER_OUTFIT.Skin
+	description.HeadColor, description.TorsoColor = skin, skin
+	description.LeftArmColor, description.RightArmColor = skin, skin
+	description.LeftLegColor, description.RightLegColor = skin, skin
+	description.BodyTypeScale, description.ProportionScale = 0, 0
+	return description
+end
+
+local function keeperPrompt(head: BasePart)
+	local prompt = head:FindFirstChild(KEEPER_PROMPT) :: ProximityPrompt?
+	if not prompt then
+		prompt = Instance.new("ProximityPrompt")
+		prompt.Name = KEEPER_PROMPT
+		prompt.Parent = head
+	end
+	local p = prompt :: ProximityPrompt
+	p.ActionText = "Talk"
+	p.ObjectText = "Finn · Rod Keeper"
+	-- He stands behind the counter, so the prompt reaches a little further than the till's.
+	p.MaxActivationDistance = 11
+	p.RequiresLineOfSight = false
+	p.HoldDuration = 0
+	p.KeyboardKeyCode = Enum.KeyCode.E
+	p.GamepadKeyCode = Enum.KeyCode.ButtonX
+	p.UIOffset = Vector2.new(0, -30)
+end
+
+-- One anchored keeper per rod hall, built only if a hall arrives without him.
+local function staffRodCounter(hall: Instance)
+	local frame = hall:GetAttribute("KeeperFrame")
+	if typeof(frame) ~= "CFrame" or hall:GetAttribute("KeeperPending") then
+		return
+	end
+	local existing = hall:FindFirstChild("RodKeeper")
+	local existingHead = existing and existing:FindFirstChild("Head")
+	if existingHead and existingHead:IsA("BasePart") then
+		keeperPrompt(existingHead)
+		return
+	end
+	hall:SetAttribute("KeeperPending", true)
+	task.spawn(function()
+		local description = keeperDescription()
+		local ok, keeper =
+			pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
+		description:Destroy()
+		if not ok then
+			warn("[Fishing] Rod keeper outfit failed to load: " .. tostring(keeper))
+			-- A plain body keeps the counter staffed when the catalog is unavailable.
+			local plain = Instance.new("HumanoidDescription")
+			plain.HeadColor, plain.TorsoColor = KEEPER_OUTFIT.Skin, Color3.fromRGB(70, 120, 90)
+			ok, keeper =
+				pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, plain, Enum.HumanoidRigType.R15)
+			plain:Destroy()
+		end
+		hall:SetAttribute("KeeperPending", nil)
+		if not ok then
+			warn("[Fishing] Rod keeper could not be built: " .. tostring(keeper))
+			return
+		end
+		if not hall.Parent or hall:FindFirstChild("RodKeeper") then
+			keeper:Destroy()
+			return
+		end
+		keeper.Name = "RodKeeper"
+		keeper:SetAttribute("NpcName", "Finn")
+		local head = keeper:FindFirstChild("Head")
+		if head and head:IsA("BasePart") then
+			-- Classic faces are retired from the Marketplace; use the engine's smile.
+			local face = head:FindFirstChild("face")
+			if not face then
+				face = Instance.new("Decal")
+				face.Name, face.Parent = "face", head
+			end
+			if face:IsA("Decal") then
+				face.Face, face.Texture = Enum.NormalId.Front, "rbxasset://textures/face.png"
+			end
+		end
+		local humanoid = keeper:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.DisplayName = "Finn · Rod Keeper"
+			humanoid.NameDisplayDistance = 28
+			humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+			humanoid.WalkSpeed, humanoid.JumpPower = 0, 0
+			humanoid.BreakJointsOnDeath = false
+		end
+		for _, part in keeper:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = part.Name == "HumanoidRootPart"
+				part.CanCollide, part.CanTouch = false, false
+				-- The server's sightline check aims at his head; hat and hair must not block it.
+				part.CanQuery = part.Name == "Head"
+			end
+		end
+		keeper:PivotTo(frame + Vector3.new(0, keeper:GetExtentsSize().Y / 2, 0))
+		keeper.Parent = hall
+		if head and head:IsA("BasePart") then
+			keeperPrompt(head)
+		end
+		-- Roblox's stock R15 idle keeps him breathing instead of standing like a statue.
+		local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			local idle = Instance.new("Animation")
+			idle.AnimationId = "rbxassetid://507766388"
+			local loaded, track = pcall(animator.LoadAnimation, animator, idle)
+			if loaded then
+				track.Looped = true
+				track:Play()
+			end
+		end
+	end)
+end
+
+local function shopPrompt(player: Player, promptName: string?): ProximityPrompt?
 	local character, _, root = livingCharacter(player)
 	if not character or not root then
 		return nil
@@ -49,7 +179,7 @@ local function shopPrompt(player: Player): ProximityPrompt?
 		then
 			continue
 		end
-		local prompt = shop:FindFirstChild("BuyFishingRodPrompt", true)
+		local prompt = shop:FindFirstChild(promptName or "BuyFishingRodPrompt", true)
 		local part = prompt and prompt.Parent
 		if not prompt or not prompt:IsA("ProximityPrompt") or not part or not part:IsA("BasePart") then
 			continue
@@ -104,6 +234,40 @@ local function walkThroughDoor(player: Player, prompt: ProximityPrompt)
 		-- Sent even when the move was skipped, so the client's fade always lifts.
 		feedback:FireClient(player, "DoorArrived", trip)
 	end)
+end
+
+local UPGRADE_FAILURES = {
+	UnknownUpgrade = "Finn doesn't offer that upgrade.",
+	Maxed = "That upgrade is already maxed out.",
+	NoRod = "Collect your free starter rod at the counter before upgrading it.",
+}
+
+local function upgradeRod(player: Player, stat: any): (boolean, string)
+	if not RodUpgrades.valid(stat) then
+		return false, UPGRADE_FAILURES.UnknownUpgrade
+	end
+	local spec = RodUpgrades.Stats[stat]
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your wallet is still loading. Try again in a moment."
+	end
+	-- Pre-check the cached profile so a rejected request never costs a save.
+	local level = RodUpgrades.level(profile.RodUpgrades, stat)
+	local outcome = BoatData.upgradeRod(profile, stat)
+	if outcome == "InsufficientFunds" then
+		local price = RodUpgrades.price(stat, level)
+		return false, string.format("You need $%d for %s level %d.", price or 0, spec.Name, level + 1)
+	elseif outcome ~= "Upgraded" then
+		return false, UPGRADE_FAILURES[outcome] or "That upgrade isn't available."
+	end
+	local ok, message = BoatService.updateProgress(player, function(current)
+		local result = BoatData.upgradeRod(current, stat)
+		assert(result == "Upgraded", result)
+	end)
+	if not ok then
+		return false, message
+	end
+	return true, string.format("%s upgraded to level %d!", spec.Name, level + 1)
 end
 
 local function ownsRod(player: Player): boolean
@@ -253,8 +417,8 @@ function FishingService.start()
 	request.Name, request.Parent = "Request", remotes
 	feedback = Instance.new("RemoteEvent")
 	feedback.Name, feedback.Parent = "Feedback", remotes
-	request.OnServerEvent:Connect(function(player, action)
-		if action ~= "PurchaseRod" and action ~= "EquipRod" and action ~= "UnequipRod" then
+	request.OnServerEvent:Connect(function(player, action, value)
+		if action ~= "PurchaseRod" and action ~= "EquipRod" and action ~= "UnequipRod" and action ~= "UpgradeRod" then
 			return
 		end
 		local state = states[player]
@@ -262,7 +426,16 @@ function FishingService.start()
 			return
 		end
 		state.lastRequest = os.clock()
-		if action == "PurchaseRod" then
+		if action == "UpgradeRod" then
+			if not shopPrompt(player, KEEPER_PROMPT) then
+				feedback:FireClient(player, "UpgradeResult", false, "Talk to Finn behind the counter to upgrade.")
+				return
+			end
+			local success, message = upgradeRod(player, value)
+			if player.Parent == Players then
+				feedback:FireClient(player, "UpgradeResult", success, message)
+			end
+		elseif action == "PurchaseRod" then
 			if not shopPrompt(player) then
 				notify(player, "Step inside the plaza tackle shop and approach the counter to buy a rod.")
 				return
@@ -287,10 +460,16 @@ function FishingService.start()
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 		if prompt.Name == "BuyFishingRodPrompt" and shopPrompt(player) == prompt then
 			feedback:FireClient(player, "OpenShop")
+		elseif prompt.Name == KEEPER_PROMPT and shopPrompt(player, KEEPER_PROMPT) == prompt then
+			feedback:FireClient(player, "OpenUpgrades")
 		elseif prompt.Name == "RodStoreDoorPrompt" or prompt.Name == "FurnitureStoreDoorPrompt" then
 			walkThroughDoor(player, prompt)
 		end
 	end)
+	CollectionService:GetInstanceAddedSignal("FishingRodShop"):Connect(staffRodCounter)
+	for _, hall in CollectionService:GetTagged("FishingRodShop") do
+		staffRodCounter(hall)
+	end
 	Players.PlayerAdded:Connect(bindPlayer)
 	Players.PlayerRemoving:Connect(function(player)
 		local state = states[player]

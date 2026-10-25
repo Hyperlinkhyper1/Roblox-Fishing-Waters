@@ -23,7 +23,14 @@ local function lerp(a: number, b: number, t: number): number
 	return a + (b - a) * t
 end
 
-function FishCatch.pickSpecies(pool, species, rng: () -> number): string
+-- `luck` (0 by default) flattens the rarity curve: each fish's weight is
+-- (1 / denominator) ^ (1 - luck), so rarer fish gain the most.
+local function weight(fish, luck: number): number
+	return (1 / fish.RarityDenominator) ^ (1 - luck)
+end
+
+function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?): string
+	local bias = math.clamp(luck or 0, 0, 0.9)
 	local pick = rng()
 	if pool.Junk and #pool.Junk > 0 then
 		if pick < FishCatch.JUNK_CHANCE then
@@ -34,11 +41,11 @@ function FishCatch.pickSpecies(pool, species, rng: () -> number): string
 	end
 	local total = 0
 	for _, id in pool.Fish do
-		total += 1 / species[id].RarityDenominator
+		total += weight(species[id], bias)
 	end
 	pick *= total
 	for _, id in pool.Fish do
-		pick -= 1 / species[id].RarityDenominator
+		pick -= weight(species[id], bias)
 		if pick < 0 then
 			return id
 		end
@@ -47,18 +54,20 @@ function FishCatch.pickSpecies(pool, species, rng: () -> number): string
 end
 
 -- Most fish cluster around the species average; a few are big and a rare few
--- approach the species record weight.
-function FishCatch.rollWeight(fish, rng: () -> number): (number, string)
+-- approach the species record weight. `sizeBoost` multiplies the big and huge odds.
+function FishCatch.rollWeight(fish, rng: () -> number, sizeBoost: number?): (number, string)
+	local boost = math.max(1, sizeBoost or 1)
+	local huge, big = FishCatch.HUGE_CHANCE * boost, FishCatch.BIG_CHANCE * boost
 	local average, minimum, maximum = fish.AverageKg, fish.MinKg, fish.MaxKg
 	if fish.Rarity == "Junk" then
 		return math.floor(lerp(minimum, maximum, rng()) * 100 + 0.5) / 100, "Normal"
 	end
 	local roll = rng()
 	local kg, size
-	if roll < FishCatch.HUGE_CHANCE then
+	if roll < huge then
 		local floor = math.min(average * 3, maximum)
 		kg, size = floor + (maximum - floor) * rng() ^ 2, "Huge"
-	elseif roll < FishCatch.HUGE_CHANCE + FishCatch.BIG_CHANCE then
+	elseif roll < huge + big then
 		kg, size = average * lerp(1.7, 3, rng()), "Big"
 	else
 		-- Box-Muller normal sample, applied in log space so weights stay positive.
@@ -90,10 +99,11 @@ function FishCatch.difficulty(fish, rarities, relative: number): number
 	return math.clamp(base + sizeBonus, 0.05, 1)
 end
 
-function FishCatch.roll(pool, species, rarities, rng: () -> number): Roll
-	local id = FishCatch.pickSpecies(pool, species, rng)
+-- `boosts` are the angler's rod upgrades (RodUpgrades.boosts); nil rolls a plain rod.
+function FishCatch.roll(pool, species, rarities, rng: () -> number, boosts: any?): Roll
+	local id = FishCatch.pickSpecies(pool, species, rng, boosts and boosts.luck)
 	local fish = species[id]
-	local kg, size = FishCatch.rollWeight(fish, rng)
+	local kg, size = FishCatch.rollWeight(fish, rng, boosts and boosts.size)
 	local relative = kg / fish.AverageKg
 	return {
 		FishId = id,
@@ -106,22 +116,24 @@ function FishCatch.roll(pool, species, rarities, rng: () -> number): Roll
 end
 
 -- Reel minigame tuning. Progress starts at START_PROGRESS; reaching 1 lands the
--- fish and reaching 0 lets it escape.
-function FishCatch.tuning(difficulty: number)
+-- fish and reaching 0 lets it escape. `reelBoost` (the Reel Speed upgrade)
+-- scales the progress each hit gives.
+function FishCatch.tuning(difficulty: number, reelBoost: number?)
 	local d = math.clamp(difficulty, 0, 1)
+	local boost = math.max(1, reelBoost or 1)
 	return {
 		needleSpeed = lerp(0.55, 1.65, d), -- arc lengths per second
 		zoneSize = lerp(0.3, 0.09, d), -- fraction of the arc
 		zoneDrift = if d > 0.45 then lerp(0, 0.38, (d - 0.45) / 0.55) else 0,
 		erratic = d > 0.72,
-		gain = lerp(0.25, 0.12, d),
+		gain = lerp(0.25, 0.12, d) * boost,
 		missPenalty = lerp(0.1, 0.2, d),
 		drain = lerp(0.012, 0.045, d), -- progress lost per second
 	}
 end
 
-function FishCatch.minimumFightSeconds(difficulty: number): number
-	local hits = math.ceil((1 - FishCatch.START_PROGRESS) / FishCatch.tuning(difficulty).gain)
+function FishCatch.minimumFightSeconds(difficulty: number, reelBoost: number?): number
+	local hits = math.ceil((1 - FishCatch.START_PROGRESS) / FishCatch.tuning(difficulty, reelBoost).gain)
 	return hits * FishCatch.SECONDS_PER_HIT
 end
 

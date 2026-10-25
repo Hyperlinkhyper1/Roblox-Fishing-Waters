@@ -12,13 +12,16 @@ const temporary = await mkdtemp(join(temporaryRoot, 'fishing-boats-'));
 try {
   const anglerData = await readFile(join(root, 'src/server/AnglerData.luau'), 'utf8');
   const catalog = await readFile(join(root, 'src/shared/BoatCatalog.luau'), 'utf8');
+  const rodUpgrades = await readFile(join(root, 'src/shared/RodUpgrades.luau'), 'utf8');
   const data = (await readFile(join(root, 'src/server/BoatData.luau'), 'utf8')).replace(
     'local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")',
     `local AnglerData = (function()\n${anglerData}\nend)()`,
-  ).replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
+  ).replace(/local RodUpgrades = if script[\s\S]*?"\.\.\/shared\/RodUpgrades"\)/, () => `local RodUpgrades = (function()\n${rodUpgrades}\nend)()`)
+    .replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
   let service = await readFile(join(root, 'src/server/BoatService.luau'), 'utf8');
   const harness = await readFile(join(root, 'scripts/boat-service.luau'), 'utf8');
   service = service
+    .replace(/require\(script.Parent.AdminCommands\)/, '{ start = function() end }')
     .replace(/local BoatData = require\(script.Parent.BoatData\)/, 'local BoatData = dependencies.BoatData')
     .replace(/local Rowboat = require\(script.Parent.Rowboat\)/, 'local Rowboat = dependencies.Rowboat')
     .replace(/local FishingBoat = require\(script.Parent.FishingBoat\)/, 'local FishingBoat = dependencies.FishingBoat')
@@ -26,6 +29,7 @@ try {
     .replace(/local BoatLaunchCollision = require\(script.Parent.BoatLaunchCollision\)/, 'local BoatLaunchCollision = dependencies.BoatLaunchCollision')
     .replace(/local BoatCatalog = require\(ReplicatedStorage.Shared.BoatCatalog\)/, 'local BoatCatalog = dependencies.BoatCatalog')
     .replace(/local BoatMotion = require\(ReplicatedStorage.Shared.BoatMotion\)/, `local BoatMotion = (function()\n${await readFile(join(root, 'src/shared/BoatMotion.luau'), 'utf8')}\nend)()`)
+    .replace(/local RodUpgrades = require\(ReplicatedStorage.Shared.RodUpgrades\)/, () => `local RodUpgrades = (function()\n${rodUpgrades}\nend)()`)
     .replace(/local Biomes = require\(ReplicatedStorage.Shared.Biomes\)/, 'local Biomes = dependencies.Biomes')
     .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather');
   if (!/return BoatService\s*$/.test(service)) throw new Error('BoatService return hook changed');

@@ -5,7 +5,9 @@ local Data = {}
 local Cargo
 local function cargo()
 	if not Cargo then
-		Cargo = if script then require(game:GetService("ReplicatedStorage").Shared.Cargo) else require("../shared/Cargo")
+		Cargo = if script
+			then require(game:GetService("ReplicatedStorage").Shared.Cargo)
+			else require("../shared/Cargo")
 	end
 	return Cargo
 end
@@ -17,6 +19,24 @@ local function furniture()
 			else require("../shared/FurnitureCatalog")
 	end
 	return Furniture
+end
+local Recipes
+local function recipes()
+	if not Recipes then
+		Recipes = if script
+			then require(game:GetService("ReplicatedStorage").Shared.Recipes)
+			else require("../shared/Recipes")
+	end
+	return Recipes
+end
+local Paths
+local function paths()
+	if not Paths then
+		Paths = if script
+			then require(game:GetService("ReplicatedStorage").Shared.Paths)
+			else require("../shared/Paths")
+	end
+	return Paths
 end
 -- Base reward for unconfigured species and migration of old catch totals.
 Data.XP_PER_CATCH = 100
@@ -31,6 +51,9 @@ Data.FREEZER_CAPACITY = 4
 -- house (Furniture). Storage racks hold overflow fish (Storage) that customers
 -- never see; only freezers stock the shop.
 Data.RACK_CAPACITY = 8
+-- Cooked dishes (Supermarket path) wait on the kitchen pass, which holds this many;
+-- every placed food display case shows as many again to shop customers.
+Data.PANTRY_CAPACITY = 6
 Data.MAX_HOLD_CELL = 32
 
 -- Unix epoch was a Thursday; offset to a Monday at 00:00 UTC.
@@ -74,7 +97,14 @@ local defaults = {
 	TreasureChestsOpened = 0,
 	SunkenChestsOpened = 0,
 	CrabCagesOpened = 0,
+	-- Business paths (Shared.Paths) count these per stage.
+	FishSold = 0,
+	FoodCooked = 0,
+	FoodSold = 0,
+	DinersServed = 0,
+	FishermanCatches = 0,
 }
+local STAFF_ROLES = { Seller = true, Porter = true, Fisherman = true }
 
 local function number(value, integer)
 	return type(value) == "number" and value >= 0 and value < 2 ^ 53 and (not integer or value % 1 == 0)
@@ -89,6 +119,17 @@ local function copy(value)
 	end
 	return result
 end
+local function corruptionsValid(list)
+	if type(list) ~= "table" or #list == 0 or #list > 8 then
+		return false
+	end
+	for index, name in list do
+		if type(index) ~= "number" or type(name) ~= "string" then
+			return false
+		end
+	end
+	return true
+end
 local function recordValid(record)
 	return type(record) == "table"
 		and type(record.FishId) == "string"
@@ -101,6 +142,30 @@ local function recordValid(record)
 		and number(record.Relative, false)
 		and number(record.CaughtAt, true)
 		and (record.Size == nil or type(record.Size) == "string")
+		and (record.NeonColor == nil or type(record.NeonColor) == "string")
+		and (record.Corruptions == nil or corruptionsValid(record.Corruptions))
+end
+-- A cooked dish keeps its source fish's identity so it can be shown and told apart.
+local function dishValid(dish)
+	return type(dish) == "table"
+		and type(dish.RecipeId) == "string"
+		and type(dish.FishId) == "string"
+		and type(dish.Mutation) == "string"
+		and number(dish.Kg, false)
+		and number(dish.Value, false)
+		and number(dish.MadeAt, true)
+		and (dish.NeonColor == nil or type(dish.NeonColor) == "string")
+end
+local function flags(map)
+	if type(map) ~= "table" then
+		return false
+	end
+	for key, value in map do
+		if type(key) ~= "string" or type(value) ~= "boolean" then
+			return false
+		end
+	end
+	return true
 end
 local function cell(value)
 	return number(value, true) and value >= 1 and value <= Data.MAX_HOLD_CELL
@@ -121,12 +186,62 @@ end
 function Data.decode(raw)
 	assert(raw == nil or type(raw) == "table", "Invalid angler progress")
 	local data = copy(raw or {})
-	for _, name in { "Stats", "Settings", "Catches", "Findings", "Titles", "RedeemedCodes", "Cooler", "Freezer", "Holds", "Staff", "FurnitureStock", "Furniture", "Storage" } do
+	for _, name in
+		{
+			"Stats",
+			"Settings",
+			"Catches",
+			"Findings",
+			"Titles",
+			"RedeemedCodes",
+			"Cooler",
+			"Freezer",
+			"Holds",
+			"Staff",
+			"FurnitureStock",
+			"Furniture",
+			"Storage",
+			"Pantry",
+			"Kitchen",
+			"Upgrades",
+		}
+	do
 		assert(data[name] == nil or type(data[name]) == "table", "Invalid angler " .. name)
 		data[name] = data[name] or {}
 	end
 	for role, hired in data.Staff do
-		assert((role == "Seller" or role == "Porter") and type(hired) == "boolean", "Invalid staff member")
+		assert(STAFF_ROLES[role] and type(hired) == "boolean", "Invalid staff member")
+	end
+	assert(data.FishermanBoat == nil or type(data.FishermanBoat) == "string", "Invalid fisherman boat")
+	for index, dish in data.Pantry do
+		assert(type(index) == "number" and dishValid(dish), "Invalid dish")
+	end
+	for key, job in data.Kitchen do
+		assert(
+			type(key) == "string" and type(job) == "table" and dishValid(job.Dish) and number(job.ReadyAt, true),
+			"Invalid kitchen job"
+		)
+	end
+	for id, level in data.Upgrades do
+		assert(type(id) == "string" and number(level, true), "Invalid upgrade")
+	end
+	-- Profiles from before paths start as a fish shop; their lifetime stats count
+	-- towards it, since its baseline is empty.
+	if data.Paths == nil then
+		data.Paths = { Active = "Fishshop", Unlocked = { Fishshop = true }, Completed = {}, Baseline = {} }
+	end
+	local path = data.Paths
+	assert(
+		type(path) == "table"
+			and type(path.Active) == "string"
+			and flags(path.Unlocked)
+			and flags(path.Completed)
+			and type(path.Baseline) == "table"
+			and path.Unlocked[path.Active] == true,
+		"Invalid path progress"
+	)
+	for stat, value in path.Baseline do
+		assert(type(stat) == "string" and number(value, true), "Invalid path baseline")
 	end
 	for key, value in defaults do
 		if data.Stats[key] == nil then
@@ -208,12 +323,11 @@ function Data.decode(raw)
 	assert(type(data.EquippedTitle) == "string", "Invalid equipped title")
 	return data
 end
-function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size)
+-- `traits` carries the mutation's NeonColor and Corruptions, when it has them.
+local function catchRecord(fishId, mutation, kg, value, caughtAt, species, mutations, size, traits)
 	assert(type(fishId) == "string" and species[fishId], "Unknown fish")
 	assert(type(mutation) == "string" and mutations[mutation], "Unknown mutation")
 	local fish = species[fishId]
-	local catchXP = fish.CatchXP or Data.XP_PER_CATCH
-	assert(number(catchXP, true) and catchXP > 0, "Invalid catch XP")
 	assert(number(fish.AverageKg, false) and fish.AverageKg > 0, "Invalid fish average weight")
 	assert(number(fish.RarityDenominator, false) and fish.RarityDenominator >= 1, "Invalid fish rarity")
 	local rarityMultiplier = mutations[mutation].RarityMultiplier or 1
@@ -227,8 +341,18 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 		Rarity = fish.RarityDenominator * rarityMultiplier,
 		Relative = kg / fish.AverageKg,
 		Size = size,
+		NeonColor = traits and traits.NeonColor,
+		Corruptions = traits and copy(traits.Corruptions),
 	}
 	assert(recordValid(record), "Invalid catch")
+	return record
+end
+
+function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size, traits)
+	assert(type(fishId) == "string" and species[fishId], "Unknown fish")
+	local catchXP = species[fishId].CatchXP or Data.XP_PER_CATCH
+	assert(number(catchXP, true) and catchXP > 0, "Invalid catch XP")
+	local record = catchRecord(fishId, mutation, kg, value, caughtAt, species, mutations, size, traits)
 	local data = Data.decode(raw)
 	local entry = data.Catches[fishId] or { Count = 0, BiggestKg = 0, Mutations = {} }
 	data.Catches[fishId] = entry
@@ -314,6 +438,20 @@ function Data.moveCargo(raw, boatId, layout, from, to, species)
 	return Data.decode(data)
 end
 
+-- Called within the catch's save, so the fish never needs a second transaction.
+function Data.autoStore(raw, boatId, layout, species)
+	if not raw.Hand or not layout then
+		return raw, false
+	end
+	local items = Data.hold(raw, boatId, layout)
+	local placement = cargo().bestSpot(layout.Hold, items, { Fish = raw.Hand }, species)
+	if not placement then
+		return raw, false
+	end
+	local moved = Data.moveCargo(raw, boatId, layout, "Hand", placement, species)
+	return moved or raw, moved ~= nil
+end
+
 -- Counted here rather than through the catalog, so inlined test harnesses that
 -- never place furniture don't need to resolve it.
 local function placed(raw, itemId)
@@ -334,7 +472,6 @@ end
 function Data.storageCapacity(raw)
 	return Data.RACK_CAPACITY * placed(raw, "StorageRack")
 end
-
 
 -- Fish still waiting to be stocked: in hand, on storage racks, in the old cooler and in every hold.
 function Data.unstocked(raw)
@@ -362,8 +499,12 @@ function Data.stockFreezer(raw)
 end
 
 local function sameFish(a, b)
-	return a.FishId == b.FishId and a.Kg == b.Kg and a.CaughtAt == b.CaughtAt and a.Value == b.Value
-		and a.Mutation == b.Mutation and a.Size == b.Size
+	return a.FishId == b.FishId
+		and a.Kg == b.Kg
+		and a.CaughtAt == b.CaughtAt
+		and a.Value == b.Value
+		and a.Mutation == b.Mutation
+		and a.Size == b.Size
 end
 
 -- A porter carries a display copy. Only delivery changes the saved inventory,
@@ -458,6 +599,10 @@ function Data.placeFurniture(raw, from, x, z, r)
 	else
 		return nil, "That isn't furniture."
 	end
+	local locked = catalog.locked(itemId, data.Paths.Unlocked)
+	if locked then
+		return nil, locked
+	end
 	local reason = catalog.check(data.Furniture, itemId, x, z, r, skip)
 	if reason then
 		return nil, reason
@@ -487,11 +632,14 @@ function Data.pickUpFurniture(raw, index)
 		return nil, "Sell some fish first. They wouldn't fit in your other freezers."
 	elseif #data.Storage > Data.storageCapacity(data) then
 		return nil, "Take some fish off your racks first."
+	elseif #data.Pantry > Data.pantryCapacity(data) then
+		return nil, "Sell some dishes first. They wouldn't fit in your other display cases."
+	elseif data.Kitchen[entry.ItemId] then
+		return nil, "Collect the dish on this station first."
 	end
 	data.FurnitureStock[entry.ItemId] = (data.FurnitureStock[entry.ItemId] or 0) + 1
 	return data
 end
-
 
 -- A customer pays the fish's value. Returns nil when that fish is no longer frozen;
 -- the caller credits Cash in the same profile transaction.
@@ -502,10 +650,145 @@ function Data.sellFrozen(raw, record)
 			table.remove(data.Freezer, index)
 			local price = math.max(1, math.floor(frozen.Value))
 			data.Stats.CoinsEarned += price
+			data.Stats.FishSold += 1
 			return data, price
 		end
 	end
 	return nil, 0
+end
+
+-- The kitchen pass plus every placed food display case.
+function Data.pantryCapacity(raw)
+	return Data.PANTRY_CAPACITY * (1 + placed(raw, "FoodCase"))
+end
+
+-- Takes one particular frozen fish (one no customer is holding) into the empty hand.
+function Data.takeFrozen(raw, record)
+	local data = Data.decode(raw)
+	if data.Hand then
+		return nil, "Your hands are already full."
+	end
+	for index, frozen in data.Freezer do
+		if sameFish(frozen, record) then
+			data.Hand = table.remove(data.Freezer, index)
+			return data
+		end
+	end
+	return nil, "That fish is no longer in your freezer."
+end
+
+function Data.sameDish(a, b)
+	return a.RecipeId == b.RecipeId
+		and a.FishId == b.FishId
+		and a.Kg == b.Kg
+		and a.Value == b.Value
+		and a.MadeAt == b.MadeAt
+end
+
+-- Starts cooking the carried fish at a kitchen station. `key` is a built-in bench key
+-- or a station's furniture id; `species` is AnglerCatalog.Fish (for the fish's rarity).
+-- The fish leaves the hand now and the dish is saved on the station, so it is never lost.
+function Data.startCooking(raw, key, recipeId, species, now)
+	local data = Data.decode(raw)
+	local book = recipes()
+	local station = type(key) == "string" and book.stationOf(key)
+	if not paths().unlocked(data, "Supermarket") then
+		return nil, "Cooking unlocks with the Supermarket path."
+	elseif not station then
+		return nil, "That isn't a kitchen station."
+	elseif not book.BuiltIn[key] and placed(data, key) == 0 then
+		return nil, "Place that station in your processing room first."
+	elseif data.Kitchen[key] then
+		return nil, "This station is already in use."
+	elseif not data.Hand then
+		return nil, "Carry a fish to the station first."
+	end
+	local fish = data.Hand
+	local problem = book.problem(recipeId, station, species[fish.FishId] and species[fish.FishId].Rarity)
+	if problem then
+		return nil, problem
+	end
+	data.Kitchen[key] = {
+		Dish = {
+			RecipeId = recipeId,
+			FishId = fish.FishId,
+			Mutation = fish.Mutation,
+			Kg = fish.Kg,
+			Value = book.value(recipeId, fish.Value),
+			MadeAt = now,
+			NeonColor = fish.NeonColor,
+		},
+		ReadyAt = now + book.Items[recipeId].Seconds,
+	}
+	data.Hand = nil
+	return data
+end
+
+-- A finished dish goes from its station onto the kitchen pass.
+function Data.collectDish(raw, key, now)
+	local data = Data.decode(raw)
+	local job = type(key) == "string" and data.Kitchen[key]
+	if not job then
+		return nil, "Nothing is cooking here."
+	elseif now < job.ReadyAt then
+		return nil, "It's still cooking."
+	elseif #data.Pantry >= Data.pantryCapacity(data) then
+		return nil, "Your kitchen pass is full. Sell some dishes or place another food display case."
+	end
+	table.insert(data.Pantry, job.Dish)
+	data.Kitchen[key] = nil
+	data.Stats.FoodCooked += 1
+	return data
+end
+
+-- A customer or diner pays for one dish. `multiplier` is 1 in the shop and the
+-- restaurant markup for diners; `stat` is the counter the sale adds to.
+function Data.sellDish(raw, dish, multiplier, stat)
+	local data = Data.decode(raw)
+	for index, stocked in data.Pantry do
+		if Data.sameDish(stocked, dish) then
+			table.remove(data.Pantry, index)
+			local price = math.max(1, math.floor(stocked.Value * multiplier))
+			data.Stats.CoinsEarned += price
+			data.Stats[stat] += 1
+			return data, price
+		end
+	end
+	return nil, 0
+end
+
+-- Unlocks the next path. The caller checks Shared.Paths.chooseProblem and charges
+-- the price in the same profile transaction. The finished stage stays completed and
+-- the new one counts its stat goals from here.
+function Data.choosePath(raw, stageId, stage)
+	local data = Data.decode(raw)
+	local path = data.Paths
+	path.Completed[path.Active] = true
+	path.Unlocked[stageId] = true
+	path.Active = stageId
+	path.Baseline = copy(data.Stats)
+	for itemId, count in stage.Grants or {} do
+		data.FurnitureStock[itemId] = (data.FurnitureStock[itemId] or 0) + count
+	end
+	return Data.decode(data)
+end
+
+-- Stows one fish the hired fisherman landed into his boat's hold. Returns nil when
+-- the hold has no room left for it.
+function Data.fishermanCatch(raw, boatId, layout, roll, caughtAt, species, mutations)
+	local data = Data.decode(raw)
+	local traits = roll.Traits or {}
+	local mutation = traits.Mutation or "Normal"
+	local record = catchRecord(roll.FishId, mutation, roll.Kg, roll.Value, caughtAt, species, mutations, roll.Size, traits)
+	local items = Data.hold(data, boatId, layout)
+	local placement = cargo().bestSpot(layout.Hold, items, { Fish = record }, species)
+	if not placement then
+		return nil
+	end
+	table.insert(items, { Fish = record, X = placement.X, Y = placement.Y, R = placement.R })
+	data.Holds[boatId] = items
+	data.Stats.FishermanCatches += 1
+	return Data.decode(data)
 end
 
 -- Run inside the same wallet UpdateAsync as the award. Retried callbacks derive

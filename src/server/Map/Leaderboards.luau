@@ -1,5 +1,6 @@
--- Six compact harbour noticeboards, arranged in pairs around the east plaza.
+-- Six compact harbour noticeboards, arranged in pairs around the plaza.
 local Boards = {}
+local LAYOUT_VERSION = 3
 Boards.Definitions = {
 	{ Id = "Level", Title = "HIGHEST LEVEL", Unit = "LEVEL", Weekly = false },
 	{ Id = "WeeklyXP", Title = "MOST XP THIS WEEK", Unit = "XP", Weekly = true },
@@ -48,7 +49,7 @@ end
 
 function Boards.build(plaza: Model, pavingFrame: CFrame)
 	local existing = plaza:FindFirstChild("Leaderboards")
-	if existing and existing:GetAttribute("LayoutVersion") == 2 then
+	if existing and existing:GetAttribute("LayoutVersion") == LAYOUT_VERSION then
 		for _, gui in existing:GetDescendants() do
 			if gui:IsA("SurfaceGui") and gui.Name == "Leaderboard" then
 				styleBoard(gui)
@@ -56,14 +57,14 @@ function Boards.build(plaza: Model, pavingFrame: CFrame)
 		end
 		return existing
 	end
-	-- Replace the former two-storey wall on baked maps as well as new maps.
+	-- Replace older layouts on baked maps as well as new maps.
 	if existing then
 		existing:Destroy()
 	end
 	local model = Instance.new("Model")
 	model.Name, model.Parent = "Leaderboards", plaza
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
-	model:SetAttribute("LayoutVersion", 2)
+	model:SetAttribute("LayoutVersion", LAYOUT_VERSION)
 	-- Three separated pairs face into the square. All six panels stand at the
 	-- same readable height, with paths between pairs and no stacked displays.
 	local placements = {
@@ -71,8 +72,10 @@ function Boards.build(plaza: Model, pavingFrame: CFrame)
 		{ 34, -28, math.pi },
 		{ 29, -6, math.pi / 2 },
 		{ 29, 6, math.pi / 2 },
-		{ 22, 30, 0 },
-		{ 34, 30, 0 },
+		-- Keep the money pair clear of Harbour Home's southwest corner and
+		-- entrance, with room for the central path and southern promenade.
+		{ 10, 40, 0 },
+		{ 22, 40, 0 },
 	}
 	for index, definition in Boards.Definitions do
 		local placement = placements[index]

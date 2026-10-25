@@ -114,6 +114,10 @@ local function ensureInterior(): Model
 	local positions = { Freezer = -15, Register = 0, StorageRack = 15 }
 	for _, id in Furniture.Order do
 		local item = Furniture.Items[id]
+		-- Path equipment (kitchen stations, cases, tables) is sold from the counter catalogue.
+		if item.Requires then
+			continue
+		end
 		local x = positions[id]
 		assert(x, "Missing furniture showroom display: " .. id)
 		local display = Instance.new("Model")

@@ -90,4 +90,42 @@ function Cargo.fits(mask: { string }, taken, shape: { string }, x: number, y: nu
 	return true
 end
 
+-- Try every orientation, preferring contact with walls/cargo to limit fragmentation.
+-- Existing placements (including installed kit) are preserved.
+function Cargo.bestSpot(mask, items, item, species)
+	local taken = Cargo.occupied(items, species)
+	local shape = Cargo.shape(item, species)
+	local best, bestScore = nil, -math.huge
+	for rotation = 0, 3 do
+		local cells = Cargo.cells(shape, rotation)
+		local own = {}
+		for _, cell in cells do
+			own[key(cell[1], cell[2])] = true
+		end
+		for y, row in mask do
+			for x = 1, #row do
+				if not Cargo.fits(mask, taken, shape, x, y, rotation) then
+					continue
+				end
+				local score = 0
+				for _, cell in cells do
+					for _, direction in { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } do
+						local dx, dy = cell[1] + direction[1], cell[2] + direction[2]
+						if not own[key(dx, dy)] then
+							local cx, cy = x + dx, y + dy
+							if not Cargo.open(mask, cx, cy) or Cargo.at(taken, cx, cy) then
+								score += 1
+							end
+						end
+					end
+				end
+				if score > bestScore then
+					best, bestScore = { X = x, Y = y, R = rotation }, score
+				end
+			end
+		end
+	end
+	return best
+end
+
 return Cargo

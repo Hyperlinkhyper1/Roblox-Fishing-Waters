@@ -14,10 +14,13 @@ local function bindPrompt(prompt: Instance)
 		return
 	end
 	local function refresh()
-		-- Local only: the server never writes Enabled on these prompts.
+		-- Local only: the server never writes Enabled on these prompts. It marks a
+		-- prompt that doesn't apply right now (a busy kitchen station) Available = false.
 		prompt.Enabled = prompt:GetAttribute("OwnerUserId") == Players.LocalPlayer.UserId
+			and prompt:GetAttribute("Available") ~= false
 	end
 	prompt:GetAttributeChangedSignal("OwnerUserId"):Connect(refresh)
+	prompt:GetAttributeChangedSignal("Available"):Connect(refresh)
 	refresh()
 end
 

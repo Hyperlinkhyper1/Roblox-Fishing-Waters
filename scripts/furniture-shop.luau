@@ -20,7 +20,15 @@ function CollectionService:GetTagged(tag)
 	return tagged
 end
 local anchors = {}
-for index, id in Furniture.Order do
+-- Like the real showroom, only base furniture has a display; path equipment is
+-- bought from the counter catalogue.
+local displayed = {}
+for _, id in Furniture.Order do
+	if not Furniture.Items[id].Requires then
+		table.insert(displayed, id)
+	end
+end
+for index, id in displayed do
 	local anchor = Instance.new("Part")
 	anchor.CFrame, anchor.Parent = CFrame.new(6700 + (index - 2) * 15, 301.7, 164.5), hall
 	local prompt = Instance.new("ProximityPrompt")
@@ -45,7 +53,7 @@ root.Name, root.CFrame, root.Parent = "HumanoidRootPart", CFrame.new(), characte
 local function stand(anchor)
 	root.CFrame = anchor.CFrame + Vector3.new(0, 1.5, -1)
 end
-for _, id in Furniture.Order do
+for _, id in displayed do
 	stand(anchors[id])
 	check(atShop(player, id), "Matching display must authorize " .. id)
 	for _, other in Furniture.Order do

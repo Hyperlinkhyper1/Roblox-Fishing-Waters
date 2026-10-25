@@ -11,6 +11,7 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
+local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 
 local CargoService = {}
 local started = false
@@ -63,7 +64,9 @@ end
 local function buildFishTool(record): Tool
 	local species = Catalog.Fish[record.FishId]
 	local tool = Instance.new("Tool")
-	tool.Name = (if species then species.Name else record.FishId)
+	local mutation = FishMutations.label(record.Mutation, record.NeonColor)
+	tool.Name = (if mutation ~= "" then mutation .. " " else "")
+		.. (if species then species.Name else record.FishId)
 		.. (if record.Size == "Huge" then " (Huge)" elseif record.Size == "Big" then " (Big)" else "")
 	tool.ToolTip = string.format(
 		"%s · $%d · stow it aboard or in your freezer",
@@ -80,9 +83,9 @@ local function buildFishTool(record): Tool
 	handle.CanCollide, handle.CanTouch, handle.CanQuery = false, false, false
 	handle.Massless = true
 	handle.Parent = tool
-	local model = FishModels.create(record.FishId)
+	local model = FishModels.create(record.FishId, record)
 	if model then
-		FishModels.scaleHeldCatch(model, record.Kg)
+		FishModels.scaleHeldCatch(model, record.Kg, record.Size)
 		handle.CFrame = model:GetPivot()
 		for _, piece in model:GetDescendants() do
 			if piece:IsA("BasePart") then

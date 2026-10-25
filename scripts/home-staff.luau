@@ -67,8 +67,10 @@ local function bubble() end
 local function fishModel() return { Destroy = function() end } end
 local function carry() end
 local walkCount, onWalk = 0, nil
+local walkedPositions = {}
 local function walk(worker, position)
 	walkCount += 1
+	table.insert(walkedPositions, position)
 	worker.root.Position = position
 	if onWalk then onWalk() end
 	return worker.active
@@ -95,6 +97,7 @@ local function reset()
 	shop = { base = base, frame = CFrame.new(), staff = { Seller = worker, Porter = worker } }
 	customer = { shop = shop, active = true, root = { Position = Vector3.new(0, 0, 0) }, record = record }
 	failSave, beforeTransform, onWalk, manualNear, walkCount = false, nil, nil, false, 0
+	walkedPositions = {}
 end
 reset()
 sell(owner, customer)
@@ -140,7 +143,20 @@ check(dockedBoat(shop, owner) == nil, "Another player's boat cannot unload")
 reset()
 runPorter(shop, worker, owner)
 check(#profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1, "Porter walks a full route and delivers")
-check(walkCount == 9 and worker.fish == nil and not worker.busy, "Trip cleans its visual copy and lock")
+check(walkCount == 6 and worker.fish == nil and not worker.busy, "Trip cleans its visual copy and lock")
+check(walkedPositions[1].X == 17 and walkedPositions[1].Z == 4,
+	"Collection starts toward the dock without a front-door detour")
+check(walkedPositions[5].X == 17 and walkedPositions[5].Z == 4
+	and walkedPositions[6].Z == FishFreezer.DEPTH / 2 + 2.4,
+	"Return goes directly from the dock landing to the freezer")
+reset()
+worker.root.Position = Vector3.new(17, 7, 4)
+runPorter(shop, worker, owner)
+for _, position in walkedPositions do
+	check(position.Z ~= 18.6 and position.Z ~= 11,
+		"Porter already outside never targets the front door or entrance aisle")
+end
+check(#profile.Angler.Freezer == 2, "Porter starting outside still delivers cargo")
 reset()
 onWalk = function() boat.PrimaryPart.Position = Vector3.new(100, 0, 0) end
 runPorter(shop, worker, owner)
@@ -173,7 +189,7 @@ reset()
 for index = 1, AnglerData.FREEZER_CAPACITY do profile.Angler.Freezer[index] = record end
 profile.Angler.Furniture = { { ItemId = "StorageRack", X = 10, Z = -8, R = 0 } }
 runPorter(shop, worker, owner)
-check(#profile.Angler.Storage == 1 and #profile.Angler.Holds.Rowboat == 1 and walkCount == 11, "Full freezer sends cargo to a storage rack")
+check(#profile.Angler.Storage == 1 and #profile.Angler.Holds.Rowboat == 1 and walkCount == 8, "Full freezer sends cargo to a storage rack")
 reset()
 profile.Angler.Freezer = {}
 profile.Angler.Storage = { record }

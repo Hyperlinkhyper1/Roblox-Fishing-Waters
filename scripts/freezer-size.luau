@@ -29,7 +29,7 @@ local function check(ok, message)
 end
 for id, fish in catalog.Fish do
 	local previous = 0
-	local previousHeld = 0
+	local previousHeld = { Normal = 0, Big = 0, Huge = 0 }
 	-- Include the full record range: even the largest catches must remain
 	-- distinct instead of all hitting the same hard size limit.
 	for step = 0, 100 do
@@ -37,9 +37,11 @@ for id, fish in catalog.Fish do
 		local size = length(kg)
 		check(size > previous, id .. ": heavier catches must look larger")
 		check(size > 0 and size < 3.2, id .. ": fits the full-depth freezer row")
-		local heldSize = heldLength(kg)
-		check(heldSize > previousHeld, id .. ": heavier catches must look larger in hand")
-		previousHeld = heldSize
+		for _, category in { "Normal", "Big", "Huge" } do
+			local heldSize = heldLength(kg, category)
+			check(heldSize > previousHeld[category], id .. ": heavier " .. category .. " catches must look larger in hand")
+			previousHeld[category] = heldSize
+		end
 		previous = size
 	end
 	check(length(fish.MinKg) < length(fish.AverageKg), id .. ": small catch is smaller than average")
@@ -51,10 +53,18 @@ check(length(catalog.Fish.Clownfish.AverageKg) > length(catalog.Fish.Anchovy.Ave
 	"Small species retain different sizes too")
 check(string.find(source, "FishModels.scaleCatch(model, record.Kg)", 1, true) ~= nil,
 	"Freezer and customers use shared catch sizing")
-check(string.find(cargo, "FishModels.scaleHeldCatch(model, record.Kg)", 1, true) ~= nil,
+check(string.find(cargo, "FishModels.scaleHeldCatch(model, record.Kg, record.Size)", 1, true) ~= nil,
 	"Player's hand uses the catch's actual weight without the freezer size limit")
 check(math.abs(heldLength(8) / heldLength(1) - 2) < 1e-9,
 	"Eight times the weight doubles held fish dimensions")
+for _, kg in { 0.01, 0.09, 1.2, 35, 1100 } do
+	check(math.abs(heldLength(kg, "Normal") - heldLength(kg)) < 1e-9, "Normal catches retain weight sizing")
+	check(math.abs(heldLength(kg, "Big") / heldLength(kg) - 1.5) < 1e-9, "Big catches get a 1.5x length boost")
+	check(math.abs(heldLength(kg, "Huge") / heldLength(kg) - 3) < 1e-9, "Huge catches get a 3x length boost")
+end
+check(heldLength(3.6, "Huge") > heldLength(1.2, "Normal") * 4,
+	"Even a low-weight Huge trout towers over an average trout")
+check(heldLength(1100, "Huge") > 45, "Record Huge sharks exceed 45 studs in hand")
 check(heldLength(1100) > heldLength(35) * 3,
 	"Record catches remain visibly larger than heavy catches in hand")
 -- Exercise the scaling with elongated, tall and wide model bounds: every
@@ -71,8 +81,8 @@ for _, dimensions in { {4, 1, 0.5}, {2, 4, 0.5}, {2, 0.5, 4} } do
 	end
 	for _, kg in {0.01, 0.09, 1.2, 35, 1100} do
 		local held, frozen = mock(), mock()
-		local a, b = sizing.scaleHeldCatch(held, kg), sizing.scaleCatch(frozen, kg)
-		check(math.abs(math.max(a.X, a.Y, a.Z) - heldLength(kg)) < 1e-9,
+		local a, b = sizing.scaleHeldCatch(held, kg, "Huge"), sizing.scaleCatch(frozen, kg)
+		check(math.abs(math.max(a.X, a.Y, a.Z) - heldLength(kg, "Huge")) < 1e-9,
 			"Held model's longest axis matches its weight-based length")
 		check(math.abs(a.X / a.Y - bounds.X / bounds.Y) < 1e-9
 			and math.abs(a.Z / a.Y - bounds.Z / bounds.Y) < 1e-9,

@@ -11,12 +11,15 @@ try {
   const anglerData = await readFile(join(root, 'src/server/AnglerData.luau'), 'utf8');
   const catalog = await readFile(join(root, 'src/shared/BoatCatalog.luau'), 'utf8');
   const motion = await readFile(join(root, 'src/shared/BoatMotion.luau'), 'utf8');
+  const rodUpgrades = await readFile(join(root, 'src/shared/RodUpgrades.luau'), 'utf8');
   const data = (await readFile(join(root, 'src/server/BoatData.luau'), 'utf8')).replace(
     'local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")',
     `local AnglerData = (function()\n${anglerData}\nend)()`,
-  ).replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
+  ).replace(/local RodUpgrades = if script[\s\S]*?"\.\.\/shared\/RodUpgrades"\)/, () => `local RodUpgrades = (function()\n${rodUpgrades}\nend)()`)
+    .replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
   const harness = await readFile(join(root, 'scripts/boat-service.luau'), 'utf8');
   const source = (await readFile(join(root, 'src/server/BoatService.luau'), 'utf8'))
+    .replace('require(script.Parent.AdminCommands)', '{ start = function() end }')
     .replace('require(script.Parent.BoatData)', 'dependencies.BoatData')
     .replace('require(script.Parent.Rowboat)', 'dependencies.Rowboat')
     .replace('require(script.Parent.FishingBoat)', 'dependencies.FishingBoat')
@@ -24,6 +27,7 @@ try {
     .replace('require(script.Parent.BoatLaunchCollision)', 'dependencies.BoatLaunchCollision')
     .replace('require(ReplicatedStorage.Shared.BoatCatalog)', 'dependencies.BoatCatalog')
     .replace('require(ReplicatedStorage.Shared.BoatMotion)', `(function()\n${motion}\nend)()`)
+    .replace('require(ReplicatedStorage.Shared.RodUpgrades)', () => `(function()\n${rodUpgrades}\nend)()`)
     .replace('require(ReplicatedStorage.Shared.Biomes)', 'dependencies.Biomes')
     .replace('require(ReplicatedStorage.Shared.Weather)', 'dependencies.Weather')
     .replace(/return BoatService\s*$/, 'return { start = BoatService.start, loadPlayer = loadPlayer, purchaseRod = BoatService.purchaseRod }');

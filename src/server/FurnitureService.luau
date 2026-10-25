@@ -13,7 +13,11 @@ local CargoService = require(script.Parent.CargoService)
 local FishFreezer = require(script.Parent.Map.FishFreezer)
 local ShopDesk = require(script.Parent.Map.ShopDesk)
 local StorageRack = require(script.Parent.Map.StorageRack)
+local Kitchen = require(script.Parent.Map.Kitchen)
+local DiningRoom = require(script.Parent.Map.DiningRoom)
+local KitchenService = require(script.Parent.KitchenService)
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
+local Recipes = require(ReplicatedStorage.Shared.Recipes)
 
 local FurnitureService = {}
 local BASE_TAG = "PlayerBase"
@@ -71,11 +75,17 @@ end
 
 local function atShop(player: Player, itemId: string): boolean
 	local root = rootOf(player)
-	if not root then return false end
+	if not root then
+		return false
+	end
 	for _, hall in CollectionService:GetTagged("FurnitureShowroom") do
-		if not hall:IsDescendantOf(workspace) then continue end
+		if not hall:IsDescendantOf(workspace) then
+			continue
+		end
 		local frame, size = hall:GetAttribute("InteriorFrame"), hall:GetAttribute("InteriorSize")
-		if typeof(frame) ~= "CFrame" or typeof(size) ~= "Vector3" then continue end
+		if typeof(frame) ~= "CFrame" or typeof(size) ~= "Vector3" then
+			continue
+		end
 		local p = frame:PointToObjectSpace(root.Position)
 		if math.abs(p.X) > size.X / 2 or math.abs(p.Y) > size.Y / 2 or math.abs(p.Z) > size.Z / 2 then
 			continue
@@ -86,8 +96,12 @@ local function atShop(player: Player, itemId: string): boolean
 			end
 			local displayItem = prompt:GetAttribute("ItemId")
 			local anchor = prompt.Parent
-			if (displayItem == nil or displayItem == itemId) and anchor and anchor:IsA("BasePart")
-				and near(player, anchor.Position, prompt.MaxActivationDistance + 2) then
+			if
+				(displayItem == nil or displayItem == itemId)
+				and anchor
+				and anchor:IsA("BasePart")
+				and near(player, anchor.Position, prompt.MaxActivationDistance + 2)
+			then
 				return true
 			end
 		end
@@ -115,6 +129,9 @@ local function state(player: Player)
 		FreezerCapacity = AnglerData.freezerCapacity(data),
 		Storage = #data.Storage,
 		StorageCapacity = AnglerData.storageCapacity(data),
+		Pantry = #data.Pantry,
+		PantryCapacity = AnglerData.pantryCapacity(data),
+		Unlocked = data.Paths.Unlocked,
 		BaseId = player:GetAttribute("BaseId"),
 	}
 end
@@ -156,6 +173,11 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 		local anchor = promptAnchor(model, frame * CFrame.new(0, FishFreezer.HEIGHT * 0.7, FishFreezer.DEPTH / 2))
 		-- CustomerService handles every freezer prompt in a base the same way.
 		ownerPrompt(anchor, "StockFreezerPrompt", "Place fish", "Freezer"):SetAttribute("OwnerUserId", userId)
+		-- Made Available by CustomerService once the Supermarket path lets fish be cooked.
+		local take = ownerPrompt(anchor, "TakeFrozenFishPrompt", "Take fish", "Freezer")
+		take.KeyboardKeyCode, take.GamepadKeyCode = Enum.KeyCode.F, Enum.KeyCode.ButtonY
+		take:SetAttribute("Available", false)
+		take:SetAttribute("OwnerUserId", userId)
 	elseif entry.ItemId == "Register" then
 		model = ShopDesk.build(parent, frame)
 	elseif entry.ItemId == "StorageRack" then
@@ -166,6 +188,15 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 		take.KeyboardKeyCode, take.GamepadKeyCode = Enum.KeyCode.F, Enum.KeyCode.ButtonY
 		take:SetAttribute("OwnerUserId", userId)
 		model.Parent = parent
+	elseif entry.ItemId == "FoodCase" then
+		model = Kitchen.buildCase(parent, frame)
+	elseif entry.ItemId == "DiningTable" then
+		model = DiningRoom.buildTable(parent, frame)
+		model.Parent = parent
+	elseif Recipes.Stations[entry.ItemId] then
+		model = Kitchen.buildStation(parent, frame, entry.ItemId)
+		-- KitchenService answers both prompts and keeps them in step with the cooking job.
+		KitchenService.addPrompts(model, frame, entry.ItemId, userId)
 	else
 		return nil
 	end
@@ -201,7 +232,11 @@ local function sync(base: Model)
 	local present = {}
 	for _, child in folder:GetChildren() do
 		local childKey = child:GetAttribute("FurnitureKey")
-		if not wanted[childKey] or present[childKey] or child:GetAttribute("OwnerUserId") ~= (owner and owner.UserId) then
+		if
+			not wanted[childKey]
+			or present[childKey]
+			or child:GetAttribute("OwnerUserId") ~= (owner and owner.UserId)
+		then
 			child:Destroy()
 		else
 			present[childKey] = child
@@ -277,7 +312,10 @@ local function buy(player: Player, itemId: any): (boolean, string)
 		return false, "Step inside Harbour Home and approach a display or the counter to buy furniture."
 	end
 	local ok, message = run(player, function(profile)
-		if profile.Cash < item.Price then
+		local locked = Furniture.locked(itemId, profile.Angler.Paths and profile.Angler.Paths.Unlocked)
+		if locked then
+			return nil, locked
+		elseif profile.Cash < item.Price then
 			return nil, string.format("You need $%d for a %s.", item.Price, string.lower(item.Name))
 		end
 		local data, reason = AnglerData.buyFurniture(profile.Angler, itemId)
@@ -327,7 +365,11 @@ end
 
 local function rackPrompt(player: Player, prompt: ProximityPrompt)
 	local base = baseOf(player)
-	if not base or not prompt:IsDescendantOf(base) or not near(player, prompt.Parent.Position, prompt.MaxActivationDistance + 2) then
+	if
+		not base
+		or not prompt:IsDescendantOf(base)
+		or not near(player, prompt.Parent.Position, prompt.MaxActivationDistance + 2)
+	then
 		return
 	end
 	local store = prompt.Name == "StoreFishPrompt"
@@ -350,7 +392,8 @@ local function rackPrompt(player: Player, prompt: ProximityPrompt)
 	end)
 	notify(
 		player,
-		if not ok then message
+		if not ok
+			then message
 			elseif store then "Stored one fish on your rack."
 			else "Took a fish off the rack. Carry it to a freezer to sell it."
 	)
@@ -387,6 +430,33 @@ local function staffCounter(top: Instance)
 	keeper.Parent = shop
 end
 
+local function buildPreviews(parent: Instance)
+	local folder = Instance.new("Folder")
+	folder.Name = "Previews"
+	local builders = {
+		Freezer = FishFreezer.build,
+		Register = ShopDesk.build,
+		StorageRack = StorageRack.build,
+		FoodCase = Kitchen.buildCase,
+		DiningTable = DiningRoom.buildTable,
+	}
+	for _, id in Furniture.Order do
+		local build = builders[id]
+			or function(parent, frame)
+				return Kitchen.buildStation(parent, frame, id)
+			end
+		local sample = build(folder, CFrame.identity)
+		sample.Name, sample.Parent = id, folder
+		for _, part in sample:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = true
+				part.CanCollide, part.CanTouch, part.CanQuery = false, false, false
+			end
+		end
+	end
+	folder.Parent = parent
+end
+
 function FurnitureService.start()
 	if started then
 		return
@@ -404,6 +474,7 @@ function FurnitureService.start()
 	request.Name, request.Parent = "Request", remotes
 	update = Instance.new("RemoteEvent")
 	update.Name, update.Parent = "Update", remotes
+	buildPreviews(remotes)
 	remotes.Parent = ReplicatedStorage
 	request.OnServerInvoke = function(player, action, a, b, c, d)
 		if action == "Get" then

@@ -8,6 +8,7 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
+local Paths = require(ReplicatedStorage.Shared.Paths)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local FurnitureShop = {}
@@ -125,9 +126,9 @@ function FurnitureShop.start()
 		for _, id in Furniture.Order do
 			local item, row = Furniture.Items[id], rows[id]
 			row.frame.Visible = selectedItem == nil or selectedItem == id
-			if selectedItem == id then row.frame.Position = UDim2.fromOffset(18, 118) end
 			local owned = if state then state.Stock[id] or 0 else 0
 			local placed = if state then Furniture.count(state.Placed, id) else 0
+			local locked = state ~= nil and Furniture.locked(id, state.Unlocked) ~= nil
 			row.detail.Text = string.format(
 				"%s\nOnly in the %s · %d placed, %d in stock (max %d placed)",
 				item.Description,
@@ -136,18 +137,32 @@ function FurnitureShop.start()
 				owned,
 				item.MaxPlaced
 			)
-			local enabled = state ~= nil and not pending and cash >= item.Price
-			row.buy.Text = if pending then "Please wait…" else "Buy · $" .. item.Price
+			local enabled = state ~= nil and not pending and not locked and cash >= item.Price
+			row.buy.Text = if pending
+				then "Please wait…"
+				elseif locked then "Needs " .. Paths.Stages[item.Requires].Name
+				else "Buy · $" .. item.Price
 			row.buy.Active, row.buy.AutoButtonColor = enabled, enabled
 			Theme.button(row.buy, if enabled then "Selected" else "Disabled")
 		end
 	end
+	local list = make("ScrollingFrame", card, {
+		Name = "CatalogueRows",
+		Position = UDim2.fromOffset(18, 118),
+		Size = UDim2.new(1, -36, 1, -132),
+		BackgroundTransparency = 1,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+	})
+	Theme.scroll(list)
+	make("UIListLayout", list, { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 10) })
 	for index, id in Furniture.Order do
 		local item = Furniture.Items[id]
-		local row = make("Frame", card, {
+		local row = make("Frame", list, {
 			Name = id .. "Row",
-			Position = UDim2.fromOffset(18, 118 + (index - 1) * 112),
-			Size = UDim2.new(1, -36, 0, 102),
+			LayoutOrder = index,
+			Size = UDim2.new(1, -10, 0, 102),
 		})
 		Theme.panel(row, true, 8)
 		label(row, item.Name, {
@@ -220,9 +235,7 @@ function FurnitureShop.start()
 			local itemId = prompt:GetAttribute("ItemId")
 			selectedItem = if type(itemId) == "string" and Furniture.Items[itemId] then itemId else nil
 			activePrompt = prompt
-			for index, id in Furniture.Order do
-				rows[id].frame.Position = UDim2.fromOffset(18, 118 + (index - 1) * 112)
-			end
+			list.CanvasPosition = Vector2.zero
 			card.Size = UDim2.new(1, -28, 0, if selectedItem then 238 else 470)
 			overlay.Visible = true
 			render()

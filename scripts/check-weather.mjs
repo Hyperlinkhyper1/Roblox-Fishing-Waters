@@ -26,7 +26,9 @@ console.log('PASS lake boundary matches the actual main-island coastline');
 
 const vectors = read('scripts/harbour-geometry.luau').split('local CFrame = {}')[0]
   .replace('local state = seed', 'local state = seed or 1847');
-const service = read('src/server/WeatherService.luau').replace('require(ReplicatedStorage.Shared.Weather)', 'Weather');
+const service = read('src/server/WeatherService.luau').replace('require(ReplicatedStorage.Shared.Weather)', 'Weather')
+  .replace('require(ReplicatedStorage.Shared.DayNight)', 'DayNight');
+const dayNight = read('src/shared/DayNight.luau');
 const program = vectors + `
 Vector3.yAxis = Vector3.new(0, 1, 0)
 local now = 100000
@@ -117,7 +119,11 @@ print('PASS sheltered lake vs exposed sea, continuous mouth, deterministic synch
 
 local callbacks = {}
 local RunService = { Heartbeat = { Connect = function(_, callback) table.insert(callbacks, callback) end } }
-local game = { GetService = function(_, name) return if name == 'RunService' then RunService else {} end }
+local Lighting = {}
+local game = { GetService = function(_, name) return if name == 'RunService' then RunService elseif name == 'Lighting' then Lighting else {} end }
+local DayNight = (function()
+${dayNight}
+end)()
 local Service = (function()
 ${service}
 end)()
@@ -138,6 +144,28 @@ for _, kind in { 'LightRain', 'Rain', 'Storm' } do
   close(workspace.GlobalWind.Magnitude, state.windSpeed)
 end
 print('PASS single authoritative forecast, replicated state and global wind')
+
+attributes.WeatherOverride = nil
+close(DayNight.clockTime(attributes.WeatherEpoch), DayNight.START_HOUR)
+now = attributes.WeatherEpoch + (22 - DayNight.START_HOUR) * DayNight.SECONDS_PER_HOUR
+callbacks[1](1)
+close(Lighting.ClockTime, 22)
+assert(DayNight.isNight(Lighting.ClockTime) and DayNight.darkness(Lighting.ClockTime) == 1, 'Late evening is full night')
+now = attributes.WeatherEpoch + 24 * DayNight.SECONDS_PER_HOUR
+close(DayNight.clockTime(now), DayNight.START_HOUR)
+assert(not DayNight.isNight(13) and DayNight.darkness(13) == 0, 'Afternoon is full day')
+assert(DayNight.isNight(18) and DayNight.isNight(5.9) and not DayNight.isNight(6), 'Night runs 18:00 to 06:00')
+local last = DayNight.darkness(0)
+for step = 1, 24 * 60 do
+  local clock = step / 60
+  local dark = DayNight.darkness(clock % 24)
+  assert(dark >= 0 and dark <= 1 and math.abs(dark - last) < 0.02, 'Twilight must fade, not snap')
+  last = dark
+end
+attributes.ClockOverride = 23
+close(DayNight.clockTime(now), 23)
+attributes.ClockOverride = nil
+print('PASS day/night clock: shared epoch, night window, smooth twilight and Studio override')
 `;
 const temporary = mkdtempSync(join(tmpdir(), 'fishing-weather-'));
 try {

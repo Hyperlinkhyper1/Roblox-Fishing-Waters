@@ -15,7 +15,7 @@ if (!/return BoatService\s*$/.test(source)) throw new Error('BoatService return 
 source = source.replace(/return BoatService\s*$/, 'return { start = BoatService.start, launch = launch, active = active }');
 await writeFile(join(output, 'BoatService.luau'), source);
 const server = { $className: 'ServerScriptService', BoatService: { $path: join(output, 'BoatService.luau') } };
-for (const name of ['BoatData', 'AnglerData', 'Rowboat', 'FishingBoat', 'DrydockLaunch', 'BoatLaunchCollision']) {
+for (const name of ['BoatData', 'AdminCommands', 'GamepassService', 'AnglerData', 'Rowboat', 'FishingBoat', 'DrydockLaunch', 'BoatLaunchCollision']) {
   server[name] = { $path: join(root, `src/server/${name}.luau`) };
 }
 server.Regression = { $path: join(root, 'scripts/boat-idle-studio.server.luau') };

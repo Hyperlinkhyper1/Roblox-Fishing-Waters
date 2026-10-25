@@ -15,13 +15,16 @@ local function load(role, callback)
 	end
 	pending[role] = { callback }
 	task.spawn(function()
-		local description = Staff.description(role)
+		local description
 		local ok, model = pcall(function()
+			description = Staff.description(role)
 			return Players:CreateHumanoidModelFromDescriptionAsync(description, Enum.HumanoidRigType.R15)
 		end)
-		description:Destroy()
+		if description then
+			description:Destroy()
+		end
 		if ok then
-			Staff.applyAppearance(model, role)
+			Staff.finishModel(model)
 			for _, item in model:GetDescendants() do
 				if item:IsA("BasePart") then
 					item.Anchored = true

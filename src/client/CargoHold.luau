@@ -15,6 +15,7 @@ local Cargo = require(ReplicatedStorage.Shared.Cargo)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
+local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 
 local CargoHold = {}
 local rgb = Color3.fromRGB
@@ -137,7 +138,7 @@ local function drawItem(parent: Instance, item, rotation: number): (Frame, { Fra
 			BackgroundTransparency = 1,
 			ZIndex = 2,
 		})
-		local _, camera = FishModels.show(view, item.Fish.FishId)
+		local _, camera = FishModels.show(view, item.Fish.FishId, nil, item.Fish)
 		if camera and rotation % 4 ~= 0 then
 			-- Rolling the camera turns the fish clockwise with its footprint.
 			camera.CFrame *= CFrame.Angles(0, 0, rotation * math.pi / 2)
@@ -429,11 +430,13 @@ function CargoHold.start()
 		end
 		handEmpty.Visible = hand == nil
 		if hand then
-			FishModels.show(handView, hand.FishId)
+			FishModels.show(handView, hand.FishId, nil, hand)
 			local species = Catalog.Fish[hand.FishId]
 			local rarity = species and Catalog.Rarities[species.Rarity]
 			handStroke.Color = if rarity then rarity.Color else CELL_EDGE
-			handName.Text = (if species then species.Name else hand.FishId)
+			local mutation = FishMutations.label(hand.Mutation, hand.NeonColor)
+			handName.Text = (if mutation ~= "" then mutation .. " " else "")
+				.. (if species then species.Name else hand.FishId)
 				.. (if hand.Size == "Huge" then "  HUGE" elseif hand.Size == "Big" then "  BIG" else "")
 			handInfo.Text = string.format(
 				"%s · $%d · takes %d cells",

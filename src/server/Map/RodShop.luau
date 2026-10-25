@@ -617,15 +617,25 @@ local function buildInterior(): Model
 	return hall
 end
 
+-- Finn the rod keeper stands between the counter and the back racks, facing the door,
+-- beside the hanging price board rather than behind it. FishingService dresses and
+-- places him at startup; the frame is at his soles.
+local KEEPER_FRAME = INTERIOR_ORIGIN * CFrame.new(-5, 0, D / 2 - 8 - 2.8)
+
 local function ensureInterior(): Model
 	local existing = interiorFolder():FindFirstChild("RodStoreInterior")
+	local hall: Model
 	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == INTERIOR_VERSION then
-		CollectionService:AddTag(existing, "FishingRodShop")
-		return existing
-	elseif existing then
-		existing:Destroy()
+		hall = existing
+	else
+		if existing then
+			existing:Destroy()
+		end
+		hall = buildInterior()
 	end
-	return buildInterior()
+	hall:SetAttribute("KeeperFrame", KEEPER_FRAME)
+	CollectionService:AddTag(hall, "FishingRodShop")
+	return hall
 end
 
 ----------------------------------------------------------------------------------------------------

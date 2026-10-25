@@ -47,6 +47,8 @@ Terrain.objects.Clouds = clouds
 local camera = { CFrame = { Position = { X = 0, Y = 20, Z = 0 } } }
 local workspace = { Terrain = Terrain, CurrentCamera = camera }
 function workspace:GetServerTimeNow() return 1000 end
+local attributes = { WeatherEpoch = 1000 }
+function workspace:GetAttribute(name) return attributes[name] end
 local weather = { rain = 0, storm = 0, cloudCover = 0 }
 local Weather = { getState = function(time)
   assert(time == 1000, "Atmosphere must use the synchronized weather clock")
@@ -81,11 +83,15 @@ end)()
 local Theme = (function()
 ${read('src/first/UITheme.luau')}
 end)()
+local DayNight = (function()
+${read('src/shared/DayNight.luau')}
+end)()
 local Client = (function()
 ${read('src/client/BiomeAtmosphere.luau')
   .replace('require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))', 'Theme')
   .replace('require(ReplicatedStorage.Shared.Biomes)', 'Biomes')
-  .replace('require(ReplicatedStorage.Shared.Weather)', 'Weather')}
+  .replace('require(ReplicatedStorage.Shared.Weather)', 'Weather')
+  .replace('require(ReplicatedStorage.Shared.DayNight)', 'DayNight')}
 end)()
 local function rgbEqual(a, b) return a.R == b.R and a.G == b.G and a.B == b.B end
 local function move(x, y, z, dt)
@@ -150,6 +156,21 @@ assert(math.abs(Lighting.Brightness - (2 - 0.24 * 0.95)) < 0.00001,
 assert(lightningGrading.Brightness == 0.37,
   "Biome/weather grading must leave the separate lightning grading effect untouched")
 print("PASS underwater clarity, blue fog, all biomes, rapid transitions, surface margin, ocean bounds, camera replacement and weather transitions")
+assert(Lighting.ClockTime == DayNight.START_HOUR, "Clients run the shared clock")
+weather = { rain = 0, storm = 0, cloudCover = 0 }
+move(0, 5, 0, 0.6)
+local dayAmbient, dayBrightness, dayFog = Lighting.OutdoorAmbient, Lighting.Brightness, atmosphere.Color
+attributes.ClockOverride = 23
+move(0, 5, 0, 0.6)
+assert(Lighting.ClockTime == 23, "Clock override reaches Lighting")
+local function sum(c) return c.R + c.G + c.B end
+assert(Lighting.Brightness < dayBrightness and sum(Lighting.OutdoorAmbient) < sum(dayAmbient)
+  and sum(atmosphere.Color) < sum(dayFog), "Night darkens the light, ambient and fog")
+attributes.ClockOverride = 12
+move(0, 5, 0, 0.6)
+assert(Lighting.Brightness == dayBrightness and rgbEqual(Lighting.OutdoorAmbient, dayAmbient), "Daylight returns")
+attributes.ClockOverride = nil
+print("PASS day/night: shared clock, darker nights, daylight restored")
 `;
 const temporary = mkdtempSync(join(tmpdir(), 'fishing-underwater-'));
 try {

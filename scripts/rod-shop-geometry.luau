@@ -231,6 +231,11 @@ for _, piece in plazaSolids do
 end
 local showroomSolids = solids(showroom)
 for _, id in dependencies.FurnitureCatalog.Order do
+	-- Path equipment is sold from the counter catalogue, without a showroom display.
+	if dependencies.FurnitureCatalog.Items[id].Requires then
+		check(showroom:FindFirstChild(id .. "Display") == nil, "Path equipment has no showroom display: " .. id)
+		continue
+	end
 	local display = showroom:FindFirstChild(id .. "Display")
 	local sample = display and display:FindFirstChild("Sample" .. id)
 	check(sample and sample:IsA("Model") and #sample:GetDescendants() > 5, "Missing full-size furniture sample: " .. id)

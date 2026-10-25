@@ -55,6 +55,7 @@ local holder, view, status = previewSurface()
 local rotate = StaffPreview.show(view, "Seller", status)
 local model = view:FindFirstChildOfClass("WorldModel"):FindFirstChildOfClass("Model")
 check(not status.Visible and model ~= nil, "Retry loads the staff into a viewport WorldModel")
+check(model.Head.face.Texture == "rbxasset://textures/face.png", "Preview shows the worker's friendly smile")
 check(model:FindFirstChildOfClass("Part").Anchored and not model:FindFirstChildOfClass("Part").CanCollide
 	and not model:FindFirstChildOfClass("LocalScript"), "Preview clones are inert and have no executable scripts")
 local beforeTurn = view.CurrentCamera.CFrame.Position.X

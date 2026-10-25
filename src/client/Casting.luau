@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
+local CastAnimation = require(script.Parent.CastAnimation)
 local FishingAudio = require(script.Parent.FishingAudio)
 local Reel = require(script.Parent.ReelMinigame)
 
@@ -292,7 +293,7 @@ function Casting.start()
 	local function fight(info)
 		phase = "Fighting"
 		refreshHud()
-		local outcome = reel:fight(info.FishId, info.Difficulty, info.Pool)
+		local outcome = reel:fight(info.FishId, info.Difficulty, info.Pool, info.ReelBoost)
 		if phase == "Fighting" then
 			phase = "Idle"
 		end
@@ -319,6 +320,7 @@ function Casting.start()
 				return
 			end
 			phase, chargeStarted = "Charging", os.clock()
+			CastAnimation.windUp(rod)
 		elseif phase == "Waiting" then
 			request:FireServer("Reel", false)
 		elseif phase == "Fighting" then
@@ -334,12 +336,18 @@ function Casting.start()
 		local strength = charge()
 		local target = findWater(strength)
 		if not target then
+			if rod then
+				CastAnimation.cancel(rod)
+			end
 			phase = "Idle"
 			refreshHud()
 			notice("Aim at open water to cast.")
 			return
 		end
 		FishingAudio.cast(strength)
+		if rod then
+			CastAnimation.swing(rod)
+		end
 		phase, sentAt = "Sent", os.clock()
 		request:FireServer("Cast", target)
 		refreshHud()
@@ -350,6 +358,9 @@ function Casting.start()
 			connection:Disconnect()
 		end
 		table.clear(rodConnections)
+		if rod and phase == "Charging" then
+			CastAnimation.cancel(rod)
+		end
 		rod = nil
 		if phase == "Fighting" then
 			reel:abort()

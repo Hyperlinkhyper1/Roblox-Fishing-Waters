@@ -92,6 +92,15 @@ function methods:IsDescendantOf(ancestor)
   end
   return false
 end
+local vector = {}
+local Vector3 = {new=function(x, y, z) return setmetatable({X=x, Y=y, Z=z}, vector) end}
+vector.__div = function(v, n) return Vector3.new(v.X / n, v.Y / n, v.Z / n) end
+local axes = {RightVector=Vector3.new(1, 0, 0), UpVector=Vector3.new(0, 1, 0), LookVector=Vector3.new(0, 0, 1)}
+local function groundAt(parent, x, z)
+  local part = object("BasePart", "GroundPart", parent)
+  part.Position = Vector3.new(x, 0, z); part.Size = Vector3.new(4, 1, 4); part.CFrame = axes
+  return part
+end
 local workspace = object("Workspace", "Workspace")
 local map = object("Folder", "Map", workspace)
 local shells = object("Model", "Lod", map)
@@ -174,6 +183,51 @@ beforeScheduled = scheduled
 other.AncestryChanged:Fire()
 check(scheduled == beforeScheduled, "Old island tracking must be disconnected")
 check(shell.Parent == shells and otherShell.Parent == shells, "All shell parents must stay stable")
+-- The home island streams in pieces, so its shell is tiled and each tile follows its own ground.
+local tiled = object("Model", "3", shells)
+tiled.attributes = {TileSize=100, TileOriginX=0, TileOriginZ=0}
+local nearTile = object("Model", "0,0", tiled)
+nearTile.attributes.Ground = 4
+local nearWedge = object("BasePart", "Shell", nearTile)
+local farTile = object("Model", "1,0", tiled)
+farTile.attributes.Ground = 4
+local farWedge = object("BasePart", "Shell", farTile)
+shells.ChildAdded:Fire(tiled)
+local home = object("Model", "Harbour Isle", biome)
+home.attributes.LodId = 3
+local homeGround = object("Model", "Ground", home)
+for i = 1, 4 do groundAt(homeGround, 10 + i * 10, 50) end
+biome.ChildAdded:Fire(home)
+settle()
+check(nearWedge.LocalTransparencyModifier == 1, "A streamed-in tile must give way to the real ground")
+check(farWedge.LocalTransparencyModifier == 0, "Tiles whose ground hasn't streamed in must stay on the horizon")
+local farParts = {}
+for i = 1, 3 do
+  local part = groundAt(homeGround, 110 + i * 10, 50)
+  table.insert(farParts, part)
+  homeGround.DescendantAdded:Fire(part)
+end
+settle()
+check(farWedge.LocalTransparencyModifier == 0, "A half-streamed tile must keep covering its gaps")
+local last = groundAt(homeGround, 190, 50)
+table.insert(farParts, last)
+homeGround.DescendantAdded:Fire(last)
+settle()
+check(farWedge.LocalTransparencyModifier == 1, "A fully streamed tile must hide")
+for _, part in farParts do homeGround.DescendantRemoving:Fire(part) end
+settle()
+check(farWedge.LocalTransparencyModifier == 0 and nearWedge.LocalTransparencyModifier == 1,
+  "Streaming one tile out must bring back only that tile")
+shells.ChildRemoved:Fire(tiled)
+local replacement = object("Model", "3", shells)
+local replacementWedge = object("BasePart", "Wedge", replacement)
+shells.ChildAdded:Fire(replacement)
+settle()
+check(replacementWedge.LocalTransparencyModifier == 1, "A replacement shell must take over its island")
+beforeWrites = writes
+homeGround.DescendantRemoving:Fire(homeGround.children[1])
+flush()
+check(writes == beforeWrites, "A replaced shell must stop following the island")
 print("LOD: " .. checks .. " checks passed; 3000 arrivals without refresh/render churn")
 `;
 

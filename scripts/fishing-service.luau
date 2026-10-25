@@ -208,6 +208,11 @@ local os = {
 	end,
 }
 local Enum = { RaycastFilterType = { Exclude = "Exclude" } }
+local Color3 = {
+	fromRGB = function(r, g, b)
+		return { R = r / 255, G = g / 255, B = b / 255 }
+	end,
+}
 local RaycastParams = {
 	new = function()
 		return {}
@@ -229,6 +234,9 @@ local CollectionService = {
 	GetTagged = function(_, name)
 		return tags[name] or {}
 	end,
+	GetInstanceAddedSignal = function()
+		return signal()
+	end,
 }
 local ReplicatedStorage = Instance.new("ReplicatedStorage")
 local ProximityPromptService = { PromptTriggered = signal() }
@@ -243,9 +251,35 @@ local game = {
 		return assert(services[name], name)
 	end,
 }
-local purchases, builds, failSave = 0, 0, false
+local purchases, builds, failSave, upgrades = 0, 0, false, 0
 local dependencies = {
+	BoatData = {
+		upgradeRod = function(profile, stat)
+			profile.RodUpgrades[stat] = (profile.RodUpgrades[stat] or 0) + 1
+			return "Upgraded"
+		end,
+	},
+	RodUpgrades = {
+		Stats = { Speed = { Name = "Reel Speed" } },
+		valid = function(stat)
+			return stat == "Speed"
+		end,
+		level = function(levels, stat)
+			return levels[stat] or 0
+		end,
+		price = function()
+			return 100
+		end,
+	},
 	BoatService = {
+		getProfile = function(player)
+			return if player:GetAttribute("BoatDataStatus") == "Ready" then { RodUpgrades = {} } else nil
+		end,
+		updateProgress = function(_, transform)
+			upgrades += 1
+			transform({ RodUpgrades = {} })
+			return true, "Saved."
+		end,
 		purchaseRod = function(player)
 			purchases += 1
 			if player:GetAttribute("BoatDataStatus") ~= "Ready" then
@@ -326,9 +360,9 @@ Service.start()
 flush()
 local request = ReplicatedStorage:WaitForChild("Fishing"):WaitForChild("Request")
 local feedback = ReplicatedStorage:WaitForChild("Fishing"):WaitForChild("Feedback")
-local function send(player, action)
+local function send(player, action, value)
 	now += 1
-	request.OnServerEvent:Fire(player, action)
+	request.OnServerEvent:Fire(player, action, value)
 	flush()
 end
 check(rodCount(fresh) == 0 and builds == 0, "Unowned startup must not grant a Tool")
@@ -356,6 +390,23 @@ shop.Parent = nil
 send(fresh, "PurchaseRod")
 check(purchases == 0, "Tagged shops removed from workspace cannot authorize purchases")
 shop.Parent = workspace
+
+-- Rod upgrades are only sold by Finn: his prompt, in range and in sight.
+send(fresh, "UpgradeRod", "Speed")
+local result = feedback.messages[#feedback.messages].values
+check(upgrades == 0 and result[1] == "UpgradeResult" and result[2] == false, "Upgrades need the rod keeper")
+local keeperHead = Instance.new("Part")
+keeperHead.Position, keeperHead.Parent = Vector3.new(0, 2, 3), shop
+local keeperPrompt = Instance.new("ProximityPrompt")
+keeperPrompt.Name, keeperPrompt.MaxActivationDistance, keeperPrompt.Parent = "TalkToRodKeeperPrompt", 11, keeperHead
+send(fresh, "UpgradeRod", "Luck")
+check(upgrades == 0 and feedback.messages[#feedback.messages].values[2] == false, "Unknown upgrades are rejected")
+send(fresh, "UpgradeRod", "Speed")
+result = feedback.messages[#feedback.messages].values
+check(upgrades == 1 and result[1] == "UpgradeResult" and result[2] == true, "Finn upgrades through the wallet store")
+ProximityPromptService.PromptTriggered:Fire(keeperPrompt, fresh)
+check(feedback.messages[#feedback.messages].values[1] == "OpenUpgrades", "Talking to Finn opens the upgrades")
+keeperHead.Parent = nil
 
 local foreignPrompt = Instance.new("ProximityPrompt")
 foreignPrompt.Name, foreignPrompt.Parent = "BuyFishingRodPrompt", counter

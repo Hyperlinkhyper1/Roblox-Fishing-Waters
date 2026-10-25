@@ -4,6 +4,7 @@
 -- discs laid on the body surface. Builders work in "fish lengths" (snout at
 -- X = +0.5, tail at -0.5, back towards +Y) and are scaled to studs on creation.
 local FishModels = {}
+local FishMutations = require(script.Parent.FishMutations)
 
 local SCALE = 4 -- studs per fish length
 local FIN = 0.004
@@ -1059,11 +1060,254 @@ function builders.LeatherBoot(b)
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.7, 0.4, 1))
 end
 
+-- World-axis bounds, so framing never depends on which part came first.
+local function measure(model: Model)
+	local low, high = Vector3.one * math.huge, -Vector3.one * math.huge
+	for _, item in model:GetDescendants() do
+		if item:IsA("BasePart") then
+			local frame, half = item.CFrame, item.Size / 2
+			local extent = Vector3.new(
+				math.abs(frame.RightVector.X) * half.X
+					+ math.abs(frame.UpVector.X) * half.Y
+					+ math.abs(frame.LookVector.X) * half.Z,
+				math.abs(frame.RightVector.Y) * half.X
+					+ math.abs(frame.UpVector.Y) * half.Y
+					+ math.abs(frame.LookVector.Y) * half.Z,
+				math.abs(frame.RightVector.Z) * half.X
+					+ math.abs(frame.UpVector.Z) * half.Y
+					+ math.abs(frame.LookVector.Z) * half.Z
+			)
+			low, high = low:Min(frame.Position - extent), high:Max(frame.Position + extent)
+		end
+	end
+	model:SetAttribute("BoundsCenter", (low + high) / 2)
+	model:SetAttribute("BoundsSize", high - low)
+end
+
+-- Parts a Neon (or Astral) mutation lights up. Eyes and corrupted wounds are
+-- never repainted.
+local GLOWING = {
+	Fin = true,
+	FinRay = true,
+	FinSpot = true,
+	AdiposeFin = true,
+	PelvicFin = true,
+	Tail = true,
+	Filament = true,
+	Spine = true,
+	Barbel = true,
+	Marking = true,
+}
+local UNPAINTED = { Eye = true, Pupil = true, EyeGlint = true, Bone = true, BoneKnob = true, Wound = true }
+local ASTRAL_GLOW = rgb(170, 70, 255)
+-- The client cycles the hue of every part carrying a RainbowHue attribute.
+FishModels.RAINBOW_TAG = "RainbowFish"
+
+-- A builder over an already built, unscaled fish, so corruptions can reuse the
+-- surface helpers. Body sections are the axis-aligned ellipsoids.
+local function rebuild(model: Model, seed: number)
+	local builder = setmetatable({ model = model, sections = {} :: { Ellipsoid }, random = seeded(seed) }, Builder)
+	for _, item in model:GetChildren() do
+		local mesh = if item:IsA("Part") then item:FindFirstChildOfClass("SpecialMesh") else nil
+		if
+			mesh
+			and mesh.MeshType == Enum.MeshType.Sphere
+			and item.CFrame.Rotation == CFrame.identity
+			and math.min(item.Size.X, item.Size.Y, item.Size.Z) / SCALE > 0.015
+			and not string.find(item.Name, "Fin")
+			and not UNPAINTED[item.Name]
+		then
+			table.insert(builder.sections, { c = item.Position / SCALE, h = item.Size / SCALE / 2 })
+		end
+	end
+	return builder
+end
+
+-- The fish's lowest corner and size in fish lengths.
+local function bounds(model: Model): (Vector3, Vector3)
+	local center, size = model:GetAttribute("BoundsCenter") :: Vector3, model:GetAttribute("BoundsSize") :: Vector3
+	return (center - size / 2) / SCALE, size / SCALE
+end
+
+local corruptions = {}
+
+-- The tail end, cloned and swung up into a second tail.
+function corruptions.Tail(b)
+	local low, size = bounds(b.model)
+	local hinge = (low.X + size.X * 0.2) * SCALE
+	local turn = CFrame.new(hinge, 0, 0) * CFrame.Angles(0, 0, math.rad(-32)) * CFrame.new(-hinge, 0, 0)
+	for _, item in b.model:GetChildren() do
+		if item:IsA("BasePart") and item.Position.X < hinge and not UNPAINTED[item.Name] then
+			local copy = item:Clone()
+			copy.CFrame = turn * item.CFrame
+			copy.Parent = b.model
+		end
+	end
+end
+
+-- A second, larger eye just behind the first on both flanks.
+function corruptions.Eye(b)
+	for _, item in b.model:GetChildren() do
+		if item.Name == "Eye" and item:IsA("BasePart") and item.Position.Z > 0 then
+			local size = item.Size.X / SCALE
+			local position = item.Position / SCALE
+			b:eye(position.X - size * 1.6, position.Y + size * 0.4, size * 1.15, item.Color)
+			return
+		end
+	end
+end
+
+-- An extra pair of fins halfway down the flanks.
+function corruptions.Fin(b)
+	local low, size = bounds(b.model)
+	local color = rgb(150, 142, 108)
+	for _, item in b.model:GetChildren() do
+		if item.Name == "Fin" and item:IsA("BasePart") then
+			color = item.Color
+			break
+		end
+	end
+	local x = low.X + size.X * 0.42
+	b:pectoral(x, b:top(x) * 0.35, size.X * 0.14, size.Y * 0.18, color)
+end
+
+-- A broken bone through a raw wound on the near flank.
+function corruptions.Bone(b)
+	local low, size = bounds(b.model)
+	local x = low.X + size.X * 0.55
+	local position, normal = b:surface(x, b:top(x) * 0.25, 1)
+	if not position or not normal then
+		return
+	end
+	local wound = b:mark(position.X, position.Y, 1, size.X * 0.07, size.X * 0.05, rgb(120, 26, 34))
+	if wound then
+		wound.Name = "Wound"
+	end
+	local tip = position + (normal + Vector3.new(-0.35, 0.3, 0)).Unit * size.X * 0.13
+	local bone = rgb(236, 228, 206)
+	b:limb(position - normal * 0.01, tip, size.X * 0.022, bone, "Bone")
+	local across = normal:Cross(Vector3.zAxis)
+	across = (if across.Magnitude > 0.01 then across.Unit else Vector3.yAxis) * size.X * 0.014
+	for _, side in { 1, -1 } do
+		b:ellipsoid("BoneKnob", CFrame.new(tip + across * side), Vector3.one * size.X * 0.034, bone)
+	end
+end
+
+local function luminance(color: Color3): number
+	return color.R * 0.3 + color.G * 0.59 + color.B * 0.11
+end
+
+local function rainbow(item: BasePart, hue: number, saturation: number, value: number)
+	item:SetAttribute("RainbowHue", hue)
+	item:SetAttribute("RainbowSaturation", saturation)
+	item:SetAttribute("RainbowValue", value)
+	item.Color = Color3.fromHSV(hue % 1, saturation, value)
+end
+
+-- Drifting aurora motes and a faint violet glow from the biggest body part.
+local function aurora(model: Model)
+	local core: BasePart? = nil
+	for _, item in model:GetChildren() do
+		if item:IsA("Part") and not UNPAINTED[item.Name] and not GLOWING[item.Name] then
+			if not core or item.Size.Magnitude > core.Size.Magnitude then
+				core = item
+			end
+		end
+	end
+	if not core then
+		return
+	end
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = "AstralAurora"
+	emitter.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, rgb(70, 255, 180)),
+		ColorSequenceKeypoint.new(0.5, rgb(80, 160, 255)),
+		ColorSequenceKeypoint.new(1, rgb(190, 80, 255)),
+	})
+	emitter.LightEmission, emitter.LightInfluence = 1, 0
+	emitter.Lifetime = NumberRange.new(1.4, 2.6)
+	emitter.Rate = 9
+	emitter.Speed = NumberRange.new(0.2, 0.6)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Acceleration = Vector3.new(0, 0.5, 0)
+	emitter.Rotation = NumberRange.new(0, 360)
+	emitter.RotSpeed = NumberRange.new(-30, 30)
+	emitter.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.05),
+		NumberSequenceKeypoint.new(0.35, 0.4),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	emitter.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.25, 0.35),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	emitter.Parent = core
+	local light = Instance.new("PointLight")
+	light.Color, light.Brightness, light.Range = ASTRAL_GLOW, 0.8, 6
+	light.Parent = core
+end
+
+-- Paints a freshly created, unscaled fish with a record's mutations.
+function FishModels.mutate(model: Model, traits)
+	local set = FishMutations.parts(traits and traits.Mutation)
+	if not next(set) then
+		return
+	end
+	if set.Corrupted then
+		local seed = 11
+		for index = 1, #model.Name do
+			seed = (seed * 31 + string.byte(model.Name, index)) % 2147483647
+		end
+		for _, kind in traits.Corruptions or { "Eye" } do
+			if corruptions[kind] then
+				-- Rebuilt each time so a corruption sees the parts the last one added.
+				corruptions[kind](rebuild(model, seed))
+			end
+		end
+	end
+	local neon = traits.NeonColor and FishMutations.NeonColors[traits.NeonColor]
+	local glow = if set.Astral then ASTRAL_GLOW elseif neon then rgb(neon[1], neon[2], neon[3]) else rgb(255, 255, 255)
+	local lit = set.Neon or set.Astral
+	local low, size = bounds(model)
+	for _, item in model:GetDescendants() do
+		if not item:IsA("BasePart") or UNPAINTED[item.Name] then
+			continue
+		end
+		-- Hue runs snout to tail.
+		local hue = (1 - (item.Position.X / SCALE - low.X) / math.max(size.X, 0.01)) * 0.85
+		local shade = luminance(item.Color)
+		if lit and GLOWING[item.Name] then
+			item.Material = Enum.Material.Neon
+			if set.Rainbow then
+				rainbow(item, hue, 0.85, 1)
+			else
+				item.Color = glow
+			end
+		elseif set.Astral then
+			item.Color = rgb(12, 12, 18):Lerp(rgb(66, 66, 76), shade)
+		elseif set.Albino then
+			item.Color = Color3.fromHSV(0, 0, 0.9 + 0.1 * shade)
+		elseif set.Rainbow then
+			rainbow(item, hue, 0.6, 0.72 + 0.28 * shade)
+		end
+	end
+	if set.Rainbow then
+		model:AddTag(FishModels.RAINBOW_TAG)
+	end
+	if set.Astral then
+		aurora(model)
+	end
+	measure(model)
+end
+
 function FishModels.has(fishId: string): boolean
 	return builders[fishId] ~= nil
 end
 
-function FishModels.create(fishId: string): Model?
+-- `traits` is a catch record (or anything with its Mutation, NeonColor and
+-- Corruptions) to paint the fish with.
+function FishModels.create(fishId: string, traits: any?): Model?
 	local template = templates[fishId]
 	if not template then
 		local build = builders[fishId]
@@ -1077,34 +1321,16 @@ function FishModels.create(fishId: string): Model?
 		local builder = newBuilder(fishId, seed)
 		build(builder)
 		local model = builder.model
-		-- World-axis bounds, so framing never depends on which part came first.
-		local low, high = Vector3.one * math.huge, -Vector3.one * math.huge
-		for _, item in model:GetChildren() do
-			if item:IsA("BasePart") then
-				local frame, half = item.CFrame, item.Size / 2
-				local extent = Vector3.new(
-					math.abs(frame.RightVector.X) * half.X
-						+ math.abs(frame.UpVector.X) * half.Y
-						+ math.abs(frame.LookVector.X) * half.Z,
-					math.abs(frame.RightVector.Y) * half.X
-						+ math.abs(frame.UpVector.Y) * half.Y
-						+ math.abs(frame.LookVector.Y) * half.Z,
-					math.abs(frame.RightVector.Z) * half.X
-						+ math.abs(frame.UpVector.Z) * half.Y
-						+ math.abs(frame.LookVector.Z) * half.Z
-				)
-				low, high = low:Min(frame.Position - extent), high:Max(frame.Position + extent)
-			end
-		end
-		model:SetAttribute("BoundsCenter", (low + high) / 2)
-		model:SetAttribute("BoundsSize", high - low)
+		measure(model)
 		if model:GetAttribute("ViewDirection") == nil then
 			model:SetAttribute("ViewDirection", Vector3.new(0.18, 0.16, 1))
 		end
 		template = model
 		templates[fishId] = model
 	end
-	return template:Clone()
+	local model = template:Clone()
+	FishModels.mutate(model, traits)
+	return model
 end
 
 -- Compact display size for the freezer and customer hands.
@@ -1116,9 +1342,10 @@ function FishModels.catchLength(kg: number): number
 end
 
 -- Held catches keep their weight differences without the freezer's size limit.
--- Weight grows with volume, so doubling the length takes eight times the kg.
-function FishModels.heldLength(kg: number): number
-	return 1.6 * math.max(kg, 0.01) ^ (1 / 3)
+-- Big and Huge add a trophy-size boost so rare catches tower over normal ones.
+function FishModels.heldLength(kg: number, size: string?): number
+	local boost = if size == "Huge" then 3 elseif size == "Big" then 1.5 else 1
+	return 1.6 * math.max(kg, 0.01) ^ (1 / 3) * boost
 end
 
 local function scaleToLength(model: Model, length: number): Vector3
@@ -1132,8 +1359,8 @@ function FishModels.scaleCatch(model: Model, kg: number): Vector3
 	return scaleToLength(model, FishModels.catchLength(kg))
 end
 
-function FishModels.scaleHeldCatch(model: Model, kg: number): Vector3
-	return scaleToLength(model, FishModels.heldLength(kg))
+function FishModels.scaleHeldCatch(model: Model, kg: number, size: string?): Vector3
+	return scaleToLength(model, FishModels.heldLength(kg, size))
 end
 
 function FishModels.silhouette(model: Model)
@@ -1147,14 +1374,14 @@ function FishModels.silhouette(model: Model)
 end
 
 -- Fills a ViewportFrame with the fish and frames it. Returns the model and the
--- camera so callers can animate either one.
-function FishModels.show(viewport: ViewportFrame, fishId: string, silhouette: boolean?): (Model?, Camera?)
+-- camera so callers can animate either one. `traits` paints a caught fish's mutations.
+function FishModels.show(viewport: ViewportFrame, fishId: string, silhouette: boolean?, traits: any?): (Model?, Camera?)
 	for _, child in viewport:GetChildren() do
 		if child:IsA("Model") or child:IsA("Camera") or child:IsA("WorldModel") then
 			child:Destroy()
 		end
 	end
-	local model = FishModels.create(fishId)
+	local model = FishModels.create(fishId, if silhouette then nil else traits)
 	if not model then
 		return nil, nil
 	end

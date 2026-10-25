@@ -8,12 +8,14 @@ local RunService = game:GetService("RunService")
 local TextChatService = game:GetService("TextChatService")
 
 local BoatData = require(script.Parent.BoatData)
+local AdminCommands = require(script.Parent.AdminCommands)
 local Rowboat = require(script.Parent.Rowboat)
 local FishingBoat = require(script.Parent.FishingBoat)
 local DrydockLaunch = require(script.Parent.DrydockLaunch)
 local BoatLaunchCollision = require(script.Parent.BoatLaunchCollision)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local BoatMotion = require(ReplicatedStorage.Shared.BoatMotion)
+local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local builders = { Rowboat = Rowboat, FishingBoat = FishingBoat }
@@ -25,6 +27,7 @@ local requests = {}
 local spawnTimes = {}
 local launching = {}
 local launchPurchased
+local boatLock: ((Player, string) -> string?)? = nil
 local started = false
 local COMMAND_USER_ID = 2541746813 -- hyperlinkhyper
 -- Studio tests use their own store; failed loads never overwrite saved data.
@@ -72,6 +75,9 @@ local function publish(player: Player, state)
 		player:SetAttribute("Owns" .. id, state.profile.OwnedBoats[id] == true)
 	end
 	player:SetAttribute("OwnsStarterRod", state.profile.OwnedRods.StarterRod == true)
+	for _, stat in RodUpgrades.Order do
+		player:SetAttribute(RodUpgrades.attribute(stat), RodUpgrades.level(state.profile.RodUpgrades, stat))
+	end
 	local level, levelXP, requiredXP = BoatData.levelProgress(state.profile)
 	player:SetAttribute("Level", level)
 	player:SetAttribute("LevelXP", levelXP)
@@ -478,6 +484,24 @@ local function removeBoat(player: Player)
 	end
 end
 
+-- Puts the player's launched boat away when it is `boatId` and nobody is aboard.
+function BoatService.stowBoat(player: Player, boatId: string): boolean
+	local boat = active[player]
+	if not boat or boat.model:GetAttribute("BoatId") ~= boatId then
+		return true
+	elseif boatOccupied(player) or launching[player] then
+		return false
+	end
+	removeBoat(player)
+	return true
+end
+
+-- `check(player, boatId)` returns a reason when another system (the hired
+-- fisherman) is using that boat, so the dock cannot launch a second copy.
+function BoatService.setBoatLock(check: (Player, string) -> string?)
+	boatLock = check
+end
+
 -- The player's launched boat, whose cargo hold they can reach.
 function BoatService.activeBoat(player: Player): (string?, Model?)
 	local boat = active[player]
@@ -774,6 +798,11 @@ local function spawnBoat(player: Player, prompt: ProximityPrompt, boatId: string
 		notify(player, "Buy the " .. spec.Name .. " at the plaza drydock first.")
 		return
 	end
+	local locked = boatLock and boatLock(player, id)
+	if locked then
+		notify(player, locked)
+		return
+	end
 	if os.clock() - (spawnTimes[player] or -math.huge) < 4 then
 		return
 	end
@@ -835,6 +864,11 @@ function BoatService.start()
 		end
 	end)
 	setCommand.Parent = TextChatService
+	AdminCommands.start(function(player, message)
+		if player.Parent == Players then
+			feedback:FireClient(player, "CommandNotice", message)
+		end
+	end)
 
 	request.OnServerEvent:Connect(function(player, action, throttle, steer)
 		if action == "Row" then
@@ -954,8 +988,7 @@ function BoatService.start()
 					- math.abs(forward.Y) * boat.model:GetAttribute("DryFloorHalfLength")
 				surfaceHeight = math.max(surfaceHeight, Biomes.WaterLevel + 0.35 - lowestFloor)
 			end
-			boat.float.Position =
-				Vector3.new(boat.root.Position.X, surfaceHeight + rootOffset.Y, boat.root.Position.Z)
+			boat.float.Position = Vector3.new(boat.root.Position.X, surfaceHeight + rootOffset.Y, boat.root.Position.Z)
 			local direction = flatHeading.LookVector * (if speed < 0 then -1 else 1)
 			if os.clock() < boat.launchGraceUntil then
 				boat.clearWater = true

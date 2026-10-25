@@ -1,5 +1,6 @@
 -- Blends water colour, fog and colour grading toward whichever biome the camera is in,
--- and shows the area's name when you cross into it.
+-- and shows the area's name when you cross into it. Also runs the day/night clock
+-- and darkens every biome's look at night.
 
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
@@ -8,6 +9,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
+local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
@@ -20,6 +22,12 @@ local UNDERWATER_FOG_DEEP = Color3.fromRGB(20, 70, 115)
 local UNDERWATER_FOG_DENSITY = 0.3
 local FADE = TweenInfo.new(1.5, Enum.EasingStyle.Sine)
 local LEAVE_MARGIN = 1.1 -- stay in a biome until this far past its edge, so the title doesn't flicker
+-- Deep-night targets each biome's look blends toward.
+local NIGHT_FOG = Color3.fromRGB(28, 36, 60)
+local NIGHT_DECAY = Color3.fromRGB(16, 20, 38)
+local NIGHT_TINT = Color3.fromRGB(188, 204, 255)
+local NIGHT_CLOUDS = Color3.fromRGB(38, 44, 64)
+local NIGHT_AMBIENT = Color3.fromRGB(44, 54, 86)
 
 local function ensure<T>(parent: Instance, className: string): T
 	local existing = parent:FindFirstChildOfClass(className)
@@ -93,8 +101,10 @@ function BiomeAtmosphere.start()
 			tween:Play()
 		end
 		local look = biome.look
-		local weather = Weather.getState(workspace:GetServerTimeNow())
+		local now = workspace:GetServerTimeNow()
+		local weather = Weather.getState(now)
 		local rain, storm = weather.rain, weather.storm
+		local night = DayNight.darkness(DayNight.clockTime(now))
 		-- Terrain water keeps nearby scenery clear, while the Atmosphere below adds a
 		-- blue fog that swallows distant objects.
 		blend(terrain, {
@@ -106,35 +116,35 @@ function BiomeAtmosphere.start()
 			Offset = if underwater then 0 else Biomes.DistanceFogOffset,
 			Color = if underwater
 				then UNDERWATER_BLUE
-				else look.atmosphereColor:Lerp(Color3.fromRGB(112, 125, 142), rain * 0.65),
+				else look.atmosphereColor:Lerp(Color3.fromRGB(112, 125, 142), rain * 0.65):Lerp(NIGHT_FOG, night * 0.8),
 			Decay = if underwater
 				then UNDERWATER_FOG_DEEP
-				else look.atmosphereDecay:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5),
+				else look.atmosphereDecay:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5):Lerp(NIGHT_DECAY, night * 0.8),
 			Density = if underwater
 				then UNDERWATER_FOG_DENSITY
 				else math.min(0.5, look.density + rain * 0.13),
-			Haze = if underwater then 0 else look.haze + rain * 1.8,
-			Glare = if underwater then 0 else look.glare * (1 - rain),
+			Haze = if underwater then 0 else (look.haze + rain * 1.8) * (1 - night * 0.5),
+			Glare = if underwater then 0 else look.glare * (1 - rain) * (1 - night),
 		})
 		blend(grading, {
 			TintColor = if underwater
 				then Color3.fromRGB(215, 240, 255)
-				else look.tint:Lerp(Color3.fromRGB(177, 193, 215), rain * 0.3),
+				else look.tint:Lerp(Color3.fromRGB(177, 193, 215), rain * 0.3):Lerp(NIGHT_TINT, night * 0.6),
 			Brightness = if underwater then 0.06 else 0,
-			Saturation = if underwater then 0.05 else look.saturation - rain * 0.12,
+			Saturation = if underwater then 0.05 else look.saturation - rain * 0.12 - night * 0.15,
 			Contrast = if underwater then 0 else look.contrast + storm * 0.04,
 		})
 		blend(clouds, {
 			Cover = look.cloudCover + (1 - look.cloudCover) * weather.cloudCover,
 			Density = 0.5 + weather.cloudCover * 0.4,
-			Color = look.cloudColor:Lerp(Color3.fromRGB(75, 83, 99), rain * 0.8),
+			Color = look.cloudColor:Lerp(Color3.fromRGB(75, 83, 99), rain * 0.8):Lerp(NIGHT_CLOUDS, night * 0.8),
 		})
 		blend(Lighting, {
 			Ambient = if underwater then Color3.fromRGB(115, 145, 170) else surfaceAmbient,
 			OutdoorAmbient = if underwater
 				then Color3.fromRGB(145, 175, 200)
-				else look.ambient:Lerp(Color3.fromRGB(68, 78, 96), rain * 0.75),
-			Brightness = if underwater then 2 else 2 - rain * 0.95 - storm * 0.2,
+				else look.ambient:Lerp(Color3.fromRGB(68, 78, 96), rain * 0.75):Lerp(NIGHT_AMBIENT, night * 0.85),
+			Brightness = (if underwater then 2 else 2 - rain * 0.95 - storm * 0.2) * (1 - night * 0.45),
 		})
 	end
 
@@ -148,6 +158,7 @@ function BiomeAtmosphere.start()
 		if not camera then
 			return
 		end
+		Lighting.ClockTime = DayNight.clockTime()
 		local position = camera.CFrame.Position
 		biomeElapsed += dt
 		weatherElapsed += dt

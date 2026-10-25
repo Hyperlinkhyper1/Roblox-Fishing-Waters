@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
+local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 local FishingAudio = require(script.Parent.FishingAudio)
 
 local Reel = {}
@@ -502,11 +503,12 @@ function Reel:render(state, dt: number)
 end
 
 -- Yields until the fight ends: "Landed", "Escaped" or "Aborted".
-function Reel:fight(fishId: string, difficulty: number, placeName: string?): string
+-- reelBoost is the server's Reel Speed upgrade for this cast.
+function Reel:fight(fishId: string, difficulty: number, placeName: string?, reelBoost: number?): string
 	self:abort()
 	local fish = Catalog.Fish[fishId]
 	local state = {
-		tuning = FishCatch.tuning(difficulty),
+		tuning = FishCatch.tuning(difficulty, if type(reelBoost) == "number" then reelBoost else nil),
 		difficulty = difficulty,
 		progress = FishCatch.START_PROGRESS,
 		gauge = 2,
@@ -594,8 +596,10 @@ function Reel:showCatch(payload)
 	end
 	local fish = Catalog.Fish[payload.FishId]
 	local rarity = fish and Catalog.Rarities[fish.Rarity]
-	FishModels.show(self.trophy, payload.FishId)
-	self.resultTitle.Text = string.upper(if fish then fish.Name else payload.FishId)
+	FishModels.show(self.trophy, payload.FishId, nil, payload)
+	local mutation = FishMutations.label(payload.Mutation, payload.NeonColor)
+	self.resultTitle.Text =
+		string.upper((if mutation ~= "" then mutation .. " " else "") .. (if fish then fish.Name else payload.FishId))
 	self.rarityBadge.Visible = rarity ~= nil
 	if rarity then
 		self.rarityBadge.BackgroundColor3 = rarity.Color
@@ -605,9 +609,13 @@ function Reel:showCatch(payload)
 	self.sizeBadge.BackgroundColor3 = if payload.Size == "Huge" then rgb(255, 196, 70) else rgb(220, 220, 214)
 	self.sizeLabel.Text = if payload.Size == "Huge" then "HUGE!" else "BIG"
 	self.weight.Text = FishCatch.formatKg(payload.Kg)
-	self.worth.Text = "Worth $" .. tostring(payload.Value)
+	local multiplier = FishMutations.multiplier(payload.Mutation, payload.Corruptions)
+	self.worth.Text = "Worth $"
+		.. tostring(payload.Value)
+		.. (if multiplier > 1 then string.format("  (×%g mutation)", multiplier) else "")
 	self.footer.Text = if not payload.Saved
 		then "Your catch couldn't be saved. Please try again."
+		elseif payload.AutoStored then "Auto Store placed your catch in your boat's hold."
 		elseif payload.Stored then "Added to your hotbar. Stow it in your boat's hold or take it to your freezer."
 		else "Your hands were full, so you released it. It still counts in your bestiary."
 	holdResult(self, 5)

@@ -8,9 +8,43 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const folder = await mkdtemp(join(tmpdir(), 'fishing-menu-'));
 try {
   let program = await readFile(join(root, 'scripts/player-menu.luau'), 'utf8');
+  if (process.argv.includes('--shop-only')) {
+    program = program.slice(0, program.indexOf('Menu.start()')) + `
+Menu.start()
+advance(1)
+local gui = playerGui.PlayerMenu
+local sidebar, card = gui.LeftNavigation, gui.MenuOverlay.MenuWindow
+local content = card.Content
+local function click(value)
+ for _, item in content:GetDescendants() do
+  if item:IsA("TextButton") and item.Text == value then item.Activated:Fire() return end
+ end
+ error("Missing shop button: " .. value)
+end
+for _, width in {1020, 362} do
+ player:SetAttribute("OwnsAutoStore", false)
+ card.AbsoluteSize = Vector2.new(width, 600)
+ now += 1
+ sidebar.Shop.Activated:Fire()
+ check(gui.MenuOverlay.Visible, "Shop opens")
+ local before = #passPrompts
+ click("Buy Auto Store · Robux")
+ check(#passPrompts == before + 1 and passPrompts[#passPrompts][2] == 3722004182, "Configured purchase prompt")
+ player:SetAttribute("OwnsAutoStore", true)
+ click("Owned")
+ check(#passPrompts == before + 1, "Owned pass does not prompt again")
+ card.CloseMenu.Activated:Fire()
+end
+print("Auto Store shop: " .. checks .. " desktop/mobile UI checks passed (recording mocks).")
+`;
+  }
   if (process.argv.includes('--home-only')) {
     program = program.slice(0, program.indexOf('Menu.start()'))
       + await readFile(join(root, 'scripts/home-menu.luau'), 'utf8');
+  }
+  if (process.argv.includes('--equipment-only')) {
+    program = program.slice(0, program.indexOf('Menu.start()'))
+      + await readFile(join(root, 'scripts/equipment-bag.luau'), 'utf8');
   }
   if (process.argv.includes('--settings-only')) {
     program = program.slice(0, program.indexOf('Menu.start()')) + `
@@ -28,7 +62,7 @@ for _, width in {1020, 362} do
   card.AbsoluteSize = Vector2.new(width, 600)
   sidebar.Settings.Activated:Fire()
   check(gui.MenuOverlay.Visible and #content:GetChildren() > 0, "Settings opens with content")
-  check(sidebar.Equipmentbag.ThemeFace.NavDecor:FindFirstChild("Strap") ~= nil, "Equipment bag styling matches its generated name")
+  check(sidebar.Equipmentbag.ThemeFace.NavIcon:FindFirstChild("Bag") ~= nil, "Equipment bag icon matches its generated name")
   click("PerformanceTab")
   click("Shadows")
   check(not profile.Angler.Settings.Shadows, "Shadows toggle saves")
@@ -50,19 +84,28 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
   for (const [marker, file] of [
     ['DATA', 'src/server/AnglerData.luau'], ['CATALOG', 'src/shared/AnglerCatalog.luau'],
     ['STAFF', 'src/shared/StaffCatalog.luau'], ['BOAT', 'src/shared/BoatCatalog.luau'],
-    ['THEME', 'src/first/UITheme.luau'], ['PREVIEW', 'src/client/StaffPreview.luau'], ['MENU', 'src/client/PlayerMenu.luau'], ['SETTINGS', 'src/client/PlayerSettings.luau'], ['SERVICE', 'src/server/AnglerService.luau'],
+    ['THEME', 'src/first/UITheme.luau'], ['PREVIEW', 'src/client/StaffPreview.luau'], ['BAG', 'src/client/EquipmentBag.luau'], ['MENU', 'src/client/PlayerMenu.luau'], ['SETTINGS', 'src/client/PlayerSettings.luau'], ['SERVICE', 'src/server/AnglerService.luau'],
   ]) {
     let source = await readFile(join(root, file), 'utf8');
     source = source.replace(/require\(ReplicatedStorage.Shared.AnglerCatalog\)/g, 'Catalog')
+      .replace(/require\(ReplicatedStorage.Shared.Gamepasses\)/g, `(function() ${await readFile(join(root, 'src/shared/Gamepasses.luau'), 'utf8')} end)()`)
+      .replace(/require\(script.Parent.GamepassService\)/g, '{ start = function() end, ownsAutoStore = function() return false end }')
+      .replace(/require\(ReplicatedStorage.Shared.Aboard\)/g, 'function() return false end')
       .replace(/require\(ReplicatedStorage.Shared.StaffCatalog\)/g, 'StaffCatalog')
       .replace(/require\(game:GetService\("ReplicatedStorage"\).Shared.StaffCatalog\)/g, 'StaffCatalog')
       .replace(/require\(script.Parent.StaffPreview\)/g, 'StaffPreview')
+      .replace(/require\(script.Parent:WaitForChild\("EquipmentBag"\)\)/g, 'EquipmentBag')
+      .replace(/require\(ReplicatedStorage.Shared.FishingRod\)/g, 'FishingRod')
       .replace(/require\(ReplicatedStorage.Shared.BoatCatalog\)/g, 'BoatCatalog')
       .replace(/require\(ReplicatedStorage.Shared.FishModels\)/g, 'nil')
       .replace(/require\(script.Parent.PlayerSettings\)/g, 'Settings')
       .replace(/require\(game:GetService\("ReplicatedFirst"\):WaitForChild\("UITheme"\)\)/g, 'Theme')
       .replace(/require\(script.Parent.BoatService\)/g, 'BoatService')
       .replace(/require\(script.Parent.AnglerData\)/g, 'Data');
+    for (const pure of ['Paths', 'Recipes']) {
+      const inlined = `(function() ${await readFile(join(root, `src/shared/${pure}.luau`), 'utf8')} end)()`;
+      source = source.replace(new RegExp(`require\\(ReplicatedStorage.Shared.${pure}\\)`, 'g'), () => inlined);
+    }
     program = program.replace(`-- ${marker}_SOURCE --`, source);
   }
   let shops = '';
@@ -70,6 +113,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
     let source = await readFile(join(root, 'src/client/' + name + '.luau'), 'utf8');
     source = source.replace('require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))', 'Theme')
       .replace('require(ReplicatedStorage.Shared.BoatCatalog)', 'BoatCatalog')
+      .replace('require(ReplicatedStorage.Shared.Weather)', '{ getState = function() return { kind = "Clear" } end }')
       .replace('require(script.Parent.DrydockCamera)', 'BoatCamera');
     if (name === 'Boating') {
       source = source.replace(/return Boating\s*$/, 'Boating.start()');

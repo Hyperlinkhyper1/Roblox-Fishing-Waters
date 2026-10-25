@@ -3,12 +3,17 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local Gamepasses = require(ReplicatedStorage.Shared.Gamepasses)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local Paths = require(ReplicatedStorage.Shared.Paths)
+local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Settings = require(script.Parent.PlayerSettings)
 local StaffPreview = require(script.Parent.StaffPreview)
+local EquipmentBag = require(script.Parent:WaitForChild("EquipmentBag"))
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Menu = {}
 local started = false
@@ -160,13 +165,23 @@ local function bookButton(item, selected)
 	item.BackgroundColor3 = cover
 	Theme.corner(item, 4)
 	Theme.corner(item.ThemeFace, 4)
-	item.ThemeFace.ThemeFinish.Color = ColorSequence.new(if selected then Book.Edge else cover, cover)
+	item.ThemeFace.ThemeFinish.Rotation = 0
+	item.ThemeFace.ThemeFinish.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, cover:Lerp(Book.Ink, 0.65)),
+		ColorSequenceKeypoint.new(0.09, cover),
+		ColorSequenceKeypoint.new(0.13, cover:Lerp(Book.Ink, 0.5)),
+		ColorSequenceKeypoint.new(0.19, cover:Lerp(Book.Gold, if selected then 0.24 else 0.12)),
+		ColorSequenceKeypoint.new(0.7, cover),
+		ColorSequenceKeypoint.new(1, cover:Lerp(Book.Ink, 0.3)),
+	})
 	item.ThemeBorder.Color = Book.Gold
+	item.ThemeBorder.Transparency = if selected then 0.2 else 0.55
+	item.ThemeBorder.Thickness = 1
 	item.ThemeCaption.Font = Enum.Font.Garamond
 	item.ThemeCaption.TextColor3 = Book.Gold
 	item.ThemeCaption.TextStrokeTransparency = 1
-	item.ThemeCaption.Position = UDim2.fromOffset(18, 0)
-	item.ThemeCaption.Size = UDim2.new(1, -30, 1, -4)
+	item.ThemeCaption.Position = UDim2.fromOffset(28, -2)
+	item.ThemeCaption.Size = UDim2.new(1, -44, 1, -4)
 	local grain = item.ThemeFace:FindFirstChild("BookGrain")
 	if not grain then
 		grain = Instance.new("Frame")
@@ -185,12 +200,12 @@ local function bookButton(item, selected)
 			seed = (seed * 48271) % 2147483647
 			return seed / 2147483647
 		end
-		for index = 1, 84 do
+		for index = 1, 64 do
 			local fleck = Instance.new("Frame")
 			fleck.Name = "GrainFleck" .. index
 			fleck.BorderSizePixel = 0
 			fleck.BackgroundColor3 = if index % 3 == 0 then Book.Gold else Book.Paper
-			fleck.BackgroundTransparency = if index % 4 == 0 then 0.84 else 0.91
+			fleck.BackgroundTransparency = if index % 4 == 0 then 0.94 else 0.97
 			fleck.Position = UDim2.fromScale(nextUnit(), nextUnit())
 			fleck.Size = UDim2.fromScale(0.004 + nextUnit() * 0.009, 0.018 + nextUnit() * 0.04)
 			fleck.Rotation = math.floor(nextUnit() * 70) - 35
@@ -203,7 +218,7 @@ local function bookButton(item, selected)
 			grainLine.Name = "GrainLine" .. index
 			grainLine.BorderSizePixel = 0
 			grainLine.BackgroundColor3 = Book.Ink
-			grainLine.BackgroundTransparency = 0.88
+			grainLine.BackgroundTransparency = 0.95
 			grainLine.Position = UDim2.fromScale(0.08 + nextUnit() * 0.84, nextUnit())
 			grainLine.Size = UDim2.fromScale(0.035 + nextUnit() * 0.09, 0.008)
 			grainLine.Rotation = math.floor(nextUnit() * 24) - 12
@@ -213,177 +228,183 @@ local function bookButton(item, selected)
 		end
 	end
 	if not item.ThemeFace:FindFirstChild("BookSpine") then
-		decoration(item.ThemeFace, "BookSpine", Book.Ink, UDim2.fromOffset(6, 0), UDim2.new(0, 5, 1, 0))
-		decoration(item.ThemeFace, "PageEdges", Book.Paper, UDim2.new(0, 16, 1, -5), UDim2.new(1, -20, 0, 3))
-		for _, y in { 8, 35 } do
-			decoration(item.ThemeFace, "SpineBand" .. y, Book.Gold, UDim2.fromOffset(5, y), UDim2.fromOffset(7, 2))
+		local face = item.ThemeFace
+		decoration(face, "BookSpine", cover:Lerp(Book.Ink, 0.7), UDim2.fromOffset(5, 1), UDim2.new(0, 9, 1, -6))
+		decoration(face, "SpineHighlight", Book.Edge, UDim2.fromOffset(15, 2), UDim2.new(0, 1, 1, -8)).BackgroundTransparency =
+			0.25
+		local pages = decoration(face, "PageEdges", Book.Paper, UDim2.new(0, 19, 1, -6), UDim2.new(1, -23, 0, 4))
+		for index = 1, 2 do
+			decoration(
+				pages,
+				"PageLine" .. index,
+				Book.Edge,
+				UDim2.fromOffset(1, index * 2 - 1),
+				UDim2.new(1, -1, 0, 1)
+			).BackgroundTransparency =
+				0.5
 		end
-	end
-end
--- The other sidebar buttons dress as what they open: a dock plank, a canvas
--- satchel, a riveted steel plate and a market stall. Like the books, the shapes
--- are native frames so they stay crisp without uploaded textures.
-local NavStyle = {
-	Home = {
-		Top = Color3.fromRGB(166, 117, 70),
-		Bottom = Color3.fromRGB(101, 66, 37),
-		Border = Color3.fromRGB(58, 37, 20),
-		Text = Color3.fromRGB(252, 238, 206),
-		Font = Enum.Font.Fantasy,
-	},
-	Equipmentbag = {
-		Top = Color3.fromRGB(134, 122, 82),
-		Bottom = Color3.fromRGB(84, 76, 48),
-		Border = Color3.fromRGB(52, 45, 28),
-		Text = Color3.fromRGB(242, 234, 208),
-		Font = Enum.Font.SpecialElite,
-	},
-	Settings = {
-		Top = Color3.fromRGB(128, 140, 152),
-		Bottom = Color3.fromRGB(56, 64, 74),
-		Border = Color3.fromRGB(30, 34, 40),
-		Text = Color3.fromRGB(236, 242, 248),
-		Font = Enum.Font.Highway,
-	},
-	Shop = {
-		Top = Color3.fromRGB(42, 124, 80),
-		Bottom = Color3.fromRGB(20, 70, 44),
-		Border = Color3.fromRGB(14, 44, 28),
-		Text = Color3.fromRGB(255, 222, 120),
-		Font = Enum.Font.LuckiestGuy,
-	},
-}
-
-local function dot(parent, name, color, position, size)
-	local item = decoration(parent, name, color, position, UDim2.fromOffset(size, size))
-	item.AnchorPoint = Vector2.new(0.5, 0.5)
-	Theme.corner(item, math.ceil(size / 2))
-	return item
-end
-
-local function decorateNav(face, name)
-	if name == "Home" then
-		for index, y in { 15, 31 } do
-			decoration(face, "PlankSeam" .. index, Book.Ink, UDim2.fromOffset(4, y), UDim2.new(1, -8, 0, 1)).BackgroundTransparency =
-				0.45
+		decoration(face, "PageForeEdge", Book.Page, UDim2.new(1, -4, 0, 6), UDim2.new(0, 2, 1, -12))
+		for _, y in { 8, 15, 34, 41 } do
+			decoration(face, "SpineBand" .. y, Book.Gold, UDim2.fromOffset(4, y), UDim2.fromOffset(11, 1)).BackgroundTransparency =
+				0.22
 		end
-		for index, streak in { { 0.18, 7, 0.22 }, { 0.55, 22, 0.3 }, { 0.3, 38, 0.18 }, { 0.68, 9, 0.2 } } do
-			local grain = decoration(
-				face,
-				"WoodGrain" .. index,
-				Book.Gold,
-				UDim2.new(streak[1], 0, 0, streak[2]),
-				UDim2.new(streak[3], 0, 0, 1)
-			)
-			grain.BackgroundTransparency = 0.78
-		end
-		for index, point in { Vector2.new(0, 0), Vector2.new(1, 0), Vector2.new(0, 1), Vector2.new(1, 1) } do
-			dot(
-				face,
-				"Nail" .. index,
-				Color3.fromRGB(64, 58, 52),
-				UDim2.new(point.X, if point.X == 0 then 10 else -10, point.Y, if point.Y == 0 then 8 else -8),
-				4
-			)
-		end
-	elseif name == "Equipmentbag" then
-		-- Stitching runs along the hems; the strap and brass buckle sit off to the right.
-		for _, y in { 0, 1 } do
-			for index = 0, 15 do
-				local stitch = decoration(
-					face,
-					"Stitch" .. y .. index,
-					Book.Paper,
-					UDim2.new(0.04 + index * 0.06, 0, y, if y == 0 then 4 else -6),
-					UDim2.new(0.03, 0, 0, 2)
+		local tooling = bookPart(face, "CoverTooling", cover, UDim2.fromOffset(22, 5), UDim2.new(1, -31, 1, -15), 2)
+		tooling.BackgroundTransparency = 1
+		local border = Instance.new("UIStroke")
+		border.Name = "EmbossedBorder"
+		border.Color, border.Thickness, border.Transparency = Book.Gold, 1, 0.65
+		border.Parent = tooling
+		for _, x in { 0, 1 } do
+			for _, y in { 0, 1 } do
+				local corner = bookPart(
+					tooling,
+					"GoldCorner" .. x .. y,
+					Book.Gold,
+					UDim2.new(x, if x == 0 then 3 else -3, y, if y == 0 then 3 else -3),
+					UDim2.fromOffset(3, 3)
 				)
-				stitch.BackgroundTransparency = 0.25
+				corner.AnchorPoint = Vector2.new(0.5, 0.5)
+				corner.Rotation = 45
+				corner.BackgroundTransparency = 0.25
 			end
 		end
-		local strap =
-			decoration(face, "Strap", Color3.fromRGB(92, 56, 32), UDim2.new(1, -24, 0, 0), UDim2.new(0, 11, 1, 0))
-		decoration(strap, "StrapEdge", Color3.fromRGB(60, 36, 20), UDim2.fromScale(0, 0), UDim2.new(0, 1, 1, 0))
-		local buckle = decoration(face, "Buckle", Book.Gold, UDim2.new(1, -18, 0.5, 0), UDim2.fromOffset(15, 13))
-		buckle.AnchorPoint = Vector2.new(0.5, 0.5)
-		Theme.corner(buckle, 2)
-		decoration(buckle, "BuckleHole", Color3.fromRGB(92, 56, 32), UDim2.fromOffset(3, 3), UDim2.fromOffset(9, 7))
+		local ribbon = decoration(
+			face,
+			"Bookmark",
+			if item.Name == "Bestiary" then Book.Gold else Book.Bestiary,
+			UDim2.new(1, -22, 1, -13),
+			UDim2.fromOffset(7, 11)
+		)
+		ribbon.BackgroundTransparency = 0.12
+	end
+end
+-- A separate face lets the black background fade without fading the label or icon.
+local function navIcon(face, name)
+	local icon = decoration(face, "NavIcon", cream, UDim2.new(0, 11, 0.5, -11), UDim2.fromOffset(22, 22))
+	icon.BackgroundTransparency = 1
+	local function line(label, x, y, width, rotation)
+		local part = decoration(icon, label, cream, UDim2.fromOffset(x, y), UDim2.fromOffset(width, 2))
+		part.AnchorPoint = Vector2.new(0.5, 0.5)
+		part.Rotation = rotation or 0
+		Theme.corner(part, 1)
+		return part
+	end
+	local function outline(label, x, y, width, height, radius)
+		local part = decoration(icon, label, cream, UDim2.fromOffset(x, y), UDim2.fromOffset(width, height))
+		part.BackgroundTransparency = 1
+		Theme.corner(part, radius or 2)
+		local stroke = Instance.new("UIStroke")
+		stroke.Color, stroke.Thickness, stroke.Transparency = cream, 1.5, 0.08
+		stroke.Parent = part
+		return part
+	end
+	if name == "Home" then
+		line("RoofLeft", 6, 6, 13, -42)
+		line("RoofRight", 16, 6, 13, 42)
+		line("WallLeft", 3, 14, 12, 90)
+		line("WallRight", 19, 14, 12, 90)
+		line("Floor", 11, 20, 16)
+		outline("Door", 8, 12, 6, 8, 1)
+	elseif name == "Equipmentbag" then
+		outline("Bag", 3, 7, 16, 13, 3)
+		outline("Handle", 7, 2, 8, 6, 2)
+		line("Pocket", 11, 13, 8)
+		line("Clasp", 11, 15, 3, 90)
 	elseif name == "Settings" then
-		for index, point in { Vector2.new(0, 0), Vector2.new(1, 0), Vector2.new(0, 1), Vector2.new(1, 1) } do
-			dot(
-				face,
-				"Rivet" .. index,
-				Color3.fromRGB(196, 204, 212),
-				UDim2.new(point.X, if point.X == 0 then 8 else -8, point.Y, if point.Y == 0 then 7 else -7),
-				4
+		for index, y in { 4, 11, 18 } do
+			line("Track" .. index, 11, y, 20)
+			local knob = decoration(
+				icon,
+				"Knob" .. index,
+				cream,
+				UDim2.fromOffset(if index == 2 then 14 else 6, y),
+				UDim2.fromOffset(4, 6)
 			)
+			knob.AnchorPoint = Vector2.new(0.5, 0.5)
+			Theme.corner(knob, 2)
 		end
-		local gear =
-			decoration(face, "Gear", Color3.fromRGB(214, 220, 228), UDim2.new(0, 22, 0.5, 0), UDim2.fromOffset(16, 16))
-		gear.AnchorPoint = Vector2.new(0.5, 0.5)
-		Theme.corner(gear, 8)
-		for index, rotation in { 0, 45, 90, 135 } do
-			local tooth = decoration(
-				gear,
-				"Tooth" .. index,
-				gear.BackgroundColor3,
-				UDim2.fromScale(0.5, 0.5),
-				UDim2.fromOffset(22, 5)
-			)
-			tooth.AnchorPoint = Vector2.new(0.5, 0.5)
-			tooth.Rotation = rotation
-		end
-		dot(gear, "Axle", Color3.fromRGB(56, 64, 74), UDim2.fromScale(0.5, 0.5), 6)
 	elseif name == "Shop" then
-		local awning = decoration(face, "Awning", Book.Paper, UDim2.fromOffset(5, 3), UDim2.new(1, -10, 0, 12))
-		awning.ClipsDescendants = true
-		Theme.corner(awning, 3)
-		for index = 0, 7 do
-			local color = if index % 2 == 0 then Color3.fromRGB(196, 52, 48) else Color3.fromRGB(246, 236, 214)
-			decoration(awning, "Stripe" .. index, color, UDim2.fromScale(index / 8, 0), UDim2.fromScale(1 / 8, 1))
-			-- Scalloped valance under each stripe.
-			local scallop = decoration(
-				face,
-				"Scallop" .. index,
-				color,
-				UDim2.new(index / 8, 5 - index * 10 / 8, 0, 11),
-				UDim2.new(1 / 8, -10 / 8, 0, 7)
-			)
-			Theme.corner(scallop, 4)
-		end
-		local coin = dot(face, "Coin", Color3.fromRGB(238, 196, 72), UDim2.new(1, -16, 0.5, 6), 16)
-		dot(coin, "CoinRim", Color3.fromRGB(176, 132, 38), UDim2.fromScale(0.5, 0.5), 10)
-		dot(coin, "CoinShine", Color3.fromRGB(255, 232, 150), UDim2.fromScale(0.5, 0.5), 6)
+		outline("ShoppingBag", 3, 6, 16, 15, 2)
+		outline("Handle", 7, 1, 8, 10, 4)
 	end
 end
 
 local function navButton(item, selected)
-	local style = NavStyle[item.Name]
 	Theme.button(item, if selected then "Selected" else "Normal")
-	local lift = if selected then 0.22 else 0
-	item.BackgroundColor3 = style.Bottom
-	item.ThemeFace.ThemeFinish.Color = ColorSequence.new(style.Top:Lerp(Color3.new(1, 1, 1), lift), style.Bottom)
-	item.ThemeBorder.Color = if selected then Book.Gold else style.Border
-	item.ThemeBorder.Thickness = if selected then 2 else 1
-	item.ThemeCaption.Font = style.Font
-	item.ThemeCaption.TextColor3 = style.Text
-	item.ThemeCaption.TextStrokeColor3 = style.Border
-	item.ThemeCaption.TextStrokeTransparency = 0.2
-	-- Keep the caption clear of each style's ornament.
-	item.ThemeCaption.Position =
-		UDim2.fromOffset(if item.Name == "Settings" then 30 else 4, if item.Name == "Shop" then 10 else 2)
-	item.ThemeCaption.Size = UDim2.new(
-		1,
-		if item.Name == "Settings" or item.Name == "Equipmentbag" or item.Name == "Shop" then -34 else -8,
-		1,
-		if item.Name == "Shop" then -12 else -4
-	)
-	if not item.ThemeFace:FindFirstChild("NavDecor") then
-		local decor = decoration(item.ThemeFace, "NavDecor", Color3.new(), UDim2.new(), UDim2.fromScale(1, 1))
-		decor.BackgroundTransparency = 1
-		decorateNav(decor, item.Name)
+	item.BackgroundTransparency = 1
+	item.AutoButtonColor = false
+	item.TextScaled = true
+	item.TextWrapped = false
+	item.TextXAlignment = Enum.TextXAlignment.Left
+	item.ThemeBorder.Transparency = 1
+	Theme.corner(item, 6)
+	local face = item.ThemeFace
+	Theme.corner(face, 6)
+	face.BackgroundColor3 = Color3.new()
+	face.BackgroundTransparency = 0
+	face.ThemeFinish.Rotation = 0
+	face.ThemeFinish.Color = ColorSequence.new(Color3.new(), Color3.new())
+	face.ThemeFinish.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.35, 0.06),
+		NumberSequenceKeypoint.new(0.72, 0.45),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	local caption = item.ThemeCaption
+	caption.Font = Enum.Font.GothamMedium
+	caption.TextColor3 = cream
+	caption.TextStrokeTransparency = 1
+	caption.TextXAlignment = Enum.TextXAlignment.Left
+	caption.Position = UDim2.fromOffset(44, 0)
+	caption.Size = UDim2.new(1, -48, 1, 0)
+	caption.TextScaled = true
+	if not caption:FindFirstChild("CaptionSize") then
+		local size = Instance.new("UITextSizeConstraint")
+		size.Name = "CaptionSize"
+		size.MinTextSize, size.MaxTextSize = 11, 14
+		size.Parent = caption
+	end
+	if not face:FindFirstChild("NavIcon") then
+		navIcon(face, item.Name)
+	end
+	-- Focus is visible for both pointer and controller navigation. Preserve the
+	-- fade by changing only the left-side accent and caption brightness.
+	local accent = face:FindFirstChild("FocusAccent")
+	if not accent then
+		accent = decoration(face, "FocusAccent", cream, UDim2.new(0, 0, 0.5, -9), UDim2.fromOffset(2, 18))
+		Theme.corner(accent, 1)
+		local hovered, focused = false, false
+		local function update()
+			local highlighted = hovered or focused or face:GetAttribute("Finish") == "Selected"
+			accent.BackgroundTransparency = if highlighted then 0.1 else 1
+			caption.TextTransparency = if highlighted then 0 else 0.12
+		end
+		item.MouseEnter:Connect(function()
+			hovered = true
+			update()
+		end)
+		item.MouseLeave:Connect(function()
+			hovered = false
+			update()
+		end)
+		item.SelectionGained:Connect(function()
+			focused = true
+			update()
+		end)
+		item.SelectionLost:Connect(function()
+			focused = false
+			update()
+		end)
+		item.Parent:GetPropertyChangedSignal("Visible"):Connect(function()
+			if not item.Parent.Visible then
+				hovered, focused = false, false
+			end
+			update()
+		end)
+		face:GetAttributeChangedSignal("Finish"):Connect(update)
+		update()
 	end
 end
-
 local function round(parent, radius)
 	Theme.corner(
 		parent,
@@ -491,14 +512,19 @@ local function commas(value)
 	until count == 0
 	return formatted
 end
+-- "Red Neon Albino": the catalog name with the neon colour worked in.
+local function mutationName(record)
+	local mutation = Catalog.Mutations[record.Mutation]
+	local name = mutation and mutation.Name or record.Mutation
+	return if record.NeonColor then (string.gsub(name, "Neon", record.NeonColor .. " Neon")) else name
+end
 local function fishName(record)
 	local fish = Catalog.Fish[record.FishId]
-	local mutation = Catalog.Mutations[record.Mutation]
-	return (if record.Mutation ~= "Normal" then (mutation and mutation.Name or record.Mutation) .. " " else "")
+	return (if record.Mutation ~= "Normal" then mutationName(record) .. " " else "")
 		.. (fish and fish.Name or record.FishId)
 end
 -- Silhouettes are drawn as flat ink, so undiscovered fish keep their shape secret-ish.
-local function picture(parent, id, props, silhouette)
+local function picture(parent, id, props, silhouette, traits)
 	local species = Catalog.Fish[id]
 	local holder = make("Frame", parent, {
 		BackgroundColor3 = Color3.fromRGB(113, 128, 111),
@@ -536,7 +562,7 @@ local function picture(parent, id, props, silhouette)
 		if silhouette then
 			view.ImageColor3 = Book.Ink
 		end
-		FishModels.show(view, id, silhouette)
+		FishModels.show(view, id, silhouette, traits)
 	else
 		text(
 			holder,
@@ -560,8 +586,8 @@ function Menu.start()
 	local profile = nil
 	local active = nil
 	local settingTab, journalTab = "Performance", "Stats"
-	local homeTab = "Staff"
-	local freezerCapacity = 0
+	local homeTab = "Paths"
+	local freezerCapacity, pantryCapacity = 0, 0
 	local busy = false
 	local render
 	local narrow = false
@@ -569,16 +595,19 @@ function Menu.start()
 	local bestiaryPage, bestiaryQuery = 1, ""
 	local journalCollapsed = {}
 	local turnBestiary
-	local gui = make(
-		"ScreenGui",
-		player:WaitForChild("PlayerGui"),
-		{ Name = "PlayerMenu", ResetOnSpawn = false, DisplayOrder = 30, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }
-	)
+	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
+		Name = "PlayerMenu",
+		ResetOnSpawn = false,
+		DisplayOrder = 30,
+		-- Cover the world behind the Roblox top bar when a menu is open.
+		IgnoreGuiInset = true,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	})
 	local sidebar = make("Frame", gui, {
 		Name = "LeftNavigation",
 		BackgroundTransparency = 1,
 		Position = UDim2.new(0, 14, 0.45, -162),
-		Size = UDim2.fromOffset(148, 334),
+		Size = UDim2.fromOffset(172, 334),
 	})
 	list(sidebar, 8)
 	local function refreshNavigation()
@@ -771,6 +800,7 @@ function Menu.start()
 			busy = false
 			if ok and type(result) == "table" then
 				freezerCapacity = result.FreezerCapacity or freezerCapacity
+				pantryCapacity = result.PantryCapacity or pantryCapacity
 				if result.Profile then
 					profile = result.Profile
 					Settings.apply(profile.Angler.Settings)
@@ -1094,68 +1124,7 @@ function Menu.start()
 		fill()
 	end
 	local function equipment()
-		local body = scroll(content)
-		list(body, 12)
-		local count = 0
-		local ids = {}
-		for id, owned in profile.OwnedRods do
-			if owned then
-				table.insert(ids, id)
-			end
-		end
-		for id, owned in profile.OwnedBoats do
-			if owned then
-				table.insert(ids, "Boat:" .. id)
-			end
-		end
-		table.sort(ids)
-		for _, id in ids do
-			count += 1
-			local info = Catalog.Equipment[id]
-			local isBoat = string.sub(id, 1, 5) == "Boat:"
-			local tile = make("Frame", body, {
-				Name = id,
-				BackgroundColor3 = Theme.Colors.Panel,
-				Size = UDim2.new(1, -8, 0, if narrow then 168 else 116),
-				BorderSizePixel = 0,
-			})
-			round(tile)
-			text(tile, info and info.Name or (if isBoat then string.sub(id, 6) else id), 21, cream, {
-				Position = UDim2.fromOffset(16, 10),
-				Size = UDim2.new(1, if narrow then -32 else -215, 0, 32),
-				Font = Enum.Font.GothamBold,
-			})
-			text(
-				tile,
-				if isBoat
-					then "Boat · Spawn at the boat stand on your dock."
-					else (info and info.Description or "Owned fishing equipment"),
-				14,
-				muted,
-				{ Position = UDim2.fromOffset(16, 49), Size = UDim2.new(1, if narrow then -32 else -215, 0, 50) }
-			)
-			if id == "StarterRod" then
-				button(tile, if player:GetAttribute("RodEquipped") then "Stow rod" else "Equip rod", function()
-					if player:GetAttribute("BoatDataStatus") == "Ready" then
-						ReplicatedStorage.Fishing.Request:FireServer(
-							if player:GetAttribute("RodEquipped") then "UnequipRod" else "EquipRod"
-						)
-					end
-				end, {
-					Position = if narrow then UDim2.fromOffset(16, 110) else UDim2.new(1, -184, 0, 36),
-					Size = UDim2.fromOffset(168, 42),
-					BackgroundColor3 = gold,
-					TextColor3 = navy,
-				})
-			end
-		end
-		if count == 0 then
-			empty(
-				content,
-				"Your equipment bag is empty",
-				"Visit the plaza tackle shop to collect your free starter fishing rod. Every rod you own will appear here."
-			)
-		end
+		EquipmentBag.show(content, profile, player, card.AbsoluteSize.X < 1000)
 	end
 	local function journal()
 		-- A hand-lettered field journal: profile and stats on the left, findings on the right.
@@ -1499,10 +1468,7 @@ function Menu.start()
 		end
 		local function richName(record)
 			local fish = Catalog.Fish[record.FishId]
-			local mutation = Catalog.Mutations[record.Mutation]
-			local prefix = if record.Mutation and record.Mutation ~= "Normal"
-				then (mutation and mutation.Name or record.Mutation) .. " "
-				else ""
+			local prefix = if record.Mutation and record.Mutation ~= "Normal" then mutationName(record) .. " " else ""
 			return prefix .. '<font color="#A6D8F2">' .. (fish and fish.Name or record.FishId) .. "</font>"
 		end
 		local cards = {
@@ -1578,7 +1544,7 @@ function Menu.start()
 					BackgroundTransparency = 1,
 					Position = UDim2.fromScale(0.15, 0.18),
 					Size = UDim2.fromScale(0.7, 0.62),
-				})
+				}, nil, r)
 				local artEdge = art:FindFirstChild("ThemeBorder")
 				if artEdge then
 					artEdge.Enabled = false
@@ -1601,6 +1567,223 @@ function Menu.start()
 			end
 		end
 	end
+	-- Home ▸ Paths: the business road from fish shop to company. Stage rules live in
+	-- Shared.Paths; this only draws them from the saved profile.
+	local function paths(body, nextOrder)
+		local state = Paths.state(profile.Angler)
+		local choices = Paths.choices(profile)
+		local function auto(class, parent, props)
+			props.BackgroundTransparency = props.BackgroundTransparency or 1
+			props.AutomaticSize = Enum.AutomaticSize.Y
+			return make(class, parent, props)
+		end
+		local function stack(parent, gap)
+			make("UIListLayout", parent, {
+				Padding = UDim.new(0, gap),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			})
+		end
+		local function wrapped(parent, value, size, color, layoutOrder, props)
+			local item = text(parent, value, size, color, {
+				LayoutOrder = layoutOrder,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				TextYAlignment = Enum.TextYAlignment.Top,
+			})
+			for key, setting in props or {} do
+				item[key] = setting
+			end
+			return item
+		end
+		local function goalRow(parent, goal, layoutOrder)
+			local current, target = Paths.goalProgress(goal, profile)
+			local done = current >= target
+			local row = make("Frame", parent, {
+				Name = "Goal",
+				BackgroundTransparency = 1,
+				LayoutOrder = layoutOrder,
+				Size = UDim2.new(1, 0, 0, 40),
+			})
+			text(row, (if done then "✓  " else "○  ") .. Paths.goalText(goal), 14, if done then green else cream, {
+				Size = UDim2.new(1, -110, 0, 22),
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextWrapped = false,
+			})
+			local count = if goal.Money
+				then "$" .. commas(current) .. " / $" .. commas(target)
+				elseif target > 1 then commas(current) .. " / " .. commas(target)
+				else (if done then "Done" else "Not yet")
+			text(row, count, 12, muted, {
+				Position = UDim2.new(1, -108, 0, 2),
+				Size = UDim2.fromOffset(108, 20),
+				TextXAlignment = Enum.TextXAlignment.Right,
+			})
+			local track = decoration(row, "GoalTrack", Theme.Colors.Inset, UDim2.fromOffset(0, 28), UDim2.new(1, 0, 0, 6))
+			Theme.corner(track, 3)
+			local fill = decoration(track, "GoalFill", if done then green else gold, UDim2.new(), UDim2.fromScale(math.clamp(current / target, 0, 1), 1))
+			Theme.corner(fill, 3)
+		end
+		local function stageCard(parent, id, number, layoutOrder, width)
+			local stage = Paths.Stages[id]
+			local completed = state.Completed[id] == true
+			local current = state.Active == id
+			local progress = Paths.progress(profile, id)
+			local available = table.find(choices, id) ~= nil
+			local card = auto("Frame", parent, {
+				Name = id .. "Stage",
+				BackgroundTransparency = 0,
+				BackgroundColor3 = paper,
+				LayoutOrder = layoutOrder,
+				Size = width or UDim2.new(1, -10, 0, 0),
+			})
+			make("UIPadding", card, {
+				PaddingTop = UDim.new(0, 12),
+				PaddingBottom = UDim.new(0, 14),
+				PaddingLeft = UDim.new(0, 14),
+				PaddingRight = UDim.new(0, 14),
+			})
+			stack(card, 8)
+			local header = make("Frame", card, {
+				Name = "Header",
+				BackgroundTransparency = 1,
+				LayoutOrder = 1,
+				Size = UDim2.new(1, 0, 0, 48),
+			})
+			local node = decoration(
+				header,
+				"StageNode",
+				if completed then green elseif current then gold elseif available then cream else Theme.Colors.Inset,
+				UDim2.fromOffset(0, 2),
+				UDim2.fromOffset(44, 44)
+			)
+			Theme.corner(node, 22)
+			text(node, if completed then "✓" else tostring(number), 20, if completed or current or available then navy else muted, {
+				Size = UDim2.fromScale(1, 1),
+				TextXAlignment = Enum.TextXAlignment.Center,
+				Font = Enum.Font.GothamBold,
+			})
+			text(header, stage.Name, 19, cream, {
+				Position = UDim2.fromOffset(56, 0),
+				Size = UDim2.new(1, -150, 0, 26),
+				Font = Enum.Font.GothamBold,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextWrapped = false,
+			})
+			text(header, stage.Tagline, 12, muted, {
+				Position = UDim2.fromOffset(56, 26),
+				Size = UDim2.new(1, -150, 0, 18),
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextWrapped = false,
+			})
+			local badge = if completed
+				then "Completed"
+				elseif current then math.floor(progress * 100) .. "%"
+				elseif available then "$" .. commas(stage.Price)
+				else "Locked"
+			text(header, badge, if current then 22 else 13, if completed then green elseif current then gold else muted, {
+				Position = UDim2.new(1, -92, 0, 6),
+				Size = UDim2.fromOffset(92, 30),
+				TextXAlignment = Enum.TextXAlignment.Right,
+				Font = Enum.Font.GothamBold,
+			})
+			wrapped(card, stage.Description, 13, muted, 2)
+			if current or completed then
+				wrapped(card, "Unlocked: " .. table.concat(stage.Features, " · "), 12, cream, 3)
+			end
+			if current then
+				local track = decoration(card, "StageTrack", Theme.Colors.Inset, UDim2.new(), UDim2.new(1, 0, 0, 10))
+				track.LayoutOrder = 4
+				Theme.corner(track, 5)
+				local fill = decoration(track, "StageFill", if progress >= 1 then green else gold, UDim2.new(), UDim2.fromScale(progress, 1))
+				Theme.corner(fill, 5)
+				for index, goal in stage.Goals do
+					goalRow(card, goal, 4 + index)
+				end
+				if progress >= 1 and #choices == 0 and Paths.finished(profile) then
+					wrapped(card, "Every path is complete. Your business runs on all fronts!", 14, green, 20)
+				elseif progress >= 1 then
+					wrapped(card, "Stage complete! Choose your next path below.", 14, green, 20)
+				end
+			elseif available then
+				local afford = profile.Cash >= stage.Price
+				local choose = button(card, if afford then "Open " .. stage.Name .. " · $" .. commas(stage.Price) else "$" .. commas(stage.Price - profile.Cash) .. " more needed", function()
+					if afford then
+						request("ChoosePath", id)
+					end
+				end, {
+					Name = "Choose" .. id,
+					LayoutOrder = 20,
+					Size = UDim2.new(1, 0, 0, 42),
+					Active = afford,
+					AutoButtonColor = afford,
+					BackgroundColor3 = if afford then gold else navy,
+				})
+				Theme.glassButton(choose, if afford then "Selected" else "Disabled")
+				choose.Selectable = afford
+			elseif not completed then
+				local needs = {}
+				for _, required in stage.Requires do
+					table.insert(needs, Paths.Stages[required].Name)
+				end
+				wrapped(card, "Opens after " .. table.concat(needs, " and ") .. " reaches 100%.", 12, muted, 20)
+			end
+			return card
+		end
+		local function road(layoutOrder)
+			local segment = make("Frame", body, {
+				Name = "Road",
+				BackgroundTransparency = 1,
+				LayoutOrder = layoutOrder,
+				Size = UDim2.new(1, -10, 0, 18),
+			})
+			local strip = decoration(segment, "RoadStrip", Theme.Colors.Border, UDim2.fromOffset(34, 0), UDim2.new(0, 4, 1, 0))
+			strip.BackgroundTransparency = 0.4
+		end
+
+		wrapped(
+			body,
+			"Grow your business one stage at a time. Stages stack, so everything you unlock keeps working. "
+				.. "Reach 100% on your current stage to buy the next one.",
+			14,
+			muted,
+			nextOrder()
+		)
+		-- The fork after the Supermarket: whichever branch was chosen comes first.
+		local first, second = "Restaurant", "Company"
+		if state.Unlocked.Company and not state.Unlocked.Restaurant then
+			first, second = "Company", "Restaurant"
+		end
+		local forked = not state.Unlocked.Restaurant and not state.Unlocked.Company
+		for index, id in { "Fishshop", "Supermarket" } do
+			if index > 1 then
+				road(nextOrder())
+			end
+			stageCard(body, id, index, nextOrder())
+		end
+		road(nextOrder())
+		if forked then
+			wrapped(body, "Choose a branch. The other one opens once your choice reaches 100%.", 13, gold, nextOrder(), {
+				Font = Enum.Font.GothamBold,
+			})
+			local fork = auto("Frame", body, {
+				Name = "PathFork",
+				LayoutOrder = nextOrder(),
+				Size = UDim2.new(1, -10, 0, 0),
+			})
+			make("UIListLayout", fork, {
+				FillDirection = if narrow then Enum.FillDirection.Vertical else Enum.FillDirection.Horizontal,
+				Padding = UDim.new(0, 10),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			})
+			for index, id in { first, second } do
+				stageCard(fork, id, 3, index, if narrow then UDim2.new(1, 0, 0, 0) else UDim2.new(0.5, -5, 0, 0))
+			end
+		else
+			stageCard(body, first, 3, nextOrder())
+			road(nextOrder())
+			stageCard(body, second, 4, nextOrder())
+		end
+	end
 	local function home()
 		text(content, "AVAILABLE CASH", 11, muted, { Size = UDim2.new(1, 0, 0, 18) })
 		text(content, "$" .. commas(profile.Cash), 22, cream, {
@@ -1608,13 +1791,15 @@ function Menu.start()
 			Size = UDim2.new(1, 0, 0, 28),
 			Font = Enum.Font.GothamBold,
 		})
+		local tabNames = { "Paths", "Staff", "Upgrades", "Overview", "Achievements" }
+		local tabRows = math.ceil(#tabNames / 2)
 		local tabs = make("Frame", content, {
 			Name = "HomeTabs",
 			BackgroundTransparency = 1,
 			Position = UDim2.fromOffset(0, 64),
-			Size = if narrow then UDim2.new(1, 0, 0, 96) else UDim2.new(0, 200, 1, -64),
+			Size = if narrow then UDim2.new(1, 0, 0, tabRows * 48) else UDim2.new(0, 200, 1, -64),
 		})
-		for index, name in { "Staff", "Upgrades", "Overview", "Achievements" } do
+		for index, name in tabNames do
 			button(tabs, name, function()
 				homeTab = name
 				render()
@@ -1628,10 +1813,11 @@ function Menu.start()
 				BackgroundColor3 = if homeTab == name then gold else paper,
 			})
 		end
+		local bodyTop = 64 + tabRows * 48 + 10
 		local body = scroll(content, {
 			Name = "HomeBody",
-			Position = if narrow then UDim2.fromOffset(0, 170) else UDim2.fromOffset(220, 64),
-			Size = if narrow then UDim2.new(1, 0, 1, -170) else UDim2.new(1, -220, 1, -64),
+			Position = if narrow then UDim2.fromOffset(0, bodyTop) else UDim2.fromOffset(220, 64),
+			Size = if narrow then UDim2.new(1, 0, 1, -bodyTop) else UDim2.new(1, -220, 1, -64),
 		})
 		list(body, 12)
 		make("UIPadding", body, { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 12) })
@@ -1644,7 +1830,12 @@ function Menu.start()
 			})
 		end
 		line(homeTab, 24, cream, 38).Font = Enum.Font.GothamBold
-		if homeTab == "Staff" then
+		if homeTab == "Paths" then
+			paths(body, function()
+				order += 1
+				return order
+			end)
+		elseif homeTab == "Staff" then
 			local hiredCount = 0
 			for _, id in StaffCatalog.Order do
 				if profile.Angler.Staff and profile.Angler.Staff[id] then
@@ -1652,7 +1843,12 @@ function Menu.start()
 				end
 			end
 			line(string.format("Your crew · %d/%d hired", hiredCount, #StaffCatalog.Order), 15, cream, 26)
-			line("Meet your crew. Pay once to hire; they return whenever you join.", 14, muted, if narrow then 58 else 42)
+			line(
+				"Meet your crew. Pay once to hire; they return whenever you join.",
+				14,
+				muted,
+				if narrow then 58 else 42
+			)
 			for _, id in StaffCatalog.Order do
 				local role = StaffCatalog.Roles[id]
 				local hired = profile.Angler.Staff and profile.Angler.Staff[id] == true
@@ -1710,29 +1906,81 @@ function Menu.start()
 					TextYAlignment = Enum.TextYAlignment.Top,
 				})
 				local afford = profile.Cash >= role.Price
+				local locked = role.Requires ~= nil and not Paths.unlocked(profile, role.Requires)
+				local assigned = profile.Angler.FishermanBoat
 				text(row, "Permanent hire · $" .. commas(role.Price), 14, cream, {
 					Position = UDim2.fromOffset(left, if narrow then 336 else 148),
 					Size = UDim2.new(1, -inset, 0, 24),
 				})
-				text(row, if hired then "Part of your crew" elseif afford then "One payment. No daily wages."
-					else "$" .. commas(role.Price - profile.Cash) .. " more needed", 12, muted, {
-					Position = UDim2.fromOffset(left, if narrow then 362 else 176),
-					Size = UDim2.new(1, -inset, 0, 24),
-				})
-				local hire = button(row, if hired then "Hired" else "Hire · $" .. commas(role.Price), function()
-					if not hired and afford then
-						request("HireStaff", id)
+				text(
+					row,
+					if locked
+						then "Unlocks with " .. Paths.Stages[role.Requires].Name .. " (Paths tab)"
+						elseif hired and id == "Fisherman" then (if assigned and BoatCatalog[assigned]
+							then "Sails your " .. BoatCatalog[assigned].Name .. ". Pick another boat below."
+							else "Choose the boat he takes out:")
+						elseif hired then "Part of your crew"
+						elseif afford then "One payment. No daily wages."
+						else "$" .. commas(role.Price - profile.Cash) .. " more needed",
+					12,
+					if hired and id == "Fisherman" and not assigned then gold else muted,
+					{
+						Position = UDim2.fromOffset(left, if narrow then 362 else 176),
+						Size = UDim2.new(1, -inset, 0, 24),
+					}
+				)
+				local boats = {}
+				for boatId in BoatCatalog do
+					if profile.OwnedBoats[boatId] then
+						table.insert(boats, boatId)
 					end
-				end, {
-					Name = "Hire" .. id,
-					Position = UDim2.new(0, left, 1, -54),
-					Size = UDim2.new(1, -inset, 0, 40),
-					Active = not hired and afford,
-					AutoButtonColor = not hired and afford,
-					BackgroundColor3 = if hired then green elseif afford then gold else navy,
-				})
-				Theme.glassButton(hire, if hired or not afford then "Disabled" else "Selected")
-				hire.Selectable = not hired and afford
+				end
+				table.sort(boats, function(a, b)
+					return BoatCatalog[a].Price < BoatCatalog[b].Price
+				end)
+				if hired and id == "Fisherman" and #boats > 0 then
+					-- One button per owned boat; the assigned one is highlighted.
+					for index, boatId in boats do
+						local chosen = assigned == boatId
+						local pick = button(row, BoatCatalog[boatId].Name, function()
+							if not chosen then
+								request("AssignBoat", boatId)
+							end
+						end, {
+							Name = "Assign" .. boatId,
+							Position = UDim2.new((index - 1) / #boats, left + (index - 1) * -inset / #boats + 2, 1, -54),
+							Size = UDim2.new(1 / #boats, -inset / #boats - 4, 0, 40),
+							TextSize = 14,
+							BackgroundColor3 = if chosen then green else gold,
+						})
+						Theme.glassButton(pick, if chosen then "Disabled" else "Selected")
+					end
+				else
+					local enabled = not hired and afford and not locked
+					local hire = button(
+						row,
+						if hired and id == "Fisherman"
+							then "Buy a boat at the drydock first"
+							elseif hired then "Hired"
+							elseif locked then "Locked"
+							else "Hire · $" .. commas(role.Price),
+						function()
+							if enabled then
+								request("HireStaff", id)
+							end
+						end,
+						{
+							Name = "Hire" .. id,
+							Position = UDim2.new(0, left, 1, -54),
+							Size = UDim2.new(1, -inset, 0, 40),
+							Active = enabled,
+							AutoButtonColor = enabled,
+							BackgroundColor3 = if hired then green elseif enabled then gold else navy,
+						}
+					)
+					Theme.glassButton(hire, if enabled then "Selected" else "Disabled")
+					hire.Selectable = enabled
+				end
 			end
 		elseif homeTab == "Overview" then
 			local stock, totalValue = {}, 0
@@ -1776,6 +2024,37 @@ function Menu.start()
 				muted,
 				44
 			)
+			if Paths.unlocked(profile, "Supermarket") then
+				local dishValue = 0
+				for _, dish in data.Pantry or {} do
+					dishValue += math.floor(dish.Value)
+				end
+				local cooking = 0
+				for _ in data.Kitchen or {} do
+					cooking += 1
+				end
+				line(
+					string.format(
+						"Kitchen pass %d/%d dishes · $%s · %d cooking",
+						#(data.Pantry or {}),
+						pantryCapacity,
+						commas(dishValue),
+						cooking
+					),
+					14,
+					muted,
+					30
+				)
+				for _, dish in data.Pantry or {} do
+					local recipe = Recipes.Items[dish.RecipeId]
+					line(
+						string.format("%s · $%s", if recipe then recipe.Name else dish.RecipeId, commas(math.floor(dish.Value))),
+						14,
+						cream,
+						26
+					)
+				end
+			end
 			if #stock == 0 then
 				line("No fish in stock yet. Bring your next catch home to fill the freezer.", 16, muted, 80)
 			end
@@ -1789,37 +2068,65 @@ function Menu.start()
 					LayoutOrder = order,
 				})
 				text(stockCard, fishName(record), 17, cream, {
-					Position = UDim2.fromOffset(14, 10), Size = UDim2.new(1, -28, 0, 28),
+					Position = UDim2.fromOffset(14, 10),
+					Size = UDim2.new(1, -28, 0, 28),
 				})
-				text(stockCard, string.format("%.2f kg · $%s", record.Kg,
-					commas(math.max(1, math.floor(record.Value)))), 14, cream, {
-					Position = UDim2.fromOffset(14, 42), Size = UDim2.new(1, -28, 0, 24),
-				})
+				text(
+					stockCard,
+					string.format("%.2f kg · $%s", record.Kg, commas(math.max(1, math.floor(record.Value)))),
+					14,
+					cream,
+					{
+						Position = UDim2.fromOffset(14, 42),
+						Size = UDim2.new(1, -28, 0, 24),
+					}
+				)
 				text(stockCard, item.Location, 12, muted, {
-					Position = UDim2.fromOffset(14, 72), Size = UDim2.new(1, -28, 0, 26),
+					Position = UDim2.fromOffset(14, 72),
+					Size = UDim2.new(1, -28, 0, 26),
 				})
 			end
 		else
 			line(if homeTab == "Upgrades" then "No upgrades yet." else "No achievements yet.", 18, muted, 56)
-			line(if homeTab == "Upgrades" then "Future home improvements will appear here."
-				else "Your future milestones will appear here.", 14, muted, 56)
+			line(
+				if homeTab == "Upgrades"
+					then "Future home improvements will appear here."
+					else "Your future milestones will appear here.",
+				14,
+				muted,
+				56
+			)
 		end
 	end
 	local function settings()
+		local function settingsOutline(item)
+			item.ThemeBorder.Color = Color3.fromRGB(122, 122, 122)
+			item.ThemeBorder.Transparency = 0.35
+			item.ThemeBorder.Thickness = 1
+		end
+		local function settingsButton(parent, value, callback, props)
+			local item = button(parent, value, callback, props)
+			if not (props and props.Size) then
+				item.Size = UDim2.new(1, -8, 0, 44)
+			end
+			settingsOutline(item)
+			return item
+		end
 		local tabs = make(
 			"Frame",
 			content,
 			{ BackgroundTransparency = 1, Size = if narrow then UDim2.new(1, 0, 0, 44) else UDim2.new(0, 200, 1, 0) }
 		)
 		for i, name in { "Performance", "Audio", "Codes", "Titles" } do
-			button(tabs, name, function()
+			settingsButton(tabs, name, function()
 				settingTab = name
 				render()
 			end, {
 				Name = name .. "Tab",
 				TextSize = if narrow then 12 else 18,
-				Position = if narrow then UDim2.new((i - 1) / 4, 0, 0, 0) else UDim2.fromOffset(0, (i - 1) * 66),
-				Size = if narrow then UDim2.new(0.25, -4, 0, 40) else UDim2.new(1, -10, 0, 56),
+				-- Keep the full stroke inside Content's clipping boundary on both layouts.
+				Position = if narrow then UDim2.new((i - 1) / 4, 2, 0, 2) else UDim2.fromOffset(2, (i - 1) * 66 + 2),
+				Size = if narrow then UDim2.new(0.25, -4, 0, 40) else UDim2.new(1, -12, 0, 56),
 				BackgroundColor3 = if settingTab == name then gold else Theme.Colors.Panel,
 				TextColor3 = if settingTab == name then navy else cream,
 			})
@@ -1827,6 +2134,13 @@ function Menu.start()
 		local body = scroll(content, {
 			Position = if narrow then UDim2.fromOffset(0, 56) else UDim2.fromOffset(220, 0),
 			Size = if narrow then UDim2.new(1, 0, 1, -56) else UDim2.new(1, -220, 1, 0),
+		})
+		-- Leave room for the outlines along the scrolling area's edges.
+		make("UIPadding", body, {
+			PaddingLeft = UDim.new(0, 2),
+			PaddingRight = UDim.new(0, 2),
+			PaddingTop = UDim.new(0, 2),
+			PaddingBottom = UDim.new(0, 2),
 		})
 		list(body, 12)
 		text(
@@ -1845,6 +2159,7 @@ function Menu.start()
 				LayoutOrder = 1,
 			})
 			round(row)
+			settingsOutline(row)
 			text(
 				row,
 				name,
@@ -1854,7 +2169,7 @@ function Menu.start()
 			)
 			text(row, description, 13, muted, { Position = UDim2.fromOffset(14, 39), Size = UDim2.new(1, -28, 0, 36) })
 			if type(value) == "boolean" then
-				button(row, if value then "On" else "Off", function()
+				settingsButton(row, if value then "On" else "Off", function()
 					request("Setting", key, not value)
 				end, {
 					Name = key,
@@ -1864,7 +2179,7 @@ function Menu.start()
 					TextColor3 = if value then navy else cream,
 				})
 			else
-				button(row, "−", function()
+				settingsButton(row, "−", function()
 					request("Setting", key, math.max(0, value - 10))
 				end, { Name = key .. "Down", Position = UDim2.new(1, -184, 1, -44), Size = UDim2.fromOffset(40, 34) })
 				text(row, value .. "%", 16, gold, {
@@ -1872,7 +2187,7 @@ function Menu.start()
 					Size = UDim2.fromOffset(76, 34),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				})
-				button(row, "+", function()
+				settingsButton(row, "+", function()
 					request("Setting", key, math.min(100, value + 10))
 				end, { Name = key .. "Up", Position = UDim2.new(1, -54, 1, -44), Size = UDim2.fromOffset(40, 34) })
 			end
@@ -1894,12 +2209,14 @@ function Menu.start()
 			)
 			local field = input(body, "Enter code…")
 			field.Name = "CodeInput"
-			button(body, "Redeem code", function()
+			field.Size = UDim2.new(1, -8, 0, 42)
+			settingsOutline(field)
+			settingsButton(body, "Redeem code", function()
 				request("Code", field.Text)
 			end, { BackgroundColor3 = gold, TextColor3 = navy })
 		elseif settingTab == "Titles" then
 			text(body, "Choose a title you have unlocked.", 15, muted, { Size = UDim2.new(1, -8, 0, 40) })
-			button(
+			settingsButton(
 				body,
 				if profile.Angler.EquippedTitle == "" then "No title · Selected" else "Remove title",
 				function()
@@ -1911,7 +2228,7 @@ function Menu.start()
 				local title = Catalog.Titles[id]
 				if owned and title then
 					unlocked += 1
-					button(
+					settingsButton(
 						body,
 						title.Name .. (if profile.Angler.EquippedTitle == id then " · Selected" else ""),
 						function()
@@ -1986,7 +2303,36 @@ function Menu.start()
 			Shop = "The Fishing Waters Robux shop.",
 		})[active]
 		if active == "Shop" then
-			empty(content, "Nothing in the shop yet", "Robux items will appear here when they are added.")
+			text(
+				content,
+				"Auto Store",
+				24,
+				cream,
+				{ Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 0, 36) }
+			)
+			text(
+				content,
+				"Automatically packs caught fish into your ship's hold while you are aboard your own ship. Tries every rotation for a snug fit. If the hold is full, the fish stays in your hand.",
+				16,
+				muted,
+				{
+					Position = UDim2.fromOffset(8, 50),
+					Size = UDim2.new(1, -16, 0, 130),
+					TextWrapped = true,
+				}
+			)
+			local owned = player:GetAttribute("OwnsAutoStore") == true
+			button(content, if owned then "Owned" else "Buy Auto Store · Robux", function()
+				if player:GetAttribute("OwnsAutoStore") == true then
+					return
+				end
+				local ok = pcall(function()
+					MarketplaceService:PromptGamePassPurchase(player, Gamepasses.AutoStore.Id)
+				end)
+				if not ok then
+					notice.Text = "The purchase prompt could not open. Please try again."
+				end
+			end, { Position = UDim2.fromOffset(8, 194), Size = UDim2.new(1, -16, 0, 48) })
 		elseif not profile then
 			empty(
 				content,
@@ -2005,7 +2351,12 @@ function Menu.start()
 			settings()
 		end
 	end
-	for index, name in { "Home", "Bestiary", "Journal", "Equipment bag", "Settings", "Shop" } do
+	player:GetAttributeChangedSignal("OwnsAutoStore"):Connect(function()
+		if active == "Shop" then
+			render()
+		end
+	end)
+	for index, name in { "Bestiary", "Journal", "Home", "Equipment bag", "Settings", "Shop" } do
 		navButtons[name] = button(sidebar, name, function()
 			if player:GetAttribute("DrydockScreenOpen") then
 				return
@@ -2025,7 +2376,7 @@ function Menu.start()
 		end, {
 			Name = name:gsub(" ", ""),
 			LayoutOrder = index,
-			Size = UDim2.new(1, 0, 0, 46),
+			Size = UDim2.new(1, 0, 0, if name == "Bestiary" or name == "Journal" then 52 else 46),
 			BackgroundTransparency = 0,
 			TextSize = 14,
 		})
@@ -2081,9 +2432,20 @@ function Menu.start()
 		local isBook = active == "Bestiary" or active == "Journal"
 		-- The journal letters its own title and close box onto the page.
 		local isJournal = active == "Journal"
-		heading.Visible, subtitle.Visible, closeButton.Visible = not isJournal, not isJournal, not isJournal
-		content.Position = if isJournal then UDim2.fromOffset(20, 34) else UDim2.fromOffset(20, 98)
-		content.Size = if isJournal then UDim2.new(1, -40, 1, -80) else UDim2.new(1, -40, 1, -142)
+		local isEquipment = active == "Equipment bag"
+		card:FindFirstChildOfClass("UISizeConstraint").MaxSize = if isEquipment
+			then Vector2.new(1480, 700)
+			else Vector2.new(1020, 680)
+		heading.Visible, subtitle.Visible, closeButton.Visible =
+			not isJournal and not isEquipment, not isJournal and not isEquipment, not isJournal
+		content.Position = if isEquipment
+			then UDim2.fromOffset(12, 12)
+			elseif isJournal then UDim2.fromOffset(20, 34)
+			else UDim2.fromOffset(20, 98)
+		content.Size = if isEquipment
+			then UDim2.new(1, -24, 1, -54)
+			elseif isJournal then UDim2.new(1, -40, 1, -80)
+			else UDim2.new(1, -40, 1, -142)
 		for _, leaf in leaves do
 			leaf.MarginRule0.Visible, leaf.MarginRule1.Visible = not isJournal, not isJournal
 		end
@@ -2101,9 +2463,9 @@ function Menu.start()
 			then UDim2.new(if narrow then 1 else 0.5, if narrow then -100 else -78, 0, 26)
 			else UDim2.new(1, -48, 0, 34)
 		subtitle.TextSize = if isBook then 12 else 13
-		sidebar.Size = UDim2.fromOffset(if gui.AbsoluteSize.X < 680 then 116 else 148, 334)
+		sidebar.Size = UDim2.fromOffset(if gui.AbsoluteSize.X < 680 then 144 else 172, 334)
 		for _, item in navButtons do
-			item.TextSize = 16
+			item.TextSize = if item.Name == "Bestiary" or item.Name == "Journal" then 20 else 14
 		end
 		refreshNavigation()
 	end

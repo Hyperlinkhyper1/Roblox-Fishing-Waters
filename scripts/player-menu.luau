@@ -46,9 +46,26 @@ local Vector3 = {
 		return setmetatable({ X = x, Y = y, Z = z }, vectorMeta)
 	end,
 }
+-- Transform calls are recorded here; geometric framing still needs Studio.
+local frameMeta = {}
+frameMeta.__mul = function(a)
+	return a
+end
+frameMeta.__index = {
+	Inverse = function(self)
+		return self
+	end,
+}
 local CFrame = {
-	new = function() return { Position = Vector3.new(0, 0, 0) } end,
-	lookAt = function(position, target) return { Position = position, Target = target } end,
+	new = function()
+		return setmetatable({ Position = Vector3.new(0, 0, 0) }, frameMeta)
+	end,
+	lookAt = function(position, target)
+		return { Position = position, Target = target }
+	end,
+	Angles = function()
+		return setmetatable({}, frameMeta)
+	end,
 }
 local UDim = {
 	new = function(scale, offset)
@@ -67,7 +84,14 @@ function UDim2.fromScale(x, y)
 end
 local colorMethods = {}
 function colorMethods:Lerp(other, alpha)
-	return setmetatable({ self[1] + (other[1] - self[1]) * alpha, self[2] + (other[2] - self[2]) * alpha, self[3] + (other[3] - self[3]) * alpha }, { __index = colorMethods })
+	return setmetatable(
+		{
+			self[1] + (other[1] - self[1]) * alpha,
+			self[2] + (other[2] - self[2]) * alpha,
+			self[3] + (other[3] - self[3]) * alpha,
+		},
+		{ __index = colorMethods }
+	)
 end
 local Color3 = {
 	new = function(...)
@@ -82,9 +106,21 @@ local ColorSequence = {
 		return { ... }
 	end,
 }
-local ColorSequenceKeypoint = { new = function(time, value) return { Time = time, Value = value } end }
-local NumberSequenceKeypoint = { new = function(time, value) return { Time = time, Value = value } end }
-local NumberSequence = { new = function(value) return { Keypoints = value } end }
+local ColorSequenceKeypoint = {
+	new = function(time, value)
+		return { Time = time, Value = value }
+	end,
+}
+local NumberSequenceKeypoint = {
+	new = function(time, value)
+		return { Time = time, Value = value }
+	end,
+}
+local NumberSequence = {
+	new = function(value)
+		return { Keypoints = value }
+	end,
+}
 local Enum = setmetatable({}, {
 	__index = function(self, key)
 		local values = setmetatable({}, {
@@ -114,6 +150,10 @@ function Instance.new(kind)
 			ChildAdded = signal(),
 			ChildRemoved = signal(),
 			Activated = signal(),
+			MouseEnter = signal(),
+			MouseLeave = signal(),
+			SelectionGained = signal(),
+			SelectionLost = signal(),
 			CharacterAdded = signal(),
 			CharacterRemoving = signal(),
 			Died = signal(),
@@ -244,6 +284,9 @@ end
 function methods:PivotTo(frame)
 	self.PivotFrame = frame
 end
+function methods:GetPivot()
+	return CFrame.new()
+end
 function methods:GetBoundingBox()
 	return CFrame.new(), Vector3.new(4, 6, 2)
 end
@@ -310,10 +353,14 @@ local previewLoads, failPreview = 0, false
 function Players:CreateHumanoidModelFromDescriptionAsync(description, rig)
 	previewLoads += 1
 	assert(not failPreview, "Avatar service unavailable")
-	check(description.ClassName == "HumanoidDescription" and rig == Enum.HumanoidRigType.R15,
-		"Preview uses the shared staff description and the live NPC rig")
+	check(
+		description.ClassName == "HumanoidDescription" and rig == Enum.HumanoidRigType.R15,
+		"Preview uses the shared staff description and the live NPC rig"
+	)
+	check(description.Shirt == 382578523 or description.Shirt == 6500613508, "Preview loads a role-specific catalog uniform")
 	local model = Instance.new("Model")
-	Instance.new("Part").Parent = model
+	local head = Instance.new("Part")
+	head.Name, head.Parent = "Head", model
 	Instance.new("Humanoid").Parent = model
 	Instance.new("LocalScript").Parent = model
 	return model
@@ -324,7 +371,14 @@ local Lighting = Instance.new("Lighting")
 local SoundService = Instance.new("SoundService")
 local GuiService = {}
 local UserInputService = { InputBegan = signal(), GamepadEnabled = true }
+local passPrompts = {}
+local MarketplaceService = {
+	PromptGamePassPurchase = function(_, who, passId)
+		table.insert(passPrompts, { who, passId })
+	end,
+}
 local services = {
+	MarketplaceService = MarketplaceService,
 	Players = Players,
 	ReplicatedStorage = ReplicatedStorage,
 	Lighting = Lighting,
@@ -466,6 +520,23 @@ function methods:FindFirstChildOfClass(class)
 	end
 	return nil
 end
+-- Preview geometry is covered by check-rods; these mocks exercise menu lifecycle.
+services.CollectionService = {
+	RemoveTag = function(_, tool, tag)
+		tool:SetAttribute("RemovedPreviewTag", tag)
+	end,
+}
+local FishingRod = {
+	build = function()
+		local tool = Instance.new("Tool")
+		local part = Instance.new("Part")
+		part.Parent = tool
+		return tool
+	end,
+}
+local EquipmentBag = (function()
+	-- BAG_SOURCE --
+end)()
 local Menu = (function()
 	-- MENU_SOURCE --
 end)()
@@ -477,7 +548,10 @@ local overlay = gui:WaitForChild("MenuOverlay")
 local card = overlay:WaitForChild("MenuWindow")
 local content = card:WaitForChild("Content")
 check(
-	sidebar.Bestiary.LayoutOrder == 1 and sidebar.Journal.LayoutOrder == 2 and sidebar.Equipmentbag.LayoutOrder == 3,
+	sidebar.Bestiary.LayoutOrder == 1
+		and sidebar.Journal.LayoutOrder == 2
+		and sidebar.Home.LayoutOrder == 3
+		and sidebar.Equipmentbag.LayoutOrder == 4,
 	"Bestiary and Journal lead the sidebar"
 )
 local function contains(value)
@@ -516,12 +590,11 @@ for _, name in { "Bestiary", "Equipmentbag", "Journal", "Settings", "Shop" } do
 	check(overlay.Visible and player:GetAttribute("PlayerMenuOpen"), "Navigation opens " .. name)
 	check(sidebar.Parent == gui and not sidebar.Visible, "Menu windows do not contain the main navigation tabs")
 	local selected = sidebar:WaitForChild(name)
-	check(selected.ThemeFace:GetAttribute("Finish") == "Selected", "Active navigation uses the blue finish")
+	check(selected.ThemeFace:GetAttribute("Finish") == "Selected", "Active navigation retains its selected state")
 	local isBook = name == "Bestiary" or name == "Journal"
 	check(
-		selected.ThemeCaption.Text == selected.Text
-			and selected.ThemeCaption.TextStrokeTransparency == (if isBook then 1 else 0),
-		"Book captions use ink typography; other navigation retains outlined captions"
+		selected.ThemeCaption.Text == selected.Text and selected.ThemeCaption.TextStrokeTransparency == 1,
+		"Sidebar captions use clean typography"
 	)
 	check(
 		(not not card.BookChrome.Visible) == isBook and (not card.ThemeInnerRim.Visible) == isBook,
@@ -568,10 +641,10 @@ check(contains("Your equipment bag is empty"), "No unowned equipment")
 profile.OwnedRods.StarterRod = true
 open("Equipmentbag")
 open("Equipmentbag")
-clickText("Equip rod")
+clickText("[Equip]")
 check(rodActions[#rodActions] == "EquipRod", "Equipment uses authorized rod service")
 player:SetAttribute("RodEquipped", true)
-clickText("Stow rod")
+clickText("[Equipped · Stow]")
 check(rodActions[#rodActions] == "UnequipRod", "Equipment supports stowing")
 open("Journal")
 check(
@@ -610,7 +683,13 @@ open("Journal")
 check(content:FindFirstChild("JournalFindingsPage", true).Position.Y.Offset == 514, "Narrow journal pages stack")
 check(not card.BookChrome.CenterBinding.Visible, "Narrow books hide the center binding when pages stack")
 open("Shop")
-check(contains("Nothing in the shop yet"), "Robux shop is empty")
+check(contains("Auto Store") and contains("aboard your own ship"), "Shop explains Auto Store")
+clickText("Buy Auto Store · Robux")
+check(#passPrompts == 1 and passPrompts[1][2] == 3722004182, "Shop prompts configured gamepass")
+player:SetAttribute("OwnsAutoStore", true)
+check(contains("Owned"), "Ownership refreshes shop")
+clickText("Owned")
+check(#passPrompts == 1, "Owned pass does not prompt again")
 UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.ButtonB })
 check(not overlay.Visible, "Controller back closes the menu")
 print("Player menu: " .. checks .. " UI, mixer and remote checks passed (recording mocks; no Studio rendering).")

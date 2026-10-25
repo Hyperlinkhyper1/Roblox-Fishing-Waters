@@ -170,6 +170,7 @@ end
 -- Update the streaming policy even when existing shells were baked in Studio.
 function Map.prepareStreaming(root: Instance)
 	Lod.prepareStreaming(root)
+	Lod.start(root)
 end
 
 -- Also dress maps baked in Studio before underwater gardens were introduced.

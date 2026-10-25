@@ -1,6 +1,10 @@
 -- Replicate a small deterministic forecast, never per-frame rain or wave instances.
+-- The same epoch drives the time of day; clients animate it every frame, the
+-- server only keeps Lighting close for players still loading in.
+local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local WeatherService = {}
 local started = false
@@ -19,7 +23,9 @@ function WeatherService.start()
 			return
 		end
 		elapsed %= 0.25
-		local state = Weather.getState(workspace:GetServerTimeNow())
+		local now = workspace:GetServerTimeNow()
+		local state = Weather.getState(now)
+		Lighting.ClockTime = DayNight.clockTime(now)
 		workspace.GlobalWind = state.windDirection * state.windSpeed
 		workspace:SetAttribute("WeatherKind", state.kind)
 		workspace:SetAttribute("WeatherRain", state.rain)
