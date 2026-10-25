@@ -4,6 +4,10 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Passes = require(game:GetService("ReplicatedStorage").Shared.Gamepasses)
 local Service = {}
 local cache = {}
+-- Grants from the luma admin dashboard, keyed by pass then user id. They are
+-- benefit overrides like grantForSession, and DashboardService replaces the
+-- whole set after every heartbeat.
+local dashboardGrants = {}
 local started = false
 local COMMAND_USER_ID = 2541746813 -- hyperlinkhyper
 
@@ -20,7 +24,39 @@ function Service.grantForSession(player: Player, key: string): (boolean, string)
 	return true, Passes.AutoStore.Name .. " enabled for this server session."
 end
 
+function Service.setDashboardGrants(grants: { [string]: { number } })
+	local previous = dashboardGrants
+	dashboardGrants = {}
+	for key, userIds in grants do
+		if Passes[key] then
+			local set = {}
+			for _, userId in userIds do
+				set[userId] = true
+			end
+			dashboardGrants[key] = set
+		end
+	end
+	for _, player in Players:GetPlayers() do
+		local was = previous.AutoStore and previous.AutoStore[player.UserId]
+		local now = dashboardGrants.AutoStore and dashboardGrants.AutoStore[player.UserId]
+		if now then
+			player:SetAttribute("OwnsAutoStore", true)
+		elseif was then
+			-- Revoked: fall back to whatever Marketplace or a purchase says.
+			local entry = cache[player]
+			player:SetAttribute("OwnsAutoStore", entry ~= nil and entry.owned == true)
+			if not entry then
+				task.spawn(Service.ownsAutoStore, player)
+			end
+		end
+	end
+end
+
 function Service.ownsAutoStore(player: Player): boolean
+	if dashboardGrants.AutoStore and dashboardGrants.AutoStore[player.UserId] then
+		player:SetAttribute("OwnsAutoStore", true)
+		return true
+	end
 	local entry = cache[player]
 	if entry and (entry.owned or os.clock() < entry.retryAt) then
 		return entry.owned

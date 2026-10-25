@@ -11,6 +11,7 @@ local Cargo = {}
 -- released or frozen.
 Cargo.Parts = {
 	Engine = { Name = "Inboard engine", Shape = { "##", "##" } },
+	PatrolEngine = { Name = "Inboard engine", Shape = { "###", "###", "###", "###" } },
 	Lantern = { Name = "Deck lantern", Shape = { "#" } },
 }
 

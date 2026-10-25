@@ -143,14 +143,19 @@ end
 
 export type Traits = { Mutation: string, NeonColor: string?, Corruptions: { string }? }
 
--- Junk never mutates.
-function FishMutations.roll(fish, night: boolean, rng: () -> number): Traits
+-- Junk never mutates. `bonus` (from a rod skin) adds to the chance of any
+-- mutation and, at night only, to the Astral chance; Astral bonus odds come on
+-- top of the plain mutation chance rather than out of it.
+function FishMutations.roll(fish, night: boolean, rng: () -> number, bonus: any?): Traits
+	local extra = if bonus then math.max(0, bonus.mutation or 0) else 0
+	local extraAstral = if bonus and night then math.max(0, bonus.astral or 0) else 0
+	local astral = if night then FishMutations.ASTRAL_CHANCE + extraAstral else 0
 	local pick = rng()
-	if fish.Rarity == "Junk" or pick >= FishMutations.CHANCE then
+	if fish.Rarity == "Junk" or pick >= FishMutations.CHANCE + extra + extraAstral then
 		return { Mutation = "Normal" }
 	end
 	local key
-	if night and pick < FishMutations.ASTRAL_CHANCE then
+	if pick < astral then
 		key = if rng() < FishMutations.ASTRAL_RAINBOW_CHANCE then "Astral+Rainbow" else "Astral"
 	else
 		local weight = rng() * totalWeight

@@ -28,8 +28,8 @@ local BASE_TAG = "PlayerBase"
 local builders = { Rowboat = Rowboat, FishingBoat = FishingBoat }
 -- Dock-local studs (BoatDockFrame: -Z is the water, +X the right-hand pier at x=17).
 local MOORINGS = {
-	{ boat = CFrame.new(28, 0, -24), pier = Vector3.new(17, 3.2, -24), pickup = Vector3.new(20, 3.2, -24) },
-	{ boat = CFrame.new(-28, 0, -24), pier = Vector3.new(-17, 3.2, -24), pickup = Vector3.new(-20, 3.2, -24) },
+	{ boat = CFrame.new(28, 0, -24), pier = Vector3.new(17, 3.2, -24), pickup = Vector3.new(17, 3.2, -24) },
+	{ boat = CFrame.new(-28, 0, -24), pier = Vector3.new(-17, 3.2, -24), pickup = Vector3.new(-17, 3.2, -24) },
 }
 local CATCH_SECONDS = Vector2.new(16, 26)
 local TRIP_CATCHES = 8

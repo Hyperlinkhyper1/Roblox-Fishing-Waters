@@ -9,8 +9,8 @@ local PlazaHouses = require(script.Parent.PlazaHouses)
 local Props = require(script.Parent.Props)
 
 local RodShop = {}
-local LAYOUT_VERSION = 2
-local INTERIOR_VERSION = 2
+local LAYOUT_VERSION = 3
+local INTERIOR_VERSION = 5
 local TAU = math.pi * 2
 local rgb = Color3.fromRGB
 local M = Enum.Material
@@ -72,8 +72,6 @@ local function buildInterior(): Model
 	local hall = Instance.new("Model")
 	hall.Name = "RodStoreInterior"
 	hall:SetAttribute("LayoutVersion", INTERIOR_VERSION)
-	hall:SetAttribute("RodId", "StarterRod")
-	hall:SetAttribute("Price", 0)
 	hall:SetAttribute("InteriorFrame", o * CFrame.new(0, RIDGE / 2, 0))
 	hall:SetAttribute("InteriorSize", Vector3.new(W, RIDGE, D))
 	hall:SetAttribute("ArrivalFrame", o * CFrame.new(0, 3.2, -D / 2 + 5) * CFrame.Angles(0, math.pi, 0))
@@ -427,7 +425,7 @@ local function buildInterior(): Model
 
 	-- The counter, with racks of rods behind it under the back gallery
 	part("CounterBase", Vector3.new(16, 3.2, 2.6), CFrame.new(0, 1.6, backEdge - 6), rgb(70, 126, 110), M.WoodPlanks)
-	local counter = part("CounterTop", Vector3.new(16.6, 0.35, 3.2), CFrame.new(0, 3.37, backEdge - 6), WOOD)
+	part("CounterTop", Vector3.new(16.6, 0.35, 3.2), CFrame.new(0, 3.37, backEdge - 6), WOOD)
 	for _, x in { -6, -2, 2, 6 } do
 		deco(
 			"CounterPanel",
@@ -438,19 +436,11 @@ local function buildInterior(): Model
 		)
 	end
 	local menu =
-		deco("RodPriceBoard", Vector3.new(6, 1.4, 0.15), CFrame.new(0, 5.4, backEdge - 4.2), DARK_WOOD, M.WoodPlanks)
-	PlazaHouses.boardText(menu, "STARTER ROD  |  FREE", Enum.NormalId.Front)
+		deco("RodPriceBoard", Vector3.new(6, 1.4, 0.15), CFrame.new(0, 8.8, backEdge - 4.2), DARK_WOOD, M.WoodPlanks)
+	PlazaHouses.boardText(menu, "ROD UPGRADES", Enum.NormalId.Front)
 	for _, x in { -2.9, 2.9 } do
-		deco("BoardHanger", Vector3.new(0.12, 5.1, 0.12), CFrame.new(x, 8.65, backEdge - 4.2), IRON, M.Metal)
+		deco("BoardHanger", Vector3.new(0.12, 2.5, 0.12), CFrame.new(x, 10.75, backEdge - 4.2), IRON, M.Metal)
 	end
-	local browse = Instance.new("ProximityPrompt")
-	browse.Name = "BuyFishingRodPrompt"
-	browse.ActionText = "Browse rods"
-	browse.ObjectText = "Tide & Tackle"
-	browse.MaxActivationDistance = 9
-	browse.RequiresLineOfSight = false
-	browse.HoldDuration = 0
-	browse.Parent = counter
 	-- A brass bell and a ledger on the counter
 	deco("CounterBell", Vector3.new(0.8, 0.6, 0.8), CFrame.new(5.5, 3.85, backEdge - 6), rgb(214, 170, 70), M.Metal).Shape =
 		Enum.PartType.Ball
@@ -550,7 +540,7 @@ local function buildInterior(): Model
 	Props.crates(hall, at(-inner + 2, -19), rng)
 	deco("AisleRug", Vector3.new(7, 0.06, 24), CFrame.new(0, 0.03, -8), rgb(170, 66, 52), M.Fabric)
 	deco("AisleRugBorder", Vector3.new(8, 0.04, 25), CFrame.new(0, 0.02, -8), rgb(222, 180, 90), M.Fabric)
-	for _, x in { -10, 10 } do
+	for _, x in { -10 } do
 		local stand = CFrame.new(x, 0, -6)
 		part("PedestalBase", Vector3.new(3, 0.8, 3), stand * CFrame.new(0, 0.4, 0), rgb(120, 116, 112), M.Slate)
 		part("PedestalColumn", Vector3.new(1.6, 3, 1.6), stand * CFrame.new(0, 2.3, 0), rgb(150, 146, 140), M.Slate)
@@ -561,6 +551,60 @@ local function buildInterior(): Model
 		local gem = deco("PedestalGlow", Vector3.new(1, 1, 1), stand * CFrame.new(-0.3, 4.8, 0), color, M.Neon)
 		gem.Shape = Enum.PartType.Ball
 		glow(gem, color, 12, 0.6)
+	end
+
+	-- A plain wooden crate with an empty inside and a separate hinged lid. Its prompt opens the
+	-- crate window; FishingService checks the angler is standing at it.
+	do
+		local stand = CFrame.new(10, 0, -6) * CFrame.Angles(0, math.pi / 2, 0)
+		part("CratePlinth", Vector3.new(3.4, 0.8, 3), stand * CFrame.new(0, 0.4, 0), rgb(120, 116, 112), M.Slate)
+		local display = Instance.new("Model")
+		display.Name = "RodCrateDisplay"
+		display:SetAttribute("CrateFrame", o * stand)
+		display:SetAttribute("LidHinge", o * stand * CFrame.new(0, 2.4, 0.9))
+		display.Parent = hall
+		local function cratePart(name: string, size: Vector3, offset: CFrame, color: Color3): Part
+			local piece = part(name, size, stand * offset, color, M.WoodPlanks)
+			piece.CanQuery = false
+			piece.Parent = display
+			return piece
+		end
+		cratePart("CrateBottom", Vector3.new(2.6, 0.18, 1.8), CFrame.new(0, 0.89, 0), DARK_WOOD)
+		local crate = cratePart("RodCrate", Vector3.new(2.6, 1.42, 0.16), CFrame.new(0, 1.69, -0.82), WOOD)
+		crate.CanQuery = true
+		cratePart("CrateBack", Vector3.new(2.6, 1.42, 0.16), CFrame.new(0, 1.69, 0.82), WOOD)
+		for _, x in { -1.22, 1.22 } do
+			cratePart("CrateSide", Vector3.new(0.16, 1.42, 1.48), CFrame.new(x, 1.69, 0), WOOD)
+		end
+		for _, x in { -1.05, 1.05 } do
+			for _, z in { -0.93, 0.93 } do
+				cratePart("CrateBrace", Vector3.new(0.16, 1.6, 0.1), CFrame.new(x, 1.6, z), DARK_WOOD)
+			end
+		end
+		local lid = Instance.new("Model")
+		lid.Name = "RodCrateLid"
+		lid.Parent = display
+		local board = cratePart("LidBoard", Vector3.new(2.7, 0.2, 1.9), CFrame.new(0, 2.5, 0), WOOD)
+		board.CanCollide = false
+		board.Parent = lid
+		lid.PrimaryPart = board
+		for _, x in { -1.05, 1.05 } do
+			local brace = cratePart("LidBrace", Vector3.new(0.16, 0.08, 1.9), CFrame.new(x, 2.64, 0), DARK_WOOD)
+			brace.CanCollide = false
+			brace.Parent = lid
+		end
+		local sign =
+			deco("RodCrateSign", Vector3.new(3, 0.8, 0.12), stand * CFrame.new(0, 4.4, 0.6), DARK_WOOD, M.WoodPlanks)
+		sign.CanQuery = false
+		PlazaHouses.boardText(sign, "ROD CRATE  |  $350", Enum.NormalId.Front)
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.Name = "OpenRodCratePrompt"
+		prompt.ActionText = "Open crates"
+		prompt.ObjectText = "Tide Crate"
+		prompt.MaxActivationDistance = 9
+		prompt.RequiresLineOfSight = false
+		prompt.HoldDuration = 0
+		prompt.Parent = crate
 	end
 
 	-- Up on the gallery: potted palms, barrels and crates
@@ -617,10 +661,9 @@ local function buildInterior(): Model
 	return hall
 end
 
--- Finn the rod keeper stands between the counter and the back racks, facing the door,
--- beside the hanging price board rather than behind it. FishingService dresses and
--- places him at startup; the frame is at his soles.
-local KEEPER_FRAME = INTERIOR_ORIGIN * CFrame.new(-5, 0, D / 2 - 8 - 2.8)
+-- Finn stands centered behind the counter, facing the door below the upgrade sign.
+-- FishingService dresses and places him at startup; the frame is at his soles.
+local KEEPER_FRAME = INTERIOR_ORIGIN * CFrame.new(0, 0, D / 2 - 8 - 2.8)
 
 local function ensureInterior(): Model
 	local existing = interiorFolder():FindFirstChild("RodStoreInterior")
@@ -708,7 +751,7 @@ function RodShop.build(plaza: Model, plazaFrame: CFrame): Model
 			M.Slate
 		)
 		slate.CanCollide = false
-		PlazaHouses.boardText(slate, "FREE\nSTARTER\nROD\ninside", Enum.NormalId.Back)
+		PlazaHouses.boardText(slate, "ROD\nUPGRADES\n& CRATES\ninside", Enum.NormalId.Back)
 	end
 	-- Link both doors every startup, so a rebuilt square and a saved hall always agree
 	local leaf = shop:FindFirstChild("StreetDoor", true)

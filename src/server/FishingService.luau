@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BoatData = require(script.Parent.BoatData)
 local BoatService = require(script.Parent.BoatService)
 local FishingRod = require(ReplicatedStorage.Shared.FishingRod)
+local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 
 local FishingService = {}
@@ -158,7 +159,7 @@ local function staffRodCounter(hall: Instance)
 	end)
 end
 
-local function shopPrompt(player: Player, promptName: string?): ProximityPrompt?
+local function shopPrompt(player: Player, promptName: string): ProximityPrompt?
 	local character, _, root = livingCharacter(player)
 	if not character or not root then
 		return nil
@@ -179,7 +180,7 @@ local function shopPrompt(player: Player, promptName: string?): ProximityPrompt?
 		then
 			continue
 		end
-		local prompt = shop:FindFirstChild(promptName or "BuyFishingRodPrompt", true)
+		local prompt = shop:FindFirstChild(promptName, true)
 		local part = prompt and prompt.Parent
 		if not prompt or not prompt:IsA("ProximityPrompt") or not part or not part:IsA("BasePart") then
 			continue
@@ -239,7 +240,7 @@ end
 local UPGRADE_FAILURES = {
 	UnknownUpgrade = "Finn doesn't offer that upgrade.",
 	Maxed = "That upgrade is already maxed out.",
-	NoRod = "Collect your free starter rod at the counter before upgrading it.",
+	NoRod = "Your starter rod is still loading. Please try again shortly.",
 }
 
 local function upgradeRod(player: Player, stat: any): (boolean, string)
@@ -270,6 +271,87 @@ local function upgradeRod(player: Player, stat: any): (boolean, string)
 	return true, string.format("%s upgraded to level %d!", spec.Name, level + 1)
 end
 
+local CRATE_PROMPT = "OpenRodCratePrompt"
+local CRATE_FAILURES = {
+	UnknownCrate = "Finn doesn't have that crate.",
+	NoRod = "Your starter rod is still loading. Please try again shortly.",
+}
+
+-- Rolls before saving so every UpdateAsync retry awards the same skin.
+local function openRodCrate(player: Player, crateId: any): (boolean, string, string?, number?)
+	if not RodSkins.validCrate(crateId) then
+		return false, CRATE_FAILURES.UnknownCrate
+	end
+	local crate = RodSkins.Crates[crateId]
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your wallet is still loading. Try again in a moment."
+	end
+	local skinId = RodSkins.roll(crateId, math.random(), math.random())
+	-- Pre-check the cached profile so a rejected request never costs a save.
+	local outcome = BoatData.openRodCrate(profile, crateId, skinId)
+	if outcome == "InsufficientFunds" then
+		return false, string.format("You need $%d to open the %s.", crate.Price, crate.Name)
+	elseif outcome ~= "Opened" then
+		return false, CRATE_FAILURES[outcome] or "That crate isn't available."
+	end
+	local serial
+	local ok, message = BoatService.updateProgress(player, function(current)
+		local result, awardedSerial = BoatData.openRodCrate(current, crateId, skinId)
+		assert(result == "Opened", result)
+		serial = awardedSerial
+	end)
+	if not ok then
+		return false, message
+	end
+	return true,
+		string.format("You unboxed the %s · Serial #%06d!", RodSkins.Skins[skinId].Name, serial),
+		skinId,
+		serial
+end
+
+-- "" puts the plain starter rod back on.
+local function equipRodSkin(player: Player, skinId: any): (boolean, string)
+	local serial
+	if type(skinId) == "table" then
+		serial = skinId.Serial
+		skinId = skinId.SkinId
+		if type(serial) ~= "number" or serial < 1 or serial >= 2 ^ 53 or serial % 1 ~= 0 then
+			return false, "That skin serial isn't valid."
+		end
+	end
+	local wanted = if skinId == "" then nil else skinId
+	if wanted ~= nil and not RodSkins.valid(wanted) then
+		return false, "That rod skin doesn't exist."
+	end
+	if
+		(player:GetAttribute("RodSkin") or "") == (wanted or "")
+		and (serial == nil or player:GetAttribute("RodSkinSerial") == serial)
+	then
+		return true, "Already equipped."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your inventory is still loading. Try again in a moment."
+	end
+	if BoatData.equipRodSkin(profile, wanted, serial) ~= "Equipped" then
+		return false, "You don't own that rod skin yet."
+	end
+	local ok, message = BoatService.updateProgress(player, function(current)
+		local result = BoatData.equipRodSkin(current, wanted, serial)
+		assert(result == "Equipped", result)
+	end)
+	if not ok then
+		return false, message
+	end
+	return true, if wanted then RodSkins.Skins[wanted].Name .. " equipped!" else "Starter rod look equipped."
+end
+
+local function wantedSkin(player: Player): string
+	local skin = player:GetAttribute("RodSkin")
+	return if RodSkins.valid(skin) then skin else ""
+end
+
 local function ownsRod(player: Player): boolean
 	return player:GetAttribute("BoatDataStatus") == "Ready" and player:GetAttribute("OwnsStarterRod") == true
 end
@@ -294,10 +376,22 @@ local function ensureTool(player: Player): Tool?
 			end
 		end
 	end
+	-- A changed skin swaps the whole Tool, keeping it in the hand it was in.
+	local wasEquipped = false
+	if rod and (rod:GetAttribute("RodSkin") or "") ~= wantedSkin(player) then
+		wasEquipped = rod.Parent == character
+		rod:Destroy()
+		rod = nil
+	end
 	if not rod then
-		rod = FishingRod.build()
+		local skin = wantedSkin(player)
+		rod = FishingRod.build(if skin ~= "" then skin else nil)
 		rod:SetAttribute("OwnerUserId", player.UserId)
 		rod.Parent = backpack
+		local humanoid = (character :: Model):FindFirstChildOfClass("Humanoid")
+		if wasEquipped and humanoid then
+			humanoid:EquipTool(rod)
+		end
 	end
 	player:SetAttribute("RodEquipped", rod.Parent == character)
 	return rod
@@ -313,7 +407,7 @@ local function equip(player: Player)
 		humanoid:EquipTool(rod)
 		player:SetAttribute("RodEquipped", rod.Parent == character)
 	else
-		notify(player, "Visit the plaza tackle shop to get your free starter rod first.")
+		notify(player, "Your starter rod is still loading. Please try again shortly.")
 	end
 end
 
@@ -378,7 +472,7 @@ local function bindPlayer(player: Player)
 			scheduleSync()
 		end)
 	end
-	for _, attribute in { "BoatDataStatus", "OwnsStarterRod" } do
+	for _, attribute in { "BoatDataStatus", "OwnsStarterRod", "RodSkin" } do
 		table.insert(state.connections, player:GetAttributeChangedSignal(attribute):Connect(scheduleSync))
 	end
 	table.insert(state.connections, player.CharacterAdded:Connect(bindCharacter))
@@ -418,7 +512,13 @@ function FishingService.start()
 	feedback = Instance.new("RemoteEvent")
 	feedback.Name, feedback.Parent = "Feedback", remotes
 	request.OnServerEvent:Connect(function(player, action, value)
-		if action ~= "PurchaseRod" and action ~= "EquipRod" and action ~= "UnequipRod" and action ~= "UpgradeRod" then
+		if
+			action ~= "EquipRod"
+			and action ~= "UnequipRod"
+			and action ~= "UpgradeRod"
+			and action ~= "OpenRodCrate"
+			and action ~= "EquipRodSkin"
+		then
 			return
 		end
 		local state = states[player]
@@ -426,7 +526,21 @@ function FishingService.start()
 			return
 		end
 		state.lastRequest = os.clock()
-		if action == "UpgradeRod" then
+		if action == "OpenRodCrate" then
+			if not shopPrompt(player, CRATE_PROMPT) then
+				feedback:FireClient(player, "CrateResult", false, "Step up to the crate stand in the tackle shop.")
+				return
+			end
+			local success, message, skinId, serial = openRodCrate(player, value)
+			if player.Parent == Players then
+				feedback:FireClient(player, "CrateResult", success, message, skinId, serial)
+			end
+		elseif action == "EquipRodSkin" then
+			local success, message = equipRodSkin(player, value)
+			if player.Parent == Players then
+				feedback:FireClient(player, "SkinResult", success, message)
+			end
+		elseif action == "UpgradeRod" then
 			if not shopPrompt(player, KEEPER_PROMPT) then
 				feedback:FireClient(player, "UpgradeResult", false, "Talk to Finn behind the counter to upgrade.")
 				return
@@ -435,17 +549,6 @@ function FishingService.start()
 			if player.Parent == Players then
 				feedback:FireClient(player, "UpgradeResult", success, message)
 			end
-		elseif action == "PurchaseRod" then
-			if not shopPrompt(player) then
-				notify(player, "Step inside the plaza tackle shop and approach the counter to buy a rod.")
-				return
-			end
-			local success, message = BoatService.purchaseRod(player)
-			if success and states[player] == state then
-				equip(player)
-				message = "Starter rod owned! Equip it from your backpack or the rod button."
-			end
-			notify(player, message)
 		elseif action == "EquipRod" then
 			equip(player)
 		else
@@ -458,10 +561,10 @@ function FishingService.start()
 		end
 	end)
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
-		if prompt.Name == "BuyFishingRodPrompt" and shopPrompt(player) == prompt then
-			feedback:FireClient(player, "OpenShop")
-		elseif prompt.Name == KEEPER_PROMPT and shopPrompt(player, KEEPER_PROMPT) == prompt then
+		if prompt.Name == KEEPER_PROMPT and shopPrompt(player, KEEPER_PROMPT) == prompt then
 			feedback:FireClient(player, "OpenUpgrades")
+		elseif prompt.Name == CRATE_PROMPT and shopPrompt(player, CRATE_PROMPT) == prompt then
+			feedback:FireClient(player, "OpenCrates")
 		elseif prompt.Name == "RodStoreDoorPrompt" or prompt.Name == "FurnitureStoreDoorPrompt" then
 			walkThroughDoor(player, prompt)
 		end

@@ -70,7 +70,17 @@ function ParkedBoats.start()
 				-- The hull is rigid, so its pivot keeps one offset from the root.
 				local before = root.CFrame
 				local pivot = rest * root.CFrame:ToObjectSpace(model:GetPivot())
-				model:PivotTo(Weather.parkedOffset(rest, parkedAt, now) * pivot)
+				model:PivotTo(
+					Weather.parkedOffset(
+						rest,
+						parkedAt,
+						now,
+						model:GetAttribute("DryFloorHeight"),
+						model:GetAttribute("DryFloorHalfBeam"),
+						model:GetAttribute("DryFloorHalfLength"),
+						model:GetAttribute("WaterlineRootOffset")
+					) * pivot
+				)
 				if ground and ground.Instance:IsDescendantOf(model) then
 					local position = before:PointToObjectSpace(avatarRoot.Position)
 					if humanoid.MoveDirection.Magnitude < 0.01 then

@@ -23,6 +23,8 @@ const modules = {
   BEACHDETAILS: 'src/server/Map/BeachDetails.luau',
   ROWBOAT: 'src/server/Rowboat.luau',
   FISHINGBOAT: 'src/server/FishingBoat.luau',
+  SPEEDBOAT: 'src/server/Speedboat.luau',
+  BOATCATALOG: 'src/shared/BoatCatalog.luau',
   SHIPWRIGHT: 'src/server/Map/Shipwright.luau',
   DRYDOCKINTERIOR: 'src/server/Map/DrydockInterior.luau',
   DRYDOCK: 'src/server/Map/Drydock.luau',

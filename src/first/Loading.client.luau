@@ -114,7 +114,7 @@ for index = 1, 3 do
 	table.insert(dots, dot)
 end
 
-local detail = label(screen, "Detail", "Visit the rod shop to claim your first fishing rod.", 15, muted)
+local detail = label(screen, "Detail", "Your starter rod is already in your inventory. Equip it to start fishing.", 15, muted)
 detail.Position = UDim2.fromScale(0.5, 0.855)
 detail.Size = UDim2.new(1, -64, 0, 64)
 detail.TextWrapped = true
@@ -165,7 +165,7 @@ groundParams.FilterType = Enum.RaycastFilterType.Exclude
 groundParams.IgnoreWater = true
 groundParams.RespectCanCollide = true
 local tips = {
-	"Visit the rod shop to claim your first fishing rod.",
+	"Your starter rod is already in your inventory. Equip it to start fishing.",
 	"Your dock is your own little corner of Gullhaven.",
 	"Take a boat out and find a new stretch of shoreline.",
 }

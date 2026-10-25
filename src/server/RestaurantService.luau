@@ -21,7 +21,7 @@ local BASE_TAG = "PlayerBase"
 local WAIT_SECONDS = 150
 local EAT_SECONDS = 8
 local SERVE_DISTANCE = 14
-local ARRIVAL_SECONDS = Vector2.new(8, 18)
+local ARRIVAL_SECONDS = 25
 -- Most diners ask for something already on the pass; the rest for anything your
 -- stations can make, so a full menu pays off.
 local AVAILABLE_ORDER_CHANCE = 0.7
@@ -320,7 +320,7 @@ local function arrive(restaurant)
 	}
 	restaurant.seated[choice.seat] = diner
 	table.insert(restaurant.diners, diner)
-	restaurant.nextArrival = os.clock() + random:NextNumber(ARRIVAL_SECONDS.X, ARRIVAL_SECONDS.Y)
+	restaurant.nextArrival = os.clock() + ARRIVAL_SECONDS
 	task.spawn(function()
 		local ok, failure = pcall(visit, restaurant, diner)
 		if not ok then
@@ -343,7 +343,7 @@ local function register(base: Instance)
 		frame = frame,
 		diners = {},
 		seated = {},
-		nextArrival = os.clock() + random:NextNumber(4, 10),
+		nextArrival = os.clock() + ARRIVAL_SECONDS,
 	}
 	restaurants[base] = restaurant
 	base:GetAttributeChangedSignal("OwnerUserId"):Connect(function()
@@ -353,7 +353,7 @@ local function register(base: Instance)
 			stand(diner)
 		end
 		syncRoom(restaurant)
-		restaurant.nextArrival = os.clock() + random:NextNumber(4, 10)
+		restaurant.nextArrival = os.clock() + ARRIVAL_SECONDS
 	end)
 	syncRoom(restaurant)
 end

@@ -356,6 +356,45 @@ for _, beam in beams do
 		"line is disconnected"
 	)
 end
+-- Crate skins restyle the same jointed blank: same hinges, lines and safety,
+-- and every extra piece welded into the one assembly.
+for _, skinId in { "UmbrellaRod", "BambooRod", "BoneRod", "LanternRod", "BaguetteRod", "NightRod", "MageStaff" } do
+	local skin = rodFactory.build(skinId)
+	check(skin:GetAttribute("RodId") == "StarterRod" and skin:GetAttribute("RodSkin") == skinId, skinId .. " identity")
+	check(skin.Name ~= tool.Name and skin:FindFirstChild("RodBobber") ~= nil, skinId .. " name and bobber")
+	local skinParts, skinJoints, skinHinges, skinBeams = {}, {}, 0, 0
+	for _, item in skin:GetDescendants() do
+		if item:IsA("BasePart") then
+			table.insert(skinParts, item)
+			check(
+				not item.Anchored and item.Massless and not item.CanCollide and not item.CanTouch and not item.CanQuery,
+				skinId .. " unsafe physics part " .. item.Name
+			)
+			check(item.Size.X > 0 and item.Size.Y > 0 and item.Size.Z > 0, skinId .. " invalid part dimensions")
+		elseif item.ClassName == "Motor6D" then
+			skinHinges += 1
+			table.insert(skinJoints, item)
+		elseif item.ClassName == "WeldConstraint" then
+			table.insert(skinJoints, item)
+		elseif item.ClassName == "Beam" then
+			skinBeams += 1
+		end
+	end
+	check(#skinParts < 140 and skinHinges == 9 and skinBeams == 6, skinId .. " geometry or articulation budget")
+	local skinReached = { [skin:FindFirstChild("Handle")] = true }
+	for _ = 1, #skinParts do
+		for _, joint in skinJoints do
+			if skinReached[joint.Part0] then
+				skinReached[joint.Part1] = true
+			end
+		end
+	end
+	for _, part in skinParts do
+		check(skinReached[part], skinId .. " loose part " .. part.Name)
+	end
+	skin:Destroy()
+end
+check(rodFactory.build("NoSuchSkin"):GetAttribute("RodSkin") == nil, "unknown skins build the starter rod")
 local function solve()
 	for _ = 1, 10 do
 		for _, joint in hinges do

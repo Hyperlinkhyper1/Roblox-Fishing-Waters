@@ -4,6 +4,7 @@ local CollectionService = game:GetService("CollectionService")
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local FishingRod = require(ReplicatedStorage.Shared.FishingRod)
+local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 
 local Bag = {}
 local white = Color3.fromRGB(245, 245, 245)
@@ -132,7 +133,7 @@ local function scrolling(parent, name, position, size, horizontal)
 	return body
 end
 
-local function rodPreview(parent)
+local function rodPreview(parent, skinId)
 	local view = make("ViewportFrame", parent, {
 		Name = "RodPreview",
 		Position = UDim2.fromScale(0.04, 0.02),
@@ -142,7 +143,7 @@ local function rodPreview(parent)
 		LightDirection = Vector3.new(-1, -1, -2),
 	})
 	local world = make("WorldModel", view, { Name = "PreviewWorld" })
-	local rod = FishingRod.build()
+	local rod = FishingRod.build(skinId)
 	-- Preview tools must never join the live rod animation/tag listeners.
 	CollectionService:RemoveTag(rod, "FishingRod")
 	rod.Enabled = false
@@ -202,6 +203,12 @@ function Bag.show(parent, profile, player, narrow)
 			if profile.OwnedRods[id] then
 				owned += 1
 			end
+		end
+	end
+	for id in RodSkins.Skins do
+		available += 1
+		if (profile.RodSkins or {})[id] then
+			owned += 1
 		end
 	end
 	label(
@@ -266,14 +273,36 @@ function Bag.show(parent, profile, player, narrow)
 			if
 				ownedRod and string.find(string.lower(info and info.Name or id), string.lower(state.RodQuery), 1, true)
 			then
-				table.insert(ids, id)
+				table.insert(ids, { Key = id, Id = id, Info = info })
+			end
+		end
+		for _, copy in profile.RodSkinCopies or {} do
+			local skin = RodSkins.Skins[copy.SkinId]
+			local serialText = string.format("Serial #%06d", copy.Serial)
+			if
+				skin
+				and string.find(string.lower(skin.Name .. " " .. serialText), string.lower(state.RodQuery), 1, true)
+			then
+				table.insert(ids, {
+					Key = "Skin:" .. copy.SkinId .. ":" .. copy.Serial,
+					Id = copy.SkinId,
+					Serial = copy.Serial,
+					Info = {
+						Name = skin.Name,
+						Kind = skin.Rarity .. " skin",
+						Description = table.concat(RodSkins.perks(copy.SkinId), " · "),
+					},
+				})
 			end
 		end
 		table.sort(ids, function(a, b)
-			if state.Favorites[a] ~= state.Favorites[b] then
-				return state.Favorites[a] == true
+			if state.Favorites[a.Key] ~= state.Favorites[b.Key] then
+				return state.Favorites[a.Key] == true
 			end
-			return a < b
+			if a.Id == b.Id then
+				return (a.Serial or 0) < (b.Serial or 0)
+			end
+			return a.Id < b.Id
 		end)
 		if #ids == 0 then
 			-- Empty states use a vertical layout instead of horizontal card placement.
@@ -283,42 +312,61 @@ function Bag.show(parent, profile, player, narrow)
 				blank,
 				if owned == 0 then "Your equipment bag is empty" else "No matching rods",
 				if owned == 0
-					then "Collect your free starter rod at the plaza tackle shop."
+					then "Your starter rod is still loading. Please try again shortly."
 					else "Try another rod name."
 			)
 			return
 		end
-		for index, id in ids do
-			local info = Catalog.Equipment[id]
+		for index, entry in ids do
+			local id, info, serial = entry.Id, entry.Info, entry.Serial
+			local activeSkin = serial ~= nil
+				and player:GetAttribute("RodSkin") == id
+				and player:GetAttribute("RodSkinSerial") == serial
 			local tile = panel(
 				body,
-				id,
+				entry.Key,
 				UDim2.fromOffset(0, 0),
 				UDim2.new(if narrow then 0.86 elseif state.Compact then 0.25 else 1 / 3, -8, 1, -8)
 			)
 			tile.LayoutOrder = index
-			outline(tile, if player:GetAttribute("RodEquipped") and id == "StarterRod" then mint else edge, 2)
+			outline(
+				tile,
+				if activeSkin or (player:GetAttribute("RodEquipped") and id == "StarterRod") then mint else edge,
+				2
+			)
 			if id == "StarterRod" then
-				rodPreview(tile)
+				local skin = player:GetAttribute("RodSkin")
+				rodPreview(tile, if type(skin) == "string" and skin ~= "" then skin else nil)
+			elseif serial then
+				rodPreview(tile, id)
 			end
-			label(tile, "<i>" .. (info and info.Kind or "Fishing rod") .. "\nOwned</i>", 18, {
-				Name = "RodDetails",
-				Position = UDim2.fromOffset(10, 9),
-				Size = UDim2.new(1, -52, 0, 56),
-				TextColor3 = grey,
-				TextYAlignment = Enum.TextYAlignment.Top,
-			})
+			label(
+				tile,
+				"<i>"
+					.. (info and info.Kind or "Fishing rod")
+					.. "\n"
+					.. (if serial then string.format("Serial #%06d", serial) else "Owned")
+					.. "</i>",
+				18,
+				{
+					Name = "RodDetails",
+					Position = UDim2.fromOffset(10, 9),
+					Size = UDim2.new(1, -52, 0, 56),
+					TextColor3 = grey,
+					TextYAlignment = Enum.TextYAlignment.Top,
+				}
+			)
 			local favorite = action(
 				tile,
 				"FavoriteRod",
-				if state.Favorites[id] then "★" else "☆",
+				if state.Favorites[entry.Key] then "★" else "☆",
 				UDim2.new(1, -40, 0, 8),
 				UDim2.fromOffset(30, 32),
 				function()
-					state.Favorites[id] = not state.Favorites[id] or nil
+					state.Favorites[entry.Key] = not state.Favorites[entry.Key] or nil
 					fillRods()
 				end,
-				state.Favorites[id]
+				state.Favorites[entry.Key]
 			)
 			favorite.TextSize, favorite.BackgroundTransparency = 30, 1
 			label(tile, "<i>[" .. (info and info.Name or id) .. "]</i>", 18, {
@@ -351,6 +399,24 @@ function Bag.show(parent, profile, player, narrow)
 					true
 				)
 				equip.TextSize = 20
+			elseif serial then
+				local equip = action(
+					tile,
+					"EquipSkin",
+					if activeSkin then "[Selected · Remove skin]" else "[Use skin]",
+					UDim2.new(0, 10, 1, -43),
+					UDim2.new(1, -20, 0, 34),
+					function()
+						if player:GetAttribute("BoatDataStatus") == "Ready" then
+							ReplicatedStorage.Fishing.Request:FireServer(
+								"EquipRodSkin",
+								if activeSkin then "" else { SkinId = id, Serial = serial }
+							)
+						end
+					end,
+					activeSkin
+				)
+				equip.TextSize = 18
 			end
 		end
 	end

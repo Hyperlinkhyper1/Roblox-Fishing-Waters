@@ -84,14 +84,11 @@ function UDim2.fromScale(x, y)
 end
 local colorMethods = {}
 function colorMethods:Lerp(other, alpha)
-	return setmetatable(
-		{
-			self[1] + (other[1] - self[1]) * alpha,
-			self[2] + (other[2] - self[2]) * alpha,
-			self[3] + (other[3] - self[3]) * alpha,
-		},
-		{ __index = colorMethods }
-	)
+	return setmetatable({
+		self[1] + (other[1] - self[1]) * alpha,
+		self[2] + (other[2] - self[2]) * alpha,
+		self[3] + (other[3] - self[3]) * alpha,
+	}, { __index = colorMethods })
 end
 local Color3 = {
 	new = function(...)
@@ -357,7 +354,10 @@ function Players:CreateHumanoidModelFromDescriptionAsync(description, rig)
 		description.ClassName == "HumanoidDescription" and rig == Enum.HumanoidRigType.R15,
 		"Preview uses the shared staff description and the live NPC rig"
 	)
-	check(description.Shirt == 382578523 or description.Shirt == 6500613508, "Preview loads a role-specific catalog uniform")
+	check(
+		description.Shirt == 382578523 or description.Shirt == 6500613508,
+		"Preview loads a role-specific catalog uniform"
+	)
 	local model = Instance.new("Model")
 	local head = Instance.new("Part")
 	head.Name, head.Parent = "Head", model
@@ -506,8 +506,12 @@ fishing.Name, fishing.Parent = "Fishing", ReplicatedStorage
 local rodRequest = Instance.new("RemoteEvent")
 rodRequest.Name, rodRequest.Parent = "Request", fishing
 local rodActions = {}
-function rodRequest:FireServer(action)
+local skinActions = {}
+function rodRequest:FireServer(action, value)
 	table.insert(rodActions, action)
+	if action == "EquipRodSkin" then
+		table.insert(skinActions, value)
+	end
 end
 -- Roblox supplies child lookups through instance indexing.
 ReplicatedStorage.props.Fishing = fishing
@@ -646,6 +650,56 @@ check(rodActions[#rodActions] == "EquipRod", "Equipment uses authorized rod serv
 player:SetAttribute("RodEquipped", true)
 clickText("[Equipped · Stow]")
 check(rodActions[#rodActions] == "UnequipRod", "Equipment supports stowing")
+profile.RodSkins = { BoneRod = 2, BambooRod = 1 }
+profile.RodSkinCopies =
+	{ { SkinId = "BoneRod", Serial = 1 }, { SkinId = "BoneRod", Serial = 2 }, { SkinId = "BambooRod", Serial = 1 } }
+for _, width in { 1020, 362 } do
+	player:SetAttribute("RodSkinSerial", 0)
+	player:SetAttribute("RodSkin", "")
+	card.AbsoluteSize = Vector2.new(width, 600)
+	open("Equipmentbag")
+	open("Equipmentbag")
+	local cards = content:FindFirstChild("RodCards", true)
+	local first, second = cards:FindFirstChild("Skin:BoneRod:1"), cards:FindFirstChild("Skin:BoneRod:2")
+	check(
+		first ~= nil and second ~= nil and contains("Serial #000001") and contains("Serial #000002"),
+		"Each saved duplicate has a separate numbered card on desktop and phone"
+	)
+	second.EquipSkin.Activated:Fire()
+	check(
+		skinActions[#skinActions].SkinId == "BoneRod" and skinActions[#skinActions].Serial == 2,
+		"Bag selects the exact owned copy through FishingService"
+	)
+	player:SetAttribute("RodSkinSerial", 2)
+	player:SetAttribute("RodSkin", "BoneRod")
+	open("Equipmentbag")
+	open("Equipmentbag")
+	check(contains("[Selected · Remove skin]"), "Saved equipped serial identifies the selected duplicate")
+	content:FindFirstChild("RodCards", true):FindFirstChild("Skin:BoneRod:2").EquipSkin.Activated:Fire()
+	check(skinActions[#skinActions] == "", "Selected skin can return to the plain look")
+	local search = content:FindFirstChild("SearchRods", true)
+	search.Text = "000002"
+	check(
+		not content:FindFirstChild("Skin:BoneRod:1", true) and content:FindFirstChild("Skin:BoneRod:2", true),
+		"Bag searches skin serials"
+	)
+	search.Text = ""
+	player:SetAttribute("RodSkinSerial", 1)
+	open("Equipmentbag")
+	open("Equipmentbag")
+	local cards = content:FindFirstChild("RodCards", true)
+	local bone, bamboo = cards:FindFirstChild("Skin:BoneRod:1"), cards:FindFirstChild("Skin:BambooRod:1")
+	check(
+		bone and bamboo and bone.EquipSkin.Text == "[Selected · Remove skin]" and bamboo.EquipSkin.Text == "[Use skin]",
+		"Matching serials on different skins keep separate cards and selection"
+	)
+	bamboo.EquipSkin.Activated:Fire()
+	check(
+		skinActions[#skinActions].SkinId == "BambooRod" and skinActions[#skinActions].Serial == 1,
+		"Bag selects the right skin when serials overlap"
+	)
+end
+card.AbsoluteSize = Vector2.new(1020, 600)
 open("Journal")
 check(
 	contains("Fish caught") and contains("Highest value") and contains("Relative largest"),

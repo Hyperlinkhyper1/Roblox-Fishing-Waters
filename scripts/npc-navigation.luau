@@ -4,24 +4,42 @@ local function check(value, message)
 	assert(value, message)
 end
 local Vector3 = {}
+local vector = {}
 function Vector3.new(x, y, z)
-	return { X = x, Y = y, Z = z, Magnitude = math.sqrt(x*x + y*y + z*z) }
+	return setmetatable({ X = x, Y = y, Z = z, Magnitude = math.sqrt(x*x + y*y + z*z) }, vector)
 end
+function vector.__add(a, b) return Vector3.new(a.X+b.X, a.Y+b.Y, a.Z+b.Z) end
+function vector.__sub(a, b) return Vector3.new(a.X-b.X, a.Y-b.Y, a.Z-b.Z) end
+function vector.__unm(a) return Vector3.new(-a.X, -a.Y, -a.Z) end
+function vector.__mul(a, b) return Vector3.new(a.X*b, a.Y*b, a.Z*b) end
+function vector.__index(a, key)
+	if key == "Unit" then return Vector3.new(a.X/a.Magnitude, a.Y/a.Magnitude, a.Z/a.Magnitude) end
+end
+Vector3.zero = Vector3.new(0, 0, 0)
+local CFrame = { new = function(position) return { Position = position } end }
+local RaycastParams = { new = function() return {} end }
 local function ground(x, z, y)
 	return Vector3.new(x, y or 0, z or 0)
 end
-local Enum = { PathStatus = { Success = "Success", NoPath = "NoPath" } }
-local now, npc, paths, commands, config, walking, tick, parameters
+local Enum = { PathStatus = { Success = "Success", NoPath = "NoPath" }, RaycastFilterType = { Exclude = "Exclude" }, Material = { Water = "Water" } }
+local now, npc, paths, commands, config, walking, steering, tick, parameters, casts
 local os = { clock = function() return now end }
+local sweepWalls
 local function positionAt(point)
-	npc.root.Position = Vector3.new(point.X, point.Y + 3, point.Z)
+	local height = if config.groundHeight then config.groundHeight(point.X, point.Z) else point.Y
+	local nextPosition = Vector3.new(point.X, height + 3, point.Z)
+	if sweepWalls and sweepWalls(npc.root.Position, Vector3.new(3, 4, 3), nextPosition - npc.root.Position) then return end
+	npc.root.Position = nextPosition
 end
 local task = {}
 function task.wait(seconds)
 	now += seconds
 	tick += 1
 	if config.onWait then config.onWait(tick) end
-	if walking and not config.frozen then
+	if steering and not config.frozen then
+		local nextPosition = npc.root.Position + steering * (npc.humanoid.WalkSpeed * seconds)
+		positionAt(Vector3.new(nextPosition.X, nextPosition.Y - 3, nextPosition.Z))
+	elseif walking and not config.frozen then
 		local current = npc.root.Position
 		local dx, dz = walking.X - current.X, walking.Z - current.Z
 		local distance = math.sqrt(dx*dx + dz*dz)
@@ -31,6 +49,40 @@ function task.wait(seconds)
 			positionAt(Vector3.new(current.X + dx/distance*step, walking.Y, current.Z + dz/distance*step))
 		end
 	end
+end
+local workspace = {}
+-- Axis-aligned solid walls, expanded by the swept body's footprint. This
+-- catches corner cutting instead of assuming every MoveTo is unobstructed.
+sweepWalls = function(start, size, direction)
+	for _, wall in config.walls or {} do
+		local low, high = 0, 1
+		for _, axis in { "X", "Z" } do
+			local origin, step = start[axis], direction[axis]
+			local minimum, maximum = wall.min[axis] - size[axis]/2, wall.max[axis] + size[axis]/2
+			if math.abs(step) < 0.001 then
+				if origin < minimum or origin > maximum then high = -1 end
+			else
+				local a, b = (minimum-origin)/step, (maximum-origin)/step
+				low, high = math.max(low, math.min(a,b)), math.min(high, math.max(a,b))
+			end
+		end
+		if low <= high then return { Distance = low * direction.Magnitude } end
+	end
+	return nil
+end
+function workspace:Blockcast(frame, size, direction, params)
+	casts += 1
+	check(params.FilterDescendantsInstances[1] == npc.model and params.RespectCanCollide
+		and params.CollisionGroup == npc.root.CollisionGroup, "Body queries use the rig's collision rules")
+	if config.onCast then return config.onCast(frame, size, direction) end
+	return sweepWalls(frame.Position, size, direction)
+end
+function workspace:Raycast(origin, direction)
+	if config.onRay then return config.onRay(origin) end
+	if not config.ground and not config.water then return nil end
+	local height = if config.groundHeight then config.groundHeight(origin.X, origin.Z) else 0
+	if height > origin.Y or height < origin.Y + direction.Y then return nil end
+	return { Position = ground(origin.X, origin.Z, height), Normal = Vector3.new(0, 1, 0), Material = if config.water then Enum.Material.Water else "Concrete" }
 end
 local service = {}
 function service:CreatePath(options)
@@ -65,10 +117,10 @@ local Navigation = (function()
 end)()
 
 local function reset(options)
-	now, paths, commands, config, walking, tick = 0, {}, {}, options or {}, nil, 0
+	now, paths, commands, config, walking, steering, tick, casts = 0, {}, {}, options or {}, nil, nil, 0, 0
 	npc = {
 		active = true,
-		root = { Parent = true, Position = Vector3.new(0, 3, 0), Size = Vector3.new(2, 2, 1) },
+		root = { Parent = true, Position = Vector3.new(0, 3, 0), Size = Vector3.new(2, 2, 1), CollisionGroup = "Default" },
 		humanoid = { Parent = true, Health = 100, HipHeight = 2, WalkSpeed = 9 },
 		model = { Parent = true, FindFirstChild = function(_, name)
 			return if name == "UpperTorso" then { Size = Vector3.new(2, 2, 1) } else nil
@@ -76,7 +128,11 @@ local function reset(options)
 	}
 	function npc.humanoid:MoveTo(target)
 		table.insert(commands, target)
-		walking = target
+		walking, steering = target, nil
+	end
+	function npc.humanoid:Move(direction)
+		assert(direction.X == direction.X and direction.Z == direction.Z, "Steering must never contain NaN")
+		steering, walking = direction, nil
 	end
 	-- Any attempt to teleport through a wall fails the test immediately.
 	function npc.model:PivotTo() error("Navigation must not teleport") end
@@ -90,9 +146,103 @@ end
 
 reset({ detour = { ground(0, 6), ground(8, 6) } })
 check(Navigation.walk(npc, ground(8, 0)), "Follow a route around a wall")
-check(commands[1].Z == 6 and commands[2].Z == 6, "Use intermediate detour points before the destination")
+check(commands[1].Z == 6 and commands[3].Z == 6, "Use intermediate detour points before the destination")
 check(parameters.AgentRadius == 2 and parameters.AgentHeight == 5, "R15 fits shop doorways")
 check(not parameters.AgentCanJump and parameters.Costs.Water == math.huge, "Avoid jumping counters and swimming off piers")
+clean()
+
+reset({ walls = { { min = ground(3, -5), max = ground(5, 4.5) } },
+	detour = { ground(0, 6.6), ground(8, 6.6) } })
+npc.humanoid.WalkSpeed = 16
+check(Navigation.walk(npc, ground(8)), "Porter rounds a tight solid corner without clipping the wall")
+check(#paths == 1, "Precise corner arrival avoids repeatedly replanning the same valid route")
+clean()
+
+reset({ ground = true, walls = { { min = ground(4, -5), max = ground(6, 5) } },
+	onCompute = function(attempt)
+		if attempt == 2 then config.detour = { ground(npc.root.Position.X, 7), ground(10, 7) } end
+	end })
+check(Navigation.walk(npc, ground(10)), "Detect a wall absent from the path's Blocked events and take a new route")
+check(#paths == 2 and paths[2].start.X < 1,
+	"Reposition on clear ground before recomputing a stale route")
+check(now < 10, "Wall detection recovers promptly")
+clean()
+
+reset({ frozen = true, water = true, onCast = function() return {} end })
+check(not Navigation.walk(npc, ground(10)), "Blocked pier route cannot recover into water")
+check(npc.root.Position.X == 0 and npc.root.Position.Z == 0, "Water is never a recovery foothold")
+clean()
+
+reset({ frozen = true, onCast = function() return {} end })
+check(not Navigation.walk(npc, ground(10)), "Blocked route with no ground fails safely")
+check(npc.root.Position.X == 0 and npc.root.Position.Z == 0, "Recovery cannot walk across unsupported ground")
+clean()
+
+reset({ ground = true, onCast = function(frame, _, direction)
+	if frame.Position.X + direction.X > 0 then return {} end
+	return nil
+end, onWait = function() npc.active = false end })
+check(not Navigation.walk(npc, ground(10)) and #paths == 1, "Dismissal cancels a recovery step before another replan")
+check(steering == nil and walking == npc.root.Position, "Recovery cancellation stops the rig")
+clean()
+
+reset({ groundHeight = function(x) return x * 2.7 / 8 end,
+	ground = true,
+	onCast = function() return {} end,
+	detour = { ground(2, 0, 0.675), ground(4, 0, 1.35), ground(6, 0, 2.025) } })
+check(Navigation.walk(npc, ground(8, 0, 2.7), nil, true), "Uphill dock route is not vetoed by a horizontal body sweep")
+check(#paths == 1 and npc.root.Position.Y > 5, "NPC actually gains elevation across the ramp")
+check(casts == 0, "Normal path following relies on progress rather than level recovery probes")
+clean()
+
+reset({ groundHeight = function(x) return 2.7 - x * 2.7 / 8 end,
+	ground = true,
+	onCast = function() return {} end,
+	detour = { ground(2, 0, 2.025), ground(4, 0, 1.35), ground(6, 0, 0.675) } })
+positionAt(ground(0, 0, 2.7))
+check(Navigation.walk(npc, ground(8), nil, true), "Porter can also descend the dock ramp")
+check(#paths == 1 and npc.root.Position.Y < 4, "Downhill route reaches the lower pier")
+clean()
+
+local function floorAt(origin, water)
+	return { Position = ground(origin.X, origin.Z), Normal = Vector3.new(0, 1, 0),
+		Material = if water then Enum.Material.Water else "Wood" }
+end
+reset({ onRay = function(origin) return floorAt(origin, origin.X > 4) end })
+npc.humanoid.WalkSpeed = 16
+check(not Navigation.walk(npc, ground(10), nil, true), "Successful navmesh route into water fails safely")
+check(npc.root.Position.X < 4, "Porter stops before entering the water at full staff speed")
+clean()
+
+reset({ onRay = function(origin) return floorAt(origin, origin.X > 3 and origin.Z < 4) end,
+	onCompute = function(attempt)
+		if attempt == 2 then config.detour = { ground(0, 6), ground(10, 6) } end
+	end })
+npc.humanoid.WalkSpeed = 16
+check(Navigation.walk(npc, ground(10, 6), nil, true), "Porter replans a water shortcut around the dock corner")
+check(#paths == 2, "Safe detour succeeds after rejecting the unsupported route")
+clean()
+
+reset({ onRay = function(origin)
+	return if math.abs(origin.Z) > 1 then nil else floorAt(origin, false)
+end })
+check(not Navigation.walk(npc, ground(10), nil, true), "Body needs deck support on both sides of the route")
+check(npc.root.Position.X == 0 and npc.root.Position.Z == 0, "Porter does not enter a ledge narrower than his body")
+clean()
+
+reset({ onRay = function(origin)
+	return if origin.X > 3 and origin.X < 6 then nil else floorAt(origin, false)
+end })
+check(not Navigation.walk(npc, ground(10), nil, true), "Unsupported gap is rejected even with dry ground beyond it")
+check(npc.root.Position.X < 3, "Porter stops on the supported side of a gap")
+clean()
+
+reset({ onRay = function(origin)
+	local seam = origin.X % 1.3
+	return if seam < 0.055 then nil else floorAt(origin, false)
+end })
+npc.humanoid.WalkSpeed = 16
+check(Navigation.walk(npc, ground(10), nil, true), "Normal plank seams do not stop a safe dock route")
 clean()
 
 reset({ onWait = function(t)
@@ -164,6 +314,10 @@ check(Navigation.walk(npc, ground(0)) and #paths == 0, "Already-arrived NPC does
 
 reset({ endpoint = ground(0) })
 check(not Navigation.walk(npc, ground(0, 0, 10)), "A point on another floor is not an arrival")
+clean()
+
+reset()
+check(not Navigation.walk(npc, ground(0, 0, 10)), "Vertically aligned waypoints fail without invalid steering")
 clean()
 
 reset()

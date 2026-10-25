@@ -46,6 +46,38 @@ local function tiled(island: Model): boolean
 	return island.Name == "Harbour Isle"
 end
 
+-- How many ground parts the client has to receive before an untiled shell gives way
+local function groundCount(island: Model): number
+	local ground = island:FindFirstChild("Ground")
+	local count = 0
+	for _, d in if ground then ground:GetDescendants() else {} do
+		if d:IsA("BasePart") then
+			count += 1
+		end
+	end
+	return count
+end
+
+-- Ground parts under each tile of a tiled shell, so the client can tell when a tile's real ground is in
+local function countTiles(model: Instance, island: Model)
+	local originX, originZ = model:GetAttribute("TileOriginX") or 0, model:GetAttribute("TileOriginZ") or 0
+	local counts: { [string]: number } = {}
+	local ground = island:FindFirstChild("Ground")
+	for _, d in if ground then ground:GetDescendants() else {} do
+		if d:IsA("BasePart") then
+			tileKeys(d, originX, originZ, function(key)
+				counts[key] = (counts[key] or 0) + 1
+			end)
+		end
+	end
+	for _, tile in model:GetChildren() do
+		local count = counts[tile.Name] or 0
+		if tile:GetAttribute("Ground") ~= count then
+			tile:SetAttribute("Ground", count)
+		end
+	end
+end
+
 local function opaqueParts(model: Model): { BasePart }
 	local parts = {}
 	for _, d in model:GetDescendants() do
@@ -213,22 +245,12 @@ local function tiledShell(model: Model, island: Model, parts: { BasePart })
 		end
 	end
 
-	local counts: { [string]: number } = {}
-	local ground = island:FindFirstChild("Ground")
-	for _, d in if ground then ground:GetDescendants() else {} do
-		if d:IsA("BasePart") then
-			tileKeys(d, originX, originZ, function(key)
-				counts[key] = (counts[key] or 0) + 1
-			end)
-		end
-	end
-	for key, tile in tiles do
+	for _, tile in tiles do
 		if #tile:GetChildren() == 0 then
 			tile:Destroy()
-		else
-			tile:SetAttribute("Ground", counts[key] or 0)
 		end
 	end
+	countTiles(model, island)
 end
 
 -- Built unparented: it only goes into the world once merged (see merge).
@@ -243,6 +265,7 @@ local function shell(island: Model): Model
 			tiledShell(model, island, parts)
 		else
 			radialShell(model, parts)
+			model:SetAttribute("Ground", groundCount(island))
 		end
 		inert(model)
 	end
@@ -321,109 +344,14 @@ local function islands(root: Instance): { Model }
 	return found
 end
 
--- The home island contains a whole town. Requiring every house, tree and beach prop
--- to arrive as one atomic model delays joining even on fast PCs. Its local ground
--- streams normally; the client already keeps the shell until ground actually arrives.
--- Every other island arrives atomically the first time, then is pinned for that player
--- (see Lod.start) so it never streams out and back in again.
+-- Islands stream part by part, never as one atomic unit. An atomic island is thousands of
+-- wedges the client has to create in a single frame, which froze the game every time one
+-- came into range. Streamed normally the engine spreads them over many frames; the client
+-- keeps each island's shell up until most of its ground is in (see client/Lod), so the
+-- island just takes a little longer to swap in. With StreamOutBehavior LowMemory nothing
+-- streams back out unless the device runs short of memory.
 function Lod.prepareIsland(island: Model)
-	island.ModelStreamingMode = if tiled(island)
-		then Enum.ModelStreamingMode.Default
-		else Enum.ModelStreamingMode.PersistentPerPlayer
-end
-
--- Closed-off buildings (the rod and furniture stores) stand away from the map under
--- workspace.Interiors. The drydock and player bases are open to the sea, so they aren't there.
-local function insideClosedBuilding(player: Player): boolean
-	local character = player.Character
-	local body = character and character:FindFirstChild("HumanoidRootPart")
-	local interiors = workspace:FindFirstChild("Interiors")
-	if not body or not body:IsA("BasePart") or not interiors then
-		return false
-	end
-	for _, hall in interiors:GetChildren() do
-		local frame, size = hall:GetAttribute("InteriorFrame"), hall:GetAttribute("InteriorSize")
-		if typeof(frame) == "CFrame" and typeof(size) == "Vector3" then
-			local position = frame:PointToObjectSpace(body.Position)
-			if
-				math.abs(position.X) <= size.X / 2
-				and math.abs(position.Y) <= size.Y / 2
-				and math.abs(position.Z) <= size.Z / 2
-			then
-				return true
-			end
-		end
-	end
-	return false
-end
-
--- Clients report each island once its ground first arrives; from then on it stays
--- loaded for them, so islands never swap back to shells and reload. The one exception
--- is inside a closed building, where none of the sea is visible: there the pins are
--- released so the client may stream islands out, and it re-pins whatever is still
--- loaded when the player steps back outside.
-function Lod.start(root: Instance)
-	local Players = game:GetService("Players")
-	local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-	local remotes = Instance.new("Folder")
-	remotes.Name = "Lod"
-	local keep = Instance.new("RemoteEvent")
-	keep.Name, keep.Parent = "Keep", remotes
-	remotes.Parent = ReplicatedStorage
-
-	local pinned: { [Player]: { [string]: Model } } = {}
-	local inside: { [Player]: boolean } = {}
-	Players.PlayerRemoving:Connect(function(player)
-		pinned[player] = nil
-		inside[player] = nil
-	end)
-	keep.OnServerEvent:Connect(function(player, id)
-		if typeof(id) ~= "string" or inside[player] then
-			return
-		end
-		local held = pinned[player]
-		if not held then
-			held = {}
-			pinned[player] = held
-		end
-		if held[id] then
-			return
-		end
-		for _, island in islands(root) do
-			if tostring(island:GetAttribute("LodId")) == id then
-				if island.ModelStreamingMode == Enum.ModelStreamingMode.PersistentPerPlayer then
-					held[id] = island
-					island:AddPersistentPlayer(player)
-				end
-				return
-			end
-		end
-	end)
-
-	task.spawn(function()
-		while true do
-			task.wait(0.5)
-			for _, player in Players:GetPlayers() do
-				local now = insideClosedBuilding(player)
-				if now == (inside[player] == true) then
-					continue
-				end
-				inside[player] = now or nil
-				if now then
-					for _, island in pinned[player] or {} do
-						if island.Parent then
-							island:RemovePersistentPlayer(player)
-						end
-					end
-					pinned[player] = nil
-					keep:FireClient(player, "Release")
-				else
-					keep:FireClient(player, "Resume")
-				end
-			end
-		end
-	end)
+	island.ModelStreamingMode = Enum.ModelStreamingMode.Default
 end
 
 function Lod.prepareStreaming(root: Instance)
@@ -434,11 +362,26 @@ function Lod.prepareStreaming(root: Instance)
 	end
 	for _, island in islands(root) do
 		Lod.prepareIsland(island)
+		-- Counts baked into a saved map go stale whenever startup repairs rebuild some ground
+		-- (the harbour's drydock channel, say). A tile waiting for ground that no longer exists
+		-- stayed up over the finished town, so count again from the ground as it is now.
+		local id = island:GetAttribute("LodId")
+		local shell = if shells and id ~= nil then shells:FindFirstChild(tostring(id)) else nil
+		if shell and shell:GetAttribute("TileSize") then
+			countTiles(shell, island)
+		elseif shell then
+			-- An untiled home shell is only a stand-in until Lod.build tiles it; don't make it
+			-- wait for the whole town, or it sits over the harbour until the swap
+			local count = if tiled(island) then 1 else groundCount(island)
+			if shell:GetAttribute("Ground") ~= count then
+				shell:SetAttribute("Ground", count)
+			end
+		end
 	end
 end
 
--- Builds shells under root.Lod if they aren't already baked in. Small islands
--- stream as a whole, so the client never sees half an island next to its shell.
+-- Builds shells under root.Lod if they aren't already baked in. The client keeps a shell
+-- over its island until the island has mostly streamed in, so half an island never shows.
 function Lod.build(root: Instance)
 	Lod.prepareStreaming(root)
 	local baked = root:FindFirstChild("Lod")
@@ -449,6 +392,8 @@ function Lod.build(root: Instance)
 			local id = island:GetAttribute("LodId")
 			local old = if id ~= nil then baked:FindFirstChild(tostring(id)) else nil
 			if id ~= nil and tiled(island) and not (old and old:GetAttribute("TileSize")) then
+				-- This runs on every server start until a map with the tiled shell is saved
+				print("[Lod] Rebuilding the untiled " .. island.Name .. " shell; save the map to skip this")
 				local replacement = shell(island)
 				mergeShell(replacement)
 				if old then

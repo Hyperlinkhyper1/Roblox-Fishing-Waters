@@ -321,6 +321,17 @@ function Data.decode(raw)
 		data.EquippedTitle = ""
 	end
 	assert(type(data.EquippedTitle) == "string", "Invalid equipped title")
+	if data.Holds.PatrolBoat and data.PatrolHoldVersion ~= 2 then
+		local boatCatalog = if script
+			then require(game:GetService("ReplicatedStorage").Shared.BoatCatalog)
+			else require("../shared/BoatCatalog")
+		local fishCatalog = if script
+			then require(game:GetService("ReplicatedStorage").Shared.AnglerCatalog)
+			else require("../shared/AnglerCatalog")
+		Data.migratePatrolHold(data, boatCatalog.PatrolBoat, fishCatalog.Fish)
+	elseif not data.Holds.PatrolBoat then
+		data.PatrolHoldVersion = 2
+	end
 	return data
 end
 -- `traits` carries the mutation's NeonColor and Corruptions, when it has them.
@@ -372,6 +383,33 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 		end
 	end
 	return data
+end
+
+-- Repack an old wide patrol hold once. Install the larger engine first, then
+-- pack large fish before small ones. Overflow stays recoverable on storage racks.
+function Data.migratePatrolHold(data, layout, species)
+	local grid = cargo()
+	local items = copy(layout.StarterParts)
+	local fish = {}
+	for index, item in data.Holds.PatrolBoat do
+		if item.Fish then
+			table.insert(fish, { Item = item, Index = index, Area = #grid.cells(grid.shape(item, species)) })
+		end
+	end
+	table.sort(fish, function(a, b)
+		return if a.Area == b.Area then a.Index < b.Index else a.Area > b.Area
+	end)
+	for _, entry in fish do
+		local item = entry.Item
+		local spot = grid.bestSpot(layout.Hold, items, item, species)
+		if spot then
+			table.insert(items, { Fish = item.Fish, X = spot.X, Y = spot.Y, R = spot.R })
+		else
+			table.insert(data.Storage, item.Fish)
+		end
+	end
+	data.Holds.PatrolBoat = items
+	data.PatrolHoldVersion = layout.HoldVersion
 end
 
 -- A hold that has never been opened starts with the boat's own kit aboard.

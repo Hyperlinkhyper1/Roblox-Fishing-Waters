@@ -316,7 +316,7 @@ function Casting.start()
 			return
 		end
 		if phase == "Idle" then
-			if player:GetAttribute("PlayerMenuOpen") then
+			if player:GetAttribute("PlayerMenuOpen") or player:GetAttribute("RodCrateOpening") then
 				return
 			end
 			phase, chargeStarted = "Charging", os.clock()

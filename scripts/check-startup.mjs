@@ -12,10 +12,12 @@ try {
   const catalog = await readFile(join(root, 'src/shared/BoatCatalog.luau'), 'utf8');
   const motion = await readFile(join(root, 'src/shared/BoatMotion.luau'), 'utf8');
   const rodUpgrades = await readFile(join(root, 'src/shared/RodUpgrades.luau'), 'utf8');
+  const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
   const data = (await readFile(join(root, 'src/server/BoatData.luau'), 'utf8')).replace(
     'local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")',
     `local AnglerData = (function()\n${anglerData}\nend)()`,
   ).replace(/local RodUpgrades = if script[\s\S]*?"\.\.\/shared\/RodUpgrades"\)/, () => `local RodUpgrades = (function()\n${rodUpgrades}\nend)()`)
+    .replace(/local RodSkins = if script[\s\S]*?"\.\.\/shared\/RodSkins"\)/, () => `local RodSkins = (function()\n${rodSkins}\nend)()`)
     .replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
   const harness = await readFile(join(root, 'scripts/boat-service.luau'), 'utf8');
   const source = (await readFile(join(root, 'src/server/BoatService.luau'), 'utf8'))
@@ -23,14 +25,18 @@ try {
     .replace('require(script.Parent.BoatData)', 'dependencies.BoatData')
     .replace('require(script.Parent.Rowboat)', 'dependencies.Rowboat')
     .replace('require(script.Parent.FishingBoat)', 'dependencies.FishingBoat')
+    .replace('require(script.Parent.Speedboat)', 'dependencies.Speedboat')
+    .replace('require(script.Parent.PatrolBoat)', 'dependencies.PatrolBoat')
+    .replace('require(script.Parent.RacingSpeedboat)', 'dependencies.RacingSpeedboat')
     .replace('require(script.Parent.DrydockLaunch)', 'dependencies.DrydockLaunch')
     .replace('require(script.Parent.BoatLaunchCollision)', 'dependencies.BoatLaunchCollision')
     .replace('require(ReplicatedStorage.Shared.BoatCatalog)', 'dependencies.BoatCatalog')
     .replace('require(ReplicatedStorage.Shared.BoatMotion)', `(function()\n${motion}\nend)()`)
     .replace('require(ReplicatedStorage.Shared.RodUpgrades)', () => `(function()\n${rodUpgrades}\nend)()`)
+    .replace('require(ReplicatedStorage.Shared.RodSkins)', () => `(function()\n${rodSkins}\nend)()`)
     .replace('require(ReplicatedStorage.Shared.Biomes)', 'dependencies.Biomes')
     .replace('require(ReplicatedStorage.Shared.Weather)', 'dependencies.Weather')
-    .replace(/return BoatService\s*$/, 'return { start = BoatService.start, loadPlayer = loadPlayer, purchaseRod = BoatService.purchaseRod }');
+    .replace(/return BoatService\s*$/, 'return { start = BoatService.start, loadPlayer = loadPlayer }');
   const fixture = harness.slice(0, harness.indexOf('local shop = Instance.new("Model")'));
   for (const mode of ['unpublished', 'published', 'live']) {
     const setup = 'game.GameId = ' + (mode === 'unpublished' ? '0' : '123') + '\n'
@@ -43,9 +49,7 @@ check(storeRequests == 0, "Unpublished Studio must not request a DataStore")
 check(player:GetAttribute("BoatDataStatus") == "Ready", "Studio session wallet must become usable")
 check(player:GetAttribute("WalletSessionOnly") == true, "Session data must be labeled")
 check(ReplicatedStorage:FindFirstChild("Boating") ~= nil, "Wallet startup must create its remotes")
-check(Service.purchaseRod(player), "Studio player must be able to claim the free rod")
-check(player:GetAttribute("OwnsStarterRod") and player:GetAttribute("Cash") == 0, "Claim must grant ownership without cash")
-check(Service.purchaseRod(player), "Repeat claim must be safe")
+check(player:GetAttribute("OwnsStarterRod") and player:GetAttribute("Cash") == 0, "Starting inventory includes a rod without cash")
 Players.PlayerRemoving:Fire(player)
 local rejoined = makePlayer(72)
 check(rejoined:GetAttribute("OwnsStarterRod"), "Session ownership must survive rejoining this server")
@@ -56,7 +60,7 @@ check(storeRequests == 1, "Saved mode must attempt to initialize the real store"
 check(player:GetAttribute("BoatDataStatus") == "Unavailable", "Store failure must disable saved transactions")
 check(player:GetAttribute("WalletSessionOnly") == false, "Store failures must not fall back to temporary progress")
 check(ReplicatedStorage:FindFirstChild("Boating") ~= nil, "Store initialization failure must not abort service startup")
-check(not Service.purchaseRod(player) and not player:GetAttribute("OwnsStarterRod"), "Failed saved storage must never grant ownership")
+check(not player:GetAttribute("OwnsStarterRod"), "Failed saved storage must never grant ownership")
 `;
     const program = fixture.replace('local Service = (function()', setup + 'local Service = (function()')
       .replace('-- BOAT_LAUNCH_COLLISION_SOURCE --', await readFile(join(root, 'src/server/BoatLaunchCollision.luau'), 'utf8'))

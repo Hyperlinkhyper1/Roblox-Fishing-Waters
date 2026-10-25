@@ -18,8 +18,11 @@ local BiomeAtmosphere = {}
 local WEATHER_BLEND = TweenInfo.new(0.65, Enum.EasingStyle.Linear)
 local DIVE_BLEND = TweenInfo.new(0.3, Enum.EasingStyle.Sine)
 local UNDERWATER_BLUE = Color3.fromRGB(65, 150, 210)
-local UNDERWATER_FOG_DEEP = Color3.fromRGB(20, 70, 115)
-local UNDERWATER_FOG_DENSITY = 0.3
+local UNDERWATER_FOG_COLOR = Color3.fromRGB(32, 96, 128)
+local UNDERWATER_VISIBILITY = 10 / 0.28 -- 10 metres in Roblox studs
+-- Terrain uses its own underwater fog instead of Lighting.FogEnd. Calibrated in
+-- Studio: nearby objects remain visible, while a marker at 36 studs fades out.
+local UNDERWATER_TRANSPARENCY = 0.01
 local FADE = TweenInfo.new(1.5, Enum.EasingStyle.Sine)
 local LEAVE_MARGIN = 1.1 -- stay in a biome until this far past its edge, so the title doesn't flicker
 -- Deep-night targets each biome's look blends toward.
@@ -76,6 +79,9 @@ function BiomeAtmosphere.start()
 	local title = makeTitle()
 	local titleToken = 0
 	local surfaceAmbient = Lighting.Ambient
+	local surfaceFogColor = Lighting.FogColor
+	local surfaceFogStart = Lighting.FogStart
+	local surfaceFogEnd = Lighting.FogEnd
 	local activeTweens: { Tween } = {}
 
 	local function showTitle(text: string)
@@ -102,30 +108,35 @@ function BiomeAtmosphere.start()
 		end
 		local look = biome.look
 		local now = workspace:GetServerTimeNow()
-		local weather = Weather.getState(now)
+		local camera = workspace.CurrentCamera
+		local weather = Weather.getState(now, if camera then camera.CFrame.Position else Vector3.zero)
 		local rain, storm = weather.rain, weather.storm
 		local night = DayNight.darkness(DayNight.clockTime(now))
-		-- Terrain water keeps nearby scenery clear, while the Atmosphere below adds a
-		-- blue fog that swallows distant objects.
+		-- Distance fog is disabled while an Atmosphere is in Lighting. Keep the
+		-- surface atmosphere alive, but detach it underwater to enforce a short view.
+		Lighting.FogColor = if underwater then UNDERWATER_FOG_COLOR else surfaceFogColor
+		Lighting.FogStart = if underwater then 0 else surfaceFogStart
+		Lighting.FogEnd = if underwater then UNDERWATER_VISIBILITY else surfaceFogEnd
+		atmosphere.Parent = if underwater then nil else Lighting
+		-- Nearby scenery stays readable as it fades into opaque blue-green fog.
 		blend(terrain, {
 			WaterColor = if underwater then UNDERWATER_BLUE else look.waterColor,
-			WaterTransparency = if underwater then 0.9 else 0.55,
+			WaterTransparency = if underwater then UNDERWATER_TRANSPARENCY else 0.55,
 		})
-		blend(atmosphere, {
-			-- Underwater fog starts at the camera; surface haze (sky glow) stays off.
-			Offset = if underwater then 0 else Biomes.DistanceFogOffset,
-			Color = if underwater
-				then UNDERWATER_BLUE
-				else look.atmosphereColor:Lerp(Color3.fromRGB(112, 125, 142), rain * 0.65):Lerp(NIGHT_FOG, night * 0.8),
-			Decay = if underwater
-				then UNDERWATER_FOG_DEEP
-				else look.atmosphereDecay:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5):Lerp(NIGHT_DECAY, night * 0.8),
-			Density = if underwater
-				then UNDERWATER_FOG_DENSITY
-				else math.min(0.5, look.density + rain * 0.13),
-			Haze = if underwater then 0 else (look.haze + rain * 1.8) * (1 - night * 0.5),
-			Glare = if underwater then 0 else look.glare * (1 - rain) * (1 - night),
-		})
+		if not underwater then
+			blend(atmosphere, {
+				Offset = Biomes.DistanceFogOffset,
+				Color = look.atmosphereColor
+					:Lerp(Color3.fromRGB(112, 125, 142), rain * 0.65)
+					:Lerp(NIGHT_FOG, night * 0.8),
+				Decay = look.atmosphereDecay
+					:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5)
+					:Lerp(NIGHT_DECAY, night * 0.8),
+				Density = math.min(0.5, look.density + rain * 0.13),
+				Haze = (look.haze + rain * 1.8) * (1 - night * 0.5),
+				Glare = look.glare * (1 - rain) * (1 - night),
+			})
+		end
 		blend(grading, {
 			TintColor = if underwater
 				then Color3.fromRGB(215, 240, 255)

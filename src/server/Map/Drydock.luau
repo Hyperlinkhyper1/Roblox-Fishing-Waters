@@ -6,10 +6,9 @@ local Props = require(script.Parent.Props)
 local Shipwright = require(script.Parent.Shipwright)
 local DrydockInterior = require(script.Parent.DrydockInterior)
 local Rowboat = require(script.Parent.Parent.Rowboat)
-local FishingBoat = require(script.Parent.Parent.FishingBoat)
 
 local Drydock = {}
-local LAYOUT_VERSION = 10
+local LAYOUT_VERSION = 14
 local rgb = Color3.fromRGB
 local M = Enum.Material
 local STEEL = rgb(47, 58, 64)
@@ -152,7 +151,7 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 		p.Name = name
 		return p
 	end
-	local footprint = part("RearDrydockFootprint", Vector3.new(64, 32, 96), 10, 4, 68, CONCRETE, M.Concrete)
+	local footprint = part("RearDrydockFootprint", Vector3.new(43, 32, 96), 0, 4, 68, CONCRETE, M.Concrete)
 	footprint.Transparency, footprint.CanCollide, footprint.CanTouch, footprint.CanQuery = 1, false, false, false
 	footprint.CastShadow = false
 	rear.PrimaryPart = footprint
@@ -187,18 +186,11 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 				STEEL
 			)
 		end
-		for z = (if side == -1 then 49 else 74), 79, (if side == -1 then 10 else 5) do
+		for z = 49, 79, 10 do
 			part("RearSafetyPost", Vector3.new(0.16, 3, 0.16), side * 18.75, 6, z, STEEL)
 		end
 		for _, y in { 5.6, 7.4 } do
-			part(
-				"RearSafetyRail",
-				Vector3.new(0.14, 0.14, if side == -1 then 30 else 5),
-				side * 18.75,
-				y,
-				if side == -1 then 64 else 76.5,
-				STEEL
-			)
+			part("RearSafetyRail", Vector3.new(0.14, 0.14, 30), side * 18.75, y, 64, STEEL)
 		end
 		-- Outboard columns leave the working path beside the basin unobstructed.
 		part("OutdoorGantryFoot", Vector3.new(1.4, 0.25, 2.5), side * 18.1, 4.625, 54, STEEL, M.DiamondPlate)
@@ -253,50 +245,25 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 	end
 	local sign = part("RearDrydockSign", Vector3.new(15, 1.5, 0.18), 0, 3.2, 32.9, STEEL)
 	boardText(sign, "DRYDOCK  /  REPAIR SLIP", CREAM)
-	-- The larger fishing boat has its own repair berth beside the launch basin.
-	-- Its recessed floor leaves the same raised, walkable quays around the hull.
-	part("FishingBerthFloor", Vector3.new(12, 0.6, 32), 30, 0.2, 54, rgb(91, 100, 99), M.Concrete)
-	for _, x in { 23.5, 36.5 } do
-		part("FishingBerthWall", Vector3.new(1, 4, 33), x, 2.5, 54, CONCRETE, M.Concrete)
-		part("FishingBerthCoping", Vector3.new(0.6, 0.16, 33), x, 4.58, 54, BLACK, M.DiamondPlate)
-		for z = 39, 69, 2 do
-			part("FishingBerthStripe", Vector3.new(0.62, 0.04, 0.85), x, 4.68, z, YELLOW)
-		end
-	end
-	for _, x in { 21, 39 } do
-		part("FishingBerthQuay", Vector3.new(4, 12.5, 38), x, -1.75, 54, CONCRETE, M.Concrete)
-	end
-	for _, z in { 35.5, 72.5 } do
-		part("FishingBerthQuay", Vector3.new(16, 12.5, 5), 30, -1.75, z, CONCRETE, M.Concrete)
-	end
-	for _, z in { 37.5, 70.5 } do
-		part("FishingBerthWall", Vector3.new(14, 4, 1), 30, 2.5, z, CONCRETE, M.Concrete)
-	end
-	for _, z in { 46, 54, 62 } do
-		part("FishingKeelBlock", Vector3.new(3, 0.9, 2), 30, 0.95, z, DARK_WOOD, M.Wood)
-		for _, x in { 25.8, 34.2 } do
-			part("FishingBilgeBlock", Vector3.new(1.2, 0.65, 2), x, 0.825, z, DARK_WOOD, M.Wood)
-		end
-	end
-	for z = 36, 72, 9 do
-		part("FishingBerthSafetyPost", Vector3.new(0.16, 3, 0.16), 40.75, 6, z, STEEL)
-	end
-	for _, y in { 5.6, 7.4 } do
-		part("FishingBerthSafetyRail", Vector3.new(0.14, 0.14, 36), 40.75, y, 54, STEEL)
-	end
-	local fishingSign = part("FishingBerthSign", Vector3.new(11, 1.5, 0.18), 30, 3.2, 32.9, STEEL)
-	boardText(fishingSign, "FISHER'S BOAT  $2500", CREAM)
 	-- These frames share the rowboat's waterline origin and point out to the bay.
 	for name, position in
 		{
 			PreviewOrigin = Vector3.new(0, 2.1, 54),
-			FishingBoatPreview = Vector3.new(30, 2.1, 54),
+			FishingBoatPreview = Vector3.new(0, 2.1, 54),
+			SpeedboatPreview = Vector3.new(0, 2.1, 54),
+			PatrolBoatPreview = Vector3.new(0, 2.1, 54),
+			RacingSpeedboatPreview = Vector3.new(0, 2.1, 54),
 			SlipwayTop = Vector3.new(0, 2.1, 54),
 			LaunchWater = Vector3.new(0, -frame.Position.Y, 54),
 		}
 	do
 		local point = part(
-			if name == "FishingBoatPreview" then "FishingBoatDisplayOrigin" else name,
+			if name == "FishingBoatPreview"
+				then "FishingBoatDisplayOrigin"
+				elseif name == "SpeedboatPreview" then "SpeedboatDisplayOrigin"
+				elseif name == "PatrolBoatPreview" then "PatrolBoatDisplayOrigin"
+				elseif name == "RacingSpeedboatPreview" then "RacingSpeedboatDisplayOrigin"
+				else name,
 			Vector3.new(1, 1, 1),
 			position.X,
 			position.Y,
@@ -324,34 +291,34 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 	-- Reuse the original repair platform, including its blocks, rails,
 	-- drainage and attached slipway. The surrounding quays stay fixed.
 	local moving = {
-		RearBasinFloor = true, KeelBlock = true, BilgeBlock = true,
-		HaulRail = true, RearDrainGrate = true, RearDrainSlot = true,
-		SlipwayDeck = true, SlipwayRail = true,
+		RearBasinFloor = true,
+		KeelBlock = true,
+		BilgeBlock = true,
+		HaulRail = true,
+		RearDrainGrate = true,
+		RearDrainSlot = true,
+		SlipwayDeck = true,
+		SlipwayRail = true,
 	}
 	for _, piece in rear:GetChildren() do
 		if moving[piece.Name] then
 			piece.Parent = cradle
-			if piece.Name == "RearBasinFloor" then cradle.PrimaryPart = piece end
-		end
-	end
-	for _, spec in
-		{
-			{ id = "Rowboat", name = "LaunchPreview", builder = Rowboat, x = 0 },
-			{ id = "FishingBoat", name = "FishingBoatPreview", builder = FishingBoat, x = 30 },
-		}
-	do
-		local preview = spec.builder.build(frame * CFrame.new(spec.x, 2.1, 54) * CFrame.Angles(0, math.pi, 0), true)
-		preview.Name = spec.name
-		preview:SetAttribute("BoatId", spec.id)
-		preview:SetAttribute("DisplayOnly", true)
-		for _, piece in preview:GetDescendants() do
-			if piece:IsA("BasePart") then
-				piece:SetAttribute("PreviewCanCollide", piece.CanCollide)
-				piece.CanCollide = false
+			if piece.Name == "RearBasinFloor" then
+				cradle.PrimaryPart = piece
 			end
 		end
-		preview.Parent = rear
 	end
+	local preview = Rowboat.build(frame * CFrame.new(0, 2.1, 54) * CFrame.Angles(0, math.pi, 0), true)
+	preview.Name = "LaunchPreview"
+	preview:SetAttribute("BoatId", "Rowboat")
+	preview:SetAttribute("DisplayOnly", true)
+	for _, piece in preview:GetDescendants() do
+		if piece:IsA("BasePart") then
+			piece:SetAttribute("PreviewCanCollide", piece.CanCollide)
+			piece.CanCollide = false
+		end
+	end
+	preview.Parent = rear
 	-- Atomic streaming prevents partial hulls while the shop camera watches it.
 	rear.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 end
@@ -561,7 +528,11 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	part("ShipwrightCounter", Vector3.new(7, 2.5, 2), 12, 3.25, -4, rgb(72, 88, 94), M.Metal)
 	part("CounterTop", Vector3.new(7.5, 0.25, 2.5), 12, 4.65, -4, STEEL, M.DiamondPlate)
 	local price = part("BoatPrices", Vector3.new(6.5, 2.5, 0.08), 12, 3.3, -5.06, STEEL)
-	boardText(price, "ROWBOAT  $500\nFISHER'S BOAT  $2500", YELLOW)
+	boardText(
+		price,
+		"ROWBOAT  $500\nFISHER'S BOAT  $2500\nBLUEWATER  $6500\nRACING SPEEDBOAT  $12500\nPATROL CRUISER  $25000",
+		YELLOW
+	)
 	local npc = Shipwright.build(at(12, 2, -0.5))
 	npc.Parent = shop
 	-- build applies the outfit before the model is in the DataModel; retry here

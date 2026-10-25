@@ -5,20 +5,25 @@ local RaycastParams = {
 		return {}
 	end,
 }
-local heartbeat = { callbacks = {} }
-function heartbeat:Connect(callback)
+local renderStep = { callbacks = {} }
+function renderStep:Connect(callback)
 	table.insert(self.callbacks, callback)
 end
-function heartbeat:Fire(dt)
+function renderStep:Fire(dt)
 	for _, callback in self.callbacks do
 		callback(dt)
 	end
 end
 local localPlayer = { Character = Instance.new("Model") }
+local otherPlayer = { Character = Instance.new("Model") }
 game.GetService = function(_, name)
 	return if name == "Players"
-		then { LocalPlayer = localPlayer }
-		elseif name == "RunService" then { Heartbeat = heartbeat }
+		then {
+			GetPlayers = function()
+				return { localPlayer, otherPlayer }
+			end,
+		}
+		elseif name == "RunService" then { RenderStepped = renderStep }
 		else {}
 end
 workspace = Instance.new("Folder")
@@ -28,6 +33,8 @@ workspace.Terrain = {
 	WaterWaveSpeed = 8,
 }
 workspace:SetAttribute("WeatherEpoch", 0)
+-- A known storm core reaches the open-water camera during this render check.
+workspace:SetAttribute("WeatherSeed", 888)
 workspace:SetAttribute("WeatherOverride", "Storm")
 local now, rays, dry = 1000, 0, false
 function workspace:GetServerTimeNow()
@@ -36,7 +43,15 @@ end
 function workspace:Raycast(origin, direction, parameters)
 	rays += 1
 	assert(direction.Y < 0 and not parameters.IgnoreWater, "Water rays must include the surface")
-	assert(#parameters.FilterDescendantsInstances == 2, "Local visuals and character must be excluded")
+	assert(table.find(parameters.FilterDescendantsInstances, localPlayer.Character), "Local character must be excluded")
+	assert(
+		table.find(parameters.FilterDescendantsInstances, otherPlayer.Character),
+		"Other swimmers must not change the coast mask"
+	)
+	local boats = workspace:FindFirstChild("PlayerBoats")
+	if boats then
+		assert(table.find(parameters.FilterDescendantsInstances, boats), "Moving boats must not count as shoreline")
+	end
 	return { Material = if dry or origin.X < -1000 then Enum.Material.Sand else Enum.Material.Water }
 end
 local camera = { CFrame = CFrame.new(1500, 12, 0) }
@@ -55,7 +70,7 @@ end
 local Client = loadClient()
 local function tick(dt)
 	now += dt
-	heartbeat:Fire(dt)
+	renderStep:Fire(dt)
 end
 local function beams()
 	local result = {}
@@ -78,7 +93,7 @@ end
 Client.start()
 Client.start()
 local pool = beams()
-assert(#pool > 0 and #pool <= 100 and #heartbeat.callbacks == 1, "Startup must keep one bounded render pool")
+assert(#pool > 0 and #pool <= 100 and #renderStep.callbacks == 1, "Startup must keep one bounded render pool")
 local motion, previous = false, {}
 local maximumSeaHeight = 0
 local strongestCrestOpacity = 0
@@ -148,8 +163,10 @@ dry = true
 tick(1)
 tick(1)
 assert(enabledCount() == 0, "Dry land must mask all swells")
-assert(workspace.Terrain.WaterWaveSize < seaRipple * 0.1,
-	"Coastal viewpoints must suppress native oscillations that clip through the shoreline")
+assert(
+	workspace.Terrain.WaterWaveSize < seaRipple * 0.1,
+	"Coastal viewpoints must suppress native oscillations that clip through the shoreline"
+)
 dry = false
 tick(1)
 assert(enabledCount() > 0, "Water masks must refresh after geometry changes")
@@ -168,10 +185,89 @@ end
 assert(enabledCount() > 0 and #beams() == #pool, "Camera recovery must reuse its render pool")
 assert(workspace.Terrain.WaterWaveSize < seaRipple * 0.5, "Lake ripples must be smaller than open-sea ripples")
 assert(workspace.Terrain.WaterWaveSize < 0.3, "Inner lake must retain sheltered waves")
+-- Small camera motion at a coastal probe boundary must not pump the entire sea
+-- between calm and exposed waves. Hold wind steady to isolate the coast blend.
+local weatherState = dependencies.Weather.getState(now)
+dependencies.Weather.getState = function()
+	return weatherState
+end
+camera.CFrame = CFrame.new(-936, 12, 0)
+for _ = 1, 180 do
+	tick(1 / 60)
+end
+local smallestRipple, largestRipple = math.huge, -math.huge
+for frame = 1, 720 do
+	camera.CFrame = CFrame.new(-936 + math.sin(frame / 60 * math.pi * 2) * 0.5, 12, 0)
+	tick(1 / 60)
+	if frame > 180 then
+		smallestRipple = math.min(smallestRipple, workspace.Terrain.WaterWaveSize)
+		largestRipple = math.max(largestRipple, workspace.Terrain.WaterWaveSize)
+	end
+	assert(workspace.Terrain.WaterWaveSpeed == 8, "Coast transitions must preserve the native ripple phase")
+end
+assert(
+	largestRipple - smallestRipple < 0.02,
+	"Half-stud camera sway at the coast must not make the whole water surface jitter"
+)
+-- Travel in both directions across coast-sample cells and the real lake mouth.
+-- Consecutive frame changes stay small at both low and high refresh rates.
+for _, fps in { 30, 144 } do
+	for _, reverse in { false, true } do
+		local previousRipple = workspace.Terrain.WaterWaveSize
+		for frame = 1, fps * 10 do
+			local progress = frame / (fps * 10)
+			if reverse then
+				progress = 1 - progress
+			end
+			camera.CFrame = CFrame.new(-1020 + progress * 240, 12, 0)
+			tick(1 / fps)
+			if frame > fps * 2 then
+				assert(
+					math.abs(workspace.Terrain.WaterWaveSize - previousRipple) < 0.9 / fps,
+					"Moving through shoreline blend cells must not step the native waves"
+				)
+			end
+			previousRipple = workspace.Terrain.WaterWaveSize
+		end
+	end
+end
+local mouth = Vector3.new(((290 + 430) / 2 - 870) * 1.05, 12, ((1565 + 1340) / 2 - 1330) * 1.05)
+for _, reverse in { false, true } do
+	local previousRipple = workspace.Terrain.WaterWaveSize
+	for frame = 1, 600 do
+		local progress = frame / 600
+		if reverse then
+			progress = 1 - progress
+		end
+		camera.CFrame = CFrame.new(mouth + Vector3.new(-120 + progress * 360, 0, 0))
+		tick(1 / 60)
+		if frame > 180 then
+			assert(
+				math.abs(workspace.Terrain.WaterWaveSize - previousRipple) < 0.01,
+				"Lake-to-sea travel must blend smoothly in both directions"
+			)
+		end
+		previousRipple = workspace.Terrain.WaterWaveSize
+	end
+end
+-- Sailing across open water: masks are redone a few ribbons per frame, and recentering
+-- only probes the newly uncovered cells, so no single frame fires the whole grid's rays.
+camera.CFrame = CFrame.new(1500, 12, 0)
+tick(1 / 60)
+local busiestFrame, sailingRays = 0, rays
+for frame = 1, 600 do
+	camera.CFrame = CFrame.new(1500 + frame * 0.5, 12, frame * 0.2)
+	local before = rays
+	tick(1 / 60)
+	busiestFrame = math.max(busiestFrame, rays - before)
+end
+assert(busiestFrame < 49 * 7 / 2, "Water masks must not probe the whole grid in one frame: " .. busiestFrame)
+assert(rays - sailingRays > 49 * 7 * 10, "Water masks must keep refreshing while sailing")
+assert(enabledCount() > 0, "Open water must keep its crests while sailing")
 camera.CFrame = CFrame.new(0, -3, 0)
 tick(0.04)
 assert(enabledCount() == 0, "Submerged camera must hide surface ribbons")
 print(
-	"PASS pooled swell movement, shared boat heights, land masks, camera teleport/absence/recovery and sheltered lake ripples"
+	"PASS pooled swell movement, shared boat heights, land/hull masks, camera lifecycle, sheltered lake and smooth coast transitions"
 )
 print("Recording mocks only; Studio rendering and physical boat behavior remain unverified.")

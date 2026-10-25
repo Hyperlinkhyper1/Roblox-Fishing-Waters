@@ -7,7 +7,16 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const folder = await mkdtemp(join(tmpdir(), 'fishing-menu-'));
 try {
+  const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
   let program = await readFile(join(root, 'scripts/player-menu.luau'), 'utf8');
+  if (process.argv.includes('--bag-only')) {
+    const setupEnd = program.indexOf('player:SetAttribute("DrydockScreenOpen", true)');
+    const bagStart = program.indexOf('open("Equipmentbag")\ncheck(contains("Your equipment bag is empty")');
+    const bagEnd = program.indexOf('open("Journal")', bagStart);
+    if (setupEnd < 0 || bagStart < 0 || bagEnd < 0) throw new Error('Missing bag test hooks');
+    program = program.slice(0, setupEnd) + program.slice(bagStart, bagEnd)
+      + '\nprint("Equipment bag: " .. checks .. " desktop/mobile inventory and serial checks passed (recording mocks).")';
+  }
   if (process.argv.includes('--shop-only')) {
     program = program.slice(0, program.indexOf('Menu.start()')) + `
 Menu.start()
@@ -96,6 +105,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(script.Parent.StaffPreview\)/g, 'StaffPreview')
       .replace(/require\(script.Parent:WaitForChild\("EquipmentBag"\)\)/g, 'EquipmentBag')
       .replace(/require\(ReplicatedStorage.Shared.FishingRod\)/g, 'FishingRod')
+      .replace(/require\(ReplicatedStorage.Shared.RodSkins\)/g, () => `(function() ${rodSkins} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.BoatCatalog\)/g, 'BoatCatalog')
       .replace(/require\(ReplicatedStorage.Shared.FishModels\)/g, 'nil')
       .replace(/require\(script.Parent.PlayerSettings\)/g, 'Settings')

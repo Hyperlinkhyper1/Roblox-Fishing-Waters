@@ -70,7 +70,16 @@ local function object(class, name, parent)
 end
 function methods:IsA(class) return self.ClassName == class end
 function methods:GetAttribute(name) return self.attributes[name] end
-function methods:GetAttributeChangedSignal() return signal() end
+function methods:GetAttributeChangedSignal(name)
+  local signals = rawget(self, "attributeSignals") or {}
+  rawset(self, "attributeSignals", signals)
+  signals[name] = signals[name] or signal()
+  return signals[name]
+end
+local function setAttribute(item, name, value)
+  item.attributes[name] = value
+  item:GetAttributeChangedSignal(name):Fire()
+end
 function methods:GetChildren() return table.clone(self.children) end
 function methods:GetDescendants()
   local found = {}
@@ -183,6 +192,46 @@ beforeScheduled = scheduled
 other.AncestryChanged:Fire()
 check(scheduled == beforeScheduled, "Old island tracking must be disconnected")
 check(shell.Parent == shells and otherShell.Parent == shells, "All shell parents must stay stable")
+-- Other islands stream in pieces too; their shell waits until nearly all the ground is in.
+local gatedShell = object("Model", "4", shells)
+gatedShell.attributes.Ground = 20
+local gatedWedge = object("BasePart", "Shell", gatedShell)
+shells.ChildAdded:Fire(gatedShell)
+local gated = object("Model", "Gated", biome)
+gated.attributes.LodId = 4
+local gatedGround = object("Model", "Ground", gated)
+biome.ChildAdded:Fire(gated)
+settle()
+local gatedParts = {}
+for i = 1, 18 do
+  local part = object("BasePart", "GroundPart", gatedGround)
+  table.insert(gatedParts, part)
+  gatedGround.DescendantAdded:Fire(part)
+end
+settle()
+check(gatedWedge.LocalTransparencyModifier == 0, "A half-streamed island must stay covered by its shell")
+beforeScheduled = scheduled
+local nineteenth = object("BasePart", "GroundPart", gatedGround)
+table.insert(gatedParts, nineteenth)
+gatedGround.DescendantAdded:Fire(nineteenth)
+check(scheduled == beforeScheduled + 1, "Only the arrival that completes an island refreshes it")
+settle()
+check(gatedWedge.LocalTransparencyModifier == 1, "A nearly whole island must replace its shell")
+beforeWrites, beforeScheduled = writes, scheduled
+for i = 1, 18 do gatedGround.DescendantRemoving:Fire(table.remove(gatedParts)) end
+settle()
+check(gatedWedge.LocalTransparencyModifier == 1 and writes == beforeWrites and scheduled == beforeScheduled,
+  "A drawn island losing ground parts must not bring its shell back")
+gatedGround.DescendantRemoving:Fire(table.remove(gatedParts))
+settle()
+check(gatedWedge.LocalTransparencyModifier == 0, "An island whose ground is all gone must bring its shell back")
+for i = 1, 3 do
+  local part = object("BasePart", "GroundPart", gatedGround)
+  table.insert(gatedParts, part)
+  gatedGround.DescendantAdded:Fire(part)
+end
+settle()
+check(gatedWedge.LocalTransparencyModifier == 0, "A returning island must be nearly whole again before its shell goes")
 -- The home island streams in pieces, so its shell is tiled and each tile follows its own ground.
 local tiled = object("Model", "3", shells)
 tiled.attributes = {TileSize=100, TileOriginX=0, TileOriginZ=0}
@@ -214,11 +263,39 @@ table.insert(farParts, last)
 homeGround.DescendantAdded:Fire(last)
 settle()
 check(farWedge.LocalTransparencyModifier == 1, "A fully streamed tile must hide")
+homeGround.DescendantRemoving:Fire(table.remove(farParts))
+settle()
+check(farWedge.LocalTransparencyModifier == 1, "A drawn tile losing a part must not come back over the town")
+-- Walking past a tile hides it; walking away again must not put it back over loaded ground
+local staleTile = object("Model", "0,1", tiled)
+staleTile.attributes.Ground = 40
+local staleWedge = object("BasePart", "Shell", staleTile)
+tiled.DescendantAdded:Fire(staleWedge)
+for i = 1, 4 do homeGround.DescendantAdded:Fire(groundAt(homeGround, 10 + i * 10, 150)) end
+settle()
+check(staleWedge.LocalTransparencyModifier == 0, "A tile missing most of its ground must stay up")
+setAttribute(staleTile, "Ground", 4)
+settle()
+check(staleWedge.LocalTransparencyModifier == 1, "A server recount of a stale tile must let it give way")
 for _, part in farParts do homeGround.DescendantRemoving:Fire(part) end
 settle()
-check(farWedge.LocalTransparencyModifier == 0 and nearWedge.LocalTransparencyModifier == 1,
-  "Streaming one tile out must bring back only that tile")
+check(farWedge.LocalTransparencyModifier == 1 and nearWedge.LocalTransparencyModifier == 1,
+  "A tile that gave way must stay away while its island is still here")
+-- A tiled shell the server swaps in later takes over from one that had already given way
 shells.ChildRemoved:Fire(tiled)
+local swapped = object("Model", "3", shells)
+swapped.attributes = {TileSize=100, TileOriginX=0, TileOriginZ=0}
+local halfTile = object("Model", "0,0", swapped)
+halfTile.attributes.Ground = 6
+local halfWedge = object("BasePart", "Shell", halfTile)
+local emptyTile = object("Model", "1,0", swapped)
+emptyTile.attributes.Ground = 4
+local emptyWedge = object("BasePart", "Shell", emptyTile)
+shells.ChildAdded:Fire(swapped)
+settle()
+check(halfWedge.LocalTransparencyModifier == 1, "A swapped-in tile over an island already drawn must not pop up")
+check(emptyWedge.LocalTransparencyModifier == 0, "A swapped-in tile whose ground isn't here must still cover it")
+shells.ChildRemoved:Fire(swapped)
 local replacement = object("Model", "3", shells)
 local replacementWedge = object("BasePart", "Wedge", replacement)
 shells.ChildAdded:Fire(replacement)

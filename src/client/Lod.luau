@@ -5,12 +5,15 @@
 -- island Model alone isn't enough: the instance can be around (arriving, or left behind after its
 -- parts stream out) with nothing to draw, and hiding the shell then leaves a hole in the sea.
 --
--- The home island streams in pieces rather than as one unit, so its shell comes in tiles and each
--- tile gives way only once most of the ground under it has arrived. Hiding its whole shell at the
--- first ground part left everything beyond the streamed area missing from the horizon.
+-- Islands stream in piece by piece rather than as one atomic unit (that froze the frame), so a
+-- shell gives way only once most of its island's ground has arrived. The home island is too big
+-- to wait for whole, so its shell comes in tiles and each tile follows the ground under it.
+--
+-- Once a shell has given way it never comes back while its island is still in the world.
+-- Bringing it back over missing parts flipped shells on and off over a fully drawn town, and a
+-- shell the server swaps in later picks up where the one it replaces left off.
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Lod = {}
@@ -20,6 +23,8 @@ local PREFETCH_INTERVAL = 1
 local PREFETCH_AHEAD = 400
 local PREFETCH_STEP = 150 -- skip requests that barely move the streamed area
 local TILE_LOADED = 0.85 -- share of a tile's ground that has to be in before its shell gives way
+local ISLAND_LOADED = 0.95 -- the same for a whole island, which has no player inside it to cover gaps
+local HANDOVER = 0.5 -- share of the ground that will do for a shell replacing one that had already given way
 local TILE_NEAR = 96 -- streaming always holds the ground this close to the player
 local TILE_INTERVAL = 0.5 -- how often tiles near the player are looked at again as they move
 
@@ -36,6 +41,8 @@ type Grid = { size: number, x: number, z: number }
 type Shell = Visual & {
 	model: Model,
 	connections: { RBXScriptConnection },
+	needed: number, -- ground parts that have to be in before an untiled shell gives way
+	inherited: boolean, -- replaced a shell that had already given way to the real island
 	grid: Grid?, -- set when the shell is tiled
 	tiles: { [string]: Tile },
 	dirty: boolean, -- tile ground counts need redoing from scratch
@@ -83,44 +90,22 @@ function Lod.start()
 	local pending: { [string]: boolean } = {}
 	local fading: { [Visual]: number } = {}
 
-	-- Islands this client has had fully drawn, pinned by the server so they never stream out.
-	-- Inside a closed building the server releases them (released = true) until we step out.
-	local kept: { [string]: boolean } = {}
-	local keep: RemoteEvent? = nil
-	local released = false
+	-- Ground parts an island needs before it counts as drawn. Tiled shells decide per tile,
+	-- so for them any ground at all will do.
+	local function needed(id: string): number
+		local shell = byId[id]
+		return if shell then shell.needed else 1
+	end
 
-	local function isLoaded(id: string): boolean
+	local function groundIn(id: string): number
 		local island = islands[id]
-		return island ~= nil and island.ground > 0 and island.model:IsDescendantOf(workspace)
+		return if island and island.model:IsDescendantOf(workspace) then island.ground else 0
 	end
 
 	local function isTiled(id: string): boolean
 		local shell = byId[id]
 		return shell ~= nil and shell.grid ~= nil
 	end
-
-	task.spawn(function()
-		local remote = ReplicatedStorage:WaitForChild("Lod"):WaitForChild("Keep") :: RemoteEvent
-		keep = remote
-		remote.OnClientEvent:Connect(function(message)
-			if message == "Release" then
-				released = true
-				table.clear(kept)
-			elseif message == "Resume" then
-				released = false
-				-- Re-pin whatever survived the visit; anything streamed out pins again on arrival
-				for id in islands do
-					if isLoaded(id) then
-						kept[id] = true
-						remote:FireServer(id)
-					end
-				end
-			end
-		end)
-		for id in kept do
-			remote:FireServer(id)
-		end
-	end)
 
 	-- Tracks how much of each tile's ground is here, as ground parts come and go.
 	local function count(id: string, part: BasePart, delta: number)
@@ -178,17 +163,11 @@ function Lod.start()
 		pending[id] = true
 		task.defer(function()
 			pending[id] = nil
-			if not released and not kept[id] and isLoaded(id) then
-				kept[id] = true
-				if keep then
-					keep:FireServer(id)
-				end
-			end
 			local shell = byId[id]
 			if not shell then
 				return
 			end
-			local loaded = isLoaded(id)
+			local ground = groundIn(id)
 			local grid = shell.grid
 			if grid then
 				if shell.dirty then
@@ -204,10 +183,12 @@ function Lod.start()
 					end
 					-- Shells sit on top of the ground, so a half-streamed tile stays covered until it's
 					-- nearly whole. Right around the player it's always real, never draped in shell.
-					show(tile, loaded and (tile.loaded >= tile.expected * TILE_LOADED or near))
+					local share = if shell.inherited then HANDOVER else TILE_LOADED
+					local whole = near or tile.loaded >= tile.expected * share
+					show(tile, ground > 0 and (whole or tile.hidden == true))
 				end
 			else
-				show(shell, loaded)
+				show(shell, ground > 0 and (ground >= shell.needed or shell.hidden == true))
 			end
 		end)
 	end
@@ -225,9 +206,9 @@ function Lod.start()
 		end
 	end)
 
-	-- Ask for the water ahead of the boat early, so you sail up to real islands rather than shells.
-	-- Only while driving: on foot this kept dragging whole islands in around the harbour, and
-	-- every atomic island that arrives is a frame hitch (and memory that later has to stream out).
+	-- Ask for the water ahead of the boat early, so islands have time to stream in piece by piece
+	-- before you sail up to them. Only while driving: on foot this kept dragging whole islands in
+	-- around the harbour, which is memory the client then has to hold.
 	task.spawn(function()
 		local player = Players.LocalPlayer
 		local lastRequest: Vector3? = nil
@@ -262,9 +243,17 @@ function Lod.start()
 	end)
 
 	-- The server swaps in a new shell (say, a tiled one for an older baked map) by replacing it
+	-- The server destroys the old shell before parenting the new one, so remember for the
+	-- replacement whether the island had already been drawn
+	local gaveWay: { [string]: boolean } = {}
 	local function forget(model: Instance)
 		local shell = byId[model.Name]
 		if shell and shell.model == model then
+			local drawn = shell.hidden == true
+			for _, tile in shell.tiles do
+				drawn = drawn or tile.hidden == true
+			end
+			gaveWay[model.Name] = drawn or nil
 			byId[model.Name] = nil
 			disconnectAll(shell.connections)
 			fading[shell] = nil
@@ -287,6 +276,8 @@ function Lod.start()
 		end
 
 		local id = model.Name
+		local inherited = gaveWay[id] == true
+		gaveWay[id] = nil
 		local size = model:GetAttribute("TileSize")
 		local grid: Grid? = nil
 		if typeof(size) == "number" then
@@ -296,11 +287,18 @@ function Lod.start()
 				z = tonumber(model:GetAttribute("TileOriginZ")) or 0,
 			}
 		end
+		local function groundNeeded(): number
+			local ground = tonumber(model:GetAttribute("Ground"))
+			local share = if inherited then HANDOVER else ISLAND_LOADED
+			return if grid or not ground then 1 else math.max(math.ceil(ground * share), 1)
+		end
 		local shell: Shell = {
 			model = model,
 			parts = {},
 			hidden = nil,
 			connections = {},
+			needed = groundNeeded(),
+			inherited = inherited,
 			grid = grid,
 			tiles = {},
 			dirty = grid ~= nil,
@@ -331,6 +329,15 @@ function Lod.start()
 					minZ = grid.z + (tonumber(z) :: number) * grid.size,
 				}
 				shell.tiles[tileModel.Name] = tile
+				-- The server recounts the ground under each tile at startup (see server/Map/Lod)
+				local created = tile
+				table.insert(
+					shell.connections,
+					tileModel:GetAttributeChangedSignal("Ground"):Connect(function()
+						created.expected = tonumber(tileModel:GetAttribute("Ground")) or 0
+						refresh(id)
+					end)
+				)
 				-- Its ground may already be here; count everything again on the next refresh
 				shell.dirty = true
 				refresh(id)
@@ -348,6 +355,13 @@ function Lod.start()
 				end
 			end
 		end
+		table.insert(
+			shell.connections,
+			model:GetAttributeChangedSignal("Ground"):Connect(function()
+				shell.needed = groundNeeded()
+				refresh(id)
+			end)
+		)
 		table.insert(shell.connections, model.DescendantAdded:Connect(onPart))
 		table.insert(
 			shell.connections,
@@ -387,8 +401,9 @@ function Lod.start()
 				island.parts[d] = true
 				island.ground += 1
 				count(id, d, 1)
-				-- A tiled shell cares how much ground is here, not just whether there is any
-				if island.ground == 1 or isTiled(id) then
+				-- Only the arrival that completes the island matters, so a streaming burst costs
+				-- nothing. A tiled shell cares about every part, since each tile has its own count.
+				if island.ground == needed(id) or isTiled(id) then
 					refresh(id)
 				end
 			end
@@ -405,6 +420,7 @@ function Lod.start()
 						island.parts[d] = nil
 						island.ground -= 1
 						count(id, d, -1)
+						-- A shell that gave way only comes back once the island's ground is all gone
 						if island.ground == 0 or isTiled(id) then
 							refresh(id)
 						end

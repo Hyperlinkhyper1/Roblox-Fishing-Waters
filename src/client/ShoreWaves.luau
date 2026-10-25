@@ -80,6 +80,7 @@ function ShoreWaves.start()
 			along = along,
 			fade = source:GetAttribute("EdgeFade") or 1,
 			waves = {},
+			visible = nil :: boolean?,
 		}
 		for layer = 0, 1 do
 			local a, b = Instance.new("Attachment"), Instance.new("Attachment")
@@ -132,11 +133,18 @@ function ShoreWaves.start()
 	-- on higher-refresh displays. Server time still keeps every frame in phase.
 	RunService.RenderStepped:Connect(function()
 		local camera = workspace.CurrentCamera
+		local cameraPosition = camera and camera.CFrame.Position
 		local time = workspace:GetServerTimeNow()
 		for source, state in sources do
-			local visible = camera ~= nil
+			local visible = cameraPosition ~= nil
+				and (source.Position - cameraPosition).Magnitude < DISTANCE
 				and source:IsDescendantOf(workspace)
-				and (source.Position - camera.CFrame.Position).Magnitude < DISTANCE
+			-- Most of the map's shoreline is far away: leave its beams alone rather than
+			-- writing every one of them each frame
+			if not visible and state.visible == false then
+				continue
+			end
+			state.visible = visible
 			for _, wave in state.waves do
 				local beam = wave.beam
 				beam.Enabled = visible
@@ -144,7 +152,8 @@ function ShoreWaves.start()
 					continue
 				end
 				local offset, opacity, width = sampleWave(time, state.along, wave.layer)
-				for i, attachment in { wave.a, wave.b } do
+				for i = 1, 2 do
+					local attachment = if i == 1 then wave.a else wave.b
 					-- Keep the shoreward wash steady instead of wobbling its endpoints.
 					local ripple = math.sin(state.along / 35 + time * 0.25 + i * 0.2 + wave.layer) * 0.06
 					local distance = offset + ripple

@@ -51,7 +51,7 @@ for _, kind in { 'Clear', 'LightRain', 'Rain', 'Storm' } do
   assert(state.kind == kind and state.windSpeed > previousWind and state.waveAmplitude > previousWave,
     'Rain severity must increase both wind strength and wave height')
   assert(state.rain >= 0 and state.rain <= 1 and state.storm >= 0 and state.storm <= 1)
-  assert(state.waveAmplitude <= 0.72, 'Storm troughs must not submerge the small rowboat bench')
+  assert(state.waveAmplitude <= Weather.MaxWaveAmplitude and Weather.MaxWaveAmplitude == 4.5, 'Exposed seas allow taller, bounded storm swells')
   close(state.windDirection.Magnitude, 1)
   close(state.windDirection.Y, 0)
   previousWind, previousWave = state.windSpeed, state.waveAmplitude
@@ -116,6 +116,52 @@ for step = 0, 1200 do
 end
 assert(lakeEnergy < seaEnergy * 0.08 and lakeMax < seaMax * 0.3, 'Lake must have much lower waves')
 print('PASS sheltered lake vs exposed sea, continuous mouth, deterministic synchronized height and bounded normals')
+
+-- The same timestamp produces clear gaps, rain bands and harsh storm cores.
+local minimumRain, maximumRain, maximumWave = 1, 0, 0
+local roughPosition
+for x = -5000, 5000, 250 do
+  for z = -5000, 5000, 250 do
+    local point = Vector3.new(x, 0, z)
+    local localState = Weather.getState(now, point)
+    minimumRain = math.min(minimumRain, localState.rain)
+    maximumRain = math.max(maximumRain, localState.rain)
+    if localState.waveAmplitude > maximumWave then
+      maximumWave, roughPosition = localState.waveAmplitude, point
+    end
+    close(Weather.sample(point, now, localState).amplitude, localState.waveAmplitude)
+    local sea = Weather.sample(point, now)
+    assert(sea.normal.Y > 0.85 and sea.amplitude <= Weather.MaxWaveAmplitude)
+    close(sea.height, Weather.sample(point, now, localState).height)
+  end
+end
+assert(minimumRain < 0.08 and maximumRain > 0.9 and maximumWave > 3.5,
+  'Storms must have clear gaps and harsh cores with much higher exposed waves')
+local a = Weather.getState(now, roughPosition)
+local b = Weather.getState(now + 0.01, roughPosition + Vector3.new(0.01, 0, 0))
+assert(math.abs(a.rain - b.rain) < 0.001 and math.abs(a.waveAmplitude - b.waveAmplitude) < 0.002,
+  'Moving fronts and travel across them must remain continuous')
+local moved = false
+for _, system in Weather.getSystems(now) do
+  local point = Vector3.new(system.x, 0, system.z)
+  local before = Weather.getState(now, point)
+  local after = Weather.getState(now + 300, point)
+  if math.abs(before.rain - after.rain) > 0.05 then moved = true end
+end
+assert(moved, 'Fronts must move and evolve rather than remain painted on the map')
+local radar = Weather.radar(now)
+assert(radar.version == 1 and #radar.cells == radar.resolution ^ 2 and radar.peakWave > 3.5)
+for index, cell in radar.cells do
+  local column, row = (index - 1) % radar.resolution, math.floor((index - 1) / radar.resolution)
+  local point = Vector3.new(-radar.halfSize + column * radar.halfSize * 2 / (radar.resolution - 1), 0,
+    -radar.halfSize + row * radar.halfSize * 2 / (radar.resolution - 1))
+  local measured = Weather.getState(now, point)
+  assert(math.abs(cell[1] - measured.rain) <= 0.0051 and math.abs(cell[2] - measured.storm) <= 0.0051)
+  assert(math.abs(cell[3] - measured.windSpeed) <= 0.0051 and math.abs(cell[4] - measured.waveAmplitude) <= 0.0051)
+end
+attributes.WeatherOverride = 'Clear'
+assert(Weather.radar(now).peakRain == 0 and Weather.radar(now).peakStorm == 0)
+print('PASS regional severity, tall storm seas, smooth moving fronts and radar parity with game samples')
 
 local callbacks = {}
 local RunService = { Heartbeat = { Connect = function(_, callback) table.insert(callbacks, callback) end } }

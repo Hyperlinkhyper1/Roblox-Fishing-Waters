@@ -123,6 +123,12 @@ function Theme.button(item: TextButton, state: string?)
 	local border = component(item, "UIStroke", "ThemeBorder")
 	border.Transparency = 0
 	item.AutoButtonColor = state ~= "Disabled"
+	-- A button restyled away from glass (the shared close box) drops its glass lift.
+	item:SetAttribute("GlassState", nil)
+	local drop = item:FindFirstChild("ThemeDrop")
+	if drop then
+		drop.BackgroundTransparency = 1
+	end
 end
 
 function Theme.window(item: GuiObject)
@@ -170,34 +176,80 @@ function Theme.glassPanel(item: GuiObject, inset: boolean?)
 	item.ThemeBorder.Transparency = 0.65
 end
 
+-- Glass buttons are opaque, rounded and raised on a drop shadow so they never read
+-- as the flat, translucent glass panels around them. Blue marks the active or
+-- primary choice; disabled buttons lose their lift and colour.
+local glassFinishes = {
+	Normal = { Color3.fromRGB(84, 87, 92), Color3.fromRGB(40, 42, 46), Color3.fromRGB(150, 154, 160) },
+	Selected = { Color3.fromRGB(86, 168, 234), Color3.fromRGB(32, 94, 146), Color3.fromRGB(168, 216, 252) },
+	Danger = { Color3.fromRGB(196, 64, 69), Color3.fromRGB(104, 28, 32), Color3.fromRGB(246, 128, 132) },
+	Disabled = { Color3.fromRGB(44, 44, 46), Color3.fromRGB(32, 32, 34), Color3.fromRGB(78, 78, 82) },
+}
+
+local function paintGlassButton(item: TextButton, hovered: boolean)
+	local state = item:GetAttribute("GlassState")
+	if not state then
+		return
+	end
+	local finish = glassFinishes[state] or glassFinishes.Normal
+	local disabled = state == "Disabled"
+	local lift = hovered and not disabled
+	local face = item.ThemeFace
+	face.BackgroundTransparency = if disabled then 0.35 else 0
+	face.ThemeFinish.Color = ColorSequence.new(
+		if lift then finish[1]:Lerp(Color3.new(1, 1, 1), 0.12) else finish[1],
+		finish[2]
+	)
+	item.ThemeBorder.Color = if lift then finish[3]:Lerp(Color3.new(1, 1, 1), 0.4) else finish[3]
+	item.ThemeBorder.Transparency = if disabled then 0.5 elseif lift then 0 else 0.2
+	item.ThemeBorder.Thickness = if lift then 2 else 1
+	local drop = item:FindFirstChild("ThemeDrop")
+	if drop then
+		drop.BackgroundTransparency = if disabled then 1 else 0.45
+		drop.ZIndex = item.ZIndex - 1
+	end
+end
+
 function Theme.glassButton(item: TextButton, state: string?)
 	Theme.button(item, state)
-	local selected, danger, disabled = state == "Selected", state == "Danger", state == "Disabled"
-	Theme.corner(item, 1)
-	Theme.corner(item.ThemeFace, 1)
+	local disabled = state == "Disabled"
+	Theme.corner(item, 6)
+	Theme.corner(item.ThemeFace, 6)
 	item.BackgroundColor3 = Color3.new()
 	item.BackgroundTransparency = 1
-	local face = item.ThemeFace
-	face.BackgroundTransparency = if danger then 0.45 elseif selected then 0.3 else 0.6
-	face.ThemeFinish.Color = ColorSequence.new(
-		if danger
-			then Color3.fromRGB(74, 20, 22)
-			elseif selected then Color3.fromRGB(35, 35, 35)
-			else Color3.fromRGB(16, 16, 16),
-		Color3.fromRGB(5, 5, 5)
-	)
-	item.ThemeBorder.Color = if danger
-		then Color3.fromRGB(218, 70, 75)
-		elseif selected then Color3.fromRGB(173, 173, 173)
-		else Color3.fromRGB(100, 100, 100)
-	item.ThemeBorder.Transparency = if selected or danger then 0.12 else 0.5
-	Theme.text(
-		item.ThemeCaption,
-		if danger
-			then Color3.fromRGB(255, 91, 96)
-			elseif disabled then Color3.fromRGB(150, 150, 150)
-			else Theme.Colors.Text
-	)
+	item:SetAttribute("GlassState", state or "Normal")
+	local drop = component(item, "Frame", "ThemeDrop")
+	drop.Position = UDim2.fromOffset(0, 3)
+	drop.Size = UDim2.fromScale(1, 1)
+	drop.BackgroundColor3 = Color3.new()
+	drop.BorderSizePixel = 0
+	drop.Active = false
+	Theme.corner(drop, 6)
+	if not item:GetAttribute("GlassHover") then
+		item:SetAttribute("GlassHover", true)
+		local hovered, focused = false, false
+		local function update()
+			paintGlassButton(item, hovered or focused)
+		end
+		item.MouseEnter:Connect(function()
+			hovered = true
+			update()
+		end)
+		item.MouseLeave:Connect(function()
+			hovered = false
+			update()
+		end)
+		item.SelectionGained:Connect(function()
+			focused = true
+			update()
+		end)
+		item.SelectionLost:Connect(function()
+			focused = false
+			update()
+		end)
+	end
+	paintGlassButton(item, false)
+	Theme.text(item.ThemeCaption, if disabled then Color3.fromRGB(140, 140, 140) else Theme.Colors.Text)
 end
 
 function Theme.glassWindow(item: GuiObject)

@@ -9,6 +9,11 @@ export type State = {
 	windSpeed: number,
 	windDirection: Vector3,
 	waveAmplitude: number,
+	rainPotential: number,
+	stormPotential: number,
+	cloudPotential: number,
+	windPotential: number,
+	systems: { any },
 }
 
 Weather.Presets = {
@@ -29,9 +34,11 @@ Weather.Schedule = {
 	{ kind = "Clear", duration = 150 },
 }
 Weather.TransitionSeconds = 20
--- Terrain remains the swimming surface. Keep the rowboat's 0.92-stud-high
--- seat above it even in a trough; larger offsets would submerge the benches.
-Weather.MaxWaveAmplitude = 0.72
+-- Exposed storm cores have up to nine studs of crest-to-trough swell.
+-- The lake shelter and boat dry-floor clearance keep harbour travel manageable.
+Weather.MaxWaveAmplitude = 4.5
+Weather.RadarHalfSize = 5200
+Weather.RadarResolution = 29
 Weather.CycleSeconds = 0
 for _, stage in Weather.Schedule do
 	Weather.CycleSeconds += stage.duration
@@ -123,7 +130,52 @@ function Weather.lakeExposure(position: Vector3): number
 	return 1 - 0.82 * smoothstep(distance / 220)
 end
 
-function Weather.getState(serverTime: number?): State
+-- Broad rain bands contain compact storm cores. Their paths never wrap across
+-- the map: slow orbital drift and growth let fronts arrive and fade smoothly.
+function Weather.getSystems(time: number)
+	local seed = workspace:GetAttribute("WeatherSeed") or 1847
+	local epoch = workspace:GetAttribute("WeatherEpoch") or time
+	local elapsed = time - epoch
+	local systems = {}
+	for index = 1, 5 do
+		local phase = seed * 0.017 + index * 2.39996
+		local age = elapsed * (0.00065 + index * 0.00008)
+		local angle = phase * 0.31
+		table.insert(systems, {
+			x = math.sin(phase + age) * 3900,
+			z = math.cos(phase * 1.3 + age * 0.83) * 3900,
+			cosine = math.cos(angle),
+			sine = math.sin(angle),
+			radiusX = if index == 1 then 4200 else 1200 + index * 180,
+			radiusZ = if index == 1 then 850 else 950 + index * 100,
+			strength = 0.72 + 0.28 * math.sin(phase + age * 1.7) ^ 2,
+		})
+	end
+	return systems
+end
+
+local function localConditions(position: Vector3, state: State): (number, number, number, number)
+	local coverage, core = 0, 0
+	for _, system in state.systems do
+		local dx, dz = position.X - system.x, position.Z - system.z
+		local u = (dx * system.cosine + dz * system.sine) / system.radiusX
+		local v = (-dx * system.sine + dz * system.cosine) / system.radiusZ
+		local distance = u * u + v * v
+		coverage = math.max(coverage, math.exp(-distance * 1.2) * system.strength)
+		core = math.max(core, math.exp(-distance * 4.5) * system.strength)
+	end
+	local rain = state.rainPotential * smoothstep(coverage / 0.85)
+	local storm = math.max(state.stormPotential, state.rainPotential * 0.75) * smoothstep(core / 0.85)
+	local cloud = math.clamp(state.cloudPotential * (0.2 + coverage * 0.8), 0, 1)
+	local wind = 6 + (state.windPotential - 6) * (0.16 + coverage * 0.5 + core * 0.34)
+	return rain, storm, cloud, wind
+end
+
+local function waveAmplitude(wind: number): number
+	return 0.3 + (Weather.MaxWaveAmplitude - 0.3) * math.clamp(wind / 52, 0, 1) ^ 1.65
+end
+
+function Weather.getState(serverTime: number?, position: Vector3?): State
 	local time = serverTime or workspace:GetServerTimeNow()
 	local epoch = workspace:GetAttribute("WeatherEpoch") or time
 	local seed = workspace:GetAttribute("WeatherSeed") or 1847
@@ -148,7 +200,7 @@ function Weather.getState(serverTime: number?): State
 	local gust = 0.94 + 0.06 * math.sin(time * 0.47 + seed)
 	local wind = mix("windSpeed") * gust
 	local angle = (seed % 360) * math.pi / 180
-	return {
+	local state = {
 		kind = if type(override) == "string" and Weather.Presets[override] then override else stage.kind,
 		rain = mix("rain"),
 		storm = mix("storm"),
@@ -156,21 +208,36 @@ function Weather.getState(serverTime: number?): State
 		windSpeed = wind,
 		windDirection = Vector3.new(math.cos(angle), 0, math.sin(angle)),
 		-- Even a calm sea keeps a gentle, visible swell under idle hulls.
-		waveAmplitude = 0.3 + (Weather.MaxWaveAmplitude - 0.3) * (wind / 52) ^ 1.65,
+		waveAmplitude = waveAmplitude(wind),
+		rainPotential = mix("rain"),
+		stormPotential = mix("storm"),
+		cloudPotential = mix("cloudCover"),
+		windPotential = wind,
+		systems = Weather.getSystems(time),
 	}
+	if position then
+		state.rain, state.storm, state.cloudCover, state.windSpeed = localConditions(position, state)
+		state.waveAmplitude = waveAmplitude(state.windSpeed) * Weather.lakeExposure(position) ^ 2
+		state.kind = if state.storm > 0.38
+			then "Storm"
+			elseif state.rain > 0.4 then "Rain"
+			elseif state.rain > 0.06 then "LightRain"
+			else "Clear"
+	end
+	return state
 end
 
 -- Fixed frequencies preserve phase when the wind strength changes. Three crossing
 -- swells avoid identical, mechanical bobbing for every boat. Weights sum to one.
 Weather.components = {
-	{ weight = 0.62, wavelength = 76, speed = 12, angle = 0, phase = 0 },
-	{ weight = 0.26, wavelength = 43, speed = 8, angle = 0.5, phase = 1.8 },
-	{ weight = 0.12, wavelength = 23, speed = 5, angle = -0.7, phase = 4.1 },
+	{ weight = 0.62, wavelength = 110, speed = 12, angle = 0, phase = 0 },
+	{ weight = 0.26, wavelength = 65, speed = 8, angle = 0.5, phase = 1.8 },
+	{ weight = 0.12, wavelength = 34, speed = 5, angle = -0.7, phase = 4.1 },
 }
 
 local function heightAt(position: Vector3, time: number, state: State): (number, number)
-	local exposure = Weather.lakeExposure(position)
-	local amplitude = state.waveAmplitude * exposure
+	local _, _, _, wind = localConditions(position, state)
+	local amplitude = waveAmplitude(wind) * Weather.lakeExposure(position) ^ 2
 	local height = 0
 	for _, wave in Weather.components do
 		local cosine, sine = math.cos(wave.angle), math.sin(wave.angle)
@@ -208,18 +275,81 @@ end
 -- Cheap height-only variant for the many points in a visible crest.
 Weather.heightAt = heightAt
 
+-- A compact measured grid, row-major from northwest to southeast. The admin
+-- radar displays these samples instead of inventing its own weather shapes.
+function Weather.radar(time: number)
+	local state = Weather.getState(time)
+	local cells = {}
+	local peakRain, peakStorm, peakWind, peakWave = 0, 0, 0, 0
+	local function rounded(value: number): number
+		return math.round(value * 100) / 100
+	end
+	for row = 0, Weather.RadarResolution - 1 do
+		for column = 0, Weather.RadarResolution - 1 do
+			local position = Vector3.new(
+				-Weather.RadarHalfSize + column * Weather.RadarHalfSize * 2 / (Weather.RadarResolution - 1),
+				0,
+				-Weather.RadarHalfSize + row * Weather.RadarHalfSize * 2 / (Weather.RadarResolution - 1)
+			)
+			local rain, storm, _, wind = localConditions(position, state)
+			local amplitude = waveAmplitude(wind) * Weather.lakeExposure(position) ^ 2
+			table.insert(cells, { rounded(rain), rounded(storm), rounded(wind), rounded(amplitude) })
+			peakRain, peakStorm = math.max(peakRain, rain), math.max(peakStorm, storm)
+			peakWind, peakWave = math.max(peakWind, wind), math.max(peakWave, amplitude)
+		end
+	end
+	return {
+		version = 1,
+		resolution = Weather.RadarResolution,
+		halfSize = Weather.RadarHalfSize,
+		cells = cells,
+		peakRain = rounded(peakRain),
+		peakStorm = rounded(peakStorm),
+		peakWind = rounded(peakWind),
+		peakWave = rounded(peakWave),
+	}
+end
+
 -- Parked hulls stay anchored on the server. This world-space transform carries a
 -- hull from the pose it parked in (at parkedAt) to the same swell's pose now, so
 -- every client bobs it identically and the server can release it without a snap.
-function Weather.parkedOffset(rest: CFrame, parkedAt: number, now: number): CFrame
+function Weather.parkedOffset(
+	rest: CFrame,
+	parkedAt: number,
+	now: number,
+	floorHeight: number?,
+	halfBeam: number?,
+	halfLength: number?,
+	waterlineOffset: Vector3?
+): CFrame
 	local from = Weather.sample(rest.Position, parkedAt)
 	local to = Weather.sample(rest.Position, now)
+	-- Match the driven hull's dry-floor clamp even while it is anchored.
+	local function dryHeight(sample): number
+		if not floorHeight or not halfBeam or not halfLength then
+			return sample.height
+		end
+		local normal = sample.normal
+		local forward = (rest.LookVector - normal * rest.LookVector:Dot(normal)).Unit
+		local right = forward:Cross(normal).Unit
+		local lowestFloor = floorHeight * normal.Y - math.abs(right.Y) * halfBeam - math.abs(forward.Y) * halfLength
+		return math.max(sample.height, 0.35 - lowestFloor)
+	end
 	local axis = from.normal:Cross(to.normal)
 	local tilt = if axis.Magnitude > 1e-6
 		then CFrame.fromAxisAngle(axis.Unit, math.acos(math.clamp(from.normal:Dot(to.normal), -1, 1)))
 		else CFrame.identity
 	local pivot = rest.Position
-	return CFrame.new(pivot + Vector3.new(0, to.height - from.height, 0)) * tilt * CFrame.new(-pivot)
+	local offset = CFrame.new(pivot + Vector3.new(0, dryHeight(to) - dryHeight(from), 0)) * tilt * CFrame.new(-pivot)
+	if floorHeight and halfBeam and halfLength and waterlineOffset then
+		-- A newly launched hull may start level rather than at the sampled wave
+		-- pose. Clamp its actual transformed deck as well as the relative swell.
+		local pose = offset * rest
+		local center = pose:PointToWorldSpace(Vector3.new(0, floorHeight, 0) - waterlineOffset)
+		local lowest = center.Y - math.abs(pose.RightVector.Y) * halfBeam - math.abs(pose.LookVector.Y) * halfLength
+		offset = CFrame.new(0, math.max(0, 0.35 - lowest), 0) * offset
+	end
+	return offset
 end
 
 return Weather

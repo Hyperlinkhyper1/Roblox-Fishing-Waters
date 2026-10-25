@@ -34,7 +34,11 @@ local TweenInfo = { new = function(time) return { Time = time } end }
 local Instance = { new = function(class)
   return { ClassName = class }
 end }
-local Lighting = { Ambient = Color3.fromRGB(0, 0, 0), objects = {} }
+local Lighting = {
+  Ambient = Color3.fromRGB(0, 0, 0), objects = {},
+  FogColor = Color3.fromRGB(190, 195, 200), FogStart = 50, FogEnd = 100000,
+}
+local surfaceFogColor = Lighting.FogColor
 local Terrain = { objects = {} }
 function Lighting:FindFirstChildOfClass(class) return self.objects[class] end
 function Lighting:FindFirstChild(name) return self.objects[name] end
@@ -98,55 +102,70 @@ local function move(x, y, z, dt)
   workspace.CurrentCamera.CFrame.Position = { X = x, Y = y, Z = z }
   render(dt or 1/60)
 end
-local function clearWater()
-  assert(Terrain.WaterTransparency == 0.9, "Nearby underwater scenery must stay clear")
+local function underwaterFog()
+  assert(Terrain.WaterTransparency > 0 and Terrain.WaterTransparency <= 0.01,
+    "Terrain's native underwater fog must limit visibility too; Lighting fog alone does not affect submerged terrain")
   assert(Terrain.WaterColor.B > Terrain.WaterColor.G and Terrain.WaterColor.G > Terrain.WaterColor.R,
-    "Native underwater distance fog must be blue in every biome")
-  assert(atmosphere.Density == 0.3 and atmosphere.Offset == 0, "Underwater fog must start at the camera")
-  assert(atmosphere.Haze == 0, "Surface haze must not obscure underwater scenery")
-  assert(atmosphere.Color.B > atmosphere.Color.G and atmosphere.Decay.B > atmosphere.Decay.R,
+    "Underwater water colour must be blue in every biome")
+  assert(atmosphere.Parent == nil, "Atmosphere must leave Lighting so distance fog can render")
+  assert(Lighting.FogStart == 0, "Thick underwater fog must start at the camera")
+  assert(math.abs(Lighting.FogEnd * 0.28 - 10) < 0.00001,
+    "Underwater fog must be fully opaque at 10 metres")
+  assert(Lighting.FogColor.B > Lighting.FogColor.G and Lighting.FogColor.G > Lighting.FogColor.R,
     "Underwater fog must be blue")
+end
+local function surfaceFog()
+  assert(atmosphere.Parent == Lighting, "Surface atmosphere must return after leaving water")
+  assert(Lighting.FogStart == 50 and Lighting.FogEnd == 100000 and rgbEqual(Lighting.FogColor, surfaceFogColor),
+    "Leaving water must restore the original distance fog settings")
 end
 Client.start()
 render(1/60)
+surfaceFog()
 assert(rgbEqual(Terrain.WaterColor, Biomes.Normal.look.waterColor), "Initial surface biome")
 move(0, -5, 0)
-clearWater()
+underwaterFog()
 local firstDiveTween = pending[#pending]
 move(0, -0.02, 0)
-clearWater()
+underwaterFog()
 assert(pending[#pending] == firstDiveTween, "Surface margin must avoid flickering")
 move(0, 5, 0)
+surfaceFog()
 assert(firstDiveTween.cancelled, "Rapid resurfacing must cancel the in-flight dive transition")
 assert(Terrain.WaterTransparency == 0.55 and grading.Brightness == 0, "Surface clarity and grading restored")
 assert(Lighting.Ambient.R == 0, "Surface ambient must be restored")
 for _, biome in Biomes.list do
   move(biome.center.X, -8, biome.center.Y, 0.6)
-  clearWater()
+  underwaterFog()
   move(biome.center.X, 5, biome.center.Y)
+  surfaceFog()
   assert(rgbEqual(Terrain.WaterColor, biome.look.waterColor), "Resurfacing must restore the current biome")
   assert(atmosphere.Density == biome.look.density, "Biome haze must return")
 end
 move(0, -8, 0, 0.6)
 move(3700, -8, 300, 0.6)
-clearWater()
+underwaterFog()
 move(3700, 5, 300)
+surfaceFog()
 assert(rgbEqual(Terrain.WaterColor, Biomes.Volcanic.look.waterColor), "Crossing biomes underwater must restore the new biome")
 move(Biomes.MapHalfSize + 20, -8, 0, 0.6)
+surfaceFog()
 assert(Terrain.WaterTransparency == 0.55, "Below sea level outside the ocean is not underwater")
 move(0, Biomes.SeaFloor - 5, 0, 0.6)
+surfaceFog()
 assert(Terrain.WaterTransparency == 0.55, "Below the sea floor is not underwater")
 workspace.CurrentCamera = nil
 render(1/60)
 workspace.CurrentCamera = { CFrame = { Position = { X = 0, Y = -8, Z = 0 } } }
 render(1/60)
-clearWater()
+underwaterFog()
 weather = { rain = 1, storm = 1, cloudCover = 1 }
 move(0, -8, 0, 0.6)
-clearWater()
+underwaterFog()
 assert(Lighting.Brightness == 2 and grading.Brightness == 0.06,
   "Storm darkening must preserve underwater clarity and grading")
 move(0, 5, 0)
+surfaceFog()
 assert(math.abs(Lighting.Brightness - 0.85) < 0.00001,
   "Resurfacing during a storm must restore current weather darkening")
 weather = { rain = 0.24, storm = 0, cloudCover = 0.5 }
@@ -155,7 +174,7 @@ assert(math.abs(Lighting.Brightness - (2 - 0.24 * 0.95)) < 0.00001,
   "Weather changes must refresh atmosphere without moving between biomes")
 assert(lightningGrading.Brightness == 0.37,
   "Biome/weather grading must leave the separate lightning grading effect untouched")
-print("PASS underwater clarity, blue fog, all biomes, rapid transitions, surface margin, ocean bounds, camera replacement and weather transitions")
+print("PASS 10-metre underwater fog, atmosphere/fog restoration, all biomes, rapid transitions, surface margin, ocean bounds, camera replacement and weather transitions")
 assert(Lighting.ClockTime == DayNight.START_HOUR, "Clients run the shared clock")
 weather = { rain = 0, storm = 0, cloudCover = 0 }
 move(0, 5, 0, 0.6)

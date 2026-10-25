@@ -247,7 +247,9 @@ local function heightAt(shape: Shape, p: Vector2): number
 	if dx < 25 and dz > 108 and dz < 238 then
 		local bank = math.clamp((25 - dx) / 8, 0, 1)
 		local ends = math.min(math.clamp((dz - 108) / 8, 0, 1), math.clamp((238 - dz) / 8, 0, 1))
-		if bank * ends >= 1 then return -18 end
+		if bank * ends >= 1 then
+			return -18
+		end
 	end
 	local d = coastDistance(shape, p)
 	local beach = beachWeight(shape, p)
@@ -769,7 +771,10 @@ local function buildSurf(shape: Shape, island: Model, beach: Instance)
 			source:SetAttribute("RunupHeight" .. index, math.max(0.16, runup.Y + 0.08))
 		end
 		source:SetAttribute("Along", along)
-		source:SetAttribute("EdgeFade", smoothstep((along - start) / 24) * smoothstep((length - start - along - 13) / 24))
+		source:SetAttribute(
+			"EdgeFade",
+			smoothstep((along - start) / 24) * smoothstep((length - start - along - 13) / 24)
+		)
 		source.Parent = surfModel
 		CollectionService:AddTag(source, "ShoreWaveSource")
 	end
@@ -928,6 +933,49 @@ end
 
 local DOCK_DETAIL_VERSION = 1
 
+local function ensureDockAccess(base: Model, frame: CFrame)
+	local existing = base:FindFirstChild("DockAccess")
+	if existing and existing:GetAttribute("LayoutVersion") == 1 then
+		return
+	end
+	if existing then
+		existing:Destroy()
+	end
+	-- The old landings have two abrupt rises (3.2 -> 4.4 -> 5.9).
+	-- Replace only those generated blocks, including on already saved maps.
+	for _, item in base:GetChildren() do
+		if item:IsA("BasePart") then
+			local p = frame:PointToObjectSpace(item.Position)
+			if
+				(item.Size - Vector3.new(7, 2.6, 3.2)).Magnitude < 0.01
+				and math.abs(math.abs(p.X) - 17) < 0.01
+				and math.abs(p.Y - 3.1) < 0.01
+				and math.abs(p.Z - 6.4) < 0.01
+			then
+				item:Destroy()
+			end
+		end
+	end
+	local access = Instance.new("Model")
+	access.Name = "DockAccess"
+	local rise, run, thickness = 2.7, 8, 0.4
+	local slope = CFrame.Angles(-math.atan2(rise, run), 0, 0)
+	for _, side in { -1, 1 } do
+		-- Top surface reaches quay height at its front edge (z=8).
+		-- Both ends overlap their supporting deck, with no jump required.
+		local ramp = Props.part(
+			access,
+			Vector3.new(7, thickness, math.sqrt(run * run + rise * rise) + 0.4),
+			frame * CFrame.new(side * 17, 4.55, 4) * slope * CFrame.new(0, -thickness / 2, 0),
+			QUAY,
+			M.Cobblestone
+		)
+		ramp.Name = "DockRamp"
+	end
+	access:SetAttribute("LayoutVersion", 1)
+	access.Parent = base
+end
+
 local function buildBaseDocks(base: Model, frame: CFrame, index: number)
 	-- Cosmetic variation has its own stream, so adding joinery never moves village props.
 	local rng = Random.new(82417 + index * 997)
@@ -939,6 +987,7 @@ local function buildBaseDocks(base: Model, frame: CFrame, index: number)
 		})
 	end
 	Props.dockLink(base, frame * CFrame.new(0, 3, -38), rng)
+	ensureDockAccess(base, frame)
 	base:SetAttribute("DockDetailVersion", DOCK_DETAIL_VERSION)
 end
 
@@ -988,10 +1037,7 @@ local function buildBase(
 		end
 	end
 
-	-- Stone landings lead down to the two boarded piers and their matching crosswalk.
-	for side = -1, 1, 2 do
-		Props.part(m, Vector3.new(7, 2.6, 3.2), cf(-6.4, side * 17, 3.1), QUAY, M.Cobblestone)
-	end
+	-- Ramps connect the quay to the two boarded piers without a jump.
 	buildBaseDocks(m, frame, index)
 
 	-- Keep the legacy prop builders' RNG draws: the beach and village share this
@@ -1676,11 +1722,7 @@ end
 -- Saved Studio maps skip Map.build, so this also runs on the normal startup path.
 function Harbour.ensureDocks(root: Instance)
 	for _, base in root:GetDescendants() do
-		if
-			not base:IsA("Model")
-			or not CollectionService:HasTag(base, Harbour.BASE_TAG)
-			or base:GetAttribute("DockDetailVersion") == DOCK_DETAIL_VERSION
-		then
+		if not base:IsA("Model") or not CollectionService:HasTag(base, Harbour.BASE_TAG) then
 			continue
 		end
 		local frame = base:GetAttribute("BoatDockFrame")
@@ -1691,6 +1733,10 @@ function Harbour.ensureDocks(root: Instance)
 			end
 			frame = spawn.CFrame * CFrame.new(-4, -6.1, -26)
 			base:SetAttribute("BoatDockFrame", frame)
+		end
+		ensureDockAccess(base, frame)
+		if base:GetAttribute("DockDetailVersion") == DOCK_DETAIL_VERSION then
+			continue
 		end
 		for _, item in base:GetChildren() do
 			if item:IsA("Model") and (item.Name == "Dock" or item.Name == "DockLink") then

@@ -27,8 +27,10 @@ function DrydockCamera.stop()
 end
 
 function DrydockCamera.show(shop: Model, launching: boolean, boatId: string?)
-	local previewAttribute = if not launching and boatId == "FishingBoat"
-		then "FishingBoatPreviewFrame"
+	local previewAttribute = if not launching
+			and boatId
+			and boatId ~= "Rowboat"
+		then boatId .. "PreviewFrame"
 		else "PreviewOriginFrame"
 	local start = shop:GetAttribute(previewAttribute)
 	local railEnd = shop:GetAttribute("SlipwayTopFrame")

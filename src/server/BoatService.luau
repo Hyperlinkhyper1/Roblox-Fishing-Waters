@@ -11,14 +11,24 @@ local BoatData = require(script.Parent.BoatData)
 local AdminCommands = require(script.Parent.AdminCommands)
 local Rowboat = require(script.Parent.Rowboat)
 local FishingBoat = require(script.Parent.FishingBoat)
+local Speedboat = require(script.Parent.Speedboat)
+local RacingSpeedboat = require(script.Parent.RacingSpeedboat)
+local PatrolBoat = require(script.Parent.PatrolBoat)
 local DrydockLaunch = require(script.Parent.DrydockLaunch)
 local BoatLaunchCollision = require(script.Parent.BoatLaunchCollision)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local BoatMotion = require(ReplicatedStorage.Shared.BoatMotion)
+local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
-local builders = { Rowboat = Rowboat, FishingBoat = FishingBoat }
+local builders = {
+	Rowboat = Rowboat,
+	FishingBoat = FishingBoat,
+	Speedboat = Speedboat,
+	PatrolBoat = PatrolBoat,
+	RacingSpeedboat = RacingSpeedboat,
+}
 
 local BoatService = {}
 local profiles = {}
@@ -74,10 +84,15 @@ local function publish(player: Player, state)
 	for id in BoatCatalog do
 		player:SetAttribute("Owns" .. id, state.profile.OwnedBoats[id] == true)
 	end
-	player:SetAttribute("OwnsStarterRod", state.profile.OwnedRods.StarterRod == true)
+	player:SetAttribute("OwnsStarterRod", state.status == "Ready" and state.profile.OwnedRods.StarterRod == true)
 	for _, stat in RodUpgrades.Order do
 		player:SetAttribute(RodUpgrades.attribute(stat), RodUpgrades.level(state.profile.RodUpgrades, stat))
 	end
+	for id in RodSkins.Skins do
+		player:SetAttribute("RodSkinCount" .. id, state.profile.RodSkins[id] or 0)
+	end
+	player:SetAttribute("RodSkin", state.profile.EquippedRodSkin or "")
+	player:SetAttribute("RodSkinSerial", state.profile.EquippedRodSkinSerial or 0)
 	local level, levelXP, requiredXP = BoatData.levelProgress(state.profile)
 	player:SetAttribute("Level", level)
 	player:SetAttribute("LevelXP", levelXP)
@@ -438,43 +453,6 @@ local function purchase(player: Player, boatId: string?)
 	end
 end
 
--- The fishing shop shares this wallet and transaction lock. Keeping all purchases
--- in this store prevents one shop from overwriting another shop's inventory.
-function BoatService.purchaseRod(player: Player): (boolean, string)
-	local state = profiles[player]
-	if not state or state.status ~= "Ready" then
-		return false, "Your wallet is still loading or unavailable. Please try again shortly."
-	end
-	if state.busy then
-		return false, "Another purchase is being saved. Please try again shortly."
-	end
-	if state.profile.OwnedRods.StarterRod then
-		return true, "You already own the starter rod."
-	end
-	state.busy = true
-	local success, saved = pcall(function()
-		return store:UpdateAsync("Player_" .. player.UserId, function(raw)
-			local profile = BoatData.purchaseRod(raw)
-			return profile
-		end)
-	end)
-	state.busy = false
-	if not success then
-		warn("[Fishing] Purchase failed for " .. player.UserId .. ": " .. tostring(saved))
-		return false, "The rod purchase could not be saved. Please try again."
-	end
-	local valid, profile = pcall(BoatData.decode, saved)
-	if not valid or profiles[player] ~= state or player.Parent ~= Players then
-		return false, "The rod purchase could not be confirmed for this session."
-	end
-	state.profile = profile
-	publish(player, state)
-	if not profile.OwnedRods.StarterRod then
-		return false, "You do not have enough cash for this rod."
-	end
-	return true, "Starter rod owned!"
-end
-
 local function removeBoat(player: Player)
 	local boat = active[player]
 	if boat then
@@ -538,7 +516,14 @@ local function updateSuspension(boat)
 	-- a permanent height error to hold up the hull and its seated passengers.
 	boat.lift.Force = Vector3.new(0, mass * gravity, 0)
 	boat.float.MaxAxesForce = Vector3.new(0, mass * (gravity + 100) * 4, 0)
-	boat.heading.MaxTorque = mass * (gravity + 100) * boat.spec.Length * 2
+	-- Allow acceleration, braking, turning and water drag, but let solid contacts
+	-- stop the hull rather than asking the solver for unlimited collision force.
+	local spec = boat.spec
+	boat.velocity.MaxForce = mass
+		* (math.max(spec.Acceleration, spec.BrakeDeceleration) + spec.ForwardSpeed * spec.TurnRate + gravity * 0.25)
+	-- Approximate hull inertia; keep righting torque proportional to hull size
+	-- without the oversized gravity-based torque that pried boats off obstacles.
+	boat.heading.MaxTorque = mass * (spec.Length ^ 2 + spec.Beam ^ 2) / 12 * 20
 end
 
 local function clearMotion(boat)
@@ -560,6 +545,7 @@ local function setParked(boat, parked: boolean)
 		-- an idle hull dynamic lets its contacts fight our server-side movers.
 		-- Anchor only the hull root, leaving deck collisions and seats usable.
 		boat.speed, boat.turn = 0, 0
+		boat.bank, boat.bankVelocity = 0, 0
 		boat.velocity.PlaneVelocity = Vector2.zero
 		clearMotion(boat)
 		-- Anchor every piece, not just the root. A standing player is carried by the
@@ -574,12 +560,21 @@ local function setParked(boat, parked: boolean)
 		-- Clients bob the anchored hull locally from this pose and swell clock.
 		boat.model:SetAttribute("ParkedFrame", boat.root.CFrame)
 		boat.model:SetAttribute("ParkedAt", workspace:GetServerTimeNow())
+		boat.model:SetAttribute("WaterlineRootOffset", boat.waterlineOffset)
 	else
 		-- Release from the pose clients have bobbed it to, so riders see no snap.
 		local rest, parkedAt = boat.model:GetAttribute("ParkedFrame"), boat.model:GetAttribute("ParkedAt")
 		if rest and parkedAt then
 			boat.model:PivotTo(
-				Weather.parkedOffset(rest, parkedAt, workspace:GetServerTimeNow()) * boat.model:GetPivot()
+				Weather.parkedOffset(
+					rest,
+					parkedAt,
+					workspace:GetServerTimeNow(),
+					boat.model:GetAttribute("DryFloorHeight"),
+					boat.model:GetAttribute("DryFloorHalfBeam"),
+					boat.model:GetAttribute("DryFloorHalfLength"),
+					boat.waterlineOffset
+				) * boat.model:GetPivot()
 			)
 		end
 		for _, piece in boat.model:GetDescendants() do
@@ -664,17 +659,21 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 	heading.Responsiveness = 10
 	heading.Parent = root
 
+	-- Drive at the current center of mass; passengers can move it away from
+	-- the hull root. The horizontal velocity below makes the stern the pivot.
+	local driveAttachment = Instance.new("Attachment")
+	driveAttachment.Name = "BoatDrive"
+	driveAttachment.Parent = root
 	local velocity = Instance.new("LinearVelocity")
 	velocity.Name = "Rowing"
-	velocity.Attachment0 = attachment
+	velocity.Attachment0 = driveAttachment
 	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
 	velocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
 	velocity.PrimaryTangentAxis = Vector3.xAxis
 	velocity.SecondaryTangentAxis = Vector3.zAxis
 	velocity.PlaneVelocity = Vector2.zero
-	-- Acceleration is limited by the velocity ramp, not by starving the solver
-	-- of the force it needs to overcome terrain-water drag and passengers.
-	velocity.ForceLimitsEnabled = false
+	velocity.ForceLimitsEnabled = true
+	velocity.ForceLimitMode = Enum.ForceLimitMode.Magnitude
 	velocity.Parent = root
 
 	model.Parent = workspace:FindFirstChild("PlayerBoats")
@@ -689,11 +688,14 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 		float = float,
 		lift = lift,
 		velocity = velocity,
+		driveAttachment = driveAttachment,
 		-- Each hull's physical root is below its waterline. Preserve that local
 		-- offset when the hull tilts, so its waterline follows the sampled surface.
 		waterlineOffset = frame:PointToObjectSpace(root.Position),
 		yaw = yaw,
 		speed = 0,
+		bank = 0,
+		bankVelocity = 0,
 		throttle = 0,
 		steer = 0,
 		lastInput = 0,
@@ -834,6 +836,33 @@ local function spawnBoat(player: Player, prompt: ProximityPrompt, boatId: string
 	notify(player, spec.Name .. " launched. Jump aboard and sit in the driver's seat to sail.")
 end
 
+local function buildPreviews(parent: Instance)
+	local folder = Instance.new("Folder")
+	folder.Name = "Previews"
+	for id, builder in builders do
+		local model = builder.build(CFrame.identity, true)
+		model.Name = id
+		for _, item in model:GetDescendants() do
+			if item:IsA("BasePart") then
+				item.Anchored = true
+				item.CanCollide, item.CanTouch, item.CanQuery = false, false, false
+			elseif
+				item:IsA("Constraint")
+				or item:IsA("JointInstance")
+				or item:IsA("ClickDetector")
+				or item:IsA("ProximityPrompt")
+				or item:IsA("BaseScript")
+				or item:IsA("Sound")
+			then
+				item:Destroy()
+			end
+		end
+		model.Parent = folder
+	end
+	-- Publish completed templates once; the dock does not need the shipyard streamed in.
+	folder.Parent = parent
+end
+
 function BoatService.start()
 	if started then
 		return
@@ -852,6 +881,7 @@ function BoatService.start()
 	feedback = Instance.new("RemoteEvent")
 	feedback.Name = "Feedback"
 	feedback.Parent = remotes
+	buildPreviews(remotes)
 
 	local setCommand = Instance.new("TextChatCommand")
 	setCommand.Name = "SetCommand"
@@ -956,18 +986,43 @@ function BoatService.start()
 			-- Integrate the speed command across frames; water drag and solver lag
 			-- must not restart the acceleration ramp at every physics step.
 			local speed, turn = BoatMotion.step(boat.speed, boat.turn or 0, throttle, steer, boat.spec, dt)
-			if not wantsMotion and speed == 0 and turn == 0 then
+			if
+				not wantsMotion
+				and speed == 0
+				and turn == 0
+				and math.abs(boat.bank) < 0.001
+				and math.abs(boat.bankVelocity) < 0.005
+			then
 				-- Preserve normal coasting and steering decay before holding still.
 				setParked(boat, true)
 				continue
 			end
 			boat.turn = turn
+			local root = boat.root
+			local actualForward = root.CFrame.LookVector
+			actualForward = Vector3.new(actualForward.X, 0, actualForward.Z)
+			actualForward = if actualForward.Magnitude > 0.0001
+				then actualForward.Unit
+				else CFrame.Angles(0, boat.yaw, 0).LookVector
 			-- Like a real boat (or car), reversing mirrors the steering direction.
-			boat.yaw -= turn * (if speed < 0 then -1 else 1) * math.min(dt, 0.1)
+			boat.yaw = BoatMotion.heading(
+				boat.yaw - turn * (if speed < 0 then -1 else 1) * math.min(dt, 0.1),
+				math.atan2(-actualForward.X, -actualForward.Z)
+			)
 			-- Seat welds change assembly mass when passengers board or leave.
 			updateSuspension(boat)
 			local wave = Weather.sample(boat.root.Position, serverTime)
 			local flatHeading = CFrame.Angles(0, boat.yaw, 0)
+			local yawRate = root.AssemblyAngularVelocity.Y
+			boat.bank, boat.bankVelocity = BoatMotion.bank(
+				boat.bank,
+				boat.bankVelocity,
+				root.AssemblyLinearVelocity:Dot(actualForward),
+				yawRate,
+				boat.spec,
+				workspace.Gravity,
+				dt
+			)
 			-- Project the chosen heading onto the wave plane. Sampling a shared
 			-- normal keeps pitch and roll correct at every heading, including
 			-- when the same hull moves between the sheltered lake and open sea.
@@ -975,6 +1030,9 @@ function BoatService.start()
 			local forward = flatHeading.LookVector
 			forward = (forward - normal * forward:Dot(normal)).Unit
 			local right = forward:Cross(normal).Unit
+			-- Bank relative to the wave plane, keeping the existing swell pitch.
+			local bankCos, bankSin = math.cos(boat.bank), math.sin(boat.bank)
+			right, normal = right * bankCos + normal * bankSin, normal * bankCos - right * bankSin
 			local surfaceFrame = CFrame.fromMatrix(Vector3.zero, right, normal, -forward)
 			boat.heading.CFrame = surfaceFrame
 			local rootOffset = surfaceFrame:VectorToWorldSpace(boat.waterlineOffset)
@@ -1006,7 +1064,15 @@ function BoatService.start()
 			if boat.model:GetAttribute("RowSteer") ~= steer then
 				boat.model:SetAttribute("RowSteer", steer)
 			end
-			local movement = flatHeading.LookVector * speed
+			-- Compensate only normal yaw around the stern. Impact-induced pitch,
+			-- roll or spinning must not feed extra horizontal propulsion back in.
+			local center = root.AssemblyCenterOfMass
+			boat.driveAttachment.Position = root.CFrame:PointToObjectSpace(center)
+			local stern = root.Position
+				+ root.CFrame:VectorToWorldSpace(Vector3.new(0, 0, boat.spec.Length * 0.4) - boat.waterlineOffset)
+			local lever = center - stern
+			local driveYaw = Vector3.new(0, math.clamp(yawRate, -boat.spec.TurnRate, boat.spec.TurnRate), 0)
+			local movement = actualForward * speed + driveYaw:Cross(lever)
 			boat.velocity.PlaneVelocity = Vector2.new(movement.X, movement.Z)
 		end
 	end)

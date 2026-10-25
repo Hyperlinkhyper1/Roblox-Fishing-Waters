@@ -25,6 +25,9 @@ function FishingBoat.build(frame: CFrame, anchored: boolean?): Model
 	model:SetAttribute("HullBeam", 9.6)
 	model:SetAttribute("PassengerSeats", 2)
 	model:SetAttribute("DriverSeat", "HelmSeat")
+	model:SetAttribute("DryFloorHeight", 1.1)
+	model:SetAttribute("DryFloorHalfBeam", 4.2)
+	model:SetAttribute("DryFloorHalfLength", 10.85)
 
 	local root = Instance.new("Part")
 	root.Name = "HullRoot"

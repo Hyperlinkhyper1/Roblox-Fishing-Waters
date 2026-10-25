@@ -278,24 +278,36 @@ local function bookButton(item, selected)
 		ribbon.BackgroundTransparency = 0.12
 	end
 end
--- A separate face lets the black background fade without fading the label or icon.
-local function navIcon(face, name)
-	local icon = decoration(face, "NavIcon", cream, UDim2.new(0, 11, 0.5, -11), UDim2.fromOffset(22, 22))
+-- Line icons drawn from native frames on a 22px grid, so they stay sharp at any
+-- scale and need no uploaded images. `position` is the icon's centre.
+local function glyph(parent, name, color, position, size)
+	local icon = decoration(parent, "Icon", color, position, UDim2.fromOffset(22, 22))
 	icon.BackgroundTransparency = 1
+	icon.AnchorPoint = Vector2.new(0.5, 0.5)
+	if size and size ~= 22 then
+		local scale = Instance.new("UIScale")
+		scale.Scale = size / 22
+		scale.Parent = icon
+	end
 	local function line(label, x, y, width, rotation)
-		local part = decoration(icon, label, cream, UDim2.fromOffset(x, y), UDim2.fromOffset(width, 2))
+		local part = decoration(icon, label, color, UDim2.fromOffset(x, y), UDim2.fromOffset(width, 2))
 		part.AnchorPoint = Vector2.new(0.5, 0.5)
 		part.Rotation = rotation or 0
 		Theme.corner(part, 1)
 		return part
 	end
 	local function outline(label, x, y, width, height, radius)
-		local part = decoration(icon, label, cream, UDim2.fromOffset(x, y), UDim2.fromOffset(width, height))
+		local part = decoration(icon, label, color, UDim2.fromOffset(x, y), UDim2.fromOffset(width, height))
 		part.BackgroundTransparency = 1
 		Theme.corner(part, radius or 2)
 		local stroke = Instance.new("UIStroke")
-		stroke.Color, stroke.Thickness, stroke.Transparency = cream, 1.5, 0.08
+		stroke.Color, stroke.Thickness, stroke.Transparency = color, 1.5, 0.08
 		stroke.Parent = part
+		return part
+	end
+	local function dot(label, x, y, width, height, radius)
+		local part = decoration(icon, label, color, UDim2.fromOffset(x, y), UDim2.fromOffset(width, height or width))
+		Theme.corner(part, radius or 1)
 		return part
 	end
 	if name == "Home" then
@@ -316,7 +328,7 @@ local function navIcon(face, name)
 			local knob = decoration(
 				icon,
 				"Knob" .. index,
-				cream,
+				color,
 				UDim2.fromOffset(if index == 2 then 14 else 6, y),
 				UDim2.fromOffset(4, 6)
 			)
@@ -326,7 +338,117 @@ local function navIcon(face, name)
 	elseif name == "Shop" then
 		outline("ShoppingBag", 3, 6, 16, 15, 2)
 		outline("Handle", 7, 1, 8, 10, 4)
+	elseif name == "Paths" then
+		line("Pole", 5, 11, 18, 90)
+		outline("Flag", 6, 3, 12, 8, 1)
+		dot("Stone1", 12, 18, 3)
+		dot("Stone2", 17, 18, 3)
+	elseif name == "Staff" then
+		outline("Head", 7, 2, 8, 8, 4)
+		outline("Shoulders", 3, 13, 16, 8, 6)
+	elseif name == "Upgrades" then
+		line("Shaft", 11, 12, 14, 90)
+		line("TipLeft", 8, 6, 8.5, -45)
+		line("TipRight", 14, 6, 8.5, 45)
+		line("Base", 11, 20, 16)
+	elseif name == "Overview" then
+		outline("Board", 4, 3, 14, 17, 2)
+		dot("Clip", 8, 1, 6, 3)
+		line("Row1", 11, 9, 8)
+		line("Row2", 11, 13, 8)
+		line("Row3", 11, 17, 5)
+	elseif name == "Achievements" then
+		outline("Cup", 6, 3, 10, 9, 4)
+		outline("HandleLeft", 2, 4, 5, 5, 2)
+		outline("HandleRight", 15, 4, 5, 5, 2)
+		line("Stem", 11, 15, 5, 90)
+		line("Base", 11, 19, 10)
+	elseif name == "Performance" then
+		line("BoltTop", 11, 6.5, 10.8, 123.7)
+		line("BoltMiddle", 11, 11, 7)
+		line("BoltBottom", 11, 15.5, 10.8, 123.7)
+	elseif name == "Audio" then
+		outline("Box", 3, 8, 5, 6, 1)
+		line("ConeTop", 10.5, 5.5, 7, -45)
+		line("ConeBottom", 10.5, 16.5, 7, 45)
+		line("Back", 13, 11, 16, 90)
+		line("Wave1", 17, 11, 6, 90)
+		line("Wave2", 20, 11, 11, 90)
+	elseif name == "Music" then
+		outline("NoteHead", 3, 14, 7, 6, 3)
+		line("Stem", 9.5, 9, 12, 90)
+		line("Flag", 13, 5, 8, 30)
+	elseif name == "Effects" then
+		line("Ray1", 11, 11, 18)
+		line("Ray2", 11, 11, 18, 90)
+		line("Ray3", 11, 11, 11, 45)
+		line("Ray4", 11, 11, 11, -45)
+	elseif name == "Codes" then
+		outline("Ring", 2, 7, 8, 8, 4)
+		line("Shaft", 15, 11, 11)
+		line("Tooth1", 16, 14, 4, 90)
+		line("Tooth2", 19.5, 14, 4, 90)
+	elseif name == "Titles" then
+		line("Left", 3, 12, 10, 90)
+		line("Right", 19, 12, 10, 90)
+		line("PeakA", 5, 9.5, 6.4, 51.3)
+		line("PeakB", 9, 8.5, 8, -60.3)
+		line("PeakC", 13, 8.5, 8, 60.3)
+		line("PeakD", 17, 9.5, 6.4, -51.3)
+		line("Band", 11, 18, 16)
+	elseif name == "Shadows" then
+		outline("Sun", 6, 2, 10, 10, 5)
+		line("Ground", 11, 16, 18)
+		line("Shadow1", 9, 20, 10)
+	elseif name == "Weather" then
+		outline("Cloud", 2, 7, 18, 9, 5)
+		outline("Puff", 7, 2, 9, 9, 5)
+		line("Drop1", 8, 19.5, 4, 70)
+		line("Drop2", 14, 19.5, 4, 70)
+	elseif name == "Coin" then
+		outline("Coin", 2, 2, 18, 18, 9)
+		line("Bar", 11, 11, 10, 90)
+		line("Top", 11, 8.5, 6)
+		line("Bottom", 11, 13.5, 6)
+	elseif name == "Robux" then
+		outline("Outer", 3, 3, 16, 16, 5)
+		outline("Inner", 8, 8, 6, 6, 1)
+	elseif name == "Lock" then
+		outline("Shackle", 6, 2, 10, 11, 5)
+		dot("Body", 4, 10, 14, 10, 2)
+	elseif name == "Check" then
+		line("Short", 6.5, 14.5, 7, 45)
+		line("Long", 13.5, 11, 14, -50.7)
+	elseif name == "Fish" then
+		outline("Body", 2, 6, 14, 10, 5)
+		line("TailTop", 18, 9, 5.6, -45)
+		line("TailBottom", 18, 13, 5.6, 45)
+		dot("Eye", 5, 9, 2)
+	elseif name == "AutoStore" then
+		outline("Crate", 3, 9, 16, 11, 1)
+		line("Lid", 11, 13, 16)
+		line("Arrow", 11, 3.5, 7, 90)
+		line("ArrowLeft", 9.5, 5.5, 4.2, 45)
+		line("ArrowRight", 12.5, 5.5, 4.2, 135)
 	end
+	return icon
+end
+
+-- A separate face lets the black background fade without fading the label or icon.
+local function navIcon(face, name)
+	glyph(face, name, cream, UDim2.new(0, 22, 0.5, 0)).Name = "NavIcon"
+end
+
+-- Puts an icon at the left of a themed button and moves its caption beside it.
+local function withIcon(item, name, color, size)
+	size = size or 20
+	local caption = item:FindFirstChild("ThemeCaption")
+	glyph(item:FindFirstChild("ThemeFace") or item, name, color or cream, UDim2.new(0, 10 + size / 2, 0.5, 0), size)
+	if caption then
+		caption.Position = UDim2.fromOffset(size + 18, 2)
+		caption.Size = UDim2.new(1, -(size + 24), 1, -4)
+	end
+	return item
 end
 
 local function navButton(item, selected)
@@ -449,6 +571,41 @@ local function button(parent, value, callback, props)
 	styleBookItem(item)
 	styleGlassItem(item, state)
 	item.Activated:Connect(callback)
+	return item
+end
+-- A section heading led by its icon, so headings read differently from buttons.
+local function iconTitle(parent, iconName, value, size, color, props)
+	local row = make("Frame", parent, { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, size + 14) })
+	for key, setting in props or {} do
+		row[key] = setting
+	end
+	local iconSize = size + 4
+	glyph(row, iconName, color or cream, UDim2.new(0, iconSize / 2, 0.5, 0), iconSize)
+	text(row, value, size, color or cream, {
+		Name = "Title",
+		Position = UDim2.fromOffset(iconSize + 10, 0),
+		Size = UDim2.new(1, -(iconSize + 10), 1, 0),
+		Font = Enum.Font.GothamBold,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	})
+	return row
+end
+-- Navigation tabs: an icon and a left-aligned label, with a bright bar on the active one.
+local function tabButton(parent, name, iconName, selected, compact, callback, props)
+	local item = button(parent, name, callback, props)
+	Theme.glassButton(item, if selected then "Selected" else "Normal")
+	item.TextXAlignment = Enum.TextXAlignment.Left
+	withIcon(item, iconName, cream, if compact then 16 else 22)
+	if compact then
+		item.TextScaled = true
+		make("UITextSizeConstraint", item.ThemeCaption, { MinTextSize = 9, MaxTextSize = item.TextSize })
+	end
+	if selected then
+		local marker = decoration(item.ThemeFace, "ActiveMarker", cream, UDim2.new(0, 0, 0.5, 0), UDim2.new(0, 3, 1, -16))
+		marker.AnchorPoint = Vector2.new(0, 0.5)
+		Theme.corner(marker, 2)
+	end
 	return item
 end
 local function list(parent, gap)
@@ -611,12 +768,15 @@ function Menu.start()
 	})
 	list(sidebar, 8)
 	local function refreshNavigation()
-		sidebar.Visible = active == nil and player:GetAttribute("DrydockScreenOpen") ~= true
+		sidebar.Visible = active == nil
+			and player:GetAttribute("DrydockScreenOpen") ~= true
+			and player:GetAttribute("RodCrateOpening") ~= true
 		if not sidebar.Visible and GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(sidebar) then
 			GuiService.SelectedObject = nil
 		end
 	end
 	player:GetAttributeChangedSignal("DrydockScreenOpen"):Connect(refreshNavigation)
+	player:GetAttributeChangedSignal("RodCrateOpening"):Connect(refreshNavigation)
 	refreshNavigation()
 	local overlay = make("TextButton", gui, {
 		Name = "MenuOverlay",
@@ -1719,6 +1879,7 @@ function Menu.start()
 					BackgroundColor3 = if afford then gold else navy,
 				})
 				Theme.glassButton(choose, if afford then "Selected" else "Disabled")
+				withIcon(choose, if afford then "Coin" else "Lock", if afford then cream else muted)
 				choose.Selectable = afford
 			elseif not completed then
 				local needs = {}
@@ -1785,42 +1946,56 @@ function Menu.start()
 		end
 	end
 	local function home()
-		text(content, "AVAILABLE CASH", 11, muted, { Size = UDim2.new(1, 0, 0, 18) })
-		text(content, "$" .. commas(profile.Cash), 22, cream, {
-			Position = UDim2.fromOffset(0, 20),
-			Size = UDim2.new(1, 0, 0, 28),
+		-- Cash sits in its own inset badge, apart from the clickable tabs below it.
+		local wallet = make("Frame", content, {
+			Name = "CashBadge",
+			BackgroundColor3 = paper,
+			Size = UDim2.fromOffset(if narrow then 200 else 210, 54),
+		})
+		Theme.glassPanel(wallet, true)
+		glyph(wallet, "Coin", green, UDim2.fromOffset(26, 27), 26)
+		text(wallet, "AVAILABLE CASH", 11, muted, { Position = UDim2.fromOffset(48, 6), Size = UDim2.new(1, -54, 0, 16) })
+		text(wallet, "$" .. commas(profile.Cash), 22, cream, {
+			Position = UDim2.fromOffset(48, 22),
+			Size = UDim2.new(1, -54, 0, 26),
 			Font = Enum.Font.GothamBold,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextWrapped = false,
 		})
 		local tabNames = { "Paths", "Staff", "Upgrades", "Overview", "Achievements" }
 		local tabRows = math.ceil(#tabNames / 2)
 		local tabs = make("Frame", content, {
 			Name = "HomeTabs",
 			BackgroundTransparency = 1,
-			Position = UDim2.fromOffset(0, 64),
-			Size = if narrow then UDim2.new(1, 0, 0, tabRows * 48) else UDim2.new(0, 200, 1, -64),
+			Position = UDim2.fromOffset(0, 66),
+			Size = if narrow then UDim2.new(1, 0, 0, tabRows * 48) else UDim2.new(0, 210, 1, -66),
 		})
 		for index, name in tabNames do
-			button(tabs, name, function()
+			tabButton(tabs, name, name, homeTab == name, narrow, function()
 				homeTab = name
 				render()
 			end, {
 				Name = name .. "Tab",
-				TextSize = if narrow then 13 else 18,
+				TextSize = if narrow then 13 else 17,
 				Position = if narrow
 					then UDim2.new((index - 1) % 2 / 2, 0, 0, math.floor((index - 1) / 2) * 48)
-					else UDim2.fromOffset(0, (index - 1) * 66),
-				Size = if narrow then UDim2.new(0.5, -4, 0, 44) else UDim2.new(1, -10, 0, 56),
-				BackgroundColor3 = if homeTab == name then gold else paper,
+					else UDim2.fromOffset(0, (index - 1) * 62),
+				Size = if narrow then UDim2.new(0.5, -4, 0, 42) else UDim2.new(1, -10, 0, 52),
 			})
 		end
-		local bodyTop = 64 + tabRows * 48 + 10
+		local bodyTop = 66 + tabRows * 48 + 10
 		local body = scroll(content, {
 			Name = "HomeBody",
-			Position = if narrow then UDim2.fromOffset(0, bodyTop) else UDim2.fromOffset(220, 64),
-			Size = if narrow then UDim2.new(1, 0, 1, -bodyTop) else UDim2.new(1, -220, 1, -64),
+			Position = if narrow then UDim2.fromOffset(0, bodyTop) else UDim2.fromOffset(226, 0),
+			Size = if narrow then UDim2.new(1, 0, 1, -bodyTop) else UDim2.new(1, -226, 1, 0),
 		})
 		list(body, 12)
-		make("UIPadding", body, { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 12) })
+		-- Room for the raised buttons' drop shadows and outlines inside the scroll clip.
+		make("UIPadding", body, {
+			PaddingTop = UDim.new(0, 2),
+			PaddingBottom = UDim.new(0, 12),
+			PaddingLeft = UDim.new(0, 2),
+		})
 		local order = 0
 		local function line(value, size, color, height)
 			order += 1
@@ -1829,7 +2004,8 @@ function Menu.start()
 				Size = UDim2.new(1, -10, 0, height or 32),
 			})
 		end
-		line(homeTab, 24, cream, 38).Font = Enum.Font.GothamBold
+		order += 1
+		iconTitle(body, homeTab, homeTab, 24, cream, { LayoutOrder = order, Size = UDim2.new(1, -10, 0, 40) })
 		if homeTab == "Paths" then
 			paths(body, function()
 				order += 1
@@ -1953,7 +2129,11 @@ function Menu.start()
 							TextSize = 14,
 							BackgroundColor3 = if chosen then green else gold,
 						})
-						Theme.glassButton(pick, if chosen then "Disabled" else "Selected")
+						-- The assigned boat reads as the active choice; the others are plain options.
+						Theme.glassButton(pick, if chosen then "Selected" else "Normal")
+						if chosen then
+							withIcon(pick, "Check", cream, 16)
+						end
 					end
 				else
 					local enabled = not hired and afford and not locked
@@ -1979,6 +2159,11 @@ function Menu.start()
 						}
 					)
 					Theme.glassButton(hire, if enabled then "Selected" else "Disabled")
+					withIcon(
+						hire,
+						if hired and id ~= "Fisherman" then "Check" elseif enabled then "Coin" else "Lock",
+						if enabled then cream else muted
+					)
 					hire.Selectable = enabled
 				end
 			end
@@ -2067,9 +2252,17 @@ function Menu.start()
 					Size = UDim2.new(1, -10, 0, 108),
 					LayoutOrder = order,
 				})
+				local tile = make("Frame", stockCard, {
+					Name = "FishTile",
+					BackgroundColor3 = paper,
+					Position = UDim2.fromOffset(12, 12),
+					Size = UDim2.fromOffset(84, 84),
+				})
+				Theme.glassPanel(tile, true)
+				glyph(tile, "Fish", cream, UDim2.fromScale(0.5, 0.5), 40)
 				text(stockCard, fishName(record), 17, cream, {
-					Position = UDim2.fromOffset(14, 10),
-					Size = UDim2.new(1, -28, 0, 28),
+					Position = UDim2.fromOffset(110, 10),
+					Size = UDim2.new(1, -124, 0, 28),
 				})
 				text(
 					stockCard,
@@ -2077,16 +2270,25 @@ function Menu.start()
 					14,
 					cream,
 					{
-						Position = UDim2.fromOffset(14, 42),
-						Size = UDim2.new(1, -28, 0, 24),
+						Position = UDim2.fromOffset(110, 42),
+						Size = UDim2.new(1, -124, 0, 24),
 					}
 				)
 				text(stockCard, item.Location, 12, muted, {
-					Position = UDim2.fromOffset(14, 72),
-					Size = UDim2.new(1, -28, 0, 26),
+					Position = UDim2.fromOffset(110, 72),
+					Size = UDim2.new(1, -124, 0, 26),
 				})
 			end
 		else
+			order += 1
+			local placeholder = make("Frame", body, {
+				Name = "EmptyIcon",
+				BackgroundColor3 = paper,
+				LayoutOrder = order,
+				Size = UDim2.fromOffset(96, 96),
+			})
+			Theme.glassPanel(placeholder, true)
+			glyph(placeholder, homeTab, muted, UDim2.fromScale(0.5, 0.5), 48)
 			line(if homeTab == "Upgrades" then "No upgrades yet." else "No achievements yet.", 18, muted, 56)
 			line(
 				if homeTab == "Upgrades"
@@ -2109,116 +2311,136 @@ function Menu.start()
 			if not (props and props.Size) then
 				item.Size = UDim2.new(1, -8, 0, 44)
 			end
-			settingsOutline(item)
 			return item
 		end
 		local tabs = make(
 			"Frame",
 			content,
-			{ BackgroundTransparency = 1, Size = if narrow then UDim2.new(1, 0, 0, 44) else UDim2.new(0, 200, 1, 0) }
+			{ BackgroundTransparency = 1, Size = if narrow then UDim2.new(1, 0, 0, 48) else UDim2.new(0, 210, 1, 0) }
 		)
 		for i, name in { "Performance", "Audio", "Codes", "Titles" } do
-			settingsButton(tabs, name, function()
+			tabButton(tabs, name, name, settingTab == name, narrow, function()
 				settingTab = name
 				render()
 			end, {
 				Name = name .. "Tab",
-				TextSize = if narrow then 12 else 18,
-				-- Keep the full stroke inside Content's clipping boundary on both layouts.
-				Position = if narrow then UDim2.new((i - 1) / 4, 2, 0, 2) else UDim2.fromOffset(2, (i - 1) * 66 + 2),
-				Size = if narrow then UDim2.new(0.25, -4, 0, 40) else UDim2.new(1, -12, 0, 56),
-				BackgroundColor3 = if settingTab == name then gold else Theme.Colors.Panel,
-				TextColor3 = if settingTab == name then navy else cream,
+				TextSize = if narrow then 12 else 17,
+				-- Keep the full stroke and drop shadow inside Content's clipping boundary on both layouts.
+				Position = if narrow then UDim2.new((i - 1) / 4, 2, 0, 2) else UDim2.fromOffset(2, (i - 1) * 62 + 2),
+				Size = if narrow then UDim2.new(0.25, -4, 0, 40) else UDim2.new(1, -12, 0, 52),
 			})
 		end
 		local body = scroll(content, {
-			Position = if narrow then UDim2.fromOffset(0, 56) else UDim2.fromOffset(220, 0),
-			Size = if narrow then UDim2.new(1, 0, 1, -56) else UDim2.new(1, -220, 1, 0),
+			Position = if narrow then UDim2.fromOffset(0, 56) else UDim2.fromOffset(226, 0),
+			Size = if narrow then UDim2.new(1, 0, 1, -56) else UDim2.new(1, -226, 1, 0),
 		})
-		-- Leave room for the outlines along the scrolling area's edges.
+		-- Leave room for the outlines and drop shadows along the scrolling area's edges.
 		make("UIPadding", body, {
 			PaddingLeft = UDim.new(0, 2),
 			PaddingRight = UDim.new(0, 2),
 			PaddingTop = UDim.new(0, 2),
-			PaddingBottom = UDim.new(0, 2),
+			PaddingBottom = UDim.new(0, 6),
 		})
 		list(body, 12)
-		text(
-			body,
-			settingTab,
-			24,
-			cream,
-			{ Font = Enum.Font.GothamBold, Size = UDim2.new(1, 0, 0, 42), LayoutOrder = 0 }
-		)
-		local function settingRow(key, name, description)
+		iconTitle(body, settingTab, settingTab, 24, cream, { Size = UDim2.new(1, -8, 0, 42), LayoutOrder = 0 })
+		local function settingRow(key, name, description, iconName)
 			local value = profile.Angler.Settings[key]
 			local row = make("Frame", body, {
+				Name = key .. "Row",
 				BackgroundColor3 = Theme.Colors.Panel,
 				BorderSizePixel = 0,
-				Size = UDim2.new(1, -8, 0, 128),
+				Size = UDim2.new(1, -8, 0, 116),
 				LayoutOrder = 1,
 			})
 			round(row)
 			settingsOutline(row)
+			local badge = make("Frame", row, {
+				Name = "SettingIcon",
+				BackgroundColor3 = paper,
+				Position = UDim2.fromOffset(14, 14),
+				Size = UDim2.fromOffset(40, 40),
+			})
+			Theme.glassPanel(badge, true)
+			glyph(badge, iconName, cream, UDim2.fromScale(0.5, 0.5), 22)
 			text(
 				row,
 				name,
 				18,
 				cream,
-				{ Position = UDim2.fromOffset(14, 8), Size = UDim2.new(1, -28, 0, 28), Font = Enum.Font.GothamBold }
+				{ Position = UDim2.fromOffset(66, 10), Size = UDim2.new(1, -80, 0, 26), Font = Enum.Font.GothamBold }
 			)
-			text(row, description, 13, muted, { Position = UDim2.fromOffset(14, 39), Size = UDim2.new(1, -28, 0, 36) })
+			text(row, description, 13, muted, { Position = UDim2.fromOffset(66, 36), Size = UDim2.new(1, -80, 0, 34) })
 			if type(value) == "boolean" then
-				settingsButton(row, if value then "On" else "Off", function()
+				-- A sliding switch: blue with the knob right when on, flat with the knob left when off.
+				local switch = settingsButton(row, if value then "On" else "Off", function()
 					request("Setting", key, not value)
 				end, {
 					Name = key,
-					Position = UDim2.new(1, -104, 1, -44),
-					Size = UDim2.fromOffset(90, 34),
-					BackgroundColor3 = if value then green else navy,
-					TextColor3 = if value then navy else cream,
+					Position = UDim2.new(1, -108, 1, -46),
+					Size = UDim2.fromOffset(92, 34),
+					BackgroundColor3 = if value then gold else navy,
 				})
+				Theme.corner(switch, 17)
+				Theme.corner(switch.ThemeFace, 17)
+				Theme.corner(switch.ThemeDrop, 17)
+				local knob =
+					decoration(switch.ThemeFace, "Knob", cream, UDim2.new(if value then 1 else 0, if value then -4 else 4, 0.5, 0), UDim2.fromOffset(26, 26))
+				knob.AnchorPoint = Vector2.new(if value then 1 else 0, 0.5)
+				Theme.corner(knob, 13)
+				switch.ThemeCaption.Position = UDim2.fromOffset(if value then 8 else 34, 2)
+				switch.ThemeCaption.Size = UDim2.new(1, -42, 1, -4)
 			else
+				-- Level bar plus step buttons, so the value is visible at a glance.
+				local track = decoration(row, "LevelTrack", Theme.Colors.Inset, UDim2.new(0, 14, 1, -29), UDim2.new(1, -230, 0, 8))
+				Theme.corner(track, 4)
+				local fill = decoration(track, "LevelFill", gold, UDim2.new(), UDim2.fromScale(math.clamp(value / 100, 0, 1), 1))
+				Theme.corner(fill, 4)
 				settingsButton(row, "−", function()
 					request("Setting", key, math.max(0, value - 10))
-				end, { Name = key .. "Down", Position = UDim2.new(1, -184, 1, -44), Size = UDim2.fromOffset(40, 34) })
-				text(row, value .. "%", 16, gold, {
-					Position = UDim2.new(1, -140, 1, -44),
-					Size = UDim2.fromOffset(76, 34),
+				end, { Name = key .. "Down", Position = UDim2.new(1, -196, 1, -46), Size = UDim2.fromOffset(44, 34), TextSize = 22 })
+				text(row, value .. "%", 16, cream, {
+					Position = UDim2.new(1, -148, 1, -46),
+					Size = UDim2.fromOffset(84, 34),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				})
 				settingsButton(row, "+", function()
 					request("Setting", key, math.min(100, value + 10))
-				end, { Name = key .. "Up", Position = UDim2.new(1, -54, 1, -44), Size = UDim2.fromOffset(40, 34) })
+				end, { Name = key .. "Up", Position = UDim2.new(1, -60, 1, -46), Size = UDim2.fromOffset(44, 34), TextSize = 22 })
 			end
 		end
 		if settingTab == "Performance" then
-			settingRow("Shadows", "Shadows", "Disable global shadows to reduce graphics work.")
-			settingRow("WeatherEffects", "Weather effects", "Show rain, wind particles, and lightning flashes.")
+			settingRow("Shadows", "Shadows", "Disable global shadows to reduce graphics work.", "Shadows")
+			settingRow("WeatherEffects", "Weather effects", "Show rain, wind particles, and lightning flashes.", "Weather")
 		elseif settingTab == "Audio" then
-			settingRow("MasterVolume", "Master volume", "Overall game audio.")
-			settingRow("MusicVolume", "Music", "Volume for music tracks.")
-			settingRow("EffectsVolume", "Sound effects", "Weather and other game sound effects.")
+			settingRow("MasterVolume", "Master volume", "Overall game audio.", "Audio")
+			settingRow("MusicVolume", "Music", "Volume for music tracks.", "Music")
+			settingRow("EffectsVolume", "Sound effects", "Weather and other game sound effects.", "Effects")
 		elseif settingTab == "Codes" then
 			text(
 				body,
 				"Enter a code to claim its reward. There are no active codes yet.",
 				15,
 				muted,
-				{ Size = UDim2.new(1, -8, 0, 66) }
+				{ Size = UDim2.new(1, -8, 0, 46) }
 			)
 			local field = input(body, "Enter code…")
 			field.Name = "CodeInput"
 			field.Size = UDim2.new(1, -8, 0, 42)
 			settingsOutline(field)
-			settingsButton(body, "Redeem code", function()
+			withIcon(settingsButton(body, "Redeem code", function()
 				request("Code", field.Text)
-			end, { BackgroundColor3 = gold, TextColor3 = navy })
+			end, { BackgroundColor3 = gold }), "Codes")
 		elseif settingTab == "Titles" then
 			text(body, "Choose a title you have unlocked.", 15, muted, { Size = UDim2.new(1, -8, 0, 40) })
-			settingsButton(
-				body,
+			-- The equipped choice is the blue one, with a tick; every other row is a plain option.
+			local function titleButton(value, chosen, callback)
+				local item = settingsButton(body, value, callback, { BackgroundColor3 = if chosen then gold else navy })
+				item.TextXAlignment = Enum.TextXAlignment.Left
+				withIcon(item, if chosen then "Check" else "Titles", if chosen then cream else muted)
+			end
+			titleButton(
 				if profile.Angler.EquippedTitle == "" then "No title · Selected" else "Remove title",
+				profile.Angler.EquippedTitle == "",
 				function()
 					request("Title", "")
 				end
@@ -2228,9 +2450,9 @@ function Menu.start()
 				local title = Catalog.Titles[id]
 				if owned and title then
 					unlocked += 1
-					settingsButton(
-						body,
+					titleButton(
 						title.Name .. (if profile.Angler.EquippedTitle == id then " · Selected" else ""),
+						profile.Angler.EquippedTitle == id,
 						function()
 							request("Title", id)
 						end
@@ -2303,26 +2525,59 @@ function Menu.start()
 			Shop = "The Fishing Waters Robux shop.",
 		})[active]
 		if active == "Shop" then
+			local owned = player:GetAttribute("OwnsAutoStore") == true
+			iconTitle(content, "Shop", "Gamepasses", 22, cream, { Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 0, 36) })
+			-- One product card: icon tile, details and its buy button grouped on a panel.
+			local product = make("Frame", content, {
+				Name = "AutoStoreCard",
+				BackgroundColor3 = paper,
+				Position = UDim2.fromOffset(8, 48),
+				Size = UDim2.new(1, -16, 0, if narrow then 330 else 228),
+			})
+			local tileSize = if narrow then 84 else 150
+			local tile = make("Frame", product, {
+				Name = "ProductIcon",
+				BackgroundColor3 = paper,
+				Position = UDim2.fromOffset(14, 14),
+				Size = UDim2.fromOffset(tileSize, tileSize),
+			})
+			Theme.glassPanel(tile, true)
+			glyph(tile, "AutoStore", if owned then green else cream, UDim2.fromScale(0.5, 0.5), tileSize * 0.55)
+			local left = if narrow then 14 else tileSize + 30
+			local textTop = if narrow then tileSize + 24 else 14
+			local titleLeft = if narrow then tileSize + 30 else left
+			text(product, "Auto Store", 24, cream, {
+				Position = UDim2.fromOffset(titleLeft, 14),
+				Size = UDim2.new(1, -(titleLeft + 14), 0, 32),
+				Font = Enum.Font.GothamBold,
+			})
+			local tag = make("Frame", product, {
+				Name = "PassTag",
+				BackgroundColor3 = paper,
+				Position = UDim2.fromOffset(titleLeft, 50),
+				Size = UDim2.fromOffset(if owned then 92 else 104, 24),
+			})
+			Theme.glassPanel(tag, true)
+			tag.ThemeBorder.Color = if owned then green else gold
+			tag.ThemeBorder.Transparency = 0.2
+			glyph(tag, if owned then "Check" else "Robux", if owned then green else cream, UDim2.fromOffset(14, 12), 14)
+			text(tag, if owned then "OWNED" else "GAMEPASS", 11, if owned then green else cream, {
+				Position = UDim2.fromOffset(26, 0),
+				Size = UDim2.new(1, -30, 1, 0),
+			})
 			text(
-				content,
-				"Auto Store",
-				24,
-				cream,
-				{ Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 0, 36) }
-			)
-			text(
-				content,
+				product,
 				"Automatically packs caught fish into your ship's hold while you are aboard your own ship. Tries every rotation for a snug fit. If the hold is full, the fish stays in your hand.",
-				16,
+				15,
 				muted,
 				{
-					Position = UDim2.fromOffset(8, 50),
-					Size = UDim2.new(1, -16, 0, 130),
+					Position = UDim2.fromOffset(left, if narrow then textTop else 84),
+					Size = UDim2.new(1, -(left + 14), 0, if narrow then 120 else 72),
 					TextWrapped = true,
+					TextYAlignment = Enum.TextYAlignment.Top,
 				}
 			)
-			local owned = player:GetAttribute("OwnsAutoStore") == true
-			button(content, if owned then "Owned" else "Buy Auto Store · Robux", function()
+			local buy = button(product, if owned then "Owned" else "Buy Auto Store · Robux", function()
 				if player:GetAttribute("OwnsAutoStore") == true then
 					return
 				end
@@ -2332,7 +2587,15 @@ function Menu.start()
 				if not ok then
 					notice.Text = "The purchase prompt could not open. Please try again."
 				end
-			end, { Position = UDim2.fromOffset(8, 194), Size = UDim2.new(1, -16, 0, 48) })
+			end, {
+				Name = "BuyAutoStore",
+				Position = UDim2.new(0, left, 1, -60),
+				Size = UDim2.new(1, -(left + 14), 0, 44),
+				BackgroundColor3 = if owned then navy else gold,
+				Active = not owned,
+			})
+			Theme.glassButton(buy, if owned then "Disabled" else "Selected")
+			withIcon(buy, if owned then "Check" else "Robux", if owned then green else cream)
 		elseif not profile then
 			empty(
 				content,
@@ -2358,7 +2621,7 @@ function Menu.start()
 	end)
 	for index, name in { "Bestiary", "Journal", "Home", "Equipment bag", "Settings", "Shop" } do
 		navButtons[name] = button(sidebar, name, function()
-			if player:GetAttribute("DrydockScreenOpen") then
+			if player:GetAttribute("DrydockScreenOpen") or player:GetAttribute("RodCrateOpening") then
 				return
 			end
 			if active == name then

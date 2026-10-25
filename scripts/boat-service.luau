@@ -77,7 +77,9 @@ function CFrame.new(position)
 	}, frameMeta)
 end
 function frameMeta.__add(frame, offset)
-	return CFrame.new(frame.Position + offset)
+	local result = CFrame.new(frame.Position + offset)
+	result.LookVector, result.RightVector, result.UpVector = frame.LookVector, frame.RightVector, frame.UpVector
+	return result
 end
 -- Only the identity parked offset is composed; it leaves the pose unchanged.
 function frameMeta.__mul(offset, frame)
@@ -117,6 +119,7 @@ function CFrame.fromMatrix(position, right, up, back)
 	frame.RightVector, frame.UpVector, frame.LookVector = right, up, -back
 	return frame
 end
+CFrame.identity = CFrame.new()
 
 local Enum = setmetatable({}, {
 	__index = function(self, category)
@@ -416,7 +419,6 @@ end)()
 local builtBoats = {}
 local Rowboat = {
 	build = function(frame, anchored)
-		assert(not anchored)
 		local model = Instance.new("Model")
 		model:SetAttribute("DryFloorHeight", 0.4)
 		model:SetAttribute("DryFloorHalfBeam", 3.25)
@@ -425,11 +427,14 @@ local Rowboat = {
 		root.AssemblyMass, root.AssemblyLinearVelocity = 100, Vector3.zero
 		local rootFrame = CFrame.new(frame.Position + Vector3.new(0, -0.4, 0))
 		root.Name, root.CFrame, root.Position, root.Parent = "Root", rootFrame, rootFrame.Position, model
+		root.AssemblyCenterOfMass = root.Position
 		model.PrimaryPart = root
 		local seat = Instance.new("VehicleSeat")
 		seat.Name, seat.Parent = "RowerSeat", model
 		seat.CFrame = CFrame.new(frame.Position + Vector3.new(0, 0.92, 0.6))
-		table.insert(builtBoats, model)
+		if not anchored then
+			table.insert(builtBoats, model)
+		end
 		return model
 	end,
 }
@@ -445,6 +450,29 @@ local FishingBoat = {
 			seat.Name, seat.Parent = "PassengerSeat" .. index, model
 		end
 		model:SetAttribute("BoatId", "FishingBoat")
+		return model
+	end,
+}
+local Speedboat = {
+	build = function(frame, anchored)
+		local model = FishingBoat.build(frame, anchored)
+		model:SetAttribute("BoatId", "Speedboat")
+		return model
+	end,
+}
+local PatrolBoat = {
+	build = function(frame, anchored)
+		local model = FishingBoat.build(frame, anchored)
+		model:SetAttribute("BoatId", "PatrolBoat")
+		return model
+	end,
+}
+local RacingSpeedboat = {
+	build = function(frame, anchored)
+		local model = FishingBoat.build(frame, anchored)
+		local passenger = Instance.new("Seat")
+		passenger.Name, passenger.Parent = "PassengerSeat3", model
+		model:SetAttribute("BoatId", "RacingSpeedboat")
 		return model
 	end,
 }
@@ -516,6 +544,9 @@ local dependencies = {
 	BoatData = BoatData,
 	Rowboat = Rowboat,
 	FishingBoat = FishingBoat,
+	Speedboat = Speedboat,
+	RacingSpeedboat = RacingSpeedboat,
+	PatrolBoat = PatrolBoat,
 	DrydockLaunch = DrydockLaunch,
 	BoatLaunchCollision = BoatLaunchCollision,
 	BoatCatalog = BoatCatalog,
@@ -583,6 +614,19 @@ local buyPrompt = makePrompt(npc, "TalkToShipwrightPrompt")
 buyPrompt.Parent.Name = "Head"
 buyPrompt.MaxActivationDistance = 8
 Service.start()
+local previewTemplates = ReplicatedStorage:FindFirstChild("Boating"):FindFirstChild("Previews")
+check(
+	previewTemplates and previewTemplates:FindFirstChild("Rowboat") and previewTemplates:FindFirstChild("FishingBoat"),
+	"Both boat builders publish previews outside the streamed world"
+)
+for _, part in previewTemplates:GetDescendants() do
+	if part:IsA("BasePart") then
+		check(
+			part.Anchored and not part.CanCollide and not part.CanTouch and not part.CanQuery,
+			"Preview parts must be anchored and non-interactive"
+		)
+	end
+end
 check(
 	groundPart.CollisionGroup == "IslandGround" and workspace.Terrain.CollisionGroup == "IslandGround",
 	"Saved island ground and terrain must remain solid during launch grace"
@@ -679,8 +723,10 @@ check(
 	"Confirmed progress must be mirrored to attributes"
 )
 check(
-	rich:FindFirstChild("leaderstats") == richStats and richStats:FindFirstChild("Money") == richMoney
-		and richMoney.Value == 500 and #richStats:GetDescendants() == 3,
+	rich:FindFirstChild("leaderstats") == richStats
+		and richStats:FindFirstChild("Money") == richMoney
+		and richMoney.Value == 500
+		and #richStats:GetDescendants() == 3,
 	"Purchases update the existing leaderboard values without duplicate stats"
 )
 Service.purchase(rich)
@@ -798,17 +844,26 @@ check(builtBoats[1].PrimaryPart.serverOwned, "Spawned boat physics must remain s
 local floatingBoat = Service.active[rich]
 local function checkSuspension(boat, label)
 	check(
+		boat.velocity.ForceLimitsEnabled
+			and boat.velocity.ForceLimitMode == Enum.ForceLimitMode.Magnitude
+			and boat.velocity.MaxForce > boat.root.AssemblyMass * boat.spec.Acceleration
+			and boat.velocity.MaxForce < boat.root.AssemblyMass * workspace.Gravity * 10,
+		label .. " drive must have finite force that scales with passengers and permits normal acceleration"
+	)
+	check(
 		boat.float.RigidityEnabled == false and boat.heading.RigidityEnabled == false,
 		label .. " must respect suspension force and speed limits during deck contacts"
 	)
 	check(
 		boat.float.ForceLimitMode == Enum.ForceLimitMode.PerAxis
 			and boat.float.ForceRelativeTo == Enum.ActuatorRelativeTo.World
-			and boat.float.MaxAxesForce.X == 0 and boat.float.MaxAxesForce.Z == 0,
+			and boat.float.MaxAxesForce.X == 0
+			and boat.float.MaxAxesForce.Z == 0,
 		label .. " waterline must never pull sideways against the drive motor"
 	)
 	check(
-		boat.float.ApplyAtCenterOfMass and boat.lift.ApplyAtCenterOfMass
+		boat.float.ApplyAtCenterOfMass
+			and boat.lift.ApplyAtCenterOfMass
 			and boat.lift.RelativeTo == Enum.ActuatorRelativeTo.World
 			and boat.lift.Attachment0 == boat.float.Attachment0,
 		label .. " vertical support must not apply an off-center or tilted force"
@@ -818,23 +873,32 @@ local function checkSuspension(boat, label)
 		label .. " soft suspension must support the current assembly weight without sag"
 	)
 	check(
-		boat.float.MaxVelocity > 0 and boat.float.MaxVelocity <= 6
-			and boat.heading.MaxAngularVelocity > 0 and boat.heading.MaxAngularVelocity <= 2
+		boat.float.MaxVelocity > 0
+			and boat.float.MaxVelocity <= 6
+			and boat.heading.MaxAngularVelocity > 0
+			and boat.heading.MaxAngularVelocity <= 2
 			and boat.float.MaxAxesForce.Y > boat.lift.Force.Y
 			and boat.float.MaxAxesForce.Y < math.huge
-			and boat.heading.MaxTorque > 0 and boat.heading.MaxTorque < math.huge,
+			and boat.heading.MaxTorque > 0
+			and boat.heading.MaxTorque < math.huge,
 		label .. " suspension must have bounded corrections with spare capacity for standing passengers"
 	)
 end
 checkSuspension(floatingBoat, "Dock rowboat")
 local function checkParked(boat, label)
-	check(boat.parked and boat.root.Anchored and boat.model:GetAttribute("Parked"), label .. " must be a fixed platform")
+	check(
+		boat.parked and boat.root.Anchored and boat.model:GetAttribute("Parked"),
+		label .. " must be a fixed platform"
+	)
 	check(
 		not boat.float.Enabled and not boat.lift.Enabled and not boat.heading.Enabled and not boat.velocity.Enabled,
 		label .. " must disable every force controller"
 	)
 	check(boat.speed == 0 and boat.turn == 0, label .. " must clear stored motion")
-	check(boat.model:GetAttribute("RowThrottle") == 0 and boat.model:GetAttribute("RowSteer") == 0, label .. " must stop rowing animation")
+	check(
+		boat.model:GetAttribute("RowThrottle") == 0 and boat.model:GetAttribute("RowSteer") == 0,
+		label .. " must stop rowing animation"
+	)
 end
 checkParked(floatingBoat, "New dock boat")
 local heldFrame, heldSupport = floatingBoat.root.CFrame, floatingBoat.lift.Force
@@ -842,9 +906,14 @@ local heldFrame, heldSupport = floatingBoat.root.CFrame, floatingBoat.lift.Force
 -- neither feed infinity to a mover nor reposition the deck to chase waves.
 floatingBoat.root.AssemblyMass = math.huge
 waveHeight = 1.5
-for _ = 1, 300 do RunService.Heartbeat:Fire(1 / 60) end
+for _ = 1, 300 do
+	RunService.Heartbeat:Fire(1 / 60)
+end
 checkParked(floatingBoat, "Boat while standing on deck")
-check(floatingBoat.root.CFrame == heldFrame and floatingBoat.lift.Force == heldSupport, "Idle waves must not move the deck or recalculate support with infinite mass")
+check(
+	floatingBoat.root.CFrame == heldFrame and floatingBoat.lift.Force == heldSupport,
+	"Idle waves must not move the deck or recalculate support with infinite mass"
+)
 floatingBoat.root.AssemblyMass = 100
 floatingBoat.seat.Occupant = { Parent = rich.Character }
 floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = 0, 0.04, now
@@ -858,10 +927,15 @@ floatingBoat.seat.Occupant = { Parent = rich.Character }
 sightResult = { Material = Enum.Material.Water }
 RunService.Heartbeat:Fire(1 / 60)
 checkSuspension(floatingBoat, "Released rowboat")
-check(not floatingBoat.root.Anchored and not floatingBoat.parked and floatingBoat.velocity.Enabled, "Owner input must release the boat and enable driving")
+check(
+	not floatingBoat.root.Anchored and not floatingBoat.parked and floatingBoat.velocity.Enabled,
+	"Owner input must release the boat and enable driving"
+)
 check(floatingBoat.root.ownerAssignments == 2, "Release must explicitly restore server ownership after unanchoring")
 check(
-	parkedRelease and parkedRelease.rest == heldFrame and parkedRelease.time == workspace.serverTime
+	parkedRelease
+		and parkedRelease.rest == heldFrame
+		and parkedRelease.time == workspace.serverTime
 		and floatingBoat.model:GetAttribute("ParkedAt") == parkedRelease.parkedAt,
 	"Release must start from the pose clients bobbed the parked hull to"
 )
@@ -875,6 +949,7 @@ check(
 )
 waveHeight, waveNormal = -1, Vector3.new(0.25, 1, 0.2).Unit
 floatingBoat.yaw = math.pi / 2
+floatingBoat.root.CFrame = CFrame.Angles(0, floatingBoat.yaw) + floatingBoat.root.Position
 floatingBoat.speed, floatingBoat.turn = 0, 0
 floatingBoat.steer = 0
 floatingBoat.seat.Occupant = { Parent = rich.Character }
@@ -884,9 +959,11 @@ sightResult = { Material = Enum.Material.Water }
 RunService.Heartbeat:Fire(1 / 60)
 checkSuspension(floatingBoat, "Occupied rowboat")
 check(
-	floatingBoat.float.Position.Y + 0.8 * waveNormal.Y
-		- math.abs(floatingBoat.heading.CFrame.RightVector.Y) * 3.25
-		- math.abs(floatingBoat.heading.CFrame.LookVector.Y) * 7.1 >= 0.35 - 0.00001,
+	floatingBoat.float.Position.Y
+			+ 0.8 * waveNormal.Y
+			- math.abs(floatingBoat.heading.CFrame.RightVector.Y) * 3.25
+			- math.abs(floatingBoat.heading.CFrame.LookVector.Y) * 7.1
+		>= 0.35 - 0.00001,
 	"Occupied rowboat must keep its lowest sole corner clear in a trough"
 )
 check(
@@ -908,16 +985,105 @@ workspace.Gravity = 100
 RunService.Heartbeat:Fire(1 / 60)
 checkSuspension(floatingBoat, "Rowboat with changed gravity")
 workspace.Gravity = originalGravity
-for _ = 1, 300 do RunService.Heartbeat:Fire(1 / 60) end
+for _ = 1, 300 do
+	RunService.Heartbeat:Fire(1 / 60)
+end
 checkParked(floatingBoat, "Boat after dismounting and coasting to rest")
-check(floatingBoat.root.AssemblyLinearVelocity.Magnitude == 0 and floatingBoat.root.AssemblyAngularVelocity.Magnitude == 0, "Parking must clear residual linear and angular velocity")
+check(
+	floatingBoat.root.AssemblyLinearVelocity.Magnitude == 0 and floatingBoat.root.AssemblyAngularVelocity.Magnitude == 0,
+	"Parking must clear residual linear and angular velocity"
+)
 floatingBoat.seat.Occupant = { Parent = rich.Character }
 floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = 0, 0.5, now
 RunService.Heartbeat:Fire(1 / 60)
 check(not floatingBoat.parked and floatingBoat.turn > 0, "Steering in place must also release the hull")
 floatingBoat.steer = 0
-for _ = 1, 300 do RunService.Heartbeat:Fire(1 / 60) end
+for _ = 1, 300 do
+	RunService.Heartbeat:Fire(1 / 60)
+end
 checkParked(floatingBoat, "Neutral helm after turning")
+
+-- Feed measured motion into the real controller: banking must follow actual
+-- turns, and the stern must have no lateral velocity at any hull heading.
+waveHeight, waveNormal = 0, Vector3.new(0, 1, 0)
+local rowSpec = floatingBoat.spec
+for id, spec in BoatCatalog do
+	floatingBoat.spec = spec
+	for _, yaw in { 0, math.pi / 2, math.pi * 0.75 } do
+		for _, direction in { -1, 1 } do
+			floatingBoat.yaw = yaw
+			local root = floatingBoat.root
+			root.CFrame = CFrame.Angles(0, yaw) + root.Position
+			local forward, right = root.CFrame.LookVector, root.CFrame.RightVector
+			root.AssemblyCenterOfMass = root.Position + right * 0.7 + forward * 1.2
+			floatingBoat.speed = if direction > 0 then spec.ForwardSpeed else -spec.ReverseSpeed
+			floatingBoat.turn, floatingBoat.bank, floatingBoat.bankVelocity = 0, 0, 0
+			floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = direction, 1, now
+			-- Release first: parking deliberately clears all measured velocities.
+			RunService.Heartbeat:Fire(1 / 60)
+			root.AssemblyAngularVelocity = Vector3.new(0.12, -spec.TurnRate * direction, 0.2)
+			root.AssemblyLinearVelocity = forward * floatingBoat.speed
+			for _ = 1, 120 do
+				RunService.Heartbeat:Fire(1 / 60)
+			end
+			checkSuspension(floatingBoat, id .. " while turning")
+			local headingError = math.atan2(math.sin(floatingBoat.yaw - yaw), math.cos(floatingBoat.yaw - yaw))
+			check(math.abs(headingError) <= 0.350001, id .. " steering held against a blocked hull must not wind up")
+			check(floatingBoat.bank < -0.01, id .. " must lean into a moving turn in forward and reverse")
+			check(math.abs(floatingBoat.bank) <= math.rad(spec.MaxBankAngle), id .. " bank must respect hull stability")
+			check(floatingBoat.heading.CFrame.RightVector.Y < 0, id .. " right turn must lower the right side")
+			local pose = floatingBoat.heading.CFrame
+			local lowestDeck = floatingBoat.float.Position.Y
+				+ (floatingBoat.model:GetAttribute("DryFloorHeight") - floatingBoat.waterlineOffset.Y) * pose.UpVector.Y
+				- math.abs(pose.RightVector.Y) * floatingBoat.model:GetAttribute("DryFloorHalfBeam")
+				- math.abs(pose.LookVector.Y) * floatingBoat.model:GetAttribute("DryFloorHalfLength")
+			check(lowestDeck >= 0.35 - 1e-6, id .. " banking must keep the lowest deck corner above swimming water")
+			local commanded =
+				Vector3.new(floatingBoat.velocity.PlaneVelocity.X, 0, floatingBoat.velocity.PlaneVelocity.Y)
+			local stern = root.Position
+				+ root.CFrame:VectorToWorldSpace(Vector3.new(0, 0, spec.Length * 0.4) - floatingBoat.waterlineOffset)
+			local yawVelocity = Vector3.new(0, root.AssemblyAngularVelocity.Y, 0)
+			local sternVelocity = commanded + yawVelocity:Cross(stern - root.AssemblyCenterOfMass)
+			check(
+				math.abs(sternVelocity:Dot(right)) < 1e-6,
+				id .. " stern must not slide sideways with an off-center passenger"
+			)
+			local bow = stern + forward * spec.Length
+			local bowVelocity = commanded + yawVelocity:Cross(bow - root.AssemblyCenterOfMass)
+			check(bowVelocity:Dot(right) * direction > 1, id .. " bow must swing around the stern")
+			root.AssemblyAngularVelocity = Vector3.new(30, -spec.TurnRate * direction * 50, -40)
+			RunService.Heartbeat:Fire(1 / 60)
+			local impactCommand =
+				Vector3.new(floatingBoat.velocity.PlaneVelocity.X, 0, floatingBoat.velocity.PlaneVelocity.Y)
+			check(
+				(impactCommand - commanded).Magnitude < 1e-6,
+				id .. " impact pitch, roll and excessive spin must not amplify drive velocity"
+			)
+			check(
+				(
+					root.CFrame:VectorToWorldSpace(floatingBoat.driveAttachment.Position)
+					- (root.AssemblyCenterOfMass - root.Position)
+				).Magnitude < 1e-6,
+				id .. " drive force must follow passenger changes to the center of mass"
+			)
+			root.AssemblyAngularVelocity = Vector3.zero
+			for _ = 1, 120 do
+				RunService.Heartbeat:Fire(1 / 60)
+			end
+			check(math.abs(floatingBoat.bank) < 0.001, id .. " must settle when actual rotation stops")
+			local straight =
+				Vector3.new(floatingBoat.velocity.PlaneVelocity.X, 0, floatingBoat.velocity.PlaneVelocity.Y)
+			check(math.abs(straight:Dot(right)) < 1e-6, id .. " blocked yaw must not create sideways propulsion")
+		end
+	end
+end
+floatingBoat.spec = rowSpec
+floatingBoat.throttle, floatingBoat.steer = 0, 0
+floatingBoat.root.AssemblyLinearVelocity = Vector3.zero
+for _ = 1, 1200 do
+	RunService.Heartbeat:Fire(1 / 60)
+end
+checkParked(floatingBoat, "All hulls after banking and coasting")
 floatingBoat.seat.Occupant = nil
 waveHeight, waveNormal, sightResult = 0, Vector3.new(0, 1, 0), nil
 Service.spawnBoat(rich, spawnPrompt)
@@ -940,76 +1106,24 @@ check(
 )
 check(#feedback.messages > 0, "Rejected and successful actions must provide player feedback")
 local rodBuyer = makePlayer(51, 700, true)
-before = store.updates
-local rodSuccess = Service.purchaseRod(rodBuyer)
+check(rodBuyer:GetAttribute("OwnsStarterRod") == true, "Loaded players automatically own a starter rod")
 check(
-	rodSuccess and store.updates == before + 1,
-	"Rod ownership must be committed atomically in the existing wallet store"
+	rodBuyer:GetAttribute("Cash") == 700 and rodBuyer:GetAttribute("OwnsRowboat"),
+	"Starting rods preserve cash and boats"
+)
+local newAngler = makePlayer(52)
+check(
+	newAngler:GetAttribute("OwnsStarterRod") == true and newAngler:GetAttribute("Cash") == 0,
+	"New anglers start with a rod and no cash"
 )
 check(
-	rodBuyer:GetAttribute("OwnsStarterRod") == true
-		and rodBuyer:GetAttribute("Cash") == 700
-		and rodBuyer:GetAttribute("OwnsRowboat"),
-	"A free rod must preserve cash and existing boats"
+	Service.updateProgress(rodBuyer, function(profile)
+		profile.Cash += 1
+	end),
+	"Migrated profiles can save"
 )
-Service.purchaseRod(rodBuyer)
-check(store.updates == before + 1, "Repeated rod purchase requests must not write again")
-local rodFailure = makePlayer(52, 1000)
-store.updateFailures = 1
-local failedRod = Service.purchaseRod(rodFailure)
-check(
-	not failedRod and rodFailure:GetAttribute("OwnsStarterRod") == false and not store.data.Player_52.OwnedRods,
-	"A failed save must never award a rod"
-)
-check(not Service.profiles[rodFailure].busy, "A failed rod save must release the shared purchase lock")
-before = store.updates
-local unavailableRod = Service.purchaseRod(unavailable)
-check(not unavailableRod and store.updates == before, "Unavailable wallets cannot save rod purchases")
-local concurrentRod = makePlayer(53, 1000)
-before = store.updates
-store.beforeUpdate = function()
-	Service.purchase(concurrentRod)
-	Service.purchaseRod(concurrentRod)
-end
-check(Service.purchaseRod(concurrentRod), "First rod transaction must complete")
-store.beforeUpdate = nil
-check(
-	store.updates == before + 1 and concurrentRod:GetAttribute("Cash") == 1000,
-	"Boat and rod purchases must share the same reentrancy lock"
-)
-local rodThenBoat = makePlayer(54, 1000)
-check(Service.purchaseRod(rodThenBoat), "Rod transaction must succeed before buying a boat")
-Service.purchase(rodThenBoat)
-check(
-	rodThenBoat:GetAttribute("Cash") == 500
-		and rodThenBoat:GetAttribute("OwnsStarterRod")
-		and rodThenBoat:GetAttribute("OwnsRowboat"),
-	"Buying a boat after a rod must retain both inventories"
-)
-local rodRetry = makePlayer(55)
-store.retryTransform = true
-check(Service.purchaseRod(rodRetry), "Retried rod transforms must succeed")
-store.retryTransform = false
-check(
-	rodRetry:GetAttribute("Cash") == 0 and rodRetry:GetAttribute("OwnsStarterRod"),
-	"Retried rod transforms must retain free pricing and ownership"
-)
-local rodCorrupt = makePlayer(56, 700)
-store.data.Player_56 = "corrupt"
-check(
-	not Service.purchaseRod(rodCorrupt) and store.data.Player_56 == "corrupt",
-	"Rod purchases must not overwrite corrupt saved data"
-)
-local rodDeparture = makePlayer(57, 700)
-store.beforeUpdate = function()
-	Players.PlayerRemoving:Fire(rodDeparture)
-end
-check(not Service.purchaseRod(rodDeparture), "A departed session must not receive rod ownership publication")
-store.beforeUpdate = nil
-check(
-	not rodDeparture:GetAttribute("OwnsStarterRod") and Service.profiles[rodDeparture] == nil,
-	"A returning save must not recreate a departed rod buyer"
-)
+check(store.data.Player_51.OwnedRods.StarterRod, "Subsequent saves persist starter ownership")
+check(unavailable:GetAttribute("OwnsStarterRod") == false, "Unavailable profiles do not publish ownership")
 local admin = makePlayer(2541746813, 700, true)
 local setCommand = TextChatService:FindFirstChild("SetCommand")
 check(setCommand and setCommand.PrimaryAlias == "/set", "The server must register the /set chat command")
@@ -1091,7 +1205,7 @@ check(
 before = store.updates
 store.beforeUpdate = function()
 	command(admin, "/set cash 999")
-	Service.purchaseRod(admin)
+	Service.purchase(admin)
 end
 store.retryTransform = true
 command(admin, "/set cash 500")
@@ -1286,8 +1400,8 @@ check(not Service.updateProgress(menuPlayer, function()
 end), "Menus honor the purchase lock")
 Service.profiles[menuPlayer].busy = false
 check(
-	Service.purchaseRod(menuPlayer) and store.data.Player_91.Angler.Settings.MasterVolume == 30,
-	"Equipment purchases preserve menu progress"
+	Service.getProfile(menuPlayer).OwnedRods.StarterRod and store.data.Player_91.Angler.Settings.MasterVolume == 30,
+	"Starter inventory preserves menu progress"
 )
 store.retryTransform = true
 check(
@@ -1408,7 +1522,10 @@ workingFisher.yaw = 0
 workingFisher.speed, workingFisher.turn = 0, 0
 workingFisher.throttle, workingFisher.steer, workingFisher.lastInput = 1, 0, now
 RunService.Heartbeat:Fire(1 / 60)
-check(math.abs(workingFisher.velocity.PlaneVelocity.Y + BoatCatalog.FishingBoat.Acceleration / 60) < 0.00001, "Fishing boat starts with bounded acceleration")
+check(
+	math.abs(workingFisher.velocity.PlaneVelocity.Y + BoatCatalog.FishingBoat.Acceleration / 60) < 0.00001,
+	"Fishing boat starts with bounded acceleration"
+)
 for _ = 1, 1200 do
 	-- Model a lagging actuator rather than treating requested speed as actual.
 	local measured = workingFisher.root.AssemblyLinearVelocity
@@ -1416,18 +1533,27 @@ for _ = 1, 1200 do
 	workingFisher.root.AssemblyLinearVelocity = measured + (requested - measured) * (1 - math.exp(-4 / 60))
 	RunService.Heartbeat:Fire(1 / 60)
 end
-check(-workingFisher.root.AssemblyLinearVelocity.Z > 39.5, "Real service must build faster cruise speed despite actuator lag")
+check(
+	-workingFisher.root.AssemblyLinearVelocity.Z > 39.5,
+	"Real service must build faster cruise speed despite actuator lag"
+)
 workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, -40)
 workingFisher.speed = 40
 RunService.Heartbeat:Fire(1 / 60)
 check(workingFisher.velocity.PlaneVelocity.Y == -40, "Fishing boat reaches its faster top speed")
 workingFisher.throttle = -1
 RunService.Heartbeat:Fire(1 / 60)
-check(math.abs(workingFisher.velocity.PlaneVelocity.Y + 40 - BoatCatalog.FishingBoat.BrakeDeceleration / 60) < 0.00001, "Reversing brakes before changing direction")
+check(
+	math.abs(workingFisher.velocity.PlaneVelocity.Y + 40 - BoatCatalog.FishingBoat.BrakeDeceleration / 60) < 0.00001,
+	"Reversing brakes before changing direction"
+)
 workingFisher.root.AssemblyLinearVelocity = Vector3.zero
 workingFisher.speed = 0
 RunService.Heartbeat:Fire(1 / 60)
-check(math.abs(workingFisher.velocity.PlaneVelocity.Y - BoatCatalog.FishingBoat.Acceleration / 60) < 0.00001, "A stopped hull restarts gently in reverse")
+check(
+	math.abs(workingFisher.velocity.PlaneVelocity.Y - BoatCatalog.FishingBoat.Acceleration / 60) < 0.00001,
+	"A stopped hull restarts gently in reverse"
+)
 workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, 14)
 workingFisher.speed = -14
 RunService.Heartbeat:Fire(1 / 60)
@@ -1439,8 +1565,8 @@ check(
 	"Fishing boat steering responds faster while easing into its reverse turn rate"
 )
 check(
-	workingFisher.velocity.ForceLimitsEnabled == false,
-	"Velocity ramp must have enough solver force to overcome water drag"
+	workingFisher.velocity.ForceLimitsEnabled and workingFisher.velocity.MaxForce < math.huge,
+	"Velocity ramp must remain force-limited when driving into solid objects"
 )
 request.OnServerEvent:Fire(otherBuyer, "Row", 1, 1)
 check(workingFisher.steer == 1, "Other players cannot send controls to this boat")
@@ -1522,6 +1648,133 @@ check(
 check(
 	not occupiedBuyer:GetAttribute("OwnsRowboat") and occupiedBuyer:GetAttribute("Cash") == 1000,
 	"Occupied replacement rejection happens before charging"
+)
+
+local speedBuyer = makePlayer(116, 6500)
+local speedPreview = Speedboat.build(CFrame.new(Vector3.new(0, 0, 100)), true)
+local speedReservation = { player = speedBuyer, preview = speedPreview, boatId = "Speedboat" }
+function DrydockLaunch.reserve(shop, player, boatId)
+	speedReservation.shop = shop
+	check(player == speedBuyer and boatId == "Speedboat", "Speedboat reserves its selected display")
+	return speedReservation
+end
+function DrydockLaunch.run(reservation, activate)
+	check(reservation == speedReservation, "Speedboat uses its own reservation")
+	return activate(speedBuyer, CFrame.new(Vector3.new(0, 0, 100)), speedPreview)
+end
+Service.purchase(speedBuyer, "Speedboat")
+check(
+	speedBuyer:GetAttribute("Cash") == 0 and speedBuyer:GetAttribute("OwnsSpeedboat"),
+	"Saved speedboat purchase charges exactly 6500"
+)
+check(
+	store.data.Player_116.OwnedBoats.Speedboat and store.data.Player_116.Cash == 0,
+	"Speedboat ownership is persisted"
+)
+local drivenSpeedboat = Service.active[speedBuyer]
+check(
+	drivenSpeedboat and drivenSpeedboat.model == speedPreview and drivenSpeedboat.spec == BoatCatalog.Speedboat,
+	"Purchased speedboat uses the correct model and handling"
+)
+base:SetAttribute("OwnerUserId", speedBuyer.UserId)
+speedBuyer:SetAttribute("BaseId", 1)
+drivenSpeedboat.seat.Occupant = nil
+Service.spawnBoat(speedBuyer, spawnPrompt, "Speedboat")
+check(
+	Service.active[speedBuyer].model:GetAttribute("BoatId") == "Speedboat" and speedPreview.destroyed,
+	"Owned speedboat respawns at the player's dock"
+)
+
+-- Skin copies share the wallet transaction: failed commits cannot grant copies,
+-- and UpdateAsync retries cannot duplicate a reward or consume extra serials.
+local skinBuyer = makePlayer(119, 1400)
+check(
+	Service.updateProgress(skinBuyer, function(profile)
+		profile.OwnedRods.StarterRod = true
+	end),
+	"Starter rod ownership saves before opening skins"
+)
+store.retryTransform = true
+local awardedSerial
+check(
+	Service.updateProgress(skinBuyer, function(profile)
+		local outcome, serial = BoatData.openRodCrate(profile, "TideCrate", "BoneRod")
+		assert(outcome == "Opened")
+		awardedSerial = serial
+	end),
+	"A skin reward commits through the wallet store"
+)
+store.retryTransform = false
+local skinProfile = Service.getProfile(skinBuyer)
+check(
+	#skinProfile.RodSkinCopies == 1 and awardedSerial == 1 and skinProfile.Cash == 1050,
+	"Retried reward charges once and keeps one serial"
+)
+store.updateFailures = 1
+check(not Service.updateProgress(skinBuyer, function(profile)
+	assert(BoatData.openRodCrate(profile, "TideCrate", "BoneRod") == "Opened")
+end), "A failed crate commit reports failure")
+skinProfile = Service.getProfile(skinBuyer)
+check(
+	#skinProfile.RodSkinCopies == 1 and skinProfile.NextRodSkinSerial.BoneRod == 2 and skinProfile.Cash == 1050,
+	"Failed saves preserve copies, serial counter and wallet"
+)
+check(
+	Service.updateProgress(skinBuyer, function(profile)
+		assert(BoatData.openRodCrate(profile, "TideCrate", "BoneRod") == "Opened")
+		assert(BoatData.equipRodSkin(profile, "BoneRod", 2) == "Equipped")
+	end),
+	"A second numbered duplicate can be saved and selected"
+)
+check(
+	skinBuyer:GetAttribute("RodSkinSerial") == 2 and skinBuyer:GetAttribute("RodSkinCountBoneRod") == 2,
+	"Committed serial and count publish to the client"
+)
+Service.profiles[skinBuyer] = nil
+Service.loadPlayer(skinBuyer)
+skinProfile = Service.getProfile(skinBuyer)
+check(
+	#skinProfile.RodSkinCopies == 2
+		and skinProfile.RodSkinCopies[2].Serial == 2
+		and skinProfile.EquippedRodSkinSerial == 2
+		and skinProfile.NextRodSkinSerial.BoneRod == 3,
+	"Reload restores every numbered copy and the selected duplicate"
+)
+skinProfile.RodSkinCopies[1].Serial = 50
+check(
+	Service.getProfile(skinBuyer).RodSkinCopies[1].Serial == 1,
+	"Client inventory snapshots cannot mutate saved serials"
+)
+-- END_SKIN_INVENTORY_CHECKS --
+
+-- Racing speedboat follows the same saved purchase and physical launch path.
+local racingBuyer = makePlayer(125, 12500)
+local racingPreview = RacingSpeedboat.build(CFrame.new(Vector3.new(0, 0, 100)), true)
+function DrydockLaunch.reserve(shop, player, boatId)
+	check(player == racingBuyer and boatId == "RacingSpeedboat", "Racing purchase reserves its own display")
+	return { shop = shop, player = player, boatId = boatId }
+end
+function DrydockLaunch.run(reservation, activate)
+	return activate(racingBuyer, CFrame.new(Vector3.new(0, 0, 100)), racingPreview)
+end
+Service.purchase(racingBuyer, "RacingSpeedboat")
+check(
+	racingBuyer:GetAttribute("Cash") == 0 and racingBuyer:GetAttribute("OwnsRacingSpeedboat"),
+	"Racing purchase charges $12500 and publishes ownership"
+)
+check(store.data.Player_125.OwnedBoats.RacingSpeedboat, "Racing purchase persists ownership")
+local racingActive = Service.active[racingBuyer]
+check(
+	racingActive and racingActive.model == racingPreview and racingActive.spec == BoatCatalog.RacingSpeedboat,
+	"Racing preview launches with its own handling"
+)
+base:SetAttribute("OwnerUserId", racingBuyer.UserId)
+racingBuyer:SetAttribute("BaseId", 1)
+racingActive.seat.Occupant = nil
+Service.spawnBoat(racingBuyer, spawnPrompt, "RacingSpeedboat")
+check(
+	Service.active[racingBuyer].model:GetAttribute("BoatId") == "RacingSpeedboat" and racingPreview.destroyed,
+	"Owned racing boat respawns from the player's dock"
 )
 
 print(

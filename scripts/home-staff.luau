@@ -9,7 +9,7 @@ end)()
 local vector = {}
 local Vector3 = {}
 function Vector3.new(x, y, z)
-	return setmetatable({ X = x, Y = y, Z = z, Magnitude = math.sqrt(x*x + y*y + z*z) }, vector)
+	return setmetatable({ X = x, Y = y, Z = z, Kind = "Vector3", Magnitude = math.sqrt(x*x + y*y + z*z) }, vector)
 end
 function vector.__sub(a, b) return Vector3.new(a.X-b.X, a.Y-b.Y, a.Z-b.Z) end
 local cframe = {}
@@ -20,6 +20,9 @@ end
 function cframe.__mul(a, b)
 	return CFrame.new(a.Position.X+b.Position.X, a.Position.Y+b.Position.Y, a.Position.Z+b.Position.Z)
 end
+function cframe.__index(a, key)
+	if key == "PointToObjectSpace" then return function(_, point) return point - a.Position end end
+end
 local function typeof(value) return if type(value) == "table" and value.Kind then value.Kind else type(value) end
 local owner = { UserId = 42 }
 local currentOwner = owner
@@ -29,10 +32,14 @@ local base = {
 	GetAttribute = function() return CFrame.new() end,
 }
 local function ownerOf() return currentOwner end
-local boatOwner, boatId = 42, "Rowboat"
+local boatOwner, boatId, moorPier, moorPickup = 42, "Rowboat", nil, nil
 local boat = {
 	PrimaryPart = { Position = Vector3.new(0, 0, 0), AssemblyLinearVelocity = Vector3.new(0, 0, 0) },
-	GetAttribute = function() return boatOwner end,
+	GetAttribute = function(_, name)
+		if name == "PorterPier" then return moorPier end
+		if name == "PorterPickup" then return moorPickup end
+		return boatOwner
+	end,
 }
 local activeBoat = boat
 local profile, failSave, beforeTransform
@@ -66,14 +73,15 @@ local function describeFish() return "Trout" end
 local function bubble() end
 local function fishModel() return { Destroy = function() end } end
 local function carry() end
-local walkCount, onWalk = 0, nil
-local walkedPositions = {}
-local function walk(worker, position)
+local walkCount, onWalk, failWalkAt = 0, nil, nil
+local walkedPositions, groundChecks = {}, {}
+local function walk(worker, position, _, stayOnGround)
 	walkCount += 1
 	table.insert(walkedPositions, position)
+	groundChecks[walkCount] = stayOnGround
 	worker.root.Position = position
 	if onWalk then onWalk() end
-	return worker.active
+	return worker.active and walkCount ~= failWalkAt
 end
 local task = { spawn = function(callback) callback() end }
 local function warn() end
@@ -85,6 +93,7 @@ local record = AnglerData.recordCatch(nil, "Trout", "Normal", 2, 20, 100, specie
 local worker, shop, customer
 local function reset()
 	currentOwner, boatOwner, activeBoat, boatId = owner, 42, boat, "Rowboat"
+	moorPier, moorPickup = nil, nil
 	boat.PrimaryPart.Position, boat.PrimaryPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)
 	profile = { Cash = 100, Angler = AnglerData.decode(nil) }
 	profile.Angler.Staff = { Seller = true, Porter = true }
@@ -97,7 +106,7 @@ local function reset()
 	shop = { base = base, frame = CFrame.new(), staff = { Seller = worker, Porter = worker } }
 	customer = { shop = shop, active = true, root = { Position = Vector3.new(0, 0, 0) }, record = record }
 	failSave, beforeTransform, onWalk, manualNear, walkCount = false, nil, nil, false, 0
-	walkedPositions = {}
+	walkedPositions, groundChecks, failWalkAt = {}, {}, nil
 end
 reset()
 sell(owner, customer)
@@ -144,19 +153,34 @@ reset()
 runPorter(shop, worker, owner)
 check(#profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1, "Porter walks a full route and delivers")
 check(walkCount == 6 and worker.fish == nil and not worker.busy, "Trip cleans its visual copy and lock")
-check(walkedPositions[1].X == 17 and walkedPositions[1].Z == 4,
+for index = 1, walkCount do check(groundChecks[index] == true, "Every unloading leg requires supported ground") end
+check(walkedPositions[1].X == 17 and walkedPositions[1].Z == 11 and walkedPositions[1].Y == 5.9,
 	"Collection starts toward the dock without a front-door detour")
-check(walkedPositions[5].X == 17 and walkedPositions[5].Z == 4
+check(walkedPositions[5].X == 17 and walkedPositions[5].Z == 11
 	and walkedPositions[6].Z == FishFreezer.DEPTH / 2 + 2.4,
 	"Return goes directly from the dock landing to the freezer")
 reset()
 worker.root.Position = Vector3.new(17, 7, 4)
 runPorter(shop, worker, owner)
 for _, position in walkedPositions do
-	check(position.Z ~= 18.6 and position.Z ~= 11,
+	check(position.X ~= 0 or (position.Z ~= 18.6 and position.Z ~= 11),
 		"Porter already outside never targets the front door or entrance aisle")
 end
 check(#profile.Angler.Freezer == 2, "Porter starting outside still delivers cargo")
+for _, side in { -1, 1 } do
+	reset()
+	moorPier, moorPickup = Vector3.new(side * 17, 3.2, -24), Vector3.new(side * 20, 3.2, -24)
+	runPorter(shop, worker, owner)
+	check(#profile.Angler.Freezer == 2, "Moored boat can be unloaded from either pier")
+	check(walkedPositions[1].X == side * 17 and walkedPositions[5].X == side * 17,
+		"Company porter uses the landing on the boat's dock side")
+	check(walkedPositions[3] == moorPier, "Company pickup stays at pier center despite legacy edge attributes")
+end
+reset()
+failWalkAt = 3
+runPorter(shop, worker, owner)
+check(#profile.Angler.Freezer == 1 and #profile.Angler.Holds.Rowboat == 2 and worker.fish == nil and not worker.busy,
+	"Unsafe pickup route keeps cargo aboard and releases the porter for a later retry")
 reset()
 onWalk = function() boat.PrimaryPart.Position = Vector3.new(100, 0, 0) end
 runPorter(shop, worker, owner)

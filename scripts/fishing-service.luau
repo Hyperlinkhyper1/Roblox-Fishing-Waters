@@ -293,10 +293,11 @@ local dependencies = {
 		end,
 	},
 	FishingRod = {
-		build = function()
+		build = function(skinId)
 			builds += 1
 			local tool = Instance.new("Tool")
 			tool:SetAttribute("RodId", "StarterRod")
+			tool:SetAttribute("RodSkin", skinId or "")
 			return tool
 		end,
 	},
@@ -355,7 +356,7 @@ local counter = Instance.new("Part")
 counter.Position, counter.Parent = Vector3.zero, shop
 local prompt = Instance.new("ProximityPrompt")
 prompt.Name, prompt.MaxActivationDistance, prompt.Parent = "BuyFishingRodPrompt", 8, counter
-local fresh, character, root, humanoid, backpack = makePlayer(1)
+local fresh, character, root, humanoid, backpack = makePlayer(1, true)
 Service.start()
 flush()
 local request = ReplicatedStorage:WaitForChild("Fishing"):WaitForChild("Request")
@@ -365,32 +366,15 @@ local function send(player, action, value)
 	request.OnServerEvent:Fire(player, action, value)
 	flush()
 end
-check(rodCount(fresh) == 0 and builds == 0, "Unowned startup must not grant a Tool")
-send(fresh, "EquipRod")
-check(rodCount(fresh) == 0 and fresh:GetAttribute("RodEquipped") == false, "Unowned remote equip must be rejected")
-
+check(rodCount(fresh) == 1 and builds == 1, "Starting ownership grants exactly one backpack rod")
+check(
+	backpack:FindFirstChildOfClass("Tool") ~= nil and not fresh:GetAttribute("RodEquipped"),
+	"Starter rod begins stowed in inventory"
+)
 local beforeMessages = #feedback.messages
-root.Position = Vector3.new(0, 7, 0)
 ProximityPromptService.PromptTriggered:Fire(prompt, fresh)
 send(fresh, "PurchaseRod")
-check(purchases == 0 and #feedback.messages == beforeMessages + 1, "Outside interior must neither open nor transact")
-root.Position = Vector3.new(11, 0, 0)
-send(fresh, "PurchaseRod")
-check(purchases == 0, "Inside but beyond prompt range must be rejected")
-root.Position = Vector3.zero
-sightResult = { Instance = Instance.new("Part") }
-send(fresh, "PurchaseRod")
-check(purchases == 0, "An occluding wall must block remote purchases")
-sightResult = nil
-humanoid.Health = 0
-send(fresh, "PurchaseRod")
-check(purchases == 0, "Dead characters cannot buy")
-humanoid.Health = 100
-shop.Parent = nil
-send(fresh, "PurchaseRod")
-check(purchases == 0, "Tagged shops removed from workspace cannot authorize purchases")
-shop.Parent = workspace
-
+check(purchases == 0 and #feedback.messages == beforeMessages, "Removed claim prompt and purchase remote are ignored")
 -- Rod upgrades are only sold by Finn: his prompt, in range and in sight.
 send(fresh, "UpgradeRod", "Speed")
 local result = feedback.messages[#feedback.messages].values
@@ -415,23 +399,17 @@ ProximityPromptService.PromptTriggered:Fire(foreignPrompt, fresh)
 check(#feedback.messages == beforeMessages, "A different prompt with the same name must not open this shop")
 sightResult = { Instance = counter }
 ProximityPromptService.PromptTriggered:Fire(prompt, fresh)
-check(feedback.messages[#feedback.messages].values[1] == "OpenShop", "A visible interior prompt must open the shop")
+check(#feedback.messages == beforeMessages, "Old counter prompts cannot open a claim window")
 sightResult = nil
-failSave = true
-send(fresh, "PurchaseRod")
-check(purchases == 1 and builds == 0 and rodCount(fresh) == 0, "A failed transaction must not grant/equip a rod")
-check(fresh:GetAttribute("OwnsStarterRod") == false, "A failed purchase must not mark ownership")
-failSave = false
-send(fresh, "PurchaseRod")
-check(purchases == 2 and builds == 1 and rodCount(fresh) == 1, "A successful purchase grants exactly one Tool")
+send(fresh, "EquipRod")
 local rod = character:FindFirstChildOfClass("Tool")
-check(rod ~= nil and fresh:GetAttribute("RodEquipped") == true, "Purchase must auto-equip after ownership is confirmed")
+check(rod ~= nil and fresh:GetAttribute("RodEquipped") == true, "Starting rod can be equipped anywhere")
 check(rod:GetAttribute("OwnerUserId") == fresh.UserId, "Granted Tool must identify its owner")
 for _ = 1, 3 do
 	send(fresh, "EquipRod")
 	send(fresh, "PurchaseRod")
 end
-check(builds == 1 and rodCount(fresh) == 1, "Repeated equip/purchase must retain the same single Tool")
+check(builds == 1 and rodCount(fresh) == 1, "Repeated equip and obsolete claims retain one Tool")
 local previousPurchases = purchases
 request.OnServerEvent:Fire(fresh, "PurchaseRod")
 flush()
@@ -466,7 +444,10 @@ now += 2
 ProximityPromptService.PromptTriggered:Fire(enterFurniture, fresh)
 check(feedback.messages[#feedback.messages].values[1] == "DoorFade", "Furniture door must fade before moving")
 flush()
-check(streamed == destination.Position and character.lastPivot == destination, "Furniture door must stream and enter the showroom")
+check(
+	streamed == destination.Position and character.lastPivot == destination,
+	"Furniture door must stream and enter the showroom"
+)
 check(root.AssemblyLinearVelocity == Vector3.zero, "Furniture arrival must stop the character's velocity")
 check(feedback.messages[#feedback.messages].values[1] == "DoorArrived", "Furniture arrival must lift the fade")
 root.Position = Vector3.zero
@@ -570,6 +551,78 @@ check(
 )
 send(fresh, "PurchaseRod")
 check(purchases == previousPurchases, "A departed player's remote cannot transact")
+-- Exercise crate and bag remotes against the real saved-inventory rules.
+local SkinData = (function()
+	-- REAL_BOAT_DATA_SOURCE --
+end)()
+dependencies.BoatData.openRodCrate = SkinData.openRodCrate
+dependencies.BoatData.equipRodSkin = SkinData.equipRodSkin
+local storedSkins = SkinData.decode(nil)
+storedSkins.OwnedRods.StarterRod, storedSkins.Cash = true, 1400
+local failSkinSave, skinSaves = false, 0
+dependencies.BoatService.getProfile = function()
+	return SkinData.decode(storedSkins)
+end
+dependencies.BoatService.updateProgress = function(player, transform)
+	skinSaves += 1
+	transform(SkinData.decode(storedSkins)) -- discarded UpdateAsync attempt
+	local nextProfile = SkinData.decode(storedSkins)
+	transform(nextProfile)
+	if failSkinSave then
+		return false, "Save failed"
+	end
+	storedSkins = SkinData.decode(nextProfile)
+	player:SetAttribute("RodSkin", storedSkins.EquippedRodSkin or "")
+	player:SetAttribute("RodSkinSerial", storedSkins.EquippedRodSkinSerial or 0)
+	return true, "Saved."
+end
+local cratePrompt = Instance.new("ProximityPrompt")
+cratePrompt.Name, cratePrompt.MaxActivationDistance, cratePrompt.Parent = "OpenRodCratePrompt", 8, counter
+send(loading, "OpenRodCrate", "TideCrate")
+local reward = feedback.messages[#feedback.messages].values
+check(
+	reward[1] == "CrateResult" and reward[2] == true and reward[5] == 1,
+	"Crate feedback includes the committed copy serial"
+)
+check(#storedSkins.RodSkinCopies == 1 and storedSkins.Cash == 1050, "Remote crate retry awards and charges once")
+local skinId = reward[4]
+failSkinSave = true
+send(loading, "OpenRodCrate", "TideCrate")
+reward = feedback.messages[#feedback.messages].values
+check(
+	reward[2] == false and reward[4] == nil and reward[5] == nil and #storedSkins.RodSkinCopies == 1,
+	"Failed crate saves never reveal a reward or serial"
+)
+failSkinSave = false
+storedSkins.RodSkinCopies[2] = { SkinId = skinId, Serial = 2 }
+storedSkins.NextRodSkinSerial[skinId] = 3
+storedSkins = SkinData.decode(storedSkins)
+send(loading, "EquipRodSkin", { SkinId = skinId, Serial = 2 })
+check(
+	storedSkins.EquippedRodSkinSerial == 2 and feedback.messages[#feedback.messages].values[2] == true,
+	"Bag remote selects the requested duplicate"
+)
+local beforeSkinSaves = skinSaves
+for _, value in
+	{
+		{ SkinId = skinId, Serial = 99 },
+		{ SkinId = skinId, Serial = "2" },
+		{ SkinId = skinId, Serial = 1.5 },
+		{ SkinId = "Bogus", Serial = 2 },
+	}
+do
+	send(loading, "EquipRodSkin", value)
+	check(
+		feedback.messages[#feedback.messages].values[2] == false and skinSaves == beforeSkinSaves,
+		"Forged bag selections are rejected before saving"
+	)
+end
+send(loading, "EquipRodSkin", "")
+check(
+	storedSkins.EquippedRodSkinSerial == nil and storedSkins.EquippedRodSkin == nil,
+	"Bag remote restores the plain rod"
+)
+
 print(
 	"Fishing service: " .. checks .. " authorization and lifecycle checks passed (recording mocks; no Roblox runtime)."
 )

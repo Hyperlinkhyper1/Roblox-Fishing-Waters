@@ -1,5 +1,6 @@
 -- Build mode: at home, press B (or the Build button) for an angled building view
--- with the roof hidden. Pan the view with WASD / arrows or right-drag; scroll to zoom.
+-- with the roof hidden. Pan with WASD / arrows or right-drag, hold Q / E to turn,
+-- and scroll to zoom.
 -- Pick bought furniture from the bottom bar, turn it
 -- with R and click a floor spot to place it; click placed furniture to move it or
 -- pick it back up. Allowed rooms glow green while you hold an item. The preview
@@ -39,6 +40,12 @@ local HEIGHTS = {
 -- The Restaurant's dining room extends the floor behind the house to this z.
 local DINING_BACK = -30
 local CAMERA_PITCH = math.rad(55)
+local TURN_SPEED = math.rad(90)
+local TURN_RESPONSE = 12
+local TURN_KEYS = {
+	[Enum.KeyCode.Q] = -1,
+	[Enum.KeyCode.E] = 1,
+}
 local PAN_LIMIT = Vector2.new(30, 24)
 local PAN_KEYS = {
 	[Enum.KeyCode.W] = Vector2.new(0, -1),
@@ -98,6 +105,8 @@ function BuildMode.start()
 	local zoom = 1
 	local cameraDistance = 60
 	local panKeys = {}
+	local turnKeys = {}
+	local yaw, turnVelocity = 0, 0
 	local dragging = false
 	local dragPosition: Vector2? = nil
 	local touch: InputObject? = nil
@@ -233,7 +242,7 @@ function BuildMode.start()
 		LayoutOrder = 1,
 		Size = UDim2.fromOffset(110, 30),
 	})
-	local cancel = button(actions, "Cancel [Q]", {
+	local cancel = button(actions, "Cancel [X]", {
 		Name = "Cancel",
 		LayoutOrder = 2,
 		Size = UDim2.fromOffset(110, 30),
@@ -256,20 +265,22 @@ function BuildMode.start()
 	local navigation = make("Frame", gui, {
 		Name = "BuildNavigation",
 		Active = true,
-		Position = UDim2.fromOffset(12, 12),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 12),
 		Size = UDim2.new(1, -24, 0, 54),
 		Visible = false,
 	})
+	make("UISizeConstraint", navigation, { MaxSize = Vector2.new(600, 54) })
 	Theme.window(navigation)
 	label(
 		navigation,
 		if UserInputService.TouchEnabled
 			then "Drag to pan · Tap to select / place"
-			else "WASD / arrows: pan · Right-drag: pan · Wheel: zoom",
+			else "WASD / arrows: pan · Q / E: turn\nRight-drag: pan · Wheel: zoom",
 		{
 			Position = UDim2.fromOffset(12, 7),
 			Size = UDim2.new(1, -186, 1, -14),
-			TextSize = 12,
+			TextSize = 11,
 			TextYAlignment = Enum.TextYAlignment.Center,
 		}
 	)
@@ -334,7 +345,7 @@ function BuildMode.start()
 			then "No unplaced furniture. Buy items at Harbour Home, or pick up furniture in your house."
 			else "Loading your furniture…"
 		setButton(rotate, "Rotate [R]", held ~= nil)
-		setButton(cancel, "Cancel [Q]", held ~= nil or selected ~= nil)
+		setButton(cancel, "Cancel [X]", held ~= nil or selected ~= nil)
 		setButton(move, "Move", selected ~= nil and held == nil and not pending)
 		setButton(pickUp, "Pick up", selected ~= nil and held == nil and not pending)
 		if held then
@@ -688,14 +699,18 @@ function BuildMode.start()
 	end
 	local function clearNavigation()
 		table.clear(panKeys)
+		table.clear(turnKeys)
+		turnVelocity = 0
 		dragging, dragPosition, touch = false, nil, nil
 		touchDragged = false
 	end
 	local function cameraInput(_, inputState: Enum.UserInputState, input: InputObject)
 		if inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
 			panKeys[input.KeyCode] = nil
+			turnKeys[input.KeyCode] = nil
 		elseif inputState == Enum.UserInputState.Begin and not UserInputService:GetFocusedTextBox() then
 			panKeys[input.KeyCode] = PAN_KEYS[input.KeyCode]
+			turnKeys[input.KeyCode] = TURN_KEYS[input.KeyCode]
 		end
 		-- Consume movement and jumping before Roblox can move the character.
 		return if UserInputService:GetFocusedTextBox()
@@ -773,7 +788,22 @@ function BuildMode.start()
 		local focal = viewport.Y / (2 * math.tan(math.rad(camera.FieldOfView / 2)))
 		local halfArea = math.max(1, bottom - top) / (2 * focal)
 		local upper, lower = (viewport.Y / 2 - top) / focal, (viewport.Y / 2 - bottom) / focal
-		local back = Vector3.new(0, math.sin(CAMERA_PITCH), math.cos(CAMERA_PITCH))
+		local step = math.clamp(dt or 0, 0, 0.1)
+		if not UserInputService:GetFocusedTextBox() then
+			local turn = 0
+			for _, direction in turnKeys do
+				turn += direction
+			end
+			local targetVelocity = turn * TURN_SPEED
+			local blend = 1 - math.exp(-TURN_RESPONSE * step)
+			-- Integrate the eased speed so turning feels the same at different frame rates.
+			yaw = (yaw + targetVelocity * step + (turnVelocity - targetVelocity) * blend / TURN_RESPONSE)
+				% (2 * math.pi)
+			turnVelocity += (targetVelocity - turnVelocity) * blend
+		end
+		local sinYaw, cosYaw = math.sin(yaw), math.cos(yaw)
+		local back =
+			Vector3.new(sinYaw * math.cos(CAMERA_PITCH), math.sin(CAMERA_PITCH), cosYaw * math.cos(CAMERA_PITCH))
 		local orientation = CFrame.lookAt(Vector3.zero, -back)
 		-- Fit the floor AND room walls in the viewport between the two toolbars.
 		-- Perspective depth matters here: the near corners need more room.
@@ -798,7 +828,10 @@ function BuildMode.start()
 				direction += axis
 			end
 			if direction.Magnitude > 0 then
-				panBy(direction.Unit * math.min(cameraDistance, 100) * 0.45 * math.min(dt or 0, 0.1))
+				local axis = direction.Unit
+				local floorDirection =
+					Vector2.new(axis.X * cosYaw + axis.Y * sinYaw, -axis.X * sinYaw + axis.Y * cosYaw)
+				panBy(floorDirection * math.min(cameraDistance, 100) * 0.45 * step)
 			end
 		end
 		local center = houseFrame * Vector3.new(pan.X, FLOOR_Y, pan.Y)
@@ -832,15 +865,13 @@ function BuildMode.start()
 		end
 		active, house, houseFrame = true, model, frame
 		clearNavigation()
-		pan, zoom = Vector2.zero, 1
+		pan, zoom, yaw = Vector2.zero, 1, 0
 		saved = {
 			Type = camera.CameraType,
 			FieldOfView = camera.FieldOfView,
 			FieldOfViewMode = camera.FieldOfViewMode,
 			Frame = camera.CFrame,
 			Focus = camera.Focus,
-			MouseBehavior = UserInputService.MouseBehavior,
-			MouseIconEnabled = UserInputService.MouseIconEnabled,
 		}
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.FieldOfView = 50
@@ -860,11 +891,18 @@ function BuildMode.start()
 			Enum.KeyCode.Down,
 			Enum.KeyCode.Left,
 			Enum.KeyCode.Right,
+			Enum.KeyCode.Q,
+			Enum.KeyCode.E,
 			Enum.KeyCode.Space
 		)
 		for key, axis in PAN_KEYS do
 			if UserInputService:IsKeyDown(key) then
 				panKeys[key] = axis
+			end
+		end
+		for key, direction in TURN_KEYS do
+			if UserInputService:IsKeyDown(key) then
+				turnKeys[key] = direction
 			end
 		end
 		hideRoof()
@@ -905,10 +943,10 @@ function BuildMode.start()
 			camera.CFrame = saved.Frame
 			camera.Focus = saved.Focus
 		end
-		if saved then
-			UserInputService.MouseBehavior = saved.MouseBehavior
-			UserInputService.MouseIconEnabled = saved.MouseIconEnabled
-		end
+		-- Never restore a snapshot of the pointer: a lock or hidden icon captured on entry
+		-- can outlive whatever set it and strand the cursor. The camera re-locks if it needs to.
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		UserInputService.MouseIconEnabled = true
 		releaseCharacter()
 		controls(true)
 		panel.Visible, navigation.Visible = false, false
@@ -953,7 +991,7 @@ function BuildMode.start()
 		changeZoom(-1)
 	end)
 	recenter.Activated:Connect(function()
-		pan, zoom = Vector2.zero, 1
+		pan, zoom, yaw, turnVelocity = Vector2.zero, 1, 0, 0
 	end)
 	UserInputService.WindowFocusReleased:Connect(clearNavigation)
 	UserInputService.TextBoxFocused:Connect(clearNavigation)
@@ -983,11 +1021,11 @@ function BuildMode.start()
 		elseif input.KeyCode == Enum.KeyCode.R and held then
 			held.R = (held.R + 1) % 4
 			aim(UserInputService:GetMouseLocation())
-		elseif input.KeyCode == Enum.KeyCode.Q then
+		elseif input.KeyCode == Enum.KeyCode.X then
 			drop()
 			choose(nil)
 		elseif input.KeyCode == Enum.KeyCode.Home then
-			pan, zoom = Vector2.zero, 1
+			pan, zoom, yaw, turnVelocity = Vector2.zero, 1, 0, 0
 		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 			dragging = true
 			dragPosition = UserInputService:GetMouseLocation()

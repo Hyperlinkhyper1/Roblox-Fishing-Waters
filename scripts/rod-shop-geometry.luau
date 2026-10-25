@@ -52,7 +52,23 @@ check(enter and enter:IsA("ProximityPrompt") and enter.ActionText == "Enter", "S
 local interiors = workspace:FindFirstChild("Interiors")
 local hall = interiors and interiors:FindFirstChild("RodStoreInterior")
 check(hall and CollectionService:HasTag(hall, "FishingRodShop"), "Rod store interior is missing or untagged")
-check(hall:GetAttribute("Price") == 0 and hall:GetAttribute("RodId") == "StarterRod", "Starter rod must be free")
+local crateDisplay = hall:FindFirstChild("RodCrateDisplay")
+check(crateDisplay ~= nil, "Rod stand needs its animated crate model")
+local crateFrame = crateDisplay:GetAttribute("CrateFrame")
+local lidHinge = crateDisplay:GetAttribute("LidHinge")
+local crateLid = crateDisplay:FindFirstChild("RodCrateLid")
+check(typeof(crateFrame) == "CFrame" and typeof(lidHinge) == "CFrame", "Crate animation frames must be saved")
+check(crateLid and crateLid.PrimaryPart.Name == "LidBoard", "The lid must move independently of the crate walls")
+check(crateDisplay:FindFirstChild("OpenRodCratePrompt", true).Parent.Name == "RodCrate", "Crate prompt needs its queryable front wall")
+local cavity = { Size = Vector3.new(1, 0.8, 0.8), CFrame = crateFrame * CFrame.new(0, 1.6, 0) }
+for _, piece in crateDisplay:GetDescendants() do
+	if piece:IsA("BasePart") then
+		check(piece.Material == Enum.Material.WoodPlanks, "Basic crate uses plain wood")
+		check(not overlaps(cavity, piece), "Crate must be hollow for the rod reveal")
+	end
+	check(not piece:IsA("PointLight"), "Basic crate has no glowing orb")
+end
+check(not hall:FindFirstChild("BuyFishingRodPrompt", true), "Free rod claim prompt must be removed")
 local arrival = hall:GetAttribute("ArrivalFrame")
 local interiorFrame, interiorSize = hall:GetAttribute("InteriorFrame"), hall:GetAttribute("InteriorSize")
 check(typeof(arrival) == "CFrame" and typeof(interiorFrame) == "CFrame", "Interior frames missing")
@@ -95,11 +111,12 @@ local plazaSolids = solids(plaza)
 for _, obstacle in plazaSolids do
 	check(not overlaps(avatarAt(exitFrame), obstacle), "Exit point lands inside " .. obstacle:GetFullName())
 end
-local buyRod = hall:FindFirstChild("BuyFishingRodPrompt", true)
-check(buyRod and buyRod.Parent.Name == "CounterTop", "Rod browse prompt must be on the indoor counter")
-local counter = buyRod.Parent
+local counter = hall:FindFirstChild("CounterTop")
 local hallFrame = interiorFrame * CFrame.new(0, -interiorSize.Y / 2, 0)
 local counterLocal = hallFrame:PointToObjectSpace(counter.Position)
+local rodKeeperFrame = hall:GetAttribute("KeeperFrame")
+local keeperLocal = hallFrame:PointToObjectSpace(rodKeeperFrame.Position)
+check(math.abs(keeperLocal.X - counterLocal.X) < EPS and keeperLocal.Z > counterLocal.Z + counter.Size.Z / 2, "Finn must stand centered behind the counter")
 local customerZ = counterLocal.Z - counter.Size.Z / 2 - 2
 walk(
 	{ hallFrame:PointToObjectSpace(arrival.Position), Vector3.new(0, 3.3, customerZ) },
@@ -109,8 +126,8 @@ walk(
 )
 check(insideHall(hallFrame * Vector3.new(0, 3.3, customerZ)), "Counter customer is outside the purchase volume")
 check(
-	((hallFrame * Vector3.new(0, 3.3, customerZ)) - counter.Position).Magnitude < buyRod.MaxActivationDistance,
-	"Browse prompt is out of reach from the customer side"
+	((hallFrame * Vector3.new(0, 3.3, customerZ)) - (rodKeeperFrame * Vector3.new(0, 5.2, 0))).Magnitude < 11,
+	"Finn's prompt is out of reach from the customer side"
 )
 -- Plaza approach: from the square up to the street door
 local doorLocal = plazaFrame:PointToObjectSpace(exitFrame.Position)
@@ -146,12 +163,11 @@ local function segmentHit(a, b, obstacle)
 end
 for _, x in { -3, 0, 3 } do
 	local eye = hallFrame * Vector3.new(x, 5.2, customerZ)
-	local counterHit = segmentHit(eye, counter.Position, counter)
-	check(counterHit ~= nil, "Browse eye ray does not reach its counter")
+	local keeperHead = rodKeeperFrame * Vector3.new(0, 5.2, 0)
 	for _, obstacle in hall:GetDescendants() do
-		if obstacle:IsA("BasePart") and obstacle ~= counter and obstacle.CanQuery ~= false then
-			local hit = segmentHit(eye, counter.Position, obstacle)
-			check(not hit or hit >= counterHit - EPS, "Browse ray from x=" .. x .. " is blocked by " .. obstacle.Name)
+		if obstacle:IsA("BasePart") and obstacle.CanQuery ~= false then
+			local hit = segmentHit(eye, keeperHead, obstacle)
+			check(not hit, "Finn's head ray from x=" .. x .. " is blocked by " .. obstacle.Name)
 		end
 	end
 end
@@ -329,6 +345,14 @@ for _, width in { 116, 120 } do
 		(relinked:GetAttribute("TeleportTo").Position - upgraded:GetAttribute("ExitFrame").Position).Magnitude < EPS,
 		"Hall exit was not relinked to the rebuilt storefront"
 	)
+	-- A saved purple/gold crate hall must upgrade to the hollow wooden version.
+	hallBefore:SetAttribute("LayoutVersion", 3)
+	dependencies.RodShop.ensure(saved)
+	local rebuiltHall = interiors:FindFirstChild("RodStoreInterior")
+	check(hallBefore.Parent == nil and rebuiltHall ~= hallBefore, "Old crate interior was not replaced")
+	check(rebuiltHall:FindFirstChild("RodCrateDisplay") ~= nil and rebuiltHall:GetAttribute("LayoutVersion") == 5, "Saved hall lacks the new wooden crate")
+	dependencies.RodShop.ensure(saved)
+	check(interiors:FindFirstChild("RodStoreInterior") == rebuiltHall, "New crate hall must remain idempotent")
 end
 assert(failures == 0, tostring(failures) .. " rod store geometry checks failed")
 print(

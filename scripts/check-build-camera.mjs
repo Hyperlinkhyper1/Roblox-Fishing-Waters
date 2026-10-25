@@ -25,7 +25,7 @@ local Enum = setmetatable({}, {__index = function(self, category)
 end})
 local workspace = {}
 local panel = {}
-local navigation = {AbsolutePosition = Vector2.new(12, 12), AbsoluteSize = Vector2.new(500, 54)}
+local navigation = {AbsolutePosition = Vector2.new(12, 12), AbsoluteSize = Vector2.new(600, 54)}
 local inset = 0
 local GuiService = {GetGuiInset = function() return Vector2.new(0, inset) end}
 local focused = false
@@ -41,6 +41,8 @@ local Furniture = {GRID = 0.5}
 ${section('local CAMERA_PITCH', '\nlocal started')}
 local pan, zoom, cameraDistance = Vector2.zero, 1, 60
 local panKeys = {}
+local turnKeys = {}
+local yaw, turnVelocity = 0, 0
 local dragging, dragPosition, touch = false, nil, nil
 local touchStart, touchDragged = Vector2.zero, false
 local held = nil
@@ -53,10 +55,12 @@ local checks = 0
 for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} do
   for _, topInset in {0, 36, 58} do
     for _, rotation in {0, math.pi / 2, math.pi, math.pi * 1.5} do
+     for _, viewYaw in {0, math.pi / 4, math.pi / 2, math.pi, math.pi * 1.5} do
       inset = topInset
       panel.AbsolutePosition = Vector2.new(12, size[2] - inset - 202)
       houseFrame = CFrame.new(120, 6, -75) * CFrame.Angles(0, rotation, 0)
       pan, zoom = Vector2.zero, 1
+      yaw = viewYaw
       clearNavigation()
       -- Replacing CurrentCamera between calls must still update the new instance.
       local camera = {ViewportSize = Vector2.new(size[1], size[2]), FieldOfView = 70}
@@ -64,7 +68,8 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
       updateCamera()
       assert(camera.CameraType == "Scriptable" and camera.FieldOfView == 50, "Camera ownership lost")
       assert(camera.FieldOfViewMode == "Vertical", "Camera fit must use vertical FOV")
-      local expectedLook = houseFrame:VectorToWorldSpace(Vector3.new(0, -math.sin(CAMERA_PITCH), -math.cos(CAMERA_PITCH)))
+      local expectedLook = houseFrame:VectorToWorldSpace(Vector3.new(-math.sin(yaw) * math.cos(CAMERA_PITCH),
+        -math.sin(CAMERA_PITCH), -math.cos(yaw) * math.cos(CAMERA_PITCH)))
       assert(camera.CFrame.LookVector:Dot(expectedLook) > 0.99999, "Camera must keep the angled building view")
       local focal = size[2] / (2 * math.tan(math.rad(camera.FieldOfView / 2)))
       local function project(point)
@@ -98,8 +103,10 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
       local before = camera.Focus.Position
       assert(cameraInput("pan", "Begin", {KeyCode = "W"}) == "Sink", "Movement must be consumed")
       updateCamera(0.1)
-      assert(pan.Y < 0 and pan.X == 0, "W must pan forward along the floor")
-      assert((camera.Focus.Position - before):Dot(houseFrame.LookVector) > 0, "Focus must move with the view")
+      local forward = Vector2.new(-math.sin(yaw), -math.cos(yaw))
+      assert(pan:Dot(forward) > 0 and (pan.Unit - forward).Magnitude < 1e-7, "W must pan along the camera's floor direction")
+      assert((camera.Focus.Position - before):Dot(houseFrame:VectorToWorldSpace(Vector3.new(forward.X, 0, forward.Y))) > 0,
+        "Focus must move with the view")
       cameraInput("pan", "End", {KeyCode = "W"})
       local stopped = pan
       updateCamera(0.1)
@@ -131,6 +138,7 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
       assert(pan.X == PAN_LIMIT.X, "Typing must not pan")
       focused = false
       checks += 10
+     end
     end
   end
 end
@@ -138,7 +146,7 @@ end
 workspace.CurrentCamera.ViewportSize = Vector2.new(1920, 1080)
 panel.AbsolutePosition = Vector2.new(12, 878)
 inset = 0
-pan, zoom = Vector2.zero, 1
+pan, zoom, yaw = Vector2.zero, 1, 0
 clearNavigation()
 cameraInput("pan", "Begin", {KeyCode = "W"})
 for _ = 1, 6 do updateCamera(1 / 60) end
@@ -158,6 +166,44 @@ assert(aimCount > 0, "Camera motion must refresh the furniture preview")
 held = nil
 checks += 4
 
+-- Hold-to-turn eases in and out, remains frame-rate independent, and handles opposing keys.
+clearNavigation()
+pan, zoom, yaw = Vector2.zero, 1, 0
+cameraInput("turn", "Begin", {KeyCode = "E"})
+for _ = 1, 30 do updateCamera(1 / 60) end
+local sixtyYaw, sixtyVelocity = yaw, turnVelocity
+assert(yaw > 0 and turnVelocity > 0 and turnVelocity < TURN_SPEED, "E must smoothly accelerate clockwise")
+clearNavigation()
+yaw = 0
+cameraInput("turn", "Begin", {KeyCode = "E"})
+for _ = 1, 15 do updateCamera(1 / 30) end
+assert(math.abs(yaw - sixtyYaw) < 1e-7 and math.abs(turnVelocity - sixtyVelocity) < 1e-7,
+  "Turn easing and speed must not depend on frame rate")
+cameraInput("turn", "End", {KeyCode = "E"})
+for _ = 1, 60 do updateCamera(1 / 60) end
+assert(turnVelocity < 0.001 and next(turnKeys) == nil, "Releasing E must ease to a stop")
+clearNavigation()
+yaw = 0
+cameraInput("turn", "Begin", {KeyCode = "Q"})
+updateCamera(1 / 60)
+assert(yaw > math.pi and turnVelocity < 0, "Q must turn counterclockwise through the angle wrap")
+cameraInput("turn", "Begin", {KeyCode = "E"})
+turnVelocity = 0
+local opposedYaw = yaw
+updateCamera(0.1)
+assert(yaw == opposedYaw and turnVelocity == 0, "Q and E together must cancel")
+cameraInput("turn", "Cancel", {KeyCode = "Q"})
+assert(turnKeys.Q == nil, "Cancelled turn input must release the key")
+focused = true
+local typingYaw = yaw
+updateCamera(0.1)
+assert(yaw == typingYaw, "Typing must not rotate the view")
+focused = false
+clearNavigation()
+assert(next(turnKeys) == nil and turnVelocity == 0, "Focus loss must stop rotation immediately")
+yaw = 0
+checks += 8
+
 -- Run the actual pointer event handlers: drag pans, taps place, GUI input is ignored.
 local callbacks = {}
 for _, name in {"InputBegan", "InputChanged", "InputEnded"} do
@@ -175,6 +221,16 @@ clearNavigation()
 local function input(kind, position)
   return {UserInputType = kind, Position = position or Vector3.zero, KeyCode = "Unknown", UserInputState = "Begin"}
 end
+held = {R = 0}
+callbacks.InputBegan({KeyCode = "Q"}, false)
+assert(drops == 0 and held ~= nil, "Q must preserve the furniture being placed")
+callbacks.InputBegan({KeyCode = "X"}, false)
+assert(drops == 1, "X must cancel placement")
+pan, zoom, yaw, turnVelocity = Vector2.new(1, 2), 2, 1, 1
+callbacks.InputBegan({KeyCode = "Home"}, false)
+assert(pan.Magnitude == 0 and zoom == 1 and yaw == 0 and turnVelocity == 0, "Home must restore the initial view")
+checks += 3
+drops = 0
 held = {R = 0}
 callbacks.InputBegan(input("MouseButton2"), false)
 assert(dragging and drops == 0 and held ~= nil, "Right-drag must preserve held furniture")
@@ -242,7 +298,8 @@ local ContextActionService = {
   BindActionAtPriority = function(_, name, callback, createTouchButton, priority, ...)
     assert(name == "FurnitureBuildMovement" and priority > 3000 and not createTouchButton)
     local keys = {...}
-    assert(#keys == 9, "Build mode must capture movement and jump keys")
+    assert(#keys == 11, "Build mode must capture movement, Q/E and jump keys")
+    assert(table.find(keys, "Q") and table.find(keys, "E"), "Q and E must be owned only during build mode")
     bound = callback
   end,
   UnbindAction = function() bound = nil end,
@@ -289,8 +346,10 @@ assert(bound ~= nil and renderStep ~= nil and attributes.BuildModeOpen, "Build m
 assert(roofHidden and panel.Visible and navigation.Visible, "Build entry must reveal the editor")
 assert(UserInputService.MouseBehavior == "Default" and UserInputService.MouseIconEnabled, "Build mode must free the pointer")
 bound("pan", "Begin", {KeyCode = "D"})
+bound("turn", "Begin", {KeyCode = "E"})
 renderStep(0.05)
 assert(pan.X > 0 and not controlsEnabled, "Movement keys must move the view while character controls stay disabled")
+assert(yaw > 0 and turnVelocity > 0, "Build mode must own smooth Q/E turning")
 exit()
 assert(not active and controlsEnabled and bound == nil and renderStep == nil, "Exit must restore controls and release bindings")
 assert(not root.Anchored and humanoid.AutoRotate, "Exit must restore the character's anchor and rotation settings")
@@ -298,9 +357,10 @@ assert(not roofHidden and gridDestroyed and not panel.Visible and not navigation
 assert(workspace.CurrentCamera.CameraType == "Custom" and workspace.CurrentCamera.FieldOfView == 70
   and workspace.CurrentCamera.FieldOfViewMode == "Diagonal" and workspace.CurrentCamera.CFrame == originalFrame
   and workspace.CurrentCamera.Focus == originalFocus, "Exit must restore the previous camera")
-assert(UserInputService.MouseBehavior == "LockCenter" and not UserInputService.MouseIconEnabled,
-  "Exit must restore the previous pointer settings")
-assert(next(panKeys) == nil and not attributes.BuildModeOpen, "Exit must discard movement state")
+assert(UserInputService.MouseBehavior == Enum.MouseBehavior.Default and UserInputService.MouseIconEnabled,
+  "Exit must leave the pointer visible and free")
+assert(next(panKeys) == nil and next(turnKeys) == nil and turnVelocity == 0 and not attributes.BuildModeOpen,
+  "Exit must discard movement and turning state")
 exit()
 root.Anchored, humanoid.AutoRotate = true, false
 enter()

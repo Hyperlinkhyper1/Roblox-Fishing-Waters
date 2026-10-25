@@ -250,7 +250,7 @@ function RodWorkshop.start()
 			status.Text = "Loading your wallet…"
 			status.TextColor3 = muted
 		elseif not ownsRod then
-			status.Text = "Collect your free starter rod at the counter first, then Finn can upgrade it."
+			status.Text = "Your starter rod is still loading. Please try again shortly."
 			status.TextColor3 = muted
 		end
 	end

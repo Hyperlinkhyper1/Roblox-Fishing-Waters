@@ -175,7 +175,7 @@ function WeatherController.start()
 			return
 		end
 		local now = workspace:GetServerTimeNow()
-		local state = Weather.getState(now)
+		local state = Weather.getState(now, camera.CFrame.Position)
 		local effectsEnabled = player:GetAttribute("WeatherEffectsEnabled") ~= false
 		local position = camera.CFrame.Position
 		local submerged = math.abs(position.X) < Biomes.MapHalfSize
@@ -297,7 +297,12 @@ function WeatherController.start()
 				local token = thunderToken
 				local strength = state.storm
 				task.delay(1.1 + hash(bucket * 7) * 2.6, function()
-					if token == thunderToken and Weather.getState(workspace:GetServerTimeNow()).storm > 0.1 then
+					local activeCamera = workspace.CurrentCamera
+					if
+						token == thunderToken
+						and activeCamera
+						and Weather.getState(workspace:GetServerTimeNow(), activeCamera.CFrame.Position).storm > 0.1
+					then
 						thunder.SoundId = soundId("WeatherThunderSoundId", THUNDER_SOUND)
 						thunder.Volume = (0.22 + strength * 0.43) * (0.45 + currentSkyFraction * 0.55)
 						thunder:Play()

@@ -11,6 +11,7 @@ local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
+local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
@@ -109,8 +110,9 @@ local function cast(player: Player, target: any)
 		send(player, "Cancelled", "Cast into open water.")
 		return
 	end
-	-- Upgrades bought mid-cast apply from the next cast, matching the client's fight.
-	local boosts = RodUpgrades.boosts(profile and profile.RodUpgrades)
+	-- Upgrades and skins changed mid-cast apply from the next cast, matching the client's fight.
+	local boosts =
+		RodSkins.apply(RodUpgrades.boosts(profile and profile.RodUpgrades), profile and profile.EquippedRodSkin)
 	local state = { tool = tool, target = surface, phase = "Waiting", boosts = boosts }
 	casts[player] = state
 	tool:SetAttribute("CastTarget", surface)
@@ -127,7 +129,8 @@ local function cast(player: Player, target: any)
 		end
 		local roll = FishCatch.roll(pool, Catalog.Fish, Catalog.Rarities, rng, state.boosts)
 		-- Rolled at the bite, but only revealed once the fish is landed.
-		local traits = FishMutations.roll(Catalog.Fish[roll.FishId], DayNight.isNight(DayNight.clockTime()), rng)
+		local night = DayNight.isNight(DayNight.clockTime())
+		local traits = FishMutations.roll(Catalog.Fish[roll.FishId], night, rng, state.boosts)
 		roll.Traits = traits
 		roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)
 		state.roll, state.phase, state.hookedAt = roll, "Hooked", os.clock()

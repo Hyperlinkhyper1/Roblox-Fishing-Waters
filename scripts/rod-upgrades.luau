@@ -58,6 +58,7 @@ check(
 
 -- The transaction charges the current level's price and saves the next level.
 local profile = BoatData.decode({ Version = 1, Cash = 100000, OwnedBoats = {}, OwnedRods = {} })
+profile.OwnedRods.StarterRod = nil
 check(BoatData.upgradeRod(profile, "Speed") == "NoRod", "Upgrades need the starter rod")
 profile.OwnedRods.StarterRod = true
 check(BoatData.upgradeRod(profile, "Nope") == "UnknownUpgrade", "Unknown stats are rejected")

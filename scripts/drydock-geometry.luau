@@ -308,6 +308,18 @@ local function loadFishingBoat()
 	-- FISHINGBOAT_SOURCE --
 end
 dependencies.FishingBoat = loadFishingBoat()
+local function loadSpeedboat()
+	-- SPEEDBOAT_SOURCE --
+end
+dependencies.Speedboat = loadSpeedboat()
+local function loadRacingSpeedboat()
+	-- RACINGSPEEDBOAT_SOURCE --
+end
+dependencies.RacingSpeedboat = loadRacingSpeedboat()
+local function loadPatrolBoat()
+	-- PATROLBOAT_SOURCE --
+end
+dependencies.PatrolBoat = loadPatrolBoat()
 local function loadShipwright()
 	-- SHIPWRIGHT_SOURCE --
 end
@@ -574,7 +586,7 @@ Harbour.ensureBoating(root)
 local plaza = root:FindFirstChild("Plaza", true)
 local shop = plaza:FindFirstChild("Drydock")
 check(shop ~= nil and CollectionService:HasTag(shop, "BoatShop"), "Actual shop must exist and be tagged")
-check(shop:GetAttribute("LayoutVersion") == 10, "Industrial shop must declare its migration version")
+check(shop:GetAttribute("LayoutVersion") == 14, "Industrial shop must declare its migration version")
 check(
 	shop:GetAttribute("BoatId") == "Rowboat" and shop:GetAttribute("Price") == 500,
 	"The default shop boat must preserve the $500 rowboat"
@@ -890,22 +902,17 @@ check(rearFloor and rearFloor.CanCollide, "Outdoor repair berth needs a solid dr
 local rearFloorLow, rearFloorHigh = bounds(rearFloor, shopFrame)
 check(rearFloorLow.Z > 30 and rearFloorHigh.Z >= 75, "Outdoor repair berth must have room for a real boat")
 check(rearFloor.Size.X >= 20 and rearFloor.Size.Z >= 40, "Rear basin floor is too small to read as a repair berth")
-local fishingPreview = rear:FindFirstChild("FishingBoatPreview")
-local fishingFloor = rear:FindFirstChild("FishingBerthFloor")
-check(
-	fishingPreview and fishingPreview:IsA("Model") and fishingPreview:GetAttribute("BoatId") == "FishingBoat",
-	"The fisher's boat needs a separate identifiable physical preview"
-)
-check(fishingFloor and fishingFloor.CanCollide, "Fishing preview requires its own recessed repair berth")
-local fishingLow, fishingHigh = bounds(fishingFloor, shopFrame)
-for _, piece in fishingPreview:GetDescendants() do
-	if piece:IsA("BasePart") then
-		local low, high = bounds(piece, shopFrame)
-		check(
-			low.X >= fishingLow.X and high.X <= fishingHigh.X and low.Z >= fishingLow.Z and high.Z <= fishingHigh.Z,
-			"Fishing preview projects beyond its side berth: " .. piece.Name
-		)
-		check(piece.Anchored and not piece.CanCollide, "Fishing preview must be anchored and nonphysical")
+for _, id in { "FishingBoat", "Speedboat", "RacingSpeedboat", "PatrolBoat" } do
+	check(not rear:FindFirstChild(id .. "Preview"), "Only the center rowboat may be displayed in the yard")
+	check((shop:GetAttribute(id .. "PreviewFrame").Position - shop:GetAttribute("PreviewOriginFrame").Position).Magnitude < EPS,
+		"Every boat must use the middle drydock")
+end
+for _, item in rear:GetDescendants() do
+	check(not string.find(item.Name, "Berth") and item.Name ~= "PatrolDrydockFootprint" and item.Name ~= "RacingDrydockFootprint",
+		"Side drydocks and their access structures must be removed")
+	if item:IsA("BasePart") then
+		local low, high = bounds(item, shopFrame)
+		check(low.X >= -21.5 - EPS and high.X <= 21.5 + EPS, "Rear yard must fit the center dock: " .. item.Name)
 	end
 end
 local dryFloorWorldY = (rearFloor.CFrame * Vector3.new(0, rearFloor.Size.Y / 2, 0)).Y
@@ -945,7 +952,7 @@ local function rearSurfaceAt(x, z)
 	local height = Harbour.heightAt(shape, Vector2.new(point.X, point.Z)) - shopFrame.Position.Y
 	local constructed = false
 	for _, item in rearSolid do
-		if item.Name ~= "RearAccessStep" and item.Name ~= "RearQuayWalkway" and item.Name ~= "FishingBerthQuay" then
+		if item.Name ~= "RearAccessStep" and item.Name ~= "RearQuayWalkway" then
 			continue
 		end
 		local low, high = bounds(item, shopFrame)
@@ -984,31 +991,6 @@ for _, side in { -1, 1 } do
 		math.abs(rearSurfaceAt(side * 15.5, 79) - quayHeight) < EPS,
 		"Rear side quay lacks a continuous walking surface"
 	)
-end
-local fishingWalk = {
-	Vector3.new(16.7, 0, 64),
-	Vector3.new(21, 0, 64),
-	Vector3.new(21, 0, 35.5),
-	Vector3.new(39, 0, 35.5),
-	Vector3.new(39, 0, 72.5),
-	Vector3.new(21, 0, 72.5),
-	Vector3.new(21, 0, 64),
-}
-for index = 2, #fishingWalk do
-	local from, to = fishingWalk[index - 1], fishingWalk[index]
-	local count = math.ceil((to - from).Magnitude / 0.5)
-	for sample = 0, count do
-		local point = from:Lerp(to, sample / count)
-		local height, constructed = rearSurfaceAt(point.X, point.Z)
-		rearRouteSamples += 1
-		check(constructed and math.abs(height - quayHeight) < EPS, "Fishing berth quays need a continuous level route")
-		local avatar = probe(Vector3.new(3, 5.55, 3), Vector3.new(point.X, height + 3.225, point.Z))
-		for _, item in rearSolid do
-			if overlaps(avatar, item) then
-				rearRouteBlockers[item.Name] = true
-			end
-		end
-	end
 end
 local rearBlockedNames = {}
 for name in rearRouteBlockers do
@@ -1263,7 +1245,7 @@ end
 Harbour.ensureBoating(baked)
 local replacement = oldPlaza:FindFirstChild("Drydock")
 check(legacy.Parent == nil and replacement ~= legacy, "Version-one counter shop was not replaced")
-check(replacement:GetAttribute("LayoutVersion") == 10, "Saved map did not receive the industrial layout")
+check(replacement:GetAttribute("LayoutVersion") == 14, "Saved map did not receive the industrial layout")
 check(
 	replacement:FindFirstChild("TalkToShipwrightPrompt", true) ~= nil
 		and replacement:FindFirstChild("BuyRowboatPrompt", true) == nil,
@@ -1349,12 +1331,14 @@ local rearClutterV2 = Instance.new("Part")
 rearClutterV2.Name, rearClutterV2.Size, rearClutterV2.CFrame, rearClutterV2.Parent =
 	"RearBeachClutter", Vector3.new(2, 2, 2), shopFrame * CFrame.new(0, 1, 55), beachV2
 local outsideClutterV2 = Instance.new("Part")
-outsideClutterV2.CFrame, outsideClutterV2.Parent = shopFrame * CFrame.new(50, 1, 55), beachV2
+outsideClutterV2.CFrame, outsideClutterV2.Parent = shopFrame * CFrame.new(90, 1, 55), beachV2
+local patrolClutterV2 = Instance.new("Part")
+patrolClutterV2.CFrame, patrolClutterV2.Parent = shopFrame * CFrame.new(60, 1, 55), beachV2
 Harbour.ensureBoating(bakedV2)
 local replacementV2 = plazaV2:FindFirstChild("Drydock")
 check(legacyV2.Parent == nil and replacementV2 ~= legacyV2, "Saved version-two workshop was not upgraded")
 check(
-	replacementV2:GetAttribute("LayoutVersion") == 10,
+	replacementV2:GetAttribute("LayoutVersion") == 14,
 	"Saved version-two workshop did not receive the rear drydock layout"
 )
 local savedRearV2 = replacementV2:FindFirstChild("RearDrydock")
@@ -1363,6 +1347,7 @@ check(
 	"Saved version-two workshop still lacks the outdoor basin"
 )
 check(rearClutterV2.Parent == nil, "Saved beach clutter remains inside the new rear drydock")
+check(patrolClutterV2.Parent == beachV2, "Single dock must preserve beach props outside the center footprint")
 check(outsideClutterV2.Parent == beachV2, "Rear retrofit removed an unrelated beach prop outside its footprint")
 local savedV2Parts = {}
 for _, item in replacementV2:GetDescendants() do
@@ -1417,6 +1402,13 @@ do
 		"Outdated furnishings must be replaced without duplicating the workshop")
 end
 
+-- Repeated repair must not recreate the removed side-berth displays.
+do
+	dependencies.Drydock.build(plazaV2, plazaFrame)
+	check(not replacementV2:FindFirstChild("RacingSpeedboatPreview", true),
+		"Saved single-dock yards must not regenerate a racing display")
+end
+
 local function checkLaunchFlow()
 	-- Repair the prompt in a current, baked drydock as well as fresh NPCs.
 	-- Keep the shipyard and its launch preview in place during this migration.
@@ -1454,7 +1446,7 @@ local function checkLaunchFlow()
 	Harbour.ensureBoating(bakedV2)
 	local upgradedV3 = plazaV2:FindFirstChild("Drydock")
 	check(
-		upgradedV3 ~= replacementV2 and upgradedV3:GetAttribute("LayoutVersion") == 10,
+		upgradedV3 ~= replacementV2 and upgradedV3:GetAttribute("LayoutVersion") == 14,
 		"Saved version-three rear yard must upgrade to the working drydock"
 	)
 	check(
@@ -1462,14 +1454,15 @@ local function checkLaunchFlow()
 		"Saved version-three yard must receive a launchable preview and cradle"
 	)
 	upgradedV3:SetAttribute("LayoutVersion", 4)
-	upgradedV3:FindFirstChild("FishingBoatPreview", true):Destroy()
+	local oldSideDock = Instance.new("Part")
+	oldSideDock.Name, oldSideDock.Parent = "FishingBerthFloor", upgradedV3
 	Harbour.ensureBoating(bakedV2)
 	local upgradedV4 = plazaV2:FindFirstChild("Drydock")
 	check(
-		upgradedV4 ~= upgradedV3 and upgradedV4:GetAttribute("LayoutVersion") == 10
-			and upgradedV4:FindFirstChild("FishingBoatPreview", true)
+		upgradedV4 ~= upgradedV3 and upgradedV4:GetAttribute("LayoutVersion") == 14
+			and not upgradedV4:FindFirstChild("FishingBerthFloor", true)
 			and typeof(upgradedV4:GetAttribute("FishingBoatPreviewFrame")) == "CFrame",
-		"Saved version-four rowboat yards must receive the new fisher's boat and berth"
+		"Saved yards must retain boat launch frames without side berths"
 	)
 	-- Saved copies of the mistakenly extended lift must return to the old bay.
 	upgradedV4:SetAttribute("LayoutVersion", 6)
@@ -1477,22 +1470,20 @@ local function checkLaunchFlow()
 	extraDeck.Name, extraDeck.Parent = "LaunchPlatformDeck", upgradedV4
 	Harbour.ensureBoating(bakedV2)
 	local upgradedV6 = plazaV2:FindFirstChild("Drydock")
-	check(upgradedV6 ~= upgradedV4 and upgradedV6:GetAttribute("LayoutVersion") == 10
+	check(upgradedV6 ~= upgradedV4 and upgradedV6:GetAttribute("LayoutVersion") == 14
 		and not upgradedV6:FindFirstChild("LaunchPlatformDeck", true)
 		and not upgradedV6:FindFirstChild("LiftAccessWalkway", true),
 		"Saved extra-platform layouts must be replaced with the original lift bay")
-	-- Saved fishing boats from before the closed hull must be rebuilt as well.
-	upgradedV6:SetAttribute("LayoutVersion", 7)
-	local oldFishingPreview = upgradedV6:FindFirstChild("FishingBoatPreview", true)
-	for _, piece in oldFishingPreview:GetDescendants() do
-		if piece.Name == "BilgePanel" or piece.Name == "BottomPanel" then piece:Destroy() end
-	end
+	-- Existing five-dock saved yards must upgrade to the single center bay.
+	upgradedV6:SetAttribute("LayoutVersion", 13)
+	local oldSide = Instance.new("Part")
+	oldSide.Name, oldSide.Parent = "PatrolBerthFloor", upgradedV6
 	Harbour.ensureBoating(bakedV2)
-	local hullUpgrade = plazaV2:FindFirstChild("Drydock")
-	check(hullUpgrade ~= upgradedV6 and hullUpgrade:GetAttribute("LayoutVersion") == 10
-		and hullUpgrade:FindFirstChild("FishingBoatPreview", true):FindFirstChild("BottomPanel", true)
-		and hullUpgrade:FindFirstChild("FishingBoatPreview", true):FindFirstChild("HullEndCap", true),
-		"Saved open-bottom fishing previews must receive the complete closed hull")
+	local singleDock = plazaV2:FindFirstChild("Drydock")
+	check(singleDock ~= upgradedV6 and singleDock:GetAttribute("LayoutVersion") == 14
+		and not singleDock:FindFirstChild("PatrolBerthFloor", true)
+		and singleDock:FindFirstChild("LaunchPreview", true),
+		"Saved five-dock yards must keep only the center drydock and rowboat")
 	-- Exercise the real launch controller on geometry emitted by the real builder.
 	function frameMethods:Lerp(other, alpha)
 		return frame(self.Position:Lerp(other.Position, alpha), self.RightVector, self.UpVector, self.ZVector)
@@ -1589,7 +1580,7 @@ local function checkLaunchFlow()
 	)
 	check(math.abs(launchFinish.Position.Y - Biomes.WaterLevel) < EPS, "Launch must finish at the actual waterline")
 	for _, offset in
-		{ Vector3.zero, Vector3.new(-4, 0, 0), Vector3.new(4, 0, 0), Vector3.new(0, 0, -9), Vector3.new(0, 0, -22) }
+		{ Vector3.zero, Vector3.new(-6, 0, 0), Vector3.new(6, 0, 0), Vector3.new(-5.25, 0, 16.8), Vector3.new(5.25, 0, 16.8), Vector3.new(0, 0, -17), Vector3.new(0, 0, -22) }
 	do
 		local point = launchFinish * offset
 		check(
@@ -1674,57 +1665,50 @@ local function checkLaunchFlow()
 	local nextPreview = shop:FindFirstChild("LaunchPreview", true)
 	check(nextPreview ~= preview and nextPreview.Parent, "Completed launch must replenish the shop preview")
 	check(preview.Parent == root, "Replenishing the preview must preserve the purchased boat")
-	local fisher = shop:FindFirstChild("FishingBoatPreview", true)
-	local fisherPivot, rowPivot = fisher:GetPivot(), nextPreview:GetPivot()
+	for _, boatId in { "FishingBoat", "Speedboat", "RacingSpeedboat", "PatrolBoat" } do
+		local previewName = boatId .. "Preview"
+		local rowPivot = nextPreview:GetPivot()
+		check(not shop:FindFirstChild(previewName, true), "Larger boats must not occupy side docks")
+		check(DrydockLaunch.reserve(shop, launchPlayer, "UnknownBoat") == nil, "Unknown boats cannot reserve the slipway")
+		reservation = assert(DrydockLaunch.reserve(shop, launchPlayer, boatId))
+		local selected = reservation.preview
+		if boatId == "RacingSpeedboat" then
+			check(selected:GetAttribute("ModelVersion") == dependencies.RacingSpeedboat.VERSION, "On-demand racing hull must use the current model")
+		end
+		check(selected:GetAttribute("BoatId") == boatId and shop:GetAttribute("LaunchingBoatId") == boatId,
+			"Purchase must build and reserve the selected hull")
+		check((selected:GetPivot().Position - (previewOrigin.Position + Vector3.new(0, -0.4, 0))).Magnitude < EPS,
+			"Selected hull must start on the center launch cradle")
+		check(nextPreview.Parent == nil, "Default rowboat must leave the world during another launch")
+		check(DrydockLaunch.reserve(shop, launchPlayer, boatId) == nil, "Temporary hull must keep the bay reserved")
+		for _, piece in selected:GetDescendants() do
+			if piece:IsA("BasePart") then
+				check(not piece.CanCollide, "Temporary hull must not block the launch")
+			end
+		end
+		DrydockLaunch.release(reservation)
+		check(not shop:FindFirstChild(previewName, true) and selected.Parent == nil
+			and nextPreview:IsDescendantOf(shop) and (nextPreview:GetPivot().Position - rowPivot.Position).Magnitude < EPS,
+			"Failed purchase must remove the temporary hull and restore the center display")
+		waitHook = nil
+		reservation = assert(DrydockLaunch.reserve(shop, launchPlayer, boatId))
+		selected = reservation.preview
+		check(DrydockLaunch.run(reservation, function(player, launchFrame, model)
+			check(player == launchPlayer and model == selected and model:GetAttribute("BoatId") == boatId,
+				"Purchase must activate the selected hull")
+			check((model:GetPivot().Position - (launchFrame.Position + Vector3.new(0, -0.4, 0))).Magnitude < EPS,
+				"Hull must reach the shared waterline before activation")
+			model.Name, model.Parent = "Purchased" .. boatId, root
+			return true
+		end), "Catalog boat must launch successfully")
+		DrydockLaunch.release(reservation)
+		check(nextPreview.Parent == nil, "Rowboat must stay hidden until the purchased hull clears the lift")
+		finishReturn(selected)
+		check(selected.Parent == root and not shop:FindFirstChild(previewName, true)
+			and nextPreview:IsDescendantOf(shop) and (nextPreview:GetPivot().Position - rowPivot.Position).Magnitude < EPS,
+			"Completed launch must preserve the purchase and restore only the center rowboat")
+	end
 	local fishingOrigin = shop:GetAttribute("FishingBoatPreviewFrame")
-	check(DrydockLaunch.reserve(shop, launchPlayer, "UnknownBoat") == nil, "Unknown boats cannot reserve the slipway")
-	reservation = assert(DrydockLaunch.reserve(shop, launchPlayer, "FishingBoat"))
-	check(
-		reservation.boatId == "FishingBoat" and reservation.preview == fisher
-			and shop:GetAttribute("LaunchingBoatId") == "FishingBoat",
-		"Fishing purchase must reserve its own physical model and advertise its identity"
-	)
-	check(
-		(fisher:GetPivot().Position - (previewOrigin.Position + Vector3.new(0, -0.4, 0))).Magnitude < EPS,
-		"Fishing preview must move from its berth onto the shared launch cradle"
-	)
-	check(
-		(nextPreview:GetPivot().Position - (fishingOrigin.Position + Vector3.new(0, -0.4, 0))).Magnitude < EPS,
-		"The rowboat must park in the empty side berth instead of overlapping the larger launch"
-	)
-	DrydockLaunch.release(reservation)
-	check(
-		shop:FindFirstChild("FishingBoatPreview", true) == fisher
-			and (fisher:GetPivot().Position - fisherPivot.Position).Magnitude < EPS
-			and (nextPreview:GetPivot().Position - rowPivot.Position).Magnitude < EPS,
-		"A failed fishing purchase must restore both previews to their original berths"
-	)
-	waitHook = nil
-	reservation = assert(DrydockLaunch.reserve(shop, launchPlayer, "FishingBoat"))
-	check(DrydockLaunch.run(reservation, function(player, launchFrame, model)
-		check(
-			player == launchPlayer and model == fisher and model:GetAttribute("BoatId") == "FishingBoat",
-			"Fishing purchase must activate the same larger preview with its boat identity"
-		)
-		check(
-			(model:GetPivot().Position - (launchFrame.Position + Vector3.new(0, -0.4, 0))).Magnitude < EPS,
-			"The larger fishing hull must reach the shared waterline before activation"
-		)
-		model.Name, model.Parent = "PurchasedFishingBoat", root
-		return true
-	end), "The fishing boat launch must activate successfully")
-	DrydockLaunch.release(reservation)
-	finishReturn(fisher)
-	local nextFisher = shop:FindFirstChild("FishingBoatPreview", true)
-	check(
-		nextFisher ~= fisher and nextFisher:GetAttribute("BoatId") == "FishingBoat"
-			and (nextFisher:GetPivot().Position - fisherPivot.Position).Magnitude < EPS,
-		"Completed fishing launch must replenish the correct hull at its original side berth"
-	)
-	check(
-		fisher.Parent == root and (nextPreview:GetPivot().Position - rowPivot.Position).Magnitude < EPS,
-		"Fishing replenishment must preserve the purchased hull and restore the parked rowboat"
-	)
 	reservation = assert(DrydockLaunch.reserve(shop, launchPlayer))
 	local originalPivot = nextPreview:GetPivot()
 	waitHook = function()
@@ -1848,8 +1832,14 @@ local function checkLaunchFlow()
 	local fishingScale = math.sqrt(dependencies.BoatCatalog.FishingBoat.Length / dependencies.BoatCatalog.Rowboat.Length)
 	check(
 		(camera.Focus.Position - (fishingOrigin.Position + Vector3.new(0, fishingScale, 0))).Magnitude < EPS,
-		"Browsing the fisher's boat must focus its own berth with room for the larger hull"
+		"Browsing must focus the shared center dock with room for the larger hull"
 	)
+	DrydockCamera.stop()
+	DrydockCamera.show(shop, false, "Speedboat")
+	assert(render)()
+	local speedboatScale = math.sqrt(dependencies.BoatCatalog.Speedboat.Length / dependencies.BoatCatalog.Rowboat.Length)
+	check((camera.Focus.Position - (shop:GetAttribute("SpeedboatPreviewFrame").Position + Vector3.new(0, speedboatScale, 0))).Magnitude < EPS,
+		"Speedboat preview camera must frame the shared center dock")
 	DrydockCamera.stop()
 	DrydockCamera.show(shop, false)
 	local newCharacter = Instance.new("Model")
@@ -1871,7 +1861,7 @@ checkLaunchFlow()
 assert(failures == 0, tostring(failures) .. " drydock geometry checks failed")
 print(
 	string.format(
-		"PASS: %d actual-builder assertions; %d walk-in route samples, %d rear stair/quay samples, separate boat berths, both preview launches and replenishment, hollow repair basins, submerged slipway, NPC prompt access, detailed docks with four-stud walking lanes, saved-map upgrades and six unchanged water launches. Roblox physics and rendering are not exercised.",
+		"PASS: %d actual-builder assertions; %d walk-in route samples, %d rear stair/quay samples, single center drydock, on-demand catalog launches and rowboat restoration, hollow repair basins, submerged slipway, NPC prompt access, detailed docks with four-stud walking lanes, saved-map upgrades and six unchanged water launches. Roblox physics and rendering are not exercised.",
 		checks,
 		routeSamples,
 		rearRouteSamples

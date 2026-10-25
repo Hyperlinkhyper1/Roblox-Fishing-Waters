@@ -3,16 +3,26 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local Rowboat = require(script.Parent.Rowboat)
 local FishingBoat = require(script.Parent.FishingBoat)
+local Speedboat = require(script.Parent.Speedboat)
+local RacingSpeedboat = require(script.Parent.RacingSpeedboat)
+local PatrolBoat = require(script.Parent.PatrolBoat)
 
 local DrydockLaunch = {}
 local reservations = {}
 local boats = {
+	RacingSpeedboat = {
+		previewName = "RacingSpeedboatPreview",
+		frameAttribute = "RacingSpeedboatPreviewFrame",
+		builder = RacingSpeedboat,
+	},
 	Rowboat = { previewName = "LaunchPreview", frameAttribute = "PreviewOriginFrame", builder = Rowboat },
 	FishingBoat = {
 		previewName = "FishingBoatPreview",
 		frameAttribute = "FishingBoatPreviewFrame",
 		builder = FishingBoat,
 	},
+	Speedboat = { previewName = "SpeedboatPreview", frameAttribute = "SpeedboatPreviewFrame", builder = Speedboat },
+	PatrolBoat = { previewName = "PatrolBoatPreview", frameAttribute = "PatrolBoatPreviewFrame", builder = PatrolBoat },
 }
 
 local function marker(shop: Model, name: string): BasePart?
@@ -35,8 +45,7 @@ function DrydockLaunch.reserve(shop: Model, player: Player, boatId: string?)
 	local cradle = shop:FindFirstChild("LaunchCradle", true)
 	local displayFrame = shop:GetAttribute(spec.frameAttribute)
 	if
-		not preview
-		or not preview:IsA("Model")
+		(preview and not preview:IsA("Model"))
 		or not start
 		or not railEnd
 		or not finish
@@ -45,6 +54,21 @@ function DrydockLaunch.reserve(shop: Model, player: Player, boatId: string?)
 		or typeof(displayFrame) ~= "CFrame"
 	then
 		return nil, "The drydock is not ready. Please try again shortly."
+	end
+	-- Only the rowboat is displayed in the single basin. Other hulls are built
+	-- when purchased; the shop's viewport supplies their browsing previews.
+	if not preview then
+		preview = spec.builder.build(displayFrame, true)
+		preview.Name = spec.previewName
+		preview:SetAttribute("BoatId", selectedId)
+		preview:SetAttribute("DisplayOnly", true)
+		for _, piece in preview:GetDescendants() do
+			if piece:IsA("BasePart") then
+				piece:SetAttribute("PreviewCanCollide", piece.CanCollide)
+				piece.CanCollide = false
+			end
+		end
+		preview.Parent = shop:FindFirstChild("RearDrydock") or shop
 	end
 	-- Launch without querying water depth, terrain, boats, or nearby objects.
 	local reservation = {
@@ -62,14 +86,14 @@ function DrydockLaunch.reserve(shop: Model, player: Player, boatId: string?)
 		displayFrame = displayFrame,
 	}
 	reservations[shop] = reservation
-	-- The selected hull uses the shared launch cradle. Park the rowboat in the
-	-- now-empty side berth so the two displays cannot overlap during this launch.
-	if selectedId == "FishingBoat" then
+	-- Keep the default display out of the world while another hull uses the bay.
+	if selectedId ~= "Rowboat" then
 		local rowPreview = shop:FindFirstChild("LaunchPreview", true)
 		if rowPreview and rowPreview:IsA("Model") then
 			reservation.displacedPreview = rowPreview
 			reservation.displacedStart = rowPreview:GetPivot()
-			rowPreview:PivotTo(displayFrame * start.CFrame:ToObjectSpace(reservation.displacedStart))
+			reservation.displacedParent = rowPreview.Parent
+			rowPreview.Parent = nil
 		end
 	end
 	preview:PivotTo(start.CFrame * displayFrame:ToObjectSpace(reservation.previewStart))
@@ -86,6 +110,9 @@ local function reset(reservation)
 	end
 	reservations[shop] = nil
 	if not shop.Parent then
+		if reservation.displacedPreview then
+			reservation.displacedPreview:Destroy()
+		end
 		return
 	end
 	shop:SetAttribute("LaunchingUserId", nil)
@@ -97,8 +124,15 @@ local function reset(reservation)
 	if reservation.preview:IsDescendantOf(shop) then
 		reservation.preview:PivotTo(reservation.previewStart)
 	end
-	if reservation.displacedPreview and reservation.displacedPreview:IsDescendantOf(shop) then
+	if reservation.displacedPreview then
+		reservation.displacedPreview.Parent = reservation.displacedParent
 		reservation.displacedPreview:PivotTo(reservation.displacedStart)
+	end
+	if reservation.boatId ~= "Rowboat" then
+		if reservation.preview:IsDescendantOf(shop) then
+			reservation.preview:Destroy()
+		end
+		return
 	end
 	-- The very same preview becomes the buyer's boat; replenish the display only
 	-- after it has left the slipway. A failed save keeps the original display.
@@ -123,7 +157,9 @@ function DrydockLaunch.release(reservation)
 		reset(reservation)
 		return
 	end
-	if reservation.returning then return end
+	if reservation.returning then
+		return
+	end
 	reservation.returning = true
 	task.spawn(function()
 		local ok, reason = pcall(function()
@@ -142,11 +178,15 @@ function DrydockLaunch.release(reservation)
 						end
 					end
 				end
-				if clear then break end
+				if clear then
+					break
+				end
 				RunService.Heartbeat:Wait()
 			end
 			local cradle = reservation.cradle
-			if not cradle.Parent or not shop.Parent then return end
+			if not cradle.Parent or not shop.Parent then
+				return
+			end
 			local from, elapsed = cradle:GetPivot(), 0
 			repeat
 				elapsed += RunService.Heartbeat:Wait()
@@ -156,7 +196,9 @@ function DrydockLaunch.release(reservation)
 			until elapsed >= 5 or not cradle.Parent or not shop.Parent
 		end)
 		reset(reservation)
-		if not ok then warn("[Boats] Lift return failed: " .. tostring(reason)) end
+		if not ok then
+			warn("[Boats] Lift return failed: " .. tostring(reason))
+		end
 	end)
 end
 
@@ -188,7 +230,9 @@ function DrydockLaunch.run(reservation, activate)
 	-- Physics is attached only after the anchored lowering animation has ended.
 	local ok, result = pcall(activate, player, reservation.finish, model)
 	reservation.activated = not model:IsDescendantOf(reservation.shop)
-	if not ok then error(result) end
+	if not ok then
+		error(result)
+	end
 	return result
 end
 

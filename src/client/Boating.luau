@@ -9,6 +9,7 @@ local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme")
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local DrydockCamera = require(script.Parent.DrydockCamera)
+local BoatPreview = require(script.Parent.BoatPreview)
 
 local Boating = {}
 
@@ -17,7 +18,13 @@ function Boating.start()
 	local remotes = ReplicatedStorage:WaitForChild("Boating")
 	local request = remotes:WaitForChild("Request") :: RemoteEvent
 	local feedback = remotes:WaitForChild("Feedback") :: RemoteEvent
-	local boatIds = { "Rowboat", "FishingBoat" }
+	local boatIds = {}
+	for id in BoatCatalog do
+		table.insert(boatIds, id)
+	end
+	table.sort(boatIds, function(a, b)
+		return BoatCatalog[a].Price < BoatCatalog[b].Price
+	end)
 	local selectedBoatId = "Rowboat"
 	local selectedDockBoatId = "Rowboat"
 	local spec = BoatCatalog.Rowboat
@@ -102,7 +109,8 @@ function Boating.start()
 	lightning.ZIndex = 3
 	local currentWeather: string? = nil
 	local function refreshWeather()
-		local kind = Weather.getState().kind
+		local root = player.Character and player.Character.PrimaryPart
+		local kind = Weather.getState(nil, if root then root.Position else Vector3.zero).kind
 		if kind == currentWeather then
 			return
 		end
@@ -216,15 +224,29 @@ function Boating.start()
 		14,
 		muted
 	)
+	local tabs = Instance.new("ScrollingFrame")
+	tabs.Name = "BoatTabs"
+	tabs.Position, tabs.Size = UDim2.fromOffset(24, 105), UDim2.fromOffset(332, 46)
+	tabs.BackgroundTransparency, tabs.BorderSizePixel = 1, 0
+	tabs.ScrollBarThickness = 3
+	tabs.ScrollingDirection = Enum.ScrollingDirection.X
+	tabs.CanvasSize = UDim2.fromOffset(#boatIds * 114, 0)
+	tabs.Parent = product
 	local boatTabs = {}
 	for index, boatId in boatIds do
 		local tab = Instance.new("TextButton")
 		tab.Name = "Select" .. boatId
-		tab.Position = UDim2.fromOffset(24 + (index - 1) * 170, 105)
-		tab.Size = UDim2.fromOffset(162, 42)
-		tab.Text = if boatId == "Rowboat" then "Wooden rowboat" else "Fishing boat"
-		tab.Font, tab.TextSize = Enum.Font.GothamBold, 14
-		tab.Parent = product
+		tab.Position = UDim2.fromOffset((index - 1) * 114, 0)
+		tab.Size = UDim2.fromOffset(106, 42)
+		tab.TextWrapped = true
+		tab.Text = if boatId == "Rowboat"
+			then "Rowboat"
+			elseif boatId == "FishingBoat" then "Fishing boat"
+			elseif boatId == "Speedboat" then "Speedboat"
+			elseif boatId == "RacingSpeedboat" then "Racing"
+			else "Patrol cruiser"
+		tab.Font, tab.TextSize = Enum.Font.GothamBold, 12
+		tab.Parent = tabs
 		Theme.button(tab)
 		boatTabs[boatId] = tab
 		tab.Activated:Connect(function()
@@ -309,36 +331,159 @@ function Boating.start()
 	dock.BackgroundTransparency = 1
 	dock.Visible = false
 	dock.Parent = card
-	label(dock, "HOME DOCK", UDim2.fromOffset(24, 23), UDim2.fromOffset(276, 22), 12, cream)
-	local dockTitle = label(dock, "Choose your boat", UDim2.fromOffset(24, 61), UDim2.fromOffset(332, 38), 27, cream)
+	label(dock, "HOME DOCK  /  YOUR FLEET", UDim2.fromOffset(24, 20), UDim2.fromOffset(280, 20), 12, gold)
+	local dockTitle = label(dock, "Ready to set sail?", UDim2.fromOffset(24, 47), UDim2.fromOffset(332, 38), 28, cream)
 	dockTitle.Font = Enum.Font.GothamBold
-	label(
+	local dockDescription = label(
 		dock,
-		"Launch any boat you own. Your current boat will be replaced at your dock.",
-		UDim2.fromOffset(24, 108),
-		UDim2.fromOffset(332, 48),
-		15,
+		"Choose a boat from your fleet and launch it at your dock.",
+		UDim2.fromOffset(24, 85),
+		UDim2.fromOffset(740, 28),
+		14,
 		muted
 	)
+	local previewPanel = Instance.new("Frame")
+	previewPanel.Name = "BoatPreviewPanel"
+	previewPanel.ClipsDescendants = true
+	previewPanel.Parent = dock
+	Theme.glassPanel(previewPanel, true)
+	previewPanel.BackgroundColor3 = Color3.new(1, 1, 1)
+	previewPanel.BackgroundTransparency = 0
+	local previewWash = Instance.new("UIGradient")
+	previewWash.Color = ColorSequence.new(Color3.fromRGB(47, 74, 88), Color3.fromRGB(13, 22, 31))
+	previewWash.Rotation = 90
+	previewWash.Parent = previewPanel
+	local viewport = Instance.new("ViewportFrame")
+	viewport.Name = "SelectedBoatModel"
+	viewport.Size = UDim2.new(1, -24, 1, -56)
+	viewport.Position = UDim2.fromOffset(12, 12)
+	viewport.BackgroundTransparency = 1
+	viewport.Parent = previewPanel
+	local previewStatus = label(previewPanel, "", UDim2.fromOffset(16, 12), UDim2.new(1, -32, 1, -56), 16, muted)
+	previewStatus.TextXAlignment = Enum.TextXAlignment.Center
+	local previewHint = label(
+		previewPanel,
+		"Drag to rotate  ·  3D preview",
+		UDim2.new(0, 16, 1, -36),
+		UDim2.new(1, -32, 0, 24),
+		12,
+		muted
+	)
+	previewHint.TextXAlignment = Enum.TextXAlignment.Center
+	local dockPreview = BoatPreview.new(viewport, remotes, previewStatus)
+	local dockBoatName = label(dock, "", UDim2.fromOffset(478, 126), UDim2.fromOffset(298, 30), 20, cream)
+	local fleetLabel = label(dock, "YOUR BOATS", UDim2.fromOffset(478, 168), UDim2.fromOffset(298, 20), 11, muted)
+	local fleet = Instance.new("ScrollingFrame")
+	fleet.Name = "FleetChoices"
+	fleet.BackgroundTransparency, fleet.BorderSizePixel = 1, 0
+	fleet.ScrollBarThickness = 4
+	fleet.CanvasSize = UDim2.fromOffset(0, #boatIds * 48)
+	fleet.ScrollingDirection = Enum.ScrollingDirection.Y
+	fleet.Parent = dock
 	local dockChoices = {}
 	for _, boatId in boatIds do
 		local choice = Instance.new("TextButton")
 		choice.Name = "Launch" .. boatId
-		choice.Size = UDim2.fromOffset(332, 66)
-		choice.Font, choice.TextSize = Enum.Font.GothamBold, 16
+		choice.Size = UDim2.fromOffset(298, 44)
+		choice.Font, choice.TextSize = Enum.Font.GothamBold, 14
 		choice.TextWrapped = true
-		choice.Parent = dock
-		Theme.button(choice)
+		choice.Parent = fleet
+		Theme.glassButton(choice)
 		dockChoices[boatId] = choice
 	end
-	local dockStatus = label(dock, "", UDim2.fromOffset(24, 329), UDim2.fromOffset(332, 76), 15, muted)
+	local dockStats = Instance.new("Frame")
+	dockStats.Name = "SelectedBoatStats"
+	dockStats.BackgroundTransparency = 1
+	dockStats.Parent = dock
+	local dockStatValues = {}
+	for index, name in { "STUDS / S", "SEATS", "CARGO SLOTS" } do
+		local stat = Instance.new("Frame")
+		stat.Position = UDim2.new((index - 1) / 3, 0, 0, 0)
+		stat.Size = UDim2.new(1 / 3, -6, 1, 0)
+		stat.Parent = dockStats
+		Theme.glassPanel(stat, true)
+		local value = label(stat, "—", UDim2.fromOffset(4, 8), UDim2.new(1, -8, 0, 25), 19, cream)
+		value.TextXAlignment = Enum.TextXAlignment.Center
+		dockStatValues[index] = value
+		local caption = label(stat, name, UDim2.fromOffset(4, 36), UDim2.new(1, -8, 0, 18), 10, muted)
+		caption.TextXAlignment = Enum.TextXAlignment.Center
+	end
+	local dockStatus = label(dock, "", UDim2.fromOffset(24, 484), UDim2.fromOffset(430, 48), 13, muted)
 	local launch = Instance.new("TextButton")
 	launch.Name = "LaunchSelectedBoat"
-	launch.Position = UDim2.fromOffset(24, 428)
-	launch.Size = UDim2.fromOffset(332, 48)
 	launch.Font, launch.TextSize = Enum.Font.GothamBold, 16
 	launch.Parent = dock
-	Theme.button(launch, "Selected")
+	Theme.glassButton(launch, "Selected")
+	local function layoutDock(compact: boolean)
+		card.Size = UDim2.fromOffset(if compact then 400 else 800, if compact then 774 else 560)
+		dockDescription.Size = UDim2.fromOffset(if compact then 352 else 740, 28)
+		dockDescription.TextSize = if compact then 12 else 14
+		previewPanel.Position = UDim2.fromOffset(24, 126)
+		previewPanel.Size = UDim2.fromOffset(if compact then 352 else 430, if compact then 238 else 342)
+		dockBoatName.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 376 else 126)
+		dockBoatName.Size = UDim2.fromOffset(if compact then 352 else 298, 30)
+		fleetLabel.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 409 else 168)
+		fleet.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 434 else 198)
+		fleet.Size = UDim2.fromOffset(if compact then 352 else 298, 156)
+		for index, boatId in boatIds do
+			local choice = dockChoices[boatId]
+			choice.Position = UDim2.fromOffset(0, (index - 1) * 48)
+			choice.Size = UDim2.fromOffset(if compact then 342 else 288, 44)
+		end
+		dockStats.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 598 else 366)
+		dockStats.Size = UDim2.fromOffset(if compact then 358 else 304, 62)
+		dockStatus.Position = UDim2.fromOffset(24, if compact then 668 else 484)
+		dockStatus.Size = UDim2.fromOffset(if compact then 352 else 430, if compact then 28 else 48)
+		launch.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 710 else 478)
+		launch.Size = UDim2.fromOffset(if compact then 352 else 298, if compact then 48 else 56)
+	end
+	local layoutSize = Vector2.zero
+	local layoutIsDock = false
+	local function layoutMenu()
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		local size = camera.ViewportSize
+		if size == layoutSize and dock.Visible == layoutIsDock then
+			return
+		end
+		layoutSize, layoutIsDock = size, dock.Visible
+		overlay.BackgroundTransparency = if dock.Visible then 0.35 else 1
+		local portrait = size.X < size.Y * 1.2
+		if dock.Visible then
+			layoutDock(size.X < 700 or portrait)
+			card.AnchorPoint = Vector2.new(0.5, 0.5)
+			card.Position = UDim2.fromScale(0.5, 0.5)
+			scale.Scale = math.min(1, (size.X - 32) / card.Size.X.Offset, (size.Y - 32) / card.Size.Y.Offset)
+		else
+			card.Size = UDim2.fromOffset(380, 500)
+			card.AnchorPoint = if portrait then Vector2.new(0.5, 1) else Vector2.new(0, 0.5)
+			card.Position = if portrait then UDim2.new(0.5, 0, 1, -16) else UDim2.new(0, 20, 0.5, 0)
+			scale.Scale = math.min(1, (size.X - 32) / 380, (size.Y * (if portrait then 0.48 else 0.88)) / 500)
+		end
+	end
+	local function refreshDockPreview()
+		if not overlay.Visible or not dock.Visible then
+			dockPreview.show(nil)
+			return
+		end
+		local dataStatus = player:GetAttribute("BoatDataStatus")
+		local ready = dataStatus == "Ready"
+		local owned = player:GetAttribute("Owns" .. selectedDockBoatId) == true
+		dockPreview.show(if ready and owned then selectedDockBoatId else nil)
+		if not ready or not owned then
+			previewStatus.Visible = true
+			previewStatus.Text = if dataStatus == "Unavailable"
+				then "Fleet unavailable"
+				elseif not ready then "Loading your fleet…"
+				else "Buy your first boat from Mara\nat the shipyard."
+		end
+	end
+	dock:GetPropertyChangedSignal("Visible"):Connect(function()
+		layoutMenu()
+		refreshDockPreview()
+	end)
 	close.ZIndex = 3
 	browse.Activated:Connect(function()
 		request:FireServer("BrowseBoat", selectedBoatId)
@@ -349,6 +494,10 @@ function Boating.start()
 	-- Every dismissal path (buttons, distance, Escape and respawn) restores camera.
 	overlay:GetPropertyChangedSignal("Visible"):Connect(function()
 		player:SetAttribute("DrydockScreenOpen", overlay.Visible or isLaunching)
+		if overlay.Visible then
+			layoutMenu()
+		end
+		refreshDockPreview()
 		if not overlay.Visible and not isLaunching then
 			previewShop = nil
 			dockBase = nil
@@ -401,12 +550,26 @@ function Boating.start()
 		local dataStatus = player:GetAttribute("BoatDataStatus")
 		local owned = player:GetAttribute("Owns" .. selectedBoatId) == true
 		local ready = dataStatus == "Ready"
-		local ownsAnyBoat = player:GetAttribute("OwnsRowboat") == true or player:GetAttribute("OwnsFishingBoat") == true
+		local ownsAnyBoat = false
+		for _, id in boatIds do
+			if player:GetAttribute("Owns" .. id) == true then
+				ownsAnyBoat = true
+			end
+		end
 		greeting.Text = if ownsAnyBoat
 			then "Welcome back! Browse our boats, or launch a boat you already own from the boat stand on your own dock."
 			else "Looking for your first boat? Start with the wooden rowboat, or step up to a bigger, faster fishing boat. We'll lower your purchase into the water and put you aboard."
 		title.Text = spec.Name
-		description.Text = if selectedBoatId == "FishingBoat"
+		description.Text = if selectedBoatId == "RacingSpeedboat"
+			then "Our fastest boat with the sharpest turns. Four cockpit seats and 49 cargo tiles: 15 fewer than the fishing boat."
+			elseif
+				selectedBoatId == "PatrolBoat"
+			then "A long gray patrol cruiser with a wheelhouse for two, stern benches for two more, 128 cargo tiles and more speed. Pivots easily in harbour; turns a little wider than the Bluewater speedboat at speed."
+			elseif
+				selectedBoatId == "Speedboat"
+			then "A blue-and-white sport cruiser with more speed, sharper turns and the same 64 cargo tiles as the fishing boat."
+			elseif
+				selectedBoatId == "FishingBoat"
 			then "A bigger hull, a sheltered wheelhouse and room for three. Cruise faster to your next fishing spot."
 			else "A simple wooden boat for your first trips. Inspect the hull before we lower it into the water."
 		statValues[1].Text = tostring(spec.ForwardSpeed) .. " studs/s"
@@ -454,37 +617,64 @@ function Boating.start()
 				end
 			end
 		end
-		local choiceIndex = 0
 		for _, boatId in boatIds do
 			local choice, boatSpec = dockChoices[boatId], BoatCatalog[boatId]
-			choice.Visible = player:GetAttribute("Owns" .. boatId) == true
-			if choice.Visible then
-				choice.Position = UDim2.fromOffset(24, 172 + choiceIndex * 78)
-				choiceIndex += 1
-			end
-			choice.Text = boatSpec.Name
+			local boatOwned = player:GetAttribute("Owns" .. boatId) == true
+			choice.Active, choice.Selectable = ready and boatOwned, ready and boatOwned
+			choice.Text = (if boatOwned and boatId == selectedDockBoatId then "✓  " else "")
+				.. boatSpec.Name
 				.. "\n"
-				.. tostring(boatSpec.ForwardSpeed)
-				.. " studs/s · "
-				.. tostring(boatSpec.Seats)
-				.. (if boatSpec.Seats == 1 then " seat" else " seats")
-			Theme.button(choice, if boatId == selectedDockBoatId then "Selected" else nil)
+				.. (
+					if not ready
+						then "Loading…"
+						elseif boatOwned then "Owned · ready to launch"
+						else "Available at the shipyard · $" .. tostring(boatSpec.Price)
+				)
+			Theme.glassButton(
+				choice,
+				if not ready or not boatOwned
+					then "Disabled"
+					elseif boatId == selectedDockBoatId then "Selected"
+					else nil
+			)
 		end
-		launch.Active = ready and ownsAnyBoat and not isLaunching
+		local dockSpec = BoatCatalog[selectedDockBoatId]
+		dockBoatName.Text = if ownsAnyBoat then dockSpec.Name else "Your fleet starts here"
+		local cargoSlots = 0
+		for _, row in dockSpec.Hold do
+			local _, count = row:gsub("#", "")
+			cargoSlots += count
+		end
+		dockStatValues[1].Text = if ownsAnyBoat then tostring(dockSpec.ForwardSpeed) else "—"
+		dockStatValues[2].Text = if ownsAnyBoat then tostring(dockSpec.Seats) else "—"
+		dockStatValues[3].Text = if ownsAnyBoat then tostring(cargoSlots) else "—"
+		previewHint.Visible = ownsAnyBoat and ready
+		refreshDockPreview()
+		launch.Active = ready and player:GetAttribute("Owns" .. selectedDockBoatId) == true and not isLaunching
 		launch.Selectable, launch.AutoButtonColor = launch.Active, launch.Active
-		Theme.button(launch, if launch.Active then "Selected" else "Disabled")
-		launch.Text = if ownsAnyBoat then "Launch " .. BoatCatalog[selectedDockBoatId].Name else "No boats owned"
+		Theme.glassButton(launch, if launch.Active then "Selected" else "Disabled")
+		launch.Text = if dataStatus == "Unavailable"
+			then "Fleet unavailable"
+			elseif not ready then "Loading boats…"
+			elseif ownsAnyBoat then "Launch boat  →"
+			else "No boats owned"
 		dockStatus.Text = if dataStatus == "Unavailable"
 			then "Your boats could not load. Rejoin to try again."
 			elseif not ready then "Loading your boats…"
 			elseif not ownsAnyBoat then "Visit Mara at the shipyard to buy your first boat."
-			else "Select a boat above, then launch it at your dock."
+			else "Launching replaces your current boat. Your new boat will be waiting at this dock."
 	end
-	for _, attribute in { "Cash", "OwnsRowboat", "OwnsFishingBoat", "BoatDataStatus" } do
+	for _, id in boatIds do
+		player:GetAttributeChangedSignal("Owns" .. id):Connect(refresh)
+	end
+	for _, attribute in { "Cash", "BoatDataStatus" } do
 		player:GetAttributeChangedSignal(attribute):Connect(refresh)
 	end
 	for boatId, choice in dockChoices do
 		choice.Activated:Connect(function()
+			if not choice.Active then
+				return
+			end
 			selectedDockBoatId = boatId
 			refresh()
 		end)
@@ -641,20 +831,10 @@ function Boating.start()
 		end
 		local camera = workspace.CurrentCamera
 		if overlay.Visible and camera then
-			local portrait = camera.ViewportSize.X < camera.ViewportSize.Y * 1.2
-			card.AnchorPoint = if dock.Visible
-				then Vector2.new(0.5, 0.5)
-				elseif portrait then Vector2.new(0.5, 1)
-				else Vector2.new(0, 0.5)
-			card.Position = if dock.Visible
-				then UDim2.fromScale(0.5, 0.5)
-				elseif portrait then UDim2.new(0.5, 0, 1, -16)
-				else UDim2.new(0, 20, 0.5, 0)
-			scale.Scale = math.min(
-				1,
-				(camera.ViewportSize.X - 32) / 380,
-				(camera.ViewportSize.Y * (if portrait and not dock.Visible then 0.48 else 0.88)) / 500
-			)
+			layoutMenu()
+			if dock.Visible then
+				dockPreview.step(dt)
+			end
 		end
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -670,7 +850,7 @@ function Boating.start()
 		if ownSeat then
 			if seat ~= previousSeat then
 				notice(
-					(if drivenBoatId == "FishingBoat" then "Steer" else "Row")
+					(if drivenBoatId ~= "Rowboat" then "Steer" else "Row")
 						.. " with movement controls (WASD / arrows). Jump to leave the boat."
 				)
 			end

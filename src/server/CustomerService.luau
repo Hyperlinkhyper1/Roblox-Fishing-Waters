@@ -31,7 +31,7 @@ local OWNER_PROMPT_TAG = "ShopOwnerPrompt"
 local WALK_SPEED = 9
 local STAFF_WALK_SPEED = 16
 local WAIT_SECONDS = 150
-local ARRIVAL_SECONDS = Vector2.new(6, 16)
+local ARRIVAL_SECONDS = 25
 local SERVE_DISTANCE = 14
 local DISPLAY_LIMIT = 24
 -- Full-depth row keeps the same world size as held fish, including large catches.
@@ -499,8 +499,8 @@ local function refreshShelves(shop)
 	refreshFoodDisplay(shop)
 end
 
-local function walk(customer, target: Vector3, allowed: (() -> boolean)?): boolean
-	return NpcNavigation.walk(customer, target, allowed)
+local function walk(customer, target: Vector3, allowed: (() -> boolean)?, stayOnGround: boolean?): boolean
+	return NpcNavigation.walk(customer, target, allowed, stayOnGround)
 end
 
 local function face(customer, position: Vector3)
@@ -537,7 +537,6 @@ local function finish(shop, customer)
 	local index = table.find(shop.customers, customer)
 	if index then
 		table.remove(shop.customers, index)
-		shop.nextArrival = math.max(shop.nextArrival, os.clock() + random:NextNumber(ARRIVAL_SECONDS.X, ARRIVAL_SECONDS.Y))
 		refreshShelves(shop)
 	end
 end
@@ -771,15 +770,18 @@ local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Mod
 			and currentId == boatId and currentBoat == boat
 	end
 	local function go(position: Vector3): boolean
-		return valid() and walk(worker, position, valid) and valid()
+		return valid() and walk(worker, position, valid, true) and valid()
 	end
-	local landing = (dock * CFrame.new(17, 4.4, 4)).Position
+	local landing = (dock * CFrame.new(17, 5.9, 11)).Position
 	local pier = (dock * CFrame.new(17, 3.2, -38)).Position
 	local pickup = (dock * CFrame.new(0, 3.2, -38)).Position
-	-- A moored company boat names its own spot on the pier.
-	local moorPier, moorPickup = boat:GetAttribute("PorterPier"), boat:GetAttribute("PorterPickup")
-	if typeof(moorPier) == "Vector3" and typeof(moorPickup) == "Vector3" then
-		pier, pickup = moorPier, moorPickup
+	-- Collect from the pier's center, never the boat-side edge. Company hulls
+	-- have no collision, so stepping toward them leaves no ground underfoot.
+	local moorPier = boat:GetAttribute("PorterPier")
+	if typeof(moorPier) == "Vector3" then
+		pier, pickup = moorPier, moorPier
+		local side = if dock:PointToObjectSpace(pier).X < 0 then -1 else 1
+		landing = (dock * CFrame.new(side * 17, 5.9, 11)).Position
 	end
 	bubble(worker, "Porter · Collecting fish")
 	-- Navigate from the current position; forcing the front door here sends
@@ -1118,8 +1120,8 @@ local function arrive(shop)
 		active = true,
 	}
 	table.insert(shop.customers, customer)
-	-- Stagger walk-ins so a shop with several counters doesn't fill in one second.
-	shop.nextArrival = os.clock() + random:NextNumber(ARRIVAL_SECONDS.X, ARRIVAL_SECONDS.Y) / 2
+	-- Keep the same arrival interval even when several registers are available.
+	shop.nextArrival = os.clock() + ARRIVAL_SECONDS
 	task.spawn(function()
 		local ok, failure = pcall(visit, shop, customer)
 		if not ok then
@@ -1152,7 +1154,7 @@ local function registerShop(base: Model)
 		staff = {},
 		spawning = {},
 		customers = {},
-		nextArrival = os.clock() + random:NextNumber(3, 8),
+		nextArrival = os.clock() + ARRIVAL_SECONDS,
 	}
 	shop.freezerPrompt = ownerPrompt(anchor, "StockFreezerPrompt", "Place fish", "Freezer")
 	shop.freezerPrompt.MaxActivationDistance = 5
@@ -1173,7 +1175,7 @@ local function registerShop(base: Model)
 			-- A new or departed owner never inherits the previous customers.
 			leave(customer)
 		end
-		shop.nextArrival = os.clock() + random:NextNumber(4, 10)
+		shop.nextArrival = os.clock() + ARRIVAL_SECONDS
 	end
 	base:GetAttributeChangedSignal("OwnerUserId"):Connect(owned)
 	shop.freezerPrompt:SetAttribute("OwnerUserId", base:GetAttribute("OwnerUserId"))

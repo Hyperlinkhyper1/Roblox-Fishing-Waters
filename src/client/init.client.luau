@@ -9,6 +9,7 @@ local modules = {
 	"ParkedBoats",
 	"Fishing",
 	"RodWorkshop",
+	"RodCrates",
 	"FishingAudio",
 	"Casting",
 	"CastAnimation",
