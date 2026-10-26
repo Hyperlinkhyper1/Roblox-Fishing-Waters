@@ -8,6 +8,7 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Passes = require(ReplicatedStorage.Shared.Gamepasses)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local GamepassService = require(script.Parent.GamepassService)
@@ -48,6 +49,7 @@ local function payload(closing: boolean?)
 	local state = Weather.getState(now)
 	local epoch = workspace:GetAttribute("WeatherEpoch") or now
 	local override = workspace:GetAttribute("WeatherOverride")
+	local blackHole = Weather.blackHolePosition()
 	local kinds, schedule, passes = {}, {}, {}
 	for kind in Weather.Presets do
 		table.insert(kinds, kind)
@@ -55,7 +57,9 @@ local function payload(closing: boolean?)
 	-- Calmest first, so the dashboard's weather buttons read in order.
 	table.sort(kinds, function(a, b)
 		local pa, pb = Weather.Presets[a], Weather.Presets[b]
-		return pa.rain + pa.storm < pb.rain + pb.storm
+		local sa = pa.rain + pa.storm + (if a == "BlackHole" then 10 else 0)
+		local sb = pb.rain + pb.storm + (if b == "BlackHole" then 10 else 0)
+		return if sa == sb then a < b else sa < sb
 	end)
 	for _, stage in Weather.Schedule do
 		table.insert(schedule, { kind = stage.kind, duration = stage.duration })
@@ -76,6 +80,9 @@ local function payload(closing: boolean?)
 		players = players,
 		weather = {
 			kind = state.kind,
+			blackHole = if blackHole
+				then { x = blackHole.X, z = blackHole.Z, radius = Weather.BlackHoleRadius }
+				else nil,
 			override = if type(override) == "string" then override else nil,
 			rain = state.rain,
 			storm = state.storm,
@@ -102,12 +109,30 @@ local function apply(reply)
 	-- in chat still works until the operator picks something there.
 	local version = reply.weatherVersion
 	if type(version) == "number" and version > appliedWeatherVersion then
-		appliedWeatherVersion = version
 		local kind = reply.weatherOverride
-		workspace:SetAttribute(
-			"WeatherOverride",
-			if type(kind) == "string" and Weather.Presets[kind] then kind else nil
-		)
+		local center
+		local valid = true
+		if kind == "BlackHole" then
+			local point = reply.blackHole
+			valid = type(point) == "table"
+				and type(point.x) == "number"
+				and type(point.z) == "number"
+				and point.x == point.x
+				and point.z == point.z
+				and math.abs(point.x) <= Weather.RadarHalfSize
+				and math.abs(point.z) <= Weather.RadarHalfSize
+			if valid then
+				center = Vector3.new(point.x, Biomes.WaterLevel, point.z)
+			end
+		end
+		if valid then
+			appliedWeatherVersion = version
+			workspace:SetAttribute("BlackHolePosition", center)
+			workspace:SetAttribute(
+				"WeatherOverride",
+				if type(kind) == "string" and Weather.Presets[kind] then kind else nil
+			)
+		end
 	end
 	if type(reply.grants) == "table" then
 		GamepassService.setDashboardGrants(reply.grants)

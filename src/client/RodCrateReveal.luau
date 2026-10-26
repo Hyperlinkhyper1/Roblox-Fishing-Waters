@@ -15,9 +15,15 @@ local function ease(value: number): number
 	return alpha * alpha * (3 - 2 * alpha)
 end
 
-function Reveal.play(stand: BasePart?, skinId: string, onReward: () -> (), onFinished: () -> ()): (() -> ())?
+function Reveal.play(
+	stand: BasePart?,
+	skinId: string,
+	onReward: () -> (),
+	onFinished: () -> (),
+	makeReward: (() -> Model)?
+): (() -> ())?
 	local crate = stand and stand.Parent
-	local lid = crate and crate:FindFirstChild("RodCrateLid")
+	local lid = crate and (crate:FindFirstChild("RodCrateLid") or crate:FindFirstChild("BobberCrateLid"))
 	local origin = crate and crate:GetAttribute("CrateFrame")
 	local hinge = crate and crate:GetAttribute("LidHinge")
 	local camera = workspace.CurrentCamera
@@ -56,20 +62,26 @@ function Reveal.play(stand: BasePart?, skinId: string, onReward: () -> (), onFin
 		fov = camera.FieldOfView,
 		prompts = ProximityPromptService.Enabled,
 	}
-	local rod = FishingRod.build(skinId)
-	CollectionService:RemoveTag(rod, "FishingRod")
-	rod.Enabled = false
-	local reward = Instance.new("Model")
-	reward.Name = "UnboxedRod"
-	rod.Parent = reward
-	reward.PrimaryPart = rod:FindFirstChild("Handle") :: BasePart
+	local reward: Model
+	local rewardScale = if makeReward then 5 else 1
+	if makeReward then
+		reward = makeReward()
+	else
+		local rod = FishingRod.build(skinId)
+		CollectionService:RemoveTag(rod, "FishingRod")
+		rod.Enabled = false
+		reward = Instance.new("Model")
+		reward.Name = "UnboxedRod"
+		rod.Parent = reward
+		reward.PrimaryPart = rod:FindFirstChild("Handle") :: BasePart
+	end
 	for _, part in reward:GetDescendants() do
 		if part:IsA("BasePart") then
 			part.Anchored = true
 			part.CanCollide, part.CanTouch, part.CanQuery = false, false, false
 		end
 	end
-	reward:ScaleTo(0.15)
+	reward:ScaleTo(0.15 * rewardScale)
 	reward:PivotTo(origin * CFrame.new(0, 1.45, 0))
 	-- Keep it out of Workspace until the lid has opened.
 	local connection: RBXScriptConnection?
@@ -151,7 +163,7 @@ function Reveal.play(stand: BasePart?, skinId: string, onReward: () -> (), onFin
 		lid:PivotTo(hinge * CFrame.Angles(math.rad(110) * opening * (1 - closing), 0, 0) * hingeOffset)
 		if elapsed >= 1.25 and elapsed < 4.65 then
 			local rise = ease((elapsed - 1.25) / 1.1)
-			reward:ScaleTo(0.15 + 0.85 * rise)
+			reward:ScaleTo((0.15 + 0.85 * rise) * rewardScale)
 			reward:PivotTo(
 				origin * CFrame.new(0, 1.45 + 1.95 * rise, -0.12) * CFrame.Angles(0, (elapsed - 1.25) * 0.65, 0)
 			)

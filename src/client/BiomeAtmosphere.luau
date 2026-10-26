@@ -112,6 +112,40 @@ function BiomeAtmosphere.start()
 		local weather = Weather.getState(now, if camera then camera.CFrame.Position else Vector3.zero)
 		local rain, storm = weather.rain, weather.storm
 		local night = DayNight.darkness(DayNight.clockTime(now))
+		if weather.kind == "BlackHole" then
+			-- The admin event covers every biome, including the water beneath it.
+			Lighting.FogColor = Color3.fromRGB(29, 5, 48)
+			Lighting.FogStart = if underwater then 0 else surfaceFogStart
+			Lighting.FogEnd = if underwater then UNDERWATER_VISIBILITY else surfaceFogEnd
+			atmosphere.Parent = if underwater then nil else Lighting
+			blend(terrain, {
+				WaterColor = Color3.fromRGB(33, 6, 53),
+				WaterTransparency = if underwater then UNDERWATER_TRANSPARENCY else 0.22,
+			})
+			if not underwater then
+				blend(atmosphere, {
+					Offset = Biomes.DistanceFogOffset,
+					Color = Color3.fromRGB(67, 17, 93),
+					Decay = Color3.fromRGB(26, 3, 44),
+					Density = 0.46,
+					Haze = 3.2,
+					Glare = 0,
+				})
+			end
+			blend(grading, {
+				TintColor = Color3.fromRGB(177, 108, 233),
+				Brightness = if underwater then -0.04 else -0.12,
+				Saturation = -0.2,
+				Contrast = 0.16,
+			})
+			blend(clouds, { Cover = 1, Density = 0.9, Color = Color3.fromRGB(31, 7, 48) })
+			blend(Lighting, {
+				Ambient = Color3.fromRGB(39, 15, 61),
+				OutdoorAmbient = Color3.fromRGB(47, 18, 68),
+				Brightness = 0.45,
+			})
+			return
+		end
 		-- Distance fog is disabled while an Atmosphere is in Lighting. Keep the
 		-- surface atmosphere alive, but detach it underwater to enforce a short view.
 		Lighting.FogColor = if underwater then UNDERWATER_FOG_COLOR else surfaceFogColor
@@ -121,7 +155,7 @@ function BiomeAtmosphere.start()
 		-- Nearby scenery stays readable as it fades into opaque blue-green fog.
 		blend(terrain, {
 			WaterColor = if underwater then UNDERWATER_BLUE else look.waterColor,
-			WaterTransparency = if underwater then UNDERWATER_TRANSPARENCY else 0.55,
+			WaterTransparency = if underwater then UNDERWATER_TRANSPARENCY else 0.3,
 		})
 		if not underwater then
 			blend(atmosphere, {

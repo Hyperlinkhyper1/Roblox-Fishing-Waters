@@ -78,6 +78,12 @@ check(#staleView:GetChildren() == 0 and not liveStatus.Visible,
 	"An in-flight load skips destroyed views and serves the remaining waiting preview")
 local cachedLoads = previewLoads
 for _, item in { failedHolder, holder, liveHolder } do item:Destroy() end
+local portraitHolder, portraitView, portraitStatus = previewSurface()
+StaffPreview.show(portraitView, "Seller", portraitStatus, true)
+check(portraitView.CurrentCamera.CFrame.Target.Y > view.CurrentCamera.CFrame.Target.Y,
+	"Portrait framing targets the upper body instead of the full rig")
+check(portraitView.CurrentCamera.CFrame.Position.X == 0, "Worker portraits face forward")
+portraitHolder:Destroy()
 
 Menu.start()
 advance(1)
@@ -110,17 +116,36 @@ for _, width in { 1020, 362 } do
 	click("StaffTab")
 	check(card:GetAttribute("GlassSurface") and card.BackgroundTransparency == 0.2,
 		"Home uses the same glass window as Settings")
-	check(contains("Your crew · 2/2 hired"), "Staff summary counts owned hires")
+	check(contains("Your crew · 2/" .. #StaffCatalog.Order .. " hired"), "Staff summary counts owned hires")
+	local grid = content:FindFirstChild("WorkerGrid", true)
+	check(grid and grid:FindFirstChildOfClass("UIGridLayout"), "Workers use a portrait card grid")
+	for _, gridWidth in { 700, 300, 230 } do
+		grid.AbsoluteSize = Vector2.new(gridWidth, 300)
+		local layout = grid.WorkerCards
+		check(layout.CellSize.X.Offset * layout.FillDirectionMaxCells + (layout.FillDirectionMaxCells - 1) * 10 <= gridWidth,
+			"Responsive worker cards stay inside the available width")
+	end
 	for _, id in { "Seller", "Porter" } do
 		local preview = content:FindFirstChild(id .. "Preview", true)
 		check(preview and preview.CurrentCamera and preview:FindFirstChildOfClass("WorldModel"),
 			"Staff card displays its 3D NPC before any hiring interaction")
-		local x = preview.CurrentCamera.CFrame.Position.X
-		click(id .. "TurnRight")
-		check(preview.CurrentCamera.CFrame.Position.X ~= x, "Staff turn button drives the preview")
+		click("Select" .. id)
+		check(contains(id .. " · Hired"), "Selecting a portrait shows its saved worker details")
+		check(content:FindFirstChild(id .. "Staff", true).SelectionAccent.Visible,
+			"The selected worker has a visible card accent")
 	end
-	check(contains("Seller · Hired") and contains("Porter · Hired"), "Staff shows saved hires")
+	check(not content:FindFirstChild("HireFisherman", true).Active, "Company-locked fisherman cannot be hired")
+	click("SelectFisherman")
+	check(contains("Unlocks with The Company"), "Selecting a locked worker explains the required path")
+	click("WorkerFilter")
+	check(content:FindFirstChild("FishermanStaff", true) == nil and content:FindFirstChild("SellerStaff", true),
+		"Hired filter shows only saved workers")
+	click("WorkerFilter")
+	check(content:FindFirstChild("SellerStaff", true) == nil and content:FindFirstChild("FishermanStaff", true),
+		"For hire filter shows only unhired workers")
+	click("WorkerFilter")
 	check(not content:FindFirstChild("HireSeller", true).Active, "Already hired control is inactive")
+	cachedLoads = previewLoads
 	click("OverviewTab")
 	check(contains("4 fish in stock · $76 total value"), "Stock totals count fish across storage and round sale values")
 	check(contains("Freezer 1/4") and contains("3 fish waiting"), "Freezer count uses authoritative capacity")
@@ -147,6 +172,7 @@ profile.Cash = 100
 player:SetAttribute("AnglerRevision", (player:GetAttribute("AnglerRevision") or 0) + 1)
 advance(1)
 click("StaffTab")
+click("SelectPorter")
 check(not content:FindFirstChild("HirePorter", true).Active, "Insufficient cash disables the hire control")
 check(contains("$300 more needed"), "Hire card explains exactly how much more cash is required")
 profile.Cash = 400
@@ -156,4 +182,25 @@ check(content:FindFirstChild("HirePorter", true).Active, "Funds refresh enables 
 click("HirePorter")
 check(profile.Angler.Staff.Porter and profile.Cash == 0 and contains("Porter · Hired"), "Hire button saves and updates the visible staff card")
 check(previewLoads == cachedLoads, "Tab changes, resizes and profile refreshes reuse cached staff models")
+profile.Cash = 6000
+profile.Angler.Paths.Unlocked.Company = true
+player:SetAttribute("AnglerRevision", (player:GetAttribute("AnglerRevision") or 0) + 1)
+advance(1)
+click("SelectFisherman")
+click("HireFisherman")
+check(profile.Angler.Staff.Fisherman and profile.Cash == 0, "Fisherman card hires through the server after unlocking Company")
+check(contains("Buy a boat at the drydock first"), "Fisherman without owned boats has a useful empty state")
+profile.OwnedBoats = { Rowboat = true, FishingBoat = true }
+BoatService.activeBoat = function() return nil end
+player:SetAttribute("AnglerRevision", (player:GetAttribute("AnglerRevision") or 0) + 1)
+advance(1)
+click("AssignFishingBoat")
+check(profile.Angler.FishermanBoat == "FishingBoat", "Selected fisherman's boat button saves the assignment")
+check(content:FindFirstChild("AssignFishingBoat", true).ThemeFace:GetAttribute("Finish") == "Selected",
+	"Assigned boat stays highlighted after profile refresh")
+click("WorkerFilter")
+click("WorkerFilter")
+check(contains("No workers in this filter."), "Empty for-hire filter remains usable when all workers are hired")
+check(content:FindFirstChild("WorkerGrid", true).Size.Y.Offset >= 0, "Empty worker grid has a valid height")
+click("WorkerFilter")
 print("Home menu: " .. checks .. " hiring, inventory and desktop/mobile recording checks passed.")

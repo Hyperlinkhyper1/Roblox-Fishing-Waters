@@ -1,6 +1,6 @@
--- The rod crate stand in Tide & Tackle. The server rolls, charges and saves
--- crates, and publishes owned skins as RodSkinCount<Id> plus the equipped one
--- as RodSkin; this module only presents them and plays the unboxing reveal.
+-- Rod and bobber cases in Tide & Tackle share the same catalog-driven window.
+-- The server rolls, charges and saves; this module presents owned skins and
+-- plays the unboxing reveal at the matching stand.
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,13 +11,14 @@ local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local FishingRod = require(Shared:WaitForChild("FishingRod"))
 local RodSkins = require(Shared:WaitForChild("RodSkins"))
+local BobberSkins = require(Shared:WaitForChild("BobberSkins"))
+local FishingBobber = require(Shared:WaitForChild("FishingBobber"))
 local CrateReveal = require(script.Parent:WaitForChild("RodCrateReveal"))
 
 local RodCrates = {}
 local started = false
 
-local CRATE = "TideCrate"
-local WIDTH, HEIGHT = 760, 616
+local WIDTH, HEIGHT = 760, 658
 local CARD_WIDTH, CARD_HEIGHT, CARD_GAP = 170, 200, 10
 local GOLD = Color3.fromRGB(244, 196, 76)
 local AFFORD = Color3.fromRGB(111, 202, 125)
@@ -56,7 +57,7 @@ local function percent(chance: number): string
 end
 
 -- A still, anchored copy of the real skin, so the card shows exactly what the angler will hold.
-local function preview(parent: GuiObject, skinId: string)
+local function preview(parent: GuiObject, skinId: string, bobber: boolean)
 	local view = Instance.new("ViewportFrame")
 	view.Name = "SkinPreview"
 	view.BackgroundTransparency = 1
@@ -68,10 +69,12 @@ local function preview(parent: GuiObject, skinId: string)
 	view.Parent = parent
 	local world = Instance.new("WorldModel")
 	world.Parent = view
-	local rod = FishingRod.build(skinId)
+	local rod = if bobber then FishingBobber.build(skinId) else FishingRod.build(skinId)
 	-- Preview tools must never join the live rod animation/tag listeners.
-	CollectionService:RemoveTag(rod, "FishingRod")
-	rod.Enabled = false
+	if not bobber then
+		CollectionService:RemoveTag(rod, "FishingRod")
+		rod.Enabled = false
+	end
 	local model = Instance.new("Model")
 	model.Name = "DisplayRod"
 	model.Parent = world
@@ -83,35 +86,43 @@ local function preview(parent: GuiObject, skinId: string)
 	rod.Parent = model
 	-- Lay the rod on its side, butt to the left.
 	local center, size = model:GetBoundingBox()
-	model:PivotTo(CFrame.Angles(0, math.rad(-12), math.rad(-75)) * center:Inverse() * model:GetPivot())
+	model:PivotTo(
+		CFrame.Angles(0, math.rad(-12), if bobber then 0 else math.rad(-75)) * center:Inverse() * model:GetPivot()
+	)
 	local camera = Instance.new("Camera")
 	camera.FieldOfView = 30
 	camera.Parent = view
 	view.CurrentCamera = camera
 	local function frame()
 		local aspect = math.max(0.5, view.AbsoluteSize.X / math.max(1, view.AbsoluteSize.Y))
-		local length = math.max(size.X, size.Y)
-		local distance = math.max(length * 0.62 / aspect, size.Z) / math.tan(math.rad(15))
+		local length = math.max(size.X, size.Y) * (if bobber then 1.3 else 1)
+		local distance = math.max(length * 0.62 / aspect, if bobber then length * 0.62 else 0, size.Z)
+			/ math.tan(math.rad(15))
 		camera.CFrame = CFrame.lookAt(Vector3.new(0, 0, distance), Vector3.zero)
 	end
 	view:GetPropertyChangedSignal("AbsoluteSize"):Connect(frame)
 	frame()
 end
 
-function RodCrates.start()
-	if started then
-		return
-	end
-	started = true
+local function startShop(RodSkins, bobber: boolean)
+	local kind = if bobber then "Bobber" else "Rod"
+	local openAction = "Open" .. kind .. "Crate"
+	local equipAction = "Equip" .. kind .. "Skin"
+	local openEvent = if bobber then "OpenBobberCrates" else "OpenCrates"
+	local resultEvent = if bobber then "BobberCrateResult" else "CrateResult"
+	local skinEvent = if bobber then "BobberSkinResult" else "SkinResult"
+	local skinAttribute = kind .. "Skin"
+	local countAttribute = kind .. "SkinCount"
 	local player = Players.LocalPlayer
 	local remotes = ReplicatedStorage:WaitForChild("Fishing")
 	local request = remotes:WaitForChild("Request") :: RemoteEvent
 	local feedback = remotes:WaitForChild("Feedback") :: RemoteEvent
 	local cream, muted = Theme.Colors.Text, Theme.Colors.Muted
-	local crate = RodSkins.Crates[CRATE]
+	local crateId = RodSkins.CrateOrder[1]
+	local crate = RodSkins.Crates[crateId]
 
 	local gui = Instance.new("ScreenGui")
-	gui.Name = "RodCrates"
+	gui.Name = kind .. "Crates"
 	gui.ResetOnSpawn = false
 	gui.DisplayOrder = 23
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -168,7 +179,7 @@ function RodCrates.start()
 	overlay.Parent = gui
 
 	local window = Instance.new("Frame")
-	window.Name = "RodCrateWindow"
+	window.Name = kind .. "CrateWindow"
 	window.Active = true
 	window.AnchorPoint = Vector2.new(0.5, 0.5)
 	window.Position = UDim2.fromScale(0.5, 0.5)
@@ -182,22 +193,16 @@ function RodCrates.start()
 	local header = frame(window, "Header", UDim2.fromOffset(14, 14), UDim2.new(1, -28, 0, 96), Color3.new(1, 1, 1))
 	Theme.corner(header, 8)
 	gradient(header, Color3.fromRGB(86, 52, 120), Color3.fromRGB(40, 26, 66))
-	label(header, "TIDE & TACKLE · ROD CRATES", UDim2.fromOffset(18, 12), UDim2.fromOffset(360, 18), 13, GOLD)
-	label(header, crate.Name, UDim2.fromOffset(18, 30), UDim2.fromOffset(360, 32), 26, cream)
-	local odds = {}
-	for _, rarity in RodSkins.RarityOrder do
-		table.insert(
-			odds,
-			string.format(
-				'<font color="%s">%s %s</font>',
-				hex(rarityColor(rarity)),
-				rarity,
-				percent(crate.Odds[rarity])
-			)
-		)
-	end
-	local oddsLine =
-		label(header, table.concat(odds, "  ·  "), UDim2.fromOffset(18, 64), UDim2.new(1, -220, 0, 20), 13, muted)
+	label(
+		header,
+		"TIDE & TACKLE · " .. (if bobber then "BOBBERS" else "ROD CRATES"),
+		UDim2.fromOffset(18, 12),
+		UDim2.fromOffset(360, 18),
+		13,
+		GOLD
+	)
+	local title = label(header, crate.Name, UDim2.fromOffset(18, 30), UDim2.fromOffset(360, 32), 26, cream)
+	local oddsLine = label(header, "", UDim2.fromOffset(18, 64), UDim2.new(1, -220, 0, 20), 13, muted)
 	oddsLine.RichText = true
 	oddsLine.Font = Enum.Font.GothamMedium
 	local wallet = frame(header, "Wallet", UDim2.new(1, -196, 0, 24), UDim2.fromOffset(150, 46), Theme.Colors.Inset)
@@ -216,57 +221,72 @@ function RodCrates.start()
 	close.Parent = header
 	Theme.button(close, "Danger")
 
-	-- One card per skin, four to a row.
-	local cards = {}
-	local grid = frame(
-		window,
-		"Skins",
-		UDim2.fromOffset(14, 122),
-		UDim2.new(1, -28, 0, CARD_HEIGHT * 2 + CARD_GAP),
-		Color3.new()
-	)
-	grid.BackgroundTransparency = 1
-	local layout = Instance.new("UIGridLayout")
-	layout.CellSize = UDim2.fromOffset(CARD_WIDTH, CARD_HEIGHT)
-	layout.CellPadding = UDim2.fromOffset(CARD_GAP, CARD_GAP)
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Parent = grid
-	for index, skinId in crate.Skins do
-		local skin = RodSkins.Skins[skinId]
-		local color = rarityColor(skin.Rarity)
-		local card = frame(grid, skinId, UDim2.new(), UDim2.new(), Theme.Colors.Panel)
-		card.LayoutOrder = index
-		Theme.panel(card, false, 8)
-		local stripe = frame(card, "Accent", UDim2.fromScale(0, 0), UDim2.new(1, 0, 0, 5), color)
-		Theme.corner(stripe, 8)
-		local glow = frame(card, "Glow", UDim2.fromOffset(0, 5), UDim2.new(1, 0, 0, 80), color)
-		glow.BackgroundTransparency = 0.85
-		local fade = gradient(glow, Color3.new(1, 1, 1), Color3.new(1, 1, 1))
-		fade.Transparency = NumberSequence.new(0, 1)
-		preview(card, skinId)
-		label(card, skin.Name, UDim2.fromOffset(10, 88), UDim2.new(1, -20, 0, 20), 15, cream)
-		local rarity = label(
-			card,
-			string.format("%s · %s", string.upper(skin.Rarity), percent(RodSkins.chance(CRATE, skinId))),
-			UDim2.fromOffset(10, 107),
-			UDim2.new(1, -20, 0, 14),
-			11,
-			color
+	-- Each crate has its own reward grid; selecting a tab also changes the purchase.
+	local tabs = frame(window, "CrateTabs", UDim2.fromOffset(14, 122), UDim2.new(1, -28, 0, 32), Color3.new())
+	tabs.BackgroundTransparency = 1
+	local crateViews = {}
+	for crateIndex, optionId in RodSkins.CrateOrder do
+		local option = RodSkins.Crates[optionId]
+		local tab = button(
+			tabs,
+			"Select" .. optionId,
+			string.format("%s · $%s", option.Name, commas(option.Price)),
+			UDim2.new((crateIndex - 1) / #RodSkins.CrateOrder, 0, 0, 0),
+			UDim2.new(1 / #RodSkins.CrateOrder, -8, 1, 0)
 		)
-		rarity.Font = Enum.Font.GothamBold
-		local perks = label(
-			card,
-			table.concat(RodSkins.perks(skinId), "\n"),
-			UDim2.fromOffset(10, 123),
-			UDim2.new(1, -20, 0, 40),
-			11,
-			muted
+		local cards = {}
+		local grid = frame(
+			window,
+			"Skins" .. optionId,
+			UDim2.fromOffset(14, 164),
+			UDim2.new(1, -28, 0, CARD_HEIGHT * 2 + CARD_GAP),
+			Color3.new()
 		)
-		perks.Font = Enum.Font.GothamMedium
-		perks.TextYAlignment = Enum.TextYAlignment.Top
-		local equip = button(card, "Equip" .. skinId, "", UDim2.new(0, 8, 1, -34), UDim2.new(1, -16, 0, 28))
-		cards[skinId] = { card = card, glow = glow, equip = equip }
+		grid.BackgroundTransparency = 1
+		local layout = Instance.new("UIGridLayout")
+		layout.CellSize = UDim2.fromOffset(CARD_WIDTH, CARD_HEIGHT)
+		layout.CellPadding = UDim2.fromOffset(CARD_GAP, CARD_GAP)
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Parent = grid
+		for index, skinId in option.Skins do
+			local skin = RodSkins.Skins[skinId]
+			local skinRarity = RodSkins.rarity(skinId, optionId)
+			local color = rarityColor(skinRarity)
+			local card = frame(grid, skinId, UDim2.new(), UDim2.new(), Theme.Colors.Panel)
+			card.LayoutOrder = index
+			Theme.panel(card, false, 8)
+			local stripe = frame(card, "Accent", UDim2.fromScale(0, 0), UDim2.new(1, 0, 0, 5), color)
+			Theme.corner(stripe, 8)
+			local glow = frame(card, "Glow", UDim2.fromOffset(0, 5), UDim2.new(1, 0, 0, 80), color)
+			glow.BackgroundTransparency = 0.85
+			local fade = gradient(glow, Color3.new(1, 1, 1), Color3.new(1, 1, 1))
+			fade.Transparency = NumberSequence.new(0, 1)
+			preview(card, skinId, bobber)
+			label(card, skin.Name, UDim2.fromOffset(10, 88), UDim2.new(1, -20, 0, 20), 15, cream)
+			local rarity = label(
+				card,
+				string.format("%s · %s", string.upper(skinRarity), percent(RodSkins.chance(optionId, skinId))),
+				UDim2.fromOffset(10, 107),
+				UDim2.new(1, -20, 0, 14),
+				11,
+				color
+			)
+			rarity.Font = Enum.Font.GothamBold
+			local perks = label(
+				card,
+				table.concat(RodSkins.perks(skinId), "\n"),
+				UDim2.fromOffset(10, 123),
+				UDim2.new(1, -20, 0, 40),
+				11,
+				muted
+			)
+			perks.Font = Enum.Font.GothamMedium
+			perks.TextYAlignment = Enum.TextYAlignment.Top
+			local equip = button(card, "Equip" .. skinId, "", UDim2.new(0, 8, 1, -34), UDim2.new(1, -16, 0, 28))
+			cards[skinId] = { card = card, glow = glow, equip = equip }
+		end
+		crateViews[optionId] = { tab = tab, grid = grid, cards = cards }
 	end
 
 	local footer = frame(window, "Footer", UDim2.new(0, 14, 1, -84), UDim2.new(1, -28, 0, 70), Color3.new())
@@ -274,9 +294,14 @@ function RodCrates.start()
 	local status = label(footer, "", UDim2.fromOffset(0, 0), UDim2.new(1, -300, 0, 36), 13, muted)
 	status.Font = Enum.Font.GothamMedium
 	status.TextYAlignment = Enum.TextYAlignment.Top
-	local plain =
-		button(footer, "UseStarterLook", "Use starter rod look", UDim2.fromOffset(0, 40), UDim2.fromOffset(200, 28))
-	local open = button(footer, "OpenRodCrate", "", UDim2.new(1, -284, 0, 4), UDim2.fromOffset(284, 60))
+	local plain = button(
+		footer,
+		"UseStarterLook",
+		if bobber then "Use starter bobber" else "Use starter rod look",
+		UDim2.fromOffset(0, 40),
+		UDim2.fromOffset(200, 28)
+	)
+	local open = button(footer, openAction, "", UDim2.new(1, -284, 0, 4), UDim2.fromOffset(284, 60))
 	open.TextSize = 18
 
 	-- A small reward caption stays outside the closed menu during the shop animation.
@@ -313,7 +338,7 @@ function RodCrates.start()
 	local standPart: BasePart? = nil
 
 	local function owned(skinId: string): number
-		local value = player:GetAttribute("RodSkinCount" .. skinId)
+		local value = player:GetAttribute(countAttribute .. skinId)
 		return if type(value) == "number" then value else 0
 	end
 	local function setStatus(message: string, color: Color3)
@@ -326,9 +351,28 @@ function RodCrates.start()
 		cash.Text = "$" .. commas(money)
 		local ready = player:GetAttribute("BoatDataStatus") == "Ready"
 		local ownsRod = player:GetAttribute("OwnsStarterRod") == true
-		local equipped = player:GetAttribute("RodSkin")
+		local equipped = player:GetAttribute(skinAttribute)
 		local idle = ready and pending == nil and not revealing
-		for skinId, view in cards do
+		title.Text = crate.Name
+		local odds = {}
+		for _, rarity in RodSkins.RarityOrder do
+			table.insert(
+				odds,
+				string.format(
+					'<font color="%s">%s %s</font>',
+					hex(rarityColor(rarity)),
+					rarity,
+					percent(crate.Odds[rarity])
+				)
+			)
+		end
+		oddsLine.Text = table.concat(odds, "  ·  ")
+		for optionId, view in crateViews do
+			view.grid.Visible = optionId == crateId
+			Theme.button(view.tab, if optionId == crateId then "Selected" else "Normal")
+			view.tab.Active, view.tab.Selectable = idle, idle
+		end
+		for skinId, view in crateViews[crateId].cards do
 			local count = owned(skinId)
 			local active = equipped == skinId
 			local enabled = idle and count > 0 and not active
@@ -349,7 +393,7 @@ function RodCrates.start()
 		plain.Active, plain.Selectable, plain.AutoButtonColor = plainEnabled, plainEnabled, plainEnabled
 		local afford = money >= crate.Price
 		local openEnabled = idle and ownsRod and afford
-		open.Text = if pending == "OpenRodCrate" or revealing
+		open.Text = if pending == openAction or revealing
 			then "Opening…"
 			else string.format(
 				'OPEN CRATE\n<font color="%s">$%s</font>',
@@ -366,7 +410,13 @@ function RodCrates.start()
 	end
 
 	local function openWindow()
-		if overlay.Visible or revealing or pending == "OpenRodCrate" then
+		if
+			overlay.Visible
+			or revealing
+			or pending == openAction
+			or player:GetAttribute("RodCratesOpen")
+			or player:GetAttribute("RodCrateOpening")
+		then
 			return
 		end
 		local character = player.Character
@@ -381,7 +431,12 @@ function RodCrates.start()
 		then
 			return
 		end
-		setStatus("Each skin adds its stats on top of Finn's upgrades. Duplicates stack as spares.", muted)
+		setStatus(
+			if bobber
+				then "Equip one bobber for small luck and mutation boosts. Duplicate copies do not stack perks."
+				else "Each skin adds its stats on top of Finn's upgrades. Duplicates stack as spares.",
+			muted
+		)
 		reveal.Visible = false
 		refresh()
 		overlay.Visible = true
@@ -407,7 +462,7 @@ function RodCrates.start()
 		pending, pendingId = action, pendingId + 1
 		local current = pendingId
 		refresh()
-		if action == "OpenRodCrate" then
+		if action == openAction then
 			closeWindow()
 			player:SetAttribute("RodCrateOpening", true)
 		end
@@ -415,7 +470,7 @@ function RodCrates.start()
 		task.delay(8, function()
 			if pendingId == current and pending then
 				pending = nil
-				if action == "OpenRodCrate" then
+				if action == openAction then
 					player:SetAttribute("RodCrateOpening", false)
 					openWindow()
 				end
@@ -435,12 +490,13 @@ function RodCrates.start()
 		player:SetAttribute("RodCrateOpening", true)
 		refresh()
 		local skin = RodSkins.Skins[skinId]
-		local final = rarityColor(skin.Rarity)
+		local skinRarity = RodSkins.rarity(skinId, crateId)
+		local final = rarityColor(skinRarity)
 		local function showReward()
 			reveal.Visible = true
 			revealName.Text = skin.Name
 			revealName.TextColor3 = final
-			revealRarity.Text = string.upper(skin.Rarity)
+			revealRarity.Text = string.upper(skinRarity)
 				.. (if serial then string.format(" · Serial #%06d", serial) else "")
 			revealRarity.TextColor3 = final
 			revealPerks.Text = table.concat(RodSkins.perks(skinId), "   ·   ")
@@ -453,13 +509,23 @@ function RodCrates.start()
 			stopReveal = nil
 			player:SetAttribute("RodCrateOpening", false)
 			refresh()
-			local view = cards[skinId]
+			local view = crateViews[crateId].cards[skinId]
 			if view then
 				view.glow.BackgroundTransparency = 0.2
 				TweenService:Create(view.glow, TweenInfo.new(1), { BackgroundTransparency = 0.85 }):Play()
 			end
 		end
-		stopReveal = CrateReveal.play(standPart, skinId, showReward, finish)
+		stopReveal = CrateReveal.play(
+			standPart,
+			skinId,
+			showReward,
+			finish,
+			if bobber
+				then function()
+					return FishingBobber.build(skinId)
+				end
+				else nil
+		)
 		if not stopReveal then
 			-- The stand may have streamed away while the save was in flight.
 			showReward()
@@ -482,20 +548,30 @@ function RodCrates.start()
 	open.Activated:Connect(function()
 		if open.Active then
 			setStatus("Finn is prying the lid off…", muted)
-			send("OpenRodCrate", CRATE)
+			send(openAction, crateId)
 		end
 	end)
 	plain.Activated:Connect(function()
 		if plain.Active then
-			send("EquipRodSkin", "")
+			send(equipAction, "")
 		end
 	end)
-	for skinId, view in cards do
-		view.equip.Activated:Connect(function()
-			if view.equip.Active then
-				send("EquipRodSkin", skinId)
+	for optionId, crateView in crateViews do
+		crateView.tab.Activated:Connect(function()
+			if pending or revealing or optionId == crateId then
+				return
 			end
+			crateId, crate = optionId, RodSkins.Crates[optionId]
+			setStatus(crate.Description, muted)
+			refresh()
 		end)
+		for skinId, view in crateView.cards do
+			view.equip.Activated:Connect(function()
+				if view.equip.Active then
+					send(equipAction, skinId)
+				end
+			end)
+		end
 	end
 	close.Activated:Connect(closeWindow)
 	overlay.Activated:Connect(function()
@@ -510,12 +586,12 @@ function RodCrates.start()
 	end)
 
 	feedback.OnClientEvent:Connect(function(kind, a, b, c, d)
-		if kind == "OpenCrates" and not player:GetAttribute("PlayerMenuOpen") then
+		if kind == openEvent and not player:GetAttribute("PlayerMenuOpen") then
 			local hall = workspace:FindFirstChild("Interiors")
-			local stand = hall and hall:FindFirstChild("OpenRodCratePrompt", true)
+			local stand = hall and hall:FindFirstChild(openAction .. "Prompt", true)
 			standPart = if stand and stand.Parent and stand.Parent:IsA("BasePart") then stand.Parent else nil
 			openWindow()
-		elseif kind == "CrateResult" and type(b) == "string" then
+		elseif kind == resultEvent and type(b) == "string" then
 			pending = nil
 			if a == true and RodSkins.valid(c) then
 				play(c, b, if type(d) == "number" then d else nil)
@@ -525,15 +601,15 @@ function RodCrates.start()
 				setStatus(b, SHORT)
 				task.delay(0.15, refresh)
 			end
-		elseif kind == "SkinResult" and type(b) == "string" then
+		elseif kind == skinEvent and type(b) == "string" then
 			pending = nil
 			setStatus(b, if a == true then AFFORD else SHORT)
 			task.delay(0.15, refresh)
 		end
 	end)
-	local watched = { "Cash", "BoatDataStatus", "OwnsStarterRod", "RodSkin" }
+	local watched = { "Cash", "BoatDataStatus", "OwnsStarterRod", skinAttribute }
 	for skinId in RodSkins.Skins do
-		table.insert(watched, "RodSkinCount" .. skinId)
+		table.insert(watched, countAttribute .. skinId)
 	end
 	for _, attribute in watched do
 		player:GetAttributeChangedSignal(attribute):Connect(function()
@@ -588,6 +664,15 @@ function RodCrates.start()
 		end
 	end)
 	refresh()
+end
+
+function RodCrates.start()
+	if started then
+		return
+	end
+	started = true
+	startShop(RodSkins, false)
+	startShop(BobberSkins, true)
 end
 
 return RodCrates

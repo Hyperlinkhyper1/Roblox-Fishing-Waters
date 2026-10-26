@@ -503,7 +503,7 @@ if Harbour.beachTakesIsland then
 else
 	Harbour.buildBeach(shape, parent, {}, Random.new(9281))
 end
-Harbour.buildPlaza(parent, shape.toWorld({ 870, 694 }), Random.new(1039))
+Harbour.buildPlaza(parent, shape.toWorld({ 870, 665 }), Random.new(1039))
 -- Side faces need their own projection: the top-surface audit cannot see a
 -- foundation, inlay and curb competing for pixels on a vertical edge.
 local function sideOverlaps(parts)

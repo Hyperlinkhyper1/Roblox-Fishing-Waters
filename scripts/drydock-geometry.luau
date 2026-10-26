@@ -572,7 +572,7 @@ root.Name = "Map"
 local rng = Random.new(Biomes.Seed + 1)
 local village = Instance.new("Model")
 village.Name, village.Parent = "Village", root
-local plazaCenter = shape.toWorld({ 870, 694 })
+local plazaCenter = shape.toWorld({ 870, 665 })
 local spots =
 	{ { position = plazaCenter, radius = 60 * 1.42 }, { position = plazaCenter + Vector2.new(0, 82), radius = 31 } }
 Harbour.buildPlaza(village, plazaCenter, rng)

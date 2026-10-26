@@ -4,6 +4,8 @@
 -- CatchService applies the stats, and clients only present them. No Roblox
 -- globals here, so BoatData can load it in tests.
 local RodSkins = {}
+RodSkins.GroupId = 772704145
+RodSkins.GroupReward = "TideboundRod"
 
 RodSkins.RarityOrder = { "Common", "Uncommon", "Rare", "Epic", "Legendary" }
 RodSkins.Rarities = {
@@ -18,6 +20,13 @@ RodSkins.Rarities = {
 -- fish odds (0.1 = +10%), Mutation to the chance of any mutation, and Astral to
 -- the chance of the night-only Astral mutation after dark.
 RodSkins.Skins = {
+	TideboundRod = {
+		Name = "Tidebound Rod",
+		Rarity = "Uncommon",
+		Description = "A pearl-inlaid teal rod with gilded wavework. A gift for our community.",
+		Reel = 0.075,
+		Size = 0.075,
+	},
 	UmbrellaRod = {
 		Name = "Umbrella Rod",
 		Rarity = "Common",
@@ -48,7 +57,7 @@ RodSkins.Skins = {
 	},
 	BaguetteRod = {
 		Name = "Baguette Rod",
-		Rarity = "Rare",
+		Rarity = "Uncommon",
 		Description = "Freshly baked, surprisingly stiff. Do not eat.",
 		Reel = 0.12,
 		Size = 0.2,
@@ -69,9 +78,59 @@ RodSkins.Skins = {
 		Size = 0.4,
 		Mutation = 0.02,
 	},
+	PencilRod = {
+		Name = "Pencil Rod",
+		Rarity = "Common",
+		Description = "Sketch out your next big catch with a freshly sharpened tip.",
+		Reel = 0.05,
+		Size = 0,
+	},
+	BaseballRod = {
+		Name = "Baseball Rod",
+		Rarity = "Common",
+		Description = "A wooden bat ready to knock a catch out of the water.",
+		Reel = 0,
+		Size = 0.1,
+	},
+	MusketRod = {
+		Name = "Musket Rod",
+		Rarity = "Uncommon",
+		Description = "An antique musket repurposed for a different kind of trophy.",
+		Reel = 0.08,
+		Size = 0.1,
+	},
+	HoneycombRod = {
+		Name = "Honeycomb Rod",
+		Rarity = "Rare",
+		Description = "Golden honeycomb makes every catch a little sweeter.",
+		Reel = 0.12,
+		Size = 0.25,
+	},
+	StarRod = {
+		Name = "Star Rod",
+		Rarity = "Rare",
+		Description = "A golden star to wish upon before every cast.",
+		Reel = 0.14,
+		Size = 0.2,
+	},
+	SelfieStickRod = {
+		Name = "Selfie Stick Rod",
+		Rarity = "Epic",
+		Description = "Catch a fish, then catch your best angle.",
+		Reel = 0.18,
+		Size = 0.3,
+	},
+	LightsaberRod = {
+		Name = "Lightsaber Rod",
+		Rarity = "Legendary",
+		Description = "A brilliant energy blade with a fishing line. Cast with confidence.",
+		Reel = 0.22,
+		Size = 0.4,
+		Mutation = 0.02,
+	},
 }
 
-RodSkins.CrateOrder = { "TideCrate" }
+RodSkins.CrateOrder = { "TideCrate", "NoveltyCrate" }
 RodSkins.Crates = {
 	TideCrate = {
 		Name = "Tide Crate",
@@ -79,8 +138,31 @@ RodSkins.Crates = {
 		Price = 350,
 		Odds = { Common = 0.675, Uncommon = 0.25, Rare = 0.05, Epic = 0.02, Legendary = 0.005 },
 		Skins = { "UmbrellaRod", "BambooRod", "BoneRod", "LanternRod", "BaguetteRod", "NightRod", "MageStaff" },
+		-- Keep the original crate's reward bands for existing players.
+		Rarities = { BaguetteRod = "Rare" },
+	},
+	NoveltyCrate = {
+		Name = "Novelty Crate",
+		Description = "Everyday objects, extraordinary catches.",
+		Price = 750,
+		Odds = { Common = 0.675, Uncommon = 0.25, Rare = 0.05, Epic = 0.02, Legendary = 0.005 },
+		Skins = {
+			"PencilRod",
+			"BaseballRod",
+			"BaguetteRod",
+			"MusketRod",
+			"HoneycombRod",
+			"StarRod",
+			"SelfieStickRod",
+			"LightsaberRod",
+		},
 	},
 }
+
+function RodSkins.rarity(skinId: string, crateId: string?): string
+	local crate = crateId and RodSkins.Crates[crateId]
+	return (crate and crate.Rarities and crate.Rarities[skinId]) or RodSkins.Skins[skinId].Rarity
+end
 
 function RodSkins.valid(id: any): boolean
 	return type(id) == "string" and RodSkins.Skins[id] ~= nil
@@ -108,7 +190,7 @@ function RodSkins.roll(crateId: string, rarityPick: number, skinPick: number): s
 	end
 	local pool = {}
 	for _, id in crate.Skins do
-		if RodSkins.Skins[id].Rarity == rarity then
+		if RodSkins.rarity(id, crateId) == rarity then
 			table.insert(pool, id)
 		end
 	end
@@ -118,10 +200,10 @@ end
 -- Chance of one specific skin from a crate.
 function RodSkins.chance(crateId: string, skinId: string): number
 	local crate = RodSkins.Crates[crateId]
-	local rarity = RodSkins.Skins[skinId].Rarity
+	local rarity = RodSkins.rarity(skinId, crateId)
 	local count = 0
 	for _, id in crate.Skins do
-		if RodSkins.Skins[id].Rarity == rarity then
+		if RodSkins.rarity(id, crateId) == rarity then
 			count += 1
 		end
 	end
@@ -146,20 +228,20 @@ end
 function RodSkins.perks(skinId: string): { string }
 	local skin = RodSkins.Skins[skinId]
 	local lines = {}
-	local function percent(value: number): number
-		return math.floor(value * 100 + 0.5)
+	local function percent(value: number): string
+		return string.format("%g", math.floor(value * 1000 + 0.5) / 10)
 	end
 	if (skin.Reel or 0) > 0 then
-		table.insert(lines, string.format("+%d%% reel per hit", percent(skin.Reel)))
+		table.insert(lines, string.format("+%s%% reel per hit", percent(skin.Reel)))
 	end
 	if (skin.Size or 0) > 0 then
-		table.insert(lines, string.format("+%d%% big fish chance", percent(skin.Size)))
+		table.insert(lines, string.format("+%s%% big fish chance", percent(skin.Size)))
 	end
 	if (skin.Astral or 0) > 0 then
-		table.insert(lines, string.format("+%d%% Astral chance at night", percent(skin.Astral)))
+		table.insert(lines, string.format("+%s%% Astral chance at night", percent(skin.Astral)))
 	end
 	if (skin.Mutation or 0) > 0 then
-		table.insert(lines, string.format("+%d%% mutation chance", percent(skin.Mutation)))
+		table.insert(lines, string.format("+%s%% mutation chance", percent(skin.Mutation)))
 	end
 	return lines
 end

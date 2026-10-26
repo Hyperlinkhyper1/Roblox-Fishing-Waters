@@ -10,7 +10,7 @@ local Props = require(script.Parent.Props)
 
 local RodShop = {}
 local LAYOUT_VERSION = 3
-local INTERIOR_VERSION = 5
+local INTERIOR_VERSION = 6
 local TAU = math.pi * 2
 local rgb = Color3.fromRGB
 local M = Enum.Material
@@ -540,26 +540,16 @@ local function buildInterior(): Model
 	Props.crates(hall, at(-inner + 2, -19), rng)
 	deco("AisleRug", Vector3.new(7, 0.06, 24), CFrame.new(0, 0.03, -8), rgb(170, 66, 52), M.Fabric)
 	deco("AisleRugBorder", Vector3.new(8, 0.04, 25), CFrame.new(0, 0.02, -8), rgb(222, 180, 90), M.Fabric)
-	for _, x in { -10 } do
-		local stand = CFrame.new(x, 0, -6)
-		part("PedestalBase", Vector3.new(3, 0.8, 3), stand * CFrame.new(0, 0.4, 0), rgb(120, 116, 112), M.Slate)
-		part("PedestalColumn", Vector3.new(1.6, 3, 1.6), stand * CFrame.new(0, 2.3, 0), rgb(150, 146, 140), M.Slate)
-		part("PedestalTop", Vector3.new(2.6, 0.5, 2.6), stand * CFrame.new(0, 4, 0), rgb(120, 116, 112), M.Slate)
-		local color = if x < 0 then rgb(255, 220, 90) else rgb(120, 220, 255)
-		local tip = o * (stand * Vector3.new(1.2, 10, 0))
-		Props.beam(hall, o * (stand * Vector3.new(-0.3, 4.3, 0)), tip, 0.2, color, nil, M.Neon).CanCollide = false
-		local gem = deco("PedestalGlow", Vector3.new(1, 1, 1), stand * CFrame.new(-0.3, 4.8, 0), color, M.Neon)
-		gem.Shape = Enum.PartType.Ball
-		glow(gem, color, 12, 0.6)
-	end
-
 	-- A plain wooden crate with an empty inside and a separate hinged lid. Its prompt opens the
 	-- crate window; FishingService checks the angler is standing at it.
-	do
-		local stand = CFrame.new(10, 0, -6) * CFrame.Angles(0, math.pi / 2, 0)
+	-- Bobbers take the opposite side of the aisle, facing the rod cases.
+	for _, bobberCase in { false, true } do
+		local kind = if bobberCase then "Bobber" else "Rod"
+		local stand = CFrame.new(if bobberCase then -10 else 10, 0, -6)
+			* CFrame.Angles(0, if bobberCase then -math.pi / 2 else math.pi / 2, 0)
 		part("CratePlinth", Vector3.new(3.4, 0.8, 3), stand * CFrame.new(0, 0.4, 0), rgb(120, 116, 112), M.Slate)
 		local display = Instance.new("Model")
-		display.Name = "RodCrateDisplay"
+		display.Name = kind .. "CrateDisplay"
 		display:SetAttribute("CrateFrame", o * stand)
 		display:SetAttribute("LidHinge", o * stand * CFrame.new(0, 2.4, 0.9))
 		display.Parent = hall
@@ -570,7 +560,7 @@ local function buildInterior(): Model
 			return piece
 		end
 		cratePart("CrateBottom", Vector3.new(2.6, 0.18, 1.8), CFrame.new(0, 0.89, 0), DARK_WOOD)
-		local crate = cratePart("RodCrate", Vector3.new(2.6, 1.42, 0.16), CFrame.new(0, 1.69, -0.82), WOOD)
+		local crate = cratePart(kind .. "Crate", Vector3.new(2.6, 1.42, 0.16), CFrame.new(0, 1.69, -0.82), WOOD)
 		crate.CanQuery = true
 		cratePart("CrateBack", Vector3.new(2.6, 1.42, 0.16), CFrame.new(0, 1.69, 0.82), WOOD)
 		for _, x in { -1.22, 1.22 } do
@@ -582,7 +572,7 @@ local function buildInterior(): Model
 			end
 		end
 		local lid = Instance.new("Model")
-		lid.Name = "RodCrateLid"
+		lid.Name = kind .. "CrateLid"
 		lid.Parent = display
 		local board = cratePart("LidBoard", Vector3.new(2.7, 0.2, 1.9), CFrame.new(0, 2.5, 0), WOOD)
 		board.CanCollide = false
@@ -593,14 +583,23 @@ local function buildInterior(): Model
 			brace.CanCollide = false
 			brace.Parent = lid
 		end
-		local sign =
-			deco("RodCrateSign", Vector3.new(3, 0.8, 0.12), stand * CFrame.new(0, 4.4, 0.6), DARK_WOOD, M.WoodPlanks)
+		local sign = deco(
+			kind .. "CrateSign",
+			Vector3.new(3, 0.8, 0.12),
+			stand * CFrame.new(0, 4.4, 0.6),
+			DARK_WOOD,
+			M.WoodPlanks
+		)
 		sign.CanQuery = false
-		PlazaHouses.boardText(sign, "ROD CRATE  |  $350", Enum.NormalId.Front)
+		PlazaHouses.boardText(
+			sign,
+			if bobberCase then "BOBBERS\n$350" else "ROD CRATES\n$350 / $750",
+			Enum.NormalId.Front
+		)
 		local prompt = Instance.new("ProximityPrompt")
-		prompt.Name = "OpenRodCratePrompt"
-		prompt.ActionText = "Open crates"
-		prompt.ObjectText = "Tide Crate"
+		prompt.Name = "Open" .. kind .. "CratePrompt"
+		prompt.ActionText = if bobberCase then "Open case" else "Open crates"
+		prompt.ObjectText = if bobberCase then "Bobbers · $350" else "Rod Crates"
 		prompt.MaxActivationDistance = 9
 		prompt.RequiresLineOfSight = false
 		prompt.HoldDuration = 0
@@ -675,6 +674,19 @@ local function ensureInterior(): Model
 			existing:Destroy()
 		end
 		hall = buildInterior()
+	end
+	-- Refresh saved interiors too, without rebuilding the shop for a sign change.
+	local cratePrompt = hall:FindFirstChild("OpenRodCratePrompt", true)
+	if cratePrompt and cratePrompt:IsA("ProximityPrompt") then
+		cratePrompt.ObjectText = "Rod Crates"
+	end
+	local crateSign = hall:FindFirstChild("RodCrateSign", true)
+	if crateSign then
+		for _, item in crateSign:GetDescendants() do
+			if item:IsA("TextLabel") then
+				item.Text = "ROD CRATES\n$350 / $750"
+			end
+		end
 	end
 	hall:SetAttribute("KeeperFrame", KEEPER_FRAME)
 	CollectionService:AddTag(hall, "FishingRodShop")

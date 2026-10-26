@@ -25,7 +25,7 @@ local pick = Props.pick
 local M = Enum.Material
 local TAU = math.pi * 2
 
-local SCALE = 1.05 -- studs per sketch pixel
+local SCALE = 0.85 -- studs per sketch pixel
 local SKETCH_CENTER = Vector2.new(870, 1330) -- sketch pixel that lands on the biome center
 local CELL = 16 -- ground mesh resolution
 local SEABED_RUN = 128 -- continuous underwater descent from shore to the deep floor
@@ -39,10 +39,11 @@ local VILLAGE_BAND = 165 -- land closer than this to the bay stays flat; further
 local PLAZA_HALF = 60 -- the piazza is a square this far from its centre to each edge
 
 -- Roughly how far the island reaches from its center, for keeping other islands away.
-Harbour.FOOTPRINT = 950
+Harbour.FOOTPRINT = 820
 Harbour.BASE_TAG = "PlayerBase"
 
 -- Sea-facing coast, clockwise from the tip of the western arm round to the southern headland.
+-- The north shore bulges past the sketch so the piazza keeps clear ground behind it.
 local OUTER = {
 	{ 430, 1340 },
 	{ 372, 1290 },
@@ -51,14 +52,14 @@ local OUTER = {
 	{ 318, 970 },
 	{ 345, 860 },
 	{ 395, 760 },
-	{ 450, 680 },
-	{ 530, 610 },
-	{ 640, 555 },
-	{ 780, 528 },
-	{ 950, 532 },
-	{ 1120, 552 },
-	{ 1270, 575 },
-	{ 1350, 610 },
+	{ 448, 672 },
+	{ 528, 588 },
+	{ 640, 515 },
+	{ 780, 473 },
+	{ 950, 477 },
+	{ 1120, 510 },
+	{ 1270, 552 },
+	{ 1352, 600 },
 	{ 1405, 690 },
 	{ 1445, 800 },
 	{ 1475, 950 },
@@ -122,8 +123,9 @@ local LIGHTHOUSE = { 360, 1640 }
 local BEACH = { { 660, 975 }, { 652, 905 }, { 685, 850 }, { 760, 820 }, { 870, 818 }, { 940, 852 }, { 985, 902 } }
 local BEACH_WIDTH = 42 -- dry sand from the waterline up to the foot of the dunes
 local BEACH_FADE = 45 -- the beach blends back into the normal shore over this much coastline at each end
--- Set back from the bay so the ring road runs along the piazza's southern side
-local PLAZA = { 870, 694 }
+-- Set back from the bay so the ring road runs along the piazza's southern side; the drydock
+-- slipway needs the bay about 130 studs south of the centre, so move this with SCALE.
+local PLAZA = { 870, 665 }
 
 -- Sun-baked Mediterranean ground: dry grass, maquis on the hills, pale limestone cliffs
 local GRASS = rgb(146, 148, 90)
@@ -935,14 +937,13 @@ local DOCK_DETAIL_VERSION = 1
 
 local function ensureDockAccess(base: Model, frame: CFrame)
 	local existing = base:FindFirstChild("DockAccess")
-	if existing and existing:GetAttribute("LayoutVersion") == 1 then
+	if existing and existing:GetAttribute("LayoutVersion") == 2 then
 		return
 	end
 	if existing then
 		existing:Destroy()
 	end
-	-- The old landings have two abrupt rises (3.2 -> 4.4 -> 5.9).
-	-- Replace only those generated blocks, including on already saved maps.
+	-- Remove only the original raised blocks on maps saved before ramps existed.
 	for _, item in base:GetChildren() do
 		if item:IsA("BasePart") then
 			local p = frame:PointToObjectSpace(item.Position)
@@ -958,22 +959,141 @@ local function ensureDockAccess(base: Model, frame: CFrame)
 	end
 	local access = Instance.new("Model")
 	access.Name = "DockAccess"
+	local wood = Color3.fromRGB(133, 96, 62)
+	local worn = Color3.fromRGB(158, 122, 81)
+	local dark = Color3.fromRGB(77, 55, 39)
+	local iron = Color3.fromRGB(52, 50, 48)
+	local rope = Color3.fromRGB(176, 150, 106)
 	local rise, run, thickness = 2.7, 8, 0.4
+	local length = math.sqrt(run * run + rise * rise)
 	local slope = CFrame.Angles(-math.atan2(rise, run), 0, 0)
 	for _, side in { -1, 1 } do
-		-- Top surface reaches quay height at its front edge (z=8).
-		-- Both ends overlap their supporting deck, with no jump required.
-		local ramp = Props.part(
-			access,
-			Vector3.new(7, thickness, math.sqrt(run * run + rise * rise) + 0.4),
-			frame * CFrame.new(side * 17, 4.55, 4) * slope * CFrame.new(0, -thickness / 2, 0),
-			QUAY,
-			M.Cobblestone
+		local gangway = Instance.new("Model")
+		gangway.Name = if side < 0 then "LeftGangway" else "RightGangway"
+		gangway.Parent = access
+		local center = frame * CFrame.new(side * 17, 4.55, 4) * slope
+		local function piece(
+			name: string,
+			size: Vector3,
+			cf: CFrame,
+			color: Color3,
+			material: Enum.Material,
+			decorative: boolean?
+		): Part
+			local part = Props.part(gangway, size, cf, color, material)
+			part.Name = name
+			if decorative then
+				part.CanCollide, part.CanQuery = false, false
+			end
+			return part
+		end
+		-- A continuous collider carries players and NPCs across the narrow plank seams.
+		-- Its top still meets the pier at y=3.2 and the quay at y=5.9.
+		local ramp = piece(
+			"DockRamp",
+			Vector3.new(7, thickness, length + 0.2),
+			center * CFrame.new(0, -thickness / 2, 0),
+			wood,
+			M.Wood
 		)
-		ramp.Name = "DockRamp"
+		ramp.Transparency = 1
+		ramp.CastShadow = false
+		local count = 10
+		local pitch = (length + 0.2) / count
+		for i = 1, count do
+			local z = (i - (count + 1) / 2) * pitch
+			piece(
+				"GangwayPlank",
+				Vector3.new(7, thickness, pitch - 0.035),
+				center * CFrame.new(0, -thickness / 2, z),
+				wood:Lerp(worn, (i % 3) * 0.2),
+				M.Wood,
+				true
+			)
+		end
+		for _, edge in { -1, 1 } do
+			piece(
+				"Stringer",
+				Vector3.new(0.5, 0.8, length + 0.3),
+				center * CFrame.new(edge * 3.15, -0.7, 0),
+				dark,
+				M.Wood,
+				true
+			)
+			local x = side * 17 + edge * 3.9
+			for _, z in { 0.4, 7.8, 10.6 } do
+				local y = 3.2 + rise * math.min(z, run) / run
+				piece("RailPost", Vector3.new(0.55, 3.1, 0.55), frame * CFrame.new(x, y + 1.3, z), dark, M.Wood)
+				piece("PostCap", Vector3.new(0.7, 0.12, 0.7), frame * CFrame.new(x, y + 2.91, z), worn, M.Wood, true)
+				piece(
+					"PostCollar",
+					Vector3.new(0.57, 0.18, 0.57),
+					frame * CFrame.new(x, y + 0.45, z),
+					iron,
+					M.Metal,
+					true
+				)
+			end
+			for _, span in { { 0.4, 7.8 }, { 7.8, 10.6 } } do
+				for _, rail in { { 2.65, 0.24, wood, M.Wood, "Handrail" }, { 1.35, 0.16, rope, M.Fabric, "RopeRail" } } do
+					local function at(z: number): Vector3
+						return frame * Vector3.new(x, 3.2 + rise * math.min(z, run) / run + rail[1], z)
+					end
+					local beam = Props.beam(gangway, at(span[1]), at(span[2]), rail[2], rail[3], nil, rail[4])
+					beam.Name = rail[5]
+					beam.CanCollide, beam.CanQuery = false, false
+				end
+			end
+		end
+		-- A short boarded apron bridges the coloured quay lip onto the base deck.
+		local landing =
+			piece("QuayLanding", Vector3.new(7, 0.3, 2.8), frame * CFrame.new(side * 17, 5.76, 9.4), dark, M.Wood)
+		landing.Transparency = 1
+		landing.CastShadow = false
+		for i = 1, 4 do
+			piece(
+				"LandingPlank",
+				Vector3.new(7, 0.3, 0.665),
+				frame * CFrame.new(side * 17, 5.76, 8 + (i - 0.5) * 0.7),
+				wood:Lerp(worn, (i % 3) * 0.2),
+				M.Wood,
+				true
+			)
+		end
+		for _, z in { 0.6, 6.9 } do
+			local y = 3.2 + rise * z / run
+			piece(
+				"Bearer",
+				Vector3.new(8.4, 0.55, 0.65),
+				frame * CFrame.new(side * 17, y - 1.05, z),
+				dark,
+				M.Wood,
+				true
+			)
+		end
 	end
-	access:SetAttribute("LayoutVersion", 1)
+	access:SetAttribute("LayoutVersion", 2)
 	access.Parent = base
+end
+
+-- The legacy post extended through the lower half of the board and obscured both faces.
+local function ensureDockSign(base: Model)
+	local board = base:FindFirstChild("NameBoard")
+	if not board or not board:IsA("BasePart") then
+		return
+	end
+	for _, item in base:GetChildren() do
+		if not item:IsA("BasePart") then
+			continue
+		end
+		local legacyPost = (item.Size - Vector3.new(0.6, 6, 0.6)).Magnitude < 0.01
+			and (board.CFrame:PointToObjectSpace(item.Position) - Vector3.new(0, -3, 0)).Magnitude < 0.01
+		if item.Name == "DockSignPost" or legacyPost then
+			item.Name = "DockSignPost"
+			item.Size = Vector3.new(0.6, 4.5, 0.6)
+			item.CFrame = board.CFrame * CFrame.new(0, -3.75, 0)
+		end
+	end
 end
 
 local function buildBaseDocks(base: Model, frame: CFrame, index: number)
@@ -1055,7 +1175,8 @@ local function buildBase(
 	m.PrimaryPart = pad
 
 	-- Name board facing both ways; BaseService writes the owner's name on it
-	Props.part(m, Vector3.new(0.6, 6, 0.6), cf(-11, -22, deck + 3), rgb(78, 60, 46), M.Wood)
+	local signPost = Props.part(m, Vector3.new(0.6, 4.5, 0.6), cf(-11, -22, deck + 2.25), rgb(78, 60, 46), M.Wood)
+	signPost.Name = "DockSignPost"
 	local board = Props.part(m, Vector3.new(7, 3, 0.4), cf(-11, -22, deck + 6), rgb(122, 92, 64), M.WoodPlanks)
 	board.Name = "NameBoard"
 	for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
@@ -1725,6 +1846,7 @@ function Harbour.ensureDocks(root: Instance)
 		if not base:IsA("Model") or not CollectionService:HasTag(base, Harbour.BASE_TAG) then
 			continue
 		end
+		ensureDockSign(base)
 		local frame = base:GetAttribute("BoatDockFrame")
 		if typeof(frame) ~= "CFrame" then
 			local spawn = base:FindFirstChild("SpawnPoint")

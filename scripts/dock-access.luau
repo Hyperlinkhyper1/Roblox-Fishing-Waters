@@ -5,7 +5,7 @@ local function check(value, message)
 end
 
 for _, angle in { 0, 0.73, 2.1 } do
-	for _, saved in { false, true } do
+	for _, saved in { "fresh", "blocks", "stoneRamp" } do
 		local base = Instance.new("Model")
 		local dockFrame = CFrame.new(100, 0, -240) * CFrame.Angles(0, angle, 0)
 		base:SetAttribute("OwnerUserId", 42)
@@ -13,7 +13,7 @@ for _, angle in { 0, 0.73, 2.1 } do
 		base:SetAttribute("BoatDockFrame", dockFrame)
 		local unrelated = Props.part(base, Vector3.new(2, 2, 2), dockFrame * CFrame.new(24, 6, 12), QUAY)
 		local old = {}
-		if saved then
+		if saved == "blocks" then
 			for _, side in { -1, 1 } do
 				table.insert(
 					old,
@@ -21,7 +21,15 @@ for _, angle in { 0, 0.73, 2.1 } do
 				)
 			end
 		end
-		if saved then
+		local oldAccess = nil
+		if saved == "stoneRamp" then
+			oldAccess = Instance.new("Model")
+			oldAccess.Name = "DockAccess"
+			oldAccess:SetAttribute("LayoutVersion", 1)
+			oldAccess.Parent = base
+			Props.part(oldAccess, Vector3.new(7, 0.4, 8.8), dockFrame * CFrame.new(-17, 4.3, 4), QUAY)
+		end
+		if saved ~= "fresh" then
 			Harbour.ensureDocks({
 				GetDescendants = function()
 					return { base }
@@ -40,7 +48,42 @@ for _, angle in { 0, 0.73, 2.1 } do
 			"Migration preserves plot ownership and other parts"
 		)
 		check(base:GetAttribute("DockDetailVersion") == 1, "Access repair does not rebuild the decorated piers")
-		for _, ramp in access:GetChildren() do
+		check(access:GetAttribute("LayoutVersion") == 2, "Saved stone ramps receive the timber layout")
+		if oldAccess then
+			check(oldAccess.Parent == nil, "Saved stone ramp model is replaced")
+		end
+		for _, gangway in access:GetChildren() do
+			local ramp = gangway:FindFirstChild("DockRamp")
+			check(ramp and ramp.Transparency == 1, "Each gangway has a continuous hidden walking surface")
+			local planks, rails, stringers = 0, 0, 0
+			for _, part in gangway:GetChildren() do
+				if part.Name == "GangwayPlank" then
+					planks += 1
+					check(not part.CanCollide and not part.CanQuery, "Plank seams do not snag characters or navigation")
+				elseif part.Name == "Handrail" then
+					rails += 1
+				elseif part.Name == "Stringer" then
+					stringers += 1
+				elseif part.Name == "RailPost" then
+					local p = dockFrame:PointToObjectSpace(part.Position)
+					local x = dockFrame:PointToObjectSpace(ramp.Position).X
+					check(
+						math.abs(p.X - x) - part.Size.X / 2 >= 3.5,
+						"Posts leave the entire seven-stud walking lane open"
+					)
+				end
+			end
+			check(
+				planks == 10 and rails == 4 and stringers == 2,
+				"Each timber gangway has boards, supports and handrails"
+			)
+			local landing = gangway:FindFirstChild("QuayLanding")
+			local landingLocal = dockFrame:ToObjectSpace(landing.CFrame)
+			check(
+				landing.CanCollide and math.abs(landingLocal.Position.Y + landing.Size.Y / 2 - 5.91) < 0.001,
+				"Landing meets the quay without a high step"
+			)
+			check(math.abs(landingLocal.Position.Z - landing.Size.Z / 2 - 8) < 0.001, "Landing starts at the ramp head")
 			check(ramp.CanCollide and ramp.Anchored, "Ramp must support walking")
 			check(ramp.Size.X >= 7 and ramp.CFrame.UpVector.Y > 0.9, "Ramp has wide, gentle walking clearance")
 			local localFrame = dockFrame:ToObjectSpace(ramp.CFrame)

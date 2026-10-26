@@ -19,7 +19,7 @@ assert.deepEqual(coordinates(weatherBay), coordinates(baySource), 'Weather shelt
 const outer = coordinates(harbour.match(/local OUTER = \{([\s\S]*?)\n\}/)[1]);
 const mouth = coordinates(shared.match(/Weather.MouthSketch = (\{[^\n]*\})/)[1]);
 assert.deepEqual(mouth, [outer.at(-1), outer[0]], 'Shelter must include the full cove between both headlands');
-assert.match(harbour, /local SCALE = 1\.05\b/);
+assert.match(harbour, /local SCALE = 0\.85\b/);
 assert.match(harbour, /local SKETCH_CENTER = Vector2.new\(870, 1330\)/);
 assert.match(read('src/shared/Biomes.luau'), /Biomes.Normal = \{[\s\S]*?center = Vector2.new\(0, 0\)/);
 console.log('PASS lake boundary matches the actual main-island coastline');
@@ -38,12 +38,36 @@ local workspace = {
   GetAttribute = function(_, key) return attributes[key] end,
   SetAttribute = function(_, key, value) attributes[key] = value end,
 }
+local function typeof(value)
+  return if type(value) == 'table' and value.X ~= nil and value.Y ~= nil and value.Z ~= nil then 'Vector3' else type(value)
+end
 local Weather = (function()
 ${shared}
 end)()
 local function close(a, b, epsilon)
   assert(math.abs(a - b) < (epsilon or 1e-6), tostring(a) .. ' ~= ' .. tostring(b))
 end
+for _, stage in Weather.Schedule do
+  assert(stage.kind ~= 'BlackHole', 'The admin-only event can never occur in the forecast')
+end
+attributes.WeatherOverride = 'BlackHole'
+assert(Weather.getState(now).kind ~= 'BlackHole' and Weather.mutationContext(Vector3.zero) == nil, 'Missing center cannot activate the event')
+attributes.BlackHolePosition = Vector3.new(100, 0, -200)
+assert(Weather.getState(now).kind == 'BlackHole', 'Valid dashboard override activates the event')
+assert(Weather.getState(now, Vector3.new(-5000, 0, 5000)).kind == 'BlackHole', 'Event weather is global even outside local rain bands')
+local edge = Weather.mutationContext(Vector3.new(350, 100, -200))
+assert(edge.corrupted and edge.voidTouched, 'Void Touched includes the radius boundary and ignores fishing height')
+local far = Weather.mutationContext(Vector3.new(351, 0, -200))
+assert(far.corrupted and not far.voidTouched, 'Distant fishing still guarantees corruption without Void Touched')
+for _, point in { Vector3.new(5201, 0, 0), Vector3.new(0 / 0, 0, 0), Vector3.new(0, math.huge, 0), false } do
+  attributes.BlackHolePosition = point
+  assert(Weather.blackHolePosition() == nil, 'Malformed or off-map event centers are ignored')
+end
+attributes.BlackHolePosition = Vector3.new(100, 0, -200)
+attributes.WeatherOverride = nil
+assert(Weather.mutationContext(Vector3.zero) == nil, 'Ending the event immediately disables mutation guarantees')
+attributes.BlackHolePosition = nil
+print('PASS admin-only BlackHole forecast, validated center, global weather and location-aware mutation context')
 local previousWind, previousWave = 0, 0
 for _, kind in { 'Clear', 'LightRain', 'Rain', 'Storm' } do
   attributes.WeatherOverride = kind

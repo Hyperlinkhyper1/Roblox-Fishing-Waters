@@ -55,13 +55,13 @@ function RodDynamics.step(state, dt: number, target)
 		return true
 	end
 	state.bendX, state.velocityX =
-		spring(state.bendX, state.velocityX, finiteClamp(target.bendX, MAX_BEND), dt, 13, 0.59, MAX_BEND)
+		spring(state.bendX, state.velocityX, finiteClamp(target.bendX, MAX_BEND), dt, 13, 0.82, MAX_BEND)
 	state.bendZ, state.velocityZ =
-		spring(state.bendZ, state.velocityZ, finiteClamp(target.bendZ, MAX_BEND), dt, 13, 0.59, MAX_BEND)
+		spring(state.bendZ, state.velocityZ, finiteClamp(target.bendZ, MAX_BEND), dt, 13, 0.82, MAX_BEND)
 	state.bobX, state.bobVelocityX =
-		spring(state.bobX, state.bobVelocityX, finiteClamp(target.bobX, MAX_SWING), dt, 5.4, 0.34, MAX_SWING)
+		spring(state.bobX, state.bobVelocityX, finiteClamp(target.bobX, MAX_SWING), dt, 5.4, 0.5, MAX_SWING)
 	state.bobZ, state.bobVelocityZ =
-		spring(state.bobZ, state.bobVelocityZ, finiteClamp(target.bobZ, MAX_SWING), dt, 5.4, 0.34, MAX_SWING)
+		spring(state.bobZ, state.bobVelocityZ, finiteClamp(target.bobZ, MAX_SWING), dt, 5.4, 0.5, MAX_SWING)
 	return true
 end
 

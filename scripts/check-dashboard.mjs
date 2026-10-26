@@ -14,6 +14,7 @@ const ownership = (await read('src/server/GamepassService.luau'))
 const dashboard = (await read('src/server/DashboardService.luau'))
   .replace('require(ReplicatedStorage.Shared.Gamepasses)', 'Passes')
   .replace('require(ReplicatedStorage.Shared.Weather)', 'Weather')
+  .replace('require(ReplicatedStorage.Shared.Biomes)', 'Biomes')
   .replace('require(script.Parent.GamepassService)', 'Ownership');
 
 const program = `
@@ -54,6 +55,8 @@ function game:GetService(name)
 end
 function game:BindToClose(fn) table.insert(closeHandlers, fn) end
 local attributes = { WeatherEpoch = 1000, WeatherSeed = 77 }
+local Biomes = { WaterLevel = 0 }
+local Vector3 = { new = function(x, y, z) return { X = x, Y = y, Z = z } end }
 local workspace = { GetServerTimeNow = function() return 1500 end,
  GetAttribute = function(_, key) return attributes[key] end,
  SetAttribute = function(_, key, value) attributes[key] = value end }
@@ -66,9 +69,11 @@ local warnings = {}
 local function warn(message) table.insert(warnings, message) end
 local Weather = {
  MaxWaveAmplitude = 4.5,
+ RadarHalfSize = 5200, BlackHoleRadius = 250,
+ blackHolePosition = function() return if attributes.WeatherOverride == "BlackHole" then attributes.BlackHolePosition else nil end,
  radar = function() return { version = 1, resolution = 2, halfSize = 5200,
   cells = { { 0, 0, 6, 0.3 }, { 1, 1, 52, 4.5 }, { 0.5, 0, 25, 1.5 }, { 0, 0, 6, 0.3 } } } end,
- Presets = { Storm = { rain = 1, storm = 1 }, Clear = { rain = 0, storm = 0 }, Rain = { rain = 0.62, storm = 0 } },
+ Presets = { Storm = { rain = 1, storm = 1 }, Clear = { rain = 0, storm = 0 }, Rain = { rain = 0.62, storm = 0 }, BlackHole = { rain = 0.28, storm = 0 } },
  Schedule = { { kind = "Clear", duration = 150 }, { kind = "Rain", duration = 180 } },
  CycleSeconds = 330,
  getState = function() return { kind = "Rain", rain = 0.6, storm = 0, cloudCover = 0.8, windSpeed = 30,
@@ -105,6 +110,7 @@ check(body.weather.seed == 77 and body.weather.override == nil, "Reports the rad
 check(body.weather.maxWaveAmplitude == 4.5 and body.weather.radar.version == 1 and #body.weather.radar.cells == 4,
  "Reports the actual regional samples and higher sea limit to the admin dashboard")
 check(body.kinds[1] == "Clear" and body.kinds[3] == "Storm", "Weather kinds go calmest first")
+check(body.kinds[4] == "BlackHole", "Admin-only event appears after ordinary weather")
 check(body.passes[1].key == "AutoStore" and body.passes[1].id == 3722004182, "Reports the gamepass catalogue")
 check(#body.schedule == 2 and body.schedule[2].duration == 180, "Reports the forecast schedule")
 
@@ -126,6 +132,28 @@ check(not Ownership.ownsAutoStore(angler) and angler.attributes.OwnsAutoStore ==
 reply = { weatherOverride = "Hail", weatherVersion = 10, grants = { Unknown = { 42 } } }
 step(15)
 check(attributes.WeatherOverride == nil and not Ownership.ownsAutoStore(angler), "Unknown weather and pass keys are ignored")
+
+-- A location is mandatory, finite and bounded; malformed commands do not
+-- consume the version, so a corrected response can still apply.
+for _, point in { false, {}, { x = 0 / 0, z = 0 }, { x = 0, z = math.huge }, { x = 5201, z = 0 }, { x = "10", z = 0 } } do
+ reply = { weatherOverride = "BlackHole", weatherVersion = 11, blackHole = point }
+ step(15)
+ check(attributes.WeatherOverride == nil and attributes.BlackHolePosition == nil, "Rejects a black hole without a safe location")
+end
+reply = { weatherOverride = "BlackHole", weatherVersion = 11, blackHole = { x = 120, z = -300 } }
+step(15)
+check(attributes.WeatherOverride == "BlackHole" and attributes.BlackHolePosition.X == 120 and attributes.BlackHolePosition.Y == Biomes.WaterLevel and attributes.BlackHolePosition.Z == -300, "Applies the admin event at the chosen water-level location")
+reply.blackHole.x = 999
+step(15)
+check(attributes.BlackHolePosition.X == 120, "Repeated version cannot move an active black hole")
+local reported = requests[#requests].Body.weather.blackHole
+check(reported.x == 120 and reported.z == -300 and reported.radius == 250, "Reports event center and radius back to Luma")
+reply.weatherVersion = 12
+step(15)
+check(attributes.BlackHolePosition.X == 999, "A newer admin command moves the black hole")
+reply = { weatherVersion = 13 }
+step(15)
+check(attributes.WeatherOverride == nil and attributes.BlackHolePosition == nil, "Auto clears the event and its location")
 
 -- A purchased pass stays owned when a dashboard grant is revoked.
 local buyer = player(77, "buyer")

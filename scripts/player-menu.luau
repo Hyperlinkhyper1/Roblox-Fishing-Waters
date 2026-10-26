@@ -370,14 +370,30 @@ local workspace = Instance.new("Workspace")
 local Lighting = Instance.new("Lighting")
 local SoundService = Instance.new("SoundService")
 local GuiService = {}
-local UserInputService = { InputBegan = signal(), GamepadEnabled = true }
+local UserInputService = { InputBegan = signal(), GamepadEnabled = true, KeyboardEnabled = true, TouchEnabled = false }
 local passPrompts = {}
 local MarketplaceService = {
 	PromptGamePassPurchase = function(_, who, passId)
 		table.insert(passPrompts, { who, passId })
 	end,
 }
+Enum.GroupMembershipStatus =
+	{ None = "None", Joined = "Joined", JoinRequestPending = "Pending", AlreadyMember = "Member" }
+local groupPrompts, failGroupPrompt, groupPromptStatus = 0, false, Enum.GroupMembershipStatus.Joined
+local GroupService = {
+	PromptJoinAsync = function(_, groupId)
+		assert(groupId == 772704145, "Join prompt must use the configured community")
+		groupPrompts += 1
+		assert(not failGroupPrompt, "Join prompt unavailable")
+		return groupPromptStatus
+	end,
+}
+function player:IsInGroupAsync(groupId)
+	assert(groupId == 772704145, "Membership check must use the configured community")
+	return self.groupMember == true
+end
 local services = {
+	GroupService = GroupService,
 	MarketplaceService = MarketplaceService,
 	Players = Players,
 	ReplicatedStorage = ReplicatedStorage,
@@ -640,8 +656,50 @@ for _, item in content:GetChildren() do
 		check(contains("3.25 kg"), "Search includes caught mutations")
 	end
 end
+-- BAG_CHECKS_START
 open("Equipmentbag")
-check(contains("Your equipment bag is empty"), "No unowned equipment")
+check(
+	contains("Tidebound Rod") and contains("One-time reward") and not contains("Owned"),
+	"Unclaimed group rod is an offer, not owned equipment"
+)
+check(content:FindFirstChild("GroupReward", true):FindFirstChild("RodPreview") ~= nil, "Group offer has a rod preview")
+clickText("[Join & Claim]")
+check(
+	groupPrompts == 1 and rodActions[#rodActions] == "ClaimGroupReward",
+	"Group offer prompts joining then asks the server to verify"
+)
+player.groupMember = true
+clickText("[Claim / Check again]")
+check(
+	groupPrompts == 1 and rodActions[#rodActions] == "ClaimGroupReward",
+	"Existing members can claim without a join prompt"
+)
+player.groupMember = false
+failGroupPrompt = true
+local actionsBeforeGroup = #rodActions
+clickText("[Claim / Check again]")
+check(#rodActions == actionsBeforeGroup and contains("Retry"), "Failed join prompt restores a usable retry button")
+failGroupPrompt = false
+groupPromptStatus = Enum.GroupMembershipStatus.None
+local promptButton = content:FindFirstChild("GroupReward", true).ClaimGroupReward
+promptButton.Activated:Fire()
+check(
+	#rodActions == actionsBeforeGroup and promptButton.Text == "[Join & Claim]",
+	"Cancelled join prompt leaves the reward unclaimed"
+)
+groupPromptStatus = Enum.GroupMembershipStatus.JoinRequestPending
+promptButton.Activated:Fire()
+check(
+	#rodActions == actionsBeforeGroup and contains("Membership pending"),
+	"Pending group requests do not request a reward"
+)
+groupPromptStatus = Enum.GroupMembershipStatus.Joined
+local beforeRetry = #rodActions
+advance(66)
+check(
+	#rodActions > beforeRetry and rodActions[#rodActions] == "ClaimGroupReward",
+	"Successful join schedules a later server check for membership propagation"
+)
 profile.OwnedRods.StarterRod = true
 open("Equipmentbag")
 open("Equipmentbag")
@@ -697,6 +755,22 @@ for _, width in { 1020, 362 } do
 	check(
 		skinActions[#skinActions].SkinId == "BambooRod" and skinActions[#skinActions].Serial == 1,
 		"Bag selects the right skin when serials overlap"
+	)
+end
+profile.GroupRodClaimed = true
+profile.RodSkins.TideboundRod = 1
+table.insert(profile.RodSkinCopies, { SkinId = "TideboundRod", Serial = 1 })
+for _, width in { 1020, 362 } do
+	card.AbsoluteSize = Vector2.new(width, 600)
+	open("Equipmentbag")
+	open("Equipmentbag")
+	check(
+		not content:FindFirstChild("GroupReward", true) and content:FindFirstChild("Skin:TideboundRod:1", true),
+		"Claimed reward replaces the offer with its serialized copy on desktop and phone"
+	)
+	check(
+		contains("+7.5% reel per hit") and contains("+7.5% big fish chance"),
+		"Group perks preserve fractional values in the bag"
 	)
 end
 card.AbsoluteSize = Vector2.new(1020, 600)

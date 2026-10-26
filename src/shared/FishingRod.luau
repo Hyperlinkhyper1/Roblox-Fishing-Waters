@@ -72,6 +72,382 @@ local function rgb(r: number, g: number, b: number): Color3
 end
 
 local STYLES: { [string]: { [string]: any } } = {
+	TideboundRod = {
+		Name = "Tidebound Rod",
+		ToolTip = "Community exclusive · +7.5% reel speed & line strength",
+		Grip = rgb(19, 65, 69),
+		GripMaterial = Enum.Material.Fabric,
+		Blank = rgb(18, 112, 119),
+		BlankMaterial = Enum.Material.Metal,
+		Binding = rgb(225, 183, 91),
+		Guide = rgb(250, 218, 143),
+		Reel = rgb(13, 46, 57),
+		Spool = rgb(225, 183, 91),
+		Bobber = rgb(92, 211, 200),
+		Band = rgb(250, 228, 172),
+		Decorate = function(kit)
+			local gold, pearl, aqua = rgb(225, 183, 91), rgb(238, 241, 220), rgb(92, 211, 200)
+			-- Raised gold stitching around a dark woven handle.
+			for index = 0, 6 do
+				kit.cylinder(
+					"TideboundGripStitch",
+					0.022,
+					0.263,
+					CFrame.new(0, -0.42 + index * 0.14, 0) * CFrame.Angles(0, 0, 0.17),
+					gold,
+					kit.handle
+				)
+			end
+			kit.cylinder("TideboundPommel", 0.13, 0.32, CFrame.new(0, -0.64, 0), gold, kit.handle)
+			kit.ball("TideboundPommelPearl", 0.19, CFrame.new(0, -0.75, 0), pearl, kit.handle)
+			-- Inlaid wave strokes ride each articulated segment independently.
+			for index, segment in kit.segments do
+				local y = kit.starts[index] + LENGTHS[index] / 2
+				local radius = kit.diameters[index] / 2 + 0.012
+				for side = 0, 1 do
+					kit.attach(
+						segment,
+						"TideboundWaveInlay",
+						Vector3.new(0.022, LENGTHS[index] * 0.66, 0.018),
+						CFrame.new(0, y, if side == 0 then radius else -radius)
+							* CFrame.Angles(0, 0, if side == 0 then 0.09 else -0.09),
+						gold,
+						Enum.Material.Metal
+					)
+				end
+				if index <= 4 then
+					kit.ball("TideboundPearlInlay", 0.075, CFrame.new(0, y + 0.16, -radius - 0.018), pearl, segment)
+				end
+			end
+			-- A compass medallion on the reel, with eight gilded points and a sea-glass center.
+			arc(
+				kit,
+				kit.handle,
+				"TideboundCompassRim",
+				Vector3.new(0, -0.08, -0.64),
+				Vector3.new(1, 0, 0),
+				Vector3.new(0, 1, 0),
+				{
+					radius = 0.22,
+					from = 0,
+					to = 360,
+					steps = 12,
+					thickness = 0.025,
+					color = gold,
+					material = Enum.Material.Metal,
+				}
+			)
+			for point = 0, 7 do
+				local angle = point * math.pi / 4
+				kit.attach(
+					kit.handle,
+					"TideboundCompassPoint",
+					Vector3.new(0.035, if point % 2 == 0 then 0.17 else 0.11, 0.035),
+					CFrame.new(math.sin(angle) * 0.11, -0.08 + math.cos(angle) * 0.11, -0.65)
+						* CFrame.Angles(0, 0, -angle),
+					gold,
+					Enum.Material.Metal
+				)
+			end
+			kit.ball("TideboundSeaGlass", 0.105, CFrame.new(0, -0.08, -0.68), aqua, kit.handle).Material =
+				Enum.Material.Neon
+			local tip = kit.segments[#LENGTHS]
+			kit.cylinder("TideboundTipCrown", 0.09, 0.13, CFrame.new(0, kit.top - 0.04, 0), gold, tip)
+			kit.ball("TideboundTipPearl", 0.11, CFrame.new(0, kit.top + 0.03, 0), pearl, tip)
+		end,
+	},
+	PencilRod = {
+		Name = "Pencil Rod",
+		ToolTip = "Sketch out your next big catch.",
+		Grip = rgb(246, 193, 49),
+		Blank = rgb(246, 193, 49),
+		BlankMaterial = Enum.Material.Wood,
+		Binding = rgb(224, 158, 30),
+		Bobber = rgb(235, 128, 151),
+		Diameter = function(): number
+			return 0.19
+		end,
+		Decorate = function(kit)
+			for index, segment in kit.segments do
+				kit.attach(
+					segment,
+					"PencilEdge",
+					Vector3.new(0.055, LENGTHS[index], 0.025),
+					CFrame.new(0, kit.starts[index] + LENGTHS[index] / 2, -0.09),
+					rgb(255, 222, 97),
+					Enum.Material.Wood
+				)
+			end
+			kit.cylinder("PencilFerrule", 0.26, 0.29, CFrame.new(0, -0.48, 0), rgb(190, 196, 204), kit.handle)
+			kit.cylinder("PencilEraser", 0.3, 0.27, CFrame.new(0, -0.75, 0), rgb(235, 128, 151), kit.handle).Material =
+				Enum.Material.SmoothPlastic
+			local tip = kit.segments[#LENGTHS]
+			for step = 1, 4 do
+				kit.cylinder(
+					"PencilWoodTip",
+					0.075,
+					0.2 - step * 0.035,
+					CFrame.new(0, kit.top + (step - 0.5) * 0.075, 0),
+					rgb(216, 177, 127),
+					tip
+				).Material =
+					Enum.Material.Wood
+			end
+			kit.cylinder("PencilGraphite", 0.1, 0.035, CFrame.new(0, kit.top + 0.34, 0), rgb(42, 43, 47), tip)
+		end,
+	},
+	BaseballRod = {
+		Name = "Baseball Rod",
+		ToolTip = "Knock a catch out of the water.",
+		Grip = rgb(72, 49, 36),
+		GripMaterial = Enum.Material.Fabric,
+		Blank = rgb(205, 163, 108),
+		BlankMaterial = Enum.Material.Wood,
+		Binding = rgb(172, 124, 76),
+		Bobber = rgb(242, 235, 218),
+		Band = rgb(197, 52, 48),
+		Diameter = function(index: number): number
+			return 0.13 + math.min(index, 6) * 0.055
+		end,
+		Decorate = function(kit)
+			kit.cylinder("BatKnob", 0.12, 0.4, CFrame.new(0, -0.62, 0), rgb(205, 163, 108), kit.handle).Material =
+				Enum.Material.Wood
+			for step = 0, 5 do
+				kit.cylinder(
+					"BatGripWrap",
+					0.04,
+					0.27,
+					CFrame.new(0, -0.4 + step * 0.16, 0),
+					rgb(116, 83, 59),
+					kit.handle
+				).Material =
+					Enum.Material.Fabric
+			end
+			kit.ball("BatBarrelEnd", 0.46, CFrame.new(0, kit.top - 0.04, 0), rgb(205, 163, 108), kit.segments[#LENGTHS]).Material =
+				Enum.Material.Wood
+		end,
+	},
+	MusketRod = {
+		Name = "Musket Rod",
+		ToolTip = "An antique musket repurposed for fishing.",
+		Grip = rgb(100, 56, 33),
+		GripMaterial = Enum.Material.Wood,
+		Blank = rgb(67, 73, 78),
+		Binding = rgb(170, 133, 66),
+		Reel = rgb(100, 56, 33),
+		Bobber = rgb(170, 133, 66),
+		Diameter = function(index: number): number
+			return 0.21 - index * 0.009
+		end,
+		Decorate = function(kit)
+			local wood, brass = rgb(100, 56, 33), rgb(170, 133, 66)
+			kit.attach(
+				kit.handle,
+				"MusketStock",
+				Vector3.new(0.3, 0.95, 0.44),
+				CFrame.new(0, -0.48, 0.12) * CFrame.Angles(math.rad(-12), 0, 0),
+				wood,
+				Enum.Material.Wood
+			)
+			kit.attach(
+				kit.handle,
+				"MusketButtPlate",
+				Vector3.new(0.32, 0.08, 0.46),
+				CFrame.new(0, -0.95, 0.21),
+				brass,
+				Enum.Material.Metal
+			)
+			for index = 1, 4 do
+				kit.attach(
+					kit.segments[index],
+					"MusketForestock",
+					Vector3.new(0.2, LENGTHS[index], 0.16),
+					CFrame.new(0, kit.starts[index] + LENGTHS[index] / 2, 0.13),
+					wood,
+					Enum.Material.Wood
+				)
+			end
+			kit.attach(
+				kit.segments[1],
+				"MusketHammer",
+				Vector3.new(0.12, 0.24, 0.12),
+				CFrame.new(0.18, 0.78, 0) * CFrame.Angles(0, 0, math.rad(-28)),
+				brass,
+				Enum.Material.Metal
+			)
+			arc(
+				kit,
+				kit.handle,
+				"MusketTriggerGuard",
+				Vector3.new(0, -0.3, -0.23),
+				Vector3.new(0, 1, 0),
+				Vector3.new(0, 0, -1),
+				{
+					radius = 0.2,
+					from = 0,
+					to = 180,
+					steps = 6,
+					thickness = 0.04,
+					color = brass,
+					material = Enum.Material.Metal,
+				}
+			)
+			kit.cylinder("MusketMuzzle", 0.12, 0.23, CFrame.new(0, kit.top - 0.02, 0), brass, kit.segments[#LENGTHS])
+			kit.cylinder(
+				"MusketBore",
+				0.012,
+				0.12,
+				CFrame.new(0, kit.top + 0.046, 0),
+				rgb(24, 25, 27),
+				kit.segments[#LENGTHS]
+			)
+		end,
+	},
+	HoneycombRod = {
+		Name = "Honeycomb Rod",
+		ToolTip = "Golden honeycomb makes every catch sweeter.",
+		Grip = rgb(124, 76, 26),
+		Blank = rgb(239, 164, 35),
+		BlankMaterial = Enum.Material.SmoothPlastic,
+		Binding = rgb(255, 207, 71),
+		Bobber = rgb(255, 189, 43),
+		Band = rgb(70, 43, 24),
+		Decorate = function(kit)
+			for index = 1, 7, 2 do
+				local segment, y = kit.segments[index], kit.starts[index] + LENGTHS[index] / 2
+				arc(
+					kit,
+					segment,
+					"HoneycombCell",
+					Vector3.new(0, y, -0.05),
+					Vector3.new(1, 0, 0),
+					Vector3.new(0, 1, 0),
+					{
+						radius = 0.24,
+						from = 30,
+						to = 390,
+						steps = 6,
+						thickness = 0.055,
+						color = rgb(255, 201, 55),
+						material = Enum.Material.SmoothPlastic,
+					}
+				)
+				kit.ball("HoneyDrop", 0.12, CFrame.new(0.12, y - 0.2, -0.05), rgb(235, 145, 20), segment)
+			end
+			for _, y in { -0.3, 0, 0.3 } do
+				kit.cylinder("HoneyDipperRing", 0.07, 0.4, CFrame.new(0, y, 0), rgb(239, 164, 35), kit.handle)
+			end
+		end,
+	},
+	StarRod = {
+		Name = "Star Rod",
+		ToolTip = "Wish upon a golden star before every cast.",
+		Grip = rgb(93, 55, 137),
+		GripMaterial = Enum.Material.Fabric,
+		Blank = rgb(120, 83, 170),
+		Binding = rgb(255, 215, 88),
+		Guide = rgb(255, 215, 88),
+		Bobber = rgb(255, 222, 112),
+		Decorate = function(kit)
+			local gold = rgb(255, 215, 88)
+			local center = Vector3.new(0, kit.top + 0.17, 0)
+			local tip = kit.segments[#LENGTHS]
+			for edge = 0, 9 do
+				local function vertex(index)
+					local angle = math.pi / 2 + index * math.pi / 5
+					local radius = if index % 2 == 0 then 0.42 else 0.18
+					return center + Vector3.new(math.cos(angle) * radius, math.sin(angle) * radius, 0)
+				end
+				local p0, p1 = vertex(edge), vertex(edge + 1)
+				local tangent = (p1 - p0).Unit
+				kit.attach(
+					tip,
+					"StarOutline",
+					Vector3.new(0.065, 0.065, (p1 - p0).Magnitude + 0.03),
+					CFrame.fromMatrix((p0 + p1) / 2, Vector3.new(0, 0, 1), tangent:Cross(Vector3.new(0, 0, 1)), tangent),
+					gold,
+					Enum.Material.Neon
+				)
+			end
+			kit.ball("StarCore", 0.25, CFrame.new(center), gold, tip).Material = Enum.Material.Neon
+			kit.glow(tip, gold, 5, 0.65)
+			for index = 2, 6, 2 do
+				kit.ball("StarSparkle", 0.085, CFrame.new(0.1, kit.starts[index] + 0.2, 0), gold, kit.segments[index]).Material =
+					Enum.Material.Neon
+			end
+		end,
+	},
+	SelfieStickRod = {
+		Name = "Selfie Stick Rod",
+		ToolTip = "Catch a fish, then catch your best angle.",
+		Grip = rgb(38, 39, 46),
+		GripMaterial = Enum.Material.Fabric,
+		Blank = rgb(180, 191, 205),
+		Binding = rgb(67, 70, 82),
+		Reel = rgb(38, 39, 46),
+		Bobber = rgb(92, 197, 231),
+		Decorate = function(kit)
+			local tip, y = kit.segments[#LENGTHS], kit.top + 0.2
+			kit.attach(
+				tip,
+				"PhoneMount",
+				Vector3.new(0.14, 0.3, 0.16),
+				CFrame.new(0, kit.top - 0.12, 0),
+				rgb(38, 39, 46)
+			)
+			kit.attach(tip, "SelfiePhone", Vector3.new(0.74, 1.08, 0.13), CFrame.new(0, y, 0), rgb(26, 28, 35))
+			kit.attach(
+				tip,
+				"PhoneScreen",
+				Vector3.new(0.62, 0.87, 0.015),
+				CFrame.new(0, y, -0.074),
+				rgb(80, 181, 220),
+				Enum.Material.Neon
+			)
+			kit.attach(
+				tip,
+				"PhoneShutter",
+				Vector3.new(0.13, 0.13, 0.02),
+				CFrame.new(0, y - 0.29, -0.087),
+				rgb(240, 244, 250)
+			)
+			kit.ball("PhoneCamera", 0.055, CFrame.new(0, y + 0.47, -0.075), rgb(81, 87, 105), tip)
+			for _, x in { -0.39, 0.39 } do
+				kit.attach(tip, "PhoneClamp", Vector3.new(0.08, 0.25, 0.2), CFrame.new(x, y, 0), rgb(67, 70, 82))
+			end
+			kit.ball("SelfieButton", 0.1, CFrame.new(0, 0.3, -0.14), rgb(92, 197, 231), kit.handle)
+		end,
+	},
+	LightsaberRod = {
+		Name = "Lightsaber Rod",
+		ToolTip = "A brilliant energy blade with a fishing line.",
+		Grip = rgb(162, 174, 188),
+		GripMaterial = Enum.Material.Metal,
+		Blank = rgb(79, 220, 255),
+		BlankMaterial = Enum.Material.Neon,
+		Binding = rgb(160, 245, 255),
+		Guide = rgb(218, 251, 255),
+		Reel = rgb(42, 48, 59),
+		Spool = rgb(162, 174, 188),
+		Bobber = rgb(79, 220, 255),
+		Band = rgb(218, 251, 255),
+		Diameter = function(index: number): number
+			return 0.22 - index * 0.009
+		end,
+		Decorate = function(kit)
+			for _, y in { -0.4, -0.2, 0, 0.2 } do
+				kit.cylinder("SaberHiltRing", 0.08, 0.32, CFrame.new(0, y, 0), rgb(42, 48, 59), kit.handle)
+			end
+			kit.cylinder("SaberEmitter", 0.18, 0.4, CFrame.new(0, 0.52, 0), rgb(162, 174, 188), kit.handle)
+			kit.cylinder("SaberPommel", 0.12, 0.35, CFrame.new(0, -0.62, 0), rgb(162, 174, 188), kit.handle)
+			kit.ball("SaberSwitch", 0.09, CFrame.new(0.17, 0.3, 0), rgb(238, 68, 61), kit.handle).Material =
+				Enum.Material.Neon
+			kit.ball("SaberBladeTip", 0.15, CFrame.new(0, kit.top, 0), rgb(79, 220, 255), kit.segments[#LENGTHS]).Material =
+				Enum.Material.Neon
+			kit.glow(kit.segments[2], rgb(79, 220, 255), 7, 1.2)
+			kit.glow(kit.segments[7], rgb(79, 220, 255), 7, 1.2)
+		end,
+	},
 	UmbrellaRod = {
 		Name = "Umbrella Rod",
 		ToolTip = "A sturdy brolly with a line through the tip.",
@@ -132,24 +508,48 @@ local STYLES: { [string]: { [string]: any } } = {
 				end
 			end
 			local strapY = kit.starts[2] + 0.28
-			kit.cylinder("UmbrellaStrap", 0.105, 0.55, CFrame.new(0, strapY, 0), leather, kit.segments[2]).Material = Enum.Material.Fabric
-			kit.attach(kit.segments[2], "UmbrellaStrapTab", Vector3.new(0.15, 0.16, 0.035), CFrame.new(0, strapY - 0.025, 0.275), leather)
+			kit.cylinder("UmbrellaStrap", 0.105, 0.55, CFrame.new(0, strapY, 0), leather, kit.segments[2]).Material =
+				Enum.Material.Fabric
+			kit.attach(
+				kit.segments[2],
+				"UmbrellaStrapTab",
+				Vector3.new(0.15, 0.16, 0.035),
+				CFrame.new(0, strapY - 0.025, 0.275),
+				leather
+			)
 			kit.ball("UmbrellaStrapStud", 0.055, CFrame.new(0, strapY, 0.305), silver, kit.segments[2])
 			kit.cylinder("UmbrellaRunner", 0.14, 0.19, CFrame.new(0, 0.64, 0), silver, kit.segments[1])
 			kit.cylinder("UmbrellaCrown", 0.12, 0.14, CFrame.new(0, kit.starts[5], 0), silver, kit.segments[5])
 			-- The curve starts exactly at the bottom of the grip.
-			kit.cylinder("UmbrellaCrookNeck", 0.16, 0.16, CFrame.new(0, -0.62, 0), wood, kit.handle).Material = Enum.Material.Wood
-			arc(kit, kit.handle, "UmbrellaCrook", Vector3.new(0, -0.62, 0.2), Vector3.new(0, 0, -1), Vector3.new(0, -1, 0), {
-				radius = 0.2,
-				from = 0,
-				to = 210,
-				steps = 16,
-				thickness = 0.15,
-				color = wood,
-				material = Enum.Material.Wood,
-			})
-			kit.ball("UmbrellaCrookCap", 0.155, CFrame.new(0, -0.52, 0.3732), wood, kit.handle).Material = Enum.Material.Wood
-			kit.cylinder("UmbrellaFerrule", 0.2, 0.065, CFrame.new(0, kit.top - 0.055, 0), silver, kit.segments[#LENGTHS])
+			kit.cylinder("UmbrellaCrookNeck", 0.16, 0.16, CFrame.new(0, -0.62, 0), wood, kit.handle).Material =
+				Enum.Material.Wood
+			arc(
+				kit,
+				kit.handle,
+				"UmbrellaCrook",
+				Vector3.new(0, -0.62, 0.2),
+				Vector3.new(0, 0, -1),
+				Vector3.new(0, -1, 0),
+				{
+					radius = 0.2,
+					from = 0,
+					to = 210,
+					steps = 16,
+					thickness = 0.15,
+					color = wood,
+					material = Enum.Material.Wood,
+				}
+			)
+			kit.ball("UmbrellaCrookCap", 0.155, CFrame.new(0, -0.52, 0.3732), wood, kit.handle).Material =
+				Enum.Material.Wood
+			kit.cylinder(
+				"UmbrellaFerrule",
+				0.2,
+				0.065,
+				CFrame.new(0, kit.top - 0.055, 0),
+				silver,
+				kit.segments[#LENGTHS]
+			)
 			kit.ball("UmbrellaTip", 0.07, CFrame.new(0, kit.top + 0.045, 0), silver, kit.segments[#LENGTHS])
 		end,
 	},
@@ -204,7 +604,13 @@ local STYLES: { [string]: { [string]: any } } = {
 			-- Knuckles at every joint and a little skull for a butt cap.
 			local bone = rgb(232, 224, 198)
 			for index, segment in kit.segments do
-				kit.ball("BoneKnuckle", kit.diameters[index] * 1.7, CFrame.new(0, kit.starts[index] + 0.03, 0), bone, segment)
+				kit.ball(
+					"BoneKnuckle",
+					kit.diameters[index] * 1.7,
+					CFrame.new(0, kit.starts[index] + 0.03, 0),
+					bone,
+					segment
+				)
 			end
 			local skull = kit.ball("BoneSkull", 0.36, CFrame.new(0, -0.74, 0), bone, kit.handle)
 			kit.attach(kit.handle, "BoneJaw", Vector3.new(0.22, 0.12, 0.2), CFrame.new(0, -0.9, -0.04), bone)
@@ -229,15 +635,59 @@ local STYLES: { [string]: { [string]: any } } = {
 			local iron = rgb(46, 46, 50)
 			local segment = kit.segments[2]
 			local y = kit.starts[2] + 0.18
-			kit.attach(segment, "LanternArm", Vector3.new(0.34, 0.04, 0.04), CFrame.new(0.17, y, 0), iron, Enum.Material.Metal)
-			kit.attach(segment, "LanternHook", Vector3.new(0.03, 0.12, 0.03), CFrame.new(0.32, y - 0.07, 0), iron, Enum.Material.Metal)
+			kit.attach(
+				segment,
+				"LanternArm",
+				Vector3.new(0.34, 0.04, 0.04),
+				CFrame.new(0.17, y, 0),
+				iron,
+				Enum.Material.Metal
+			)
+			kit.attach(
+				segment,
+				"LanternHook",
+				Vector3.new(0.03, 0.12, 0.03),
+				CFrame.new(0.32, y - 0.07, 0),
+				iron,
+				Enum.Material.Metal
+			)
 			local center = Vector3.new(0.32, y - 0.3, 0)
-			kit.attach(segment, "LanternCap", Vector3.new(0.24, 0.05, 0.24), CFrame.new(center + Vector3.new(0, 0.17, 0)), iron, Enum.Material.Metal)
-			kit.attach(segment, "LanternBase", Vector3.new(0.24, 0.05, 0.24), CFrame.new(center - Vector3.new(0, 0.17, 0)), iron, Enum.Material.Metal)
-			for _, corner in { Vector3.new(1, 0, 1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1) } do
-				kit.attach(segment, "LanternPost", Vector3.new(0.03, 0.3, 0.03), CFrame.new(center + corner * 0.1), iron, Enum.Material.Metal)
+			kit.attach(
+				segment,
+				"LanternCap",
+				Vector3.new(0.24, 0.05, 0.24),
+				CFrame.new(center + Vector3.new(0, 0.17, 0)),
+				iron,
+				Enum.Material.Metal
+			)
+			kit.attach(
+				segment,
+				"LanternBase",
+				Vector3.new(0.24, 0.05, 0.24),
+				CFrame.new(center - Vector3.new(0, 0.17, 0)),
+				iron,
+				Enum.Material.Metal
+			)
+			for _, corner in
+				{ Vector3.new(1, 0, 1), Vector3.new(-1, 0, 1), Vector3.new(1, 0, -1), Vector3.new(-1, 0, -1) }
+			do
+				kit.attach(
+					segment,
+					"LanternPost",
+					Vector3.new(0.03, 0.3, 0.03),
+					CFrame.new(center + corner * 0.1),
+					iron,
+					Enum.Material.Metal
+				)
 			end
-			local flame = kit.attach(segment, "LanternGlass", Vector3.new(0.15, 0.24, 0.15), CFrame.new(center), rgb(255, 196, 96), Enum.Material.Neon)
+			local flame = kit.attach(
+				segment,
+				"LanternGlass",
+				Vector3.new(0.15, 0.24, 0.15),
+				CFrame.new(center),
+				rgb(255, 196, 96),
+				Enum.Material.Neon
+			)
 			flame.Transparency = 0.15
 			kit.glow(flame, rgb(255, 190, 110), 9, 1.2)
 		end,
@@ -272,7 +722,13 @@ local STYLES: { [string]: { [string]: any } } = {
 					Enum.Material.Sand
 				)
 			end
-			kit.ball("BaguetteEnd", kit.diameters[#LENGTHS], CFrame.new(0, kit.top, 0), rgb(204, 142, 70), kit.segments[#LENGTHS]).Material =
+			kit.ball(
+				"BaguetteEnd",
+				kit.diameters[#LENGTHS],
+				CFrame.new(0, kit.top, 0),
+				rgb(204, 142, 70),
+				kit.segments[#LENGTHS]
+			).Material =
 				Enum.Material.Sand
 		end,
 	},
@@ -312,7 +768,14 @@ local STYLES: { [string]: { [string]: any } } = {
 				color = rgb(242, 236, 176),
 				material = Enum.Material.Neon,
 			})
-			kit.attach(kit.handle, "NightMoonMount", Vector3.new(0.05, 0.12, 0.05), CFrame.new(0, -0.6, 0), rgb(200, 208, 232), Enum.Material.Metal)
+			kit.attach(
+				kit.handle,
+				"NightMoonMount",
+				Vector3.new(0.05, 0.12, 0.05),
+				CFrame.new(0, -0.6, 0),
+				rgb(200, 208, 232),
+				Enum.Material.Metal
+			)
 			local bobber = kit.tool:FindFirstChild("RodBobber")
 			if bobber then
 				kit.glow(bobber, rgb(150, 130, 255), 6, 0.8)
@@ -389,7 +852,7 @@ for _, style in STYLES do
 end
 
 -- `skinId` is a RodSkins id; nil or unknown builds the plain starter rod.
-function FishingRod.build(skinId: string?): Tool
+function FishingRod.build(skinId: string?, bobberSkinId: string?): Tool
 	local style: Style = (skinId and STYLES[skinId] or DEFAULT) :: any
 	local tool = Instance.new("Tool")
 	tool.Name = style.Name
@@ -528,7 +991,8 @@ function FishingRod.build(skinId: string?): Tool
 
 	local tipFrame = CFrame.new(0, height, -0.12)
 	local bobberFrame = tipFrame * CFrame.new(0, -1.25, 0)
-	local bobber = part("RodBobber", Vector3.new(0.23, 0.31, 0.23), bobberFrame, style.Bobber, Enum.Material.SmoothPlastic)
+	local bobber =
+		part("RodBobber", Vector3.new(0.23, 0.31, 0.23), bobberFrame, style.Bobber, Enum.Material.SmoothPlastic)
 	bobber.Shape = Enum.PartType.Ball
 	local band = cylinder("BobberBand", 0.10, 0.235, bobberFrame * CFrame.new(0, -0.025, 0), style.Band, bobber)
 	band.Material = Enum.Material.SmoothPlastic
@@ -544,7 +1008,14 @@ function FishingRod.build(skinId: string?): Tool
 
 	if style.Decorate then
 		-- Skin pieces are welded to the part they ride on, so they follow its bend.
-		local function attach(parent: BasePart, name: string, size: Vector3, frame: CFrame, color: Color3, material: Enum.Material?): Part
+		local function attach(
+			parent: BasePart,
+			name: string,
+			size: Vector3,
+			frame: CFrame,
+			color: Color3,
+			material: Enum.Material?
+		): Part
 			local item = part(name, size, frame, color, material or Enum.Material.SmoothPlastic)
 			weld(parent, item)
 			return item
@@ -570,6 +1041,22 @@ function FishingRod.build(skinId: string?): Tool
 				light.Parent = parent
 			end,
 		})
+	end
+	if bobberSkinId then
+		-- Load only for a selected bobber; plain rods retain their original float.
+		local FishingBobber = require(script.Parent.FishingBobber)
+		band:Destroy()
+		local stem = tool:FindFirstChild("BobberStem")
+		if stem then
+			stem:Destroy()
+		end
+		for _, child in bobber:GetChildren() do
+			if child:IsA("Light") then
+				child:Destroy()
+			end
+		end
+		FishingBobber.decorate(bobber, bobberSkinId)
+		tool:SetAttribute("BobberSkin", bobberSkinId)
 	end
 	CollectionService:AddTag(tool, "FishingRod")
 	return tool

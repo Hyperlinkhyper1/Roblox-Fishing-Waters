@@ -1,5 +1,8 @@
 -- Wallet/boat transactions are pure so the same rules run inside UpdateAsync and tests.
 local BoatData = {}
+local BobberSkins = if script
+	then require(game:GetService("ReplicatedStorage").Shared.BobberSkins)
+	else require("../shared/BobberSkins")
 local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")
 local RodUpgrades = if script
 	then require(game:GetService("ReplicatedStorage").Shared.RodUpgrades)
@@ -36,6 +39,9 @@ export type Profile = {
 	NextRodSkinSerial: { [string]: number },
 	EquippedRodSkin: string?,
 	EquippedRodSkinSerial: number?,
+	GroupRodClaimed: boolean?,
+	BobberSkins: { [string]: number },
+	EquippedBobberSkin: string?,
 	Angler: any,
 }
 
@@ -50,6 +56,7 @@ function BoatData.decode(raw: any): Profile
 			RodSkins = {},
 			RodSkinCopies = {},
 			NextRodSkinSerial = {},
+			BobberSkins = {},
 			Angler = AnglerData.decode(nil),
 		}
 	end
@@ -83,6 +90,7 @@ function BoatData.decode(raw: any): Profile
 	end
 	assert(raw.EquippedRodSkin == nil or type(raw.EquippedRodSkin) == "string", "Invalid equipped rod skin")
 	local profile = table.clone(raw)
+	assert(raw.GroupRodClaimed == nil or type(raw.GroupRodClaimed) == "boolean", "Invalid group reward claim")
 	profile.OwnedBoats = table.clone(raw.OwnedBoats)
 	profile.OwnedRods = table.clone(raw.OwnedRods or {})
 	-- Every angler starts with a rod, including profiles saved before this default.
@@ -196,6 +204,23 @@ function BoatData.decode(raw: any): Profile
 			addCopy(id, serial, copy.Serial)
 		end
 	end
+	-- Old profiles start with the original float. Unknown retired skins are ignored.
+	assert(raw.BobberSkins == nil or type(raw.BobberSkins) == "table", "Invalid bobber inventory")
+	profile.BobberSkins = {}
+	for id, count in raw.BobberSkins or {} do
+		assert(
+			type(id) == "string" and type(count) == "number" and count >= 0 and count < 2 ^ 53 and count % 1 == 0,
+			"Invalid bobber count"
+		)
+		if count > 0 and BobberSkins.valid(id) then
+			profile.BobberSkins[id] = count
+		end
+	end
+	assert(raw.EquippedBobberSkin == nil or type(raw.EquippedBobberSkin) == "string", "Invalid equipped bobber")
+	profile.EquippedBobberSkin = if BobberSkins.valid(raw.EquippedBobberSkin)
+			and profile.BobberSkins[raw.EquippedBobberSkin]
+		then raw.EquippedBobberSkin
+		else nil
 	profile.Angler = AnglerData.decode(raw.Angler)
 	return profile
 end
@@ -264,6 +289,28 @@ function BoatData.openRodCrate(profile: Profile, crateId: string, skinId: string
 	return "Opened", serial
 end
 
+-- Membership is verified by FishingService. The receipt and serial are committed
+-- together in the existing wallet transaction, including UpdateAsync retries.
+function BoatData.claimGroupRod(profile: Profile): (string, number?)
+	local id = RodSkins.GroupReward
+	if profile.GroupRodClaimed then
+		return "AlreadyClaimed"
+	end
+	for _, copy in profile.RodSkinCopies do
+		if copy.SkinId == id then
+			profile.GroupRodClaimed = true
+			return "AlreadyClaimed", copy.Serial
+		end
+	end
+	local serial = profile.NextRodSkinSerial[id] or 1
+	assert(serial < 2 ^ 53 - 1, "Skin serial limit reached")
+	profile.RodSkins[id] = (profile.RodSkins[id] or 0) + 1
+	table.insert(profile.RodSkinCopies, { SkinId = id, Serial = serial })
+	profile.NextRodSkinSerial[id] = serial + 1
+	profile.GroupRodClaimed = true
+	return "Claimed", serial
+end
+
 -- Mutates a decoded profile in place: nil puts the plain starter rod back on.
 function BoatData.equipRodSkin(profile: Profile, skinId: string?, serial: number?): string
 	if skinId ~= nil and not RodSkins.valid(skinId) then
@@ -283,6 +330,34 @@ function BoatData.equipRodSkin(profile: Profile, skinId: string?, serial: number
 		end
 	end
 	return "NotOwned"
+end
+
+function BoatData.openBobberCrate(profile: Profile, crateId: string, skinId: string): string
+	local crate = BobberSkins.Crates[crateId]
+	if not crate or not table.find(crate.Skins, skinId) then
+		return "UnknownCrate"
+	end
+	if not profile.OwnedRods.StarterRod then
+		return "NoRod"
+	end
+	if profile.Cash < crate.Price then
+		return "InsufficientFunds"
+	end
+	profile.Cash -= crate.Price
+	profile.Angler.Stats.CoinsSpent += crate.Price
+	profile.BobberSkins[skinId] = (profile.BobberSkins[skinId] or 0) + 1
+	return "Opened"
+end
+
+function BoatData.equipBobberSkin(profile: Profile, skinId: string?): string
+	if skinId ~= nil and not BobberSkins.valid(skinId) then
+		return "UnknownSkin"
+	end
+	if skinId ~= nil and not profile.BobberSkins[skinId] then
+		return "NotOwned"
+	end
+	profile.EquippedBobberSkin = skinId
+	return "Equipped"
 end
 
 return BoatData

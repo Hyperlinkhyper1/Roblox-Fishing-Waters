@@ -134,7 +134,7 @@ print("Map startup: " .. checks .. " checks passed")
   const normal = regions.match(/function Regions\.normal\([\s\S]*?\nend/)[0];
   await run('normal-region', prelude + `
 local Regions = {}
-local Harbour = {FOOTPRINT=950, build=function() record("harbour-built"); return "spawn" end}
+local Harbour = {FOOTPRINT=820, build=function() record("harbour-built"); return "spawn" end}
 local NORMAL = {land={}, rock={}}
 local function archipelago() record("archipelago"); return {} end
 local function forest() end
@@ -143,7 +143,7 @@ ${normal}
 local ctx = {rng={}, folder={}, biome=Biomes.Normal, placed={}}
 local spawn = Regions.normal(ctx, function(point)
   check(point == "spawn", "Readiness must use the harbour's real spawn")
-  check(#ctx.placed == 1 and ctx.placed[1].radius == 950, "Reserve harbour footprint before continuation")
+  check(#ctx.placed == 1 and ctx.placed[1].radius == 820, "Reserve harbour footprint before continuation")
   check(index("archipelago") == math.huge, "Readiness must precede surrounding island generation")
   record("ready")
 end)

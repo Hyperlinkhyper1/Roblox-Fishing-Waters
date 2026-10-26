@@ -4,7 +4,7 @@ local root = Instance.new("Folder")
 root.Name = "Map"
 local village = Instance.new("Model")
 village.Name, village.Parent = "Village", root
-local plazaCenter = shape.toWorld({ 870, 694 })
+local plazaCenter = shape.toWorld({ 870, 665 })
 Harbour.buildPlaza(village, plazaCenter, Random.new(Biomes.Seed + 1))
 local plaza = root:FindFirstChild("Plaza", true)
 local paving
@@ -350,7 +350,15 @@ for _, width in { 116, 120 } do
 	dependencies.RodShop.ensure(saved)
 	local rebuiltHall = interiors:FindFirstChild("RodStoreInterior")
 	check(hallBefore.Parent == nil and rebuiltHall ~= hallBefore, "Old crate interior was not replaced")
-	check(rebuiltHall:FindFirstChild("RodCrateDisplay") ~= nil and rebuiltHall:GetAttribute("LayoutVersion") == 5, "Saved hall lacks the new wooden crate")
+	check(rebuiltHall:FindFirstChild("RodCrateDisplay") ~= nil and rebuiltHall:GetAttribute("LayoutVersion") == 6, "Saved hall lacks the new wooden crate")
+	local bobberDisplay = rebuiltHall:FindFirstChild("BobberCrateDisplay")
+	local rodDisplay = rebuiltHall:FindFirstChild("RodCrateDisplay")
+	check(bobberDisplay and bobberDisplay:FindFirstChild("BobberCrateLid"), "Saved hall must receive the bobber case and opening lid")
+	local bobberPrompt = bobberDisplay and bobberDisplay:FindFirstChild("OpenBobberCratePrompt", true)
+	check(bobberPrompt and bobberPrompt.ObjectText == "Bobbers · $350", "Bobber case has its own priced prompt")
+	local bobberPosition = bobberDisplay and bobberDisplay:GetAttribute("CrateFrame").Position
+	local rodPosition = rodDisplay:GetAttribute("CrateFrame").Position
+	check(bobberPosition and math.abs((bobberPosition - rodPosition).Magnitude - 20) < EPS, "Bobber case stands opposite the rod cases across the aisle")
 	dependencies.RodShop.ensure(saved)
 	check(interiors:FindFirstChild("RodStoreInterior") == rebuiltHall, "New crate hall must remain idempotent")
 end

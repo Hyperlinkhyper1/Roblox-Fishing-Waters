@@ -196,6 +196,47 @@ Catalog.Mutations = {
 	["Corrupted+Neon+Albino"] = { Name = "Corrupted Neon Albino", RarityMultiplier = 33333 },
 	["Corrupted+Rainbow+Neon"] = { Name = "Corrupted Rainbow Neon", RarityMultiplier = 50000 },
 	["Corrupted+Astral+Rainbow"] = { Name = "Corrupted Astral Rainbow", RarityMultiplier = 100000 },
+	-- Guaranteed event traits have no natural encounter odds or added rarity score.
+	VoidTouched = { Name = "Void Touched", RarityMultiplier = 1, EventOnly = true },
+	["VoidTouched+Astral"] = { Name = "Void Touched Astral", RarityMultiplier = 1, EventOnly = true },
+	["VoidTouched+Astral+Rainbow"] = { Name = "Void Touched Astral Rainbow", RarityMultiplier = 1, EventOnly = true },
+	["VoidTouched+Neon"] = { Name = "Void Touched Neon", RarityMultiplier = 1, EventOnly = true },
+	["VoidTouched+Albino"] = { Name = "Void Touched Albino", RarityMultiplier = 1, EventOnly = true },
+	["VoidTouched+Rainbow"] = { Name = "Void Touched Rainbow", RarityMultiplier = 1, EventOnly = true },
+	["VoidTouched+Neon+Albino"] = { Name = "Void Touched Neon Albino", RarityMultiplier = 1, EventOnly = true },
+	["VoidTouched+Rainbow+Neon"] = { Name = "Void Touched Rainbow Neon", RarityMultiplier = 1, EventOnly = true },
+	["Corrupted+VoidTouched"] = { Name = "Corrupted Void Touched", RarityMultiplier = 1, EventOnly = true },
+	["Corrupted+VoidTouched+Astral"] = {
+		Name = "Corrupted Void Touched Astral",
+		RarityMultiplier = 1,
+		EventOnly = true,
+	},
+	["Corrupted+VoidTouched+Astral+Rainbow"] = {
+		Name = "Corrupted Void Touched Astral Rainbow",
+		RarityMultiplier = 1,
+		EventOnly = true,
+	},
+	["Corrupted+VoidTouched+Neon"] = { Name = "Corrupted Void Touched Neon", RarityMultiplier = 1, EventOnly = true },
+	["Corrupted+VoidTouched+Albino"] = {
+		Name = "Corrupted Void Touched Albino",
+		RarityMultiplier = 1,
+		EventOnly = true,
+	},
+	["Corrupted+VoidTouched+Rainbow"] = {
+		Name = "Corrupted Void Touched Rainbow",
+		RarityMultiplier = 1,
+		EventOnly = true,
+	},
+	["Corrupted+VoidTouched+Neon+Albino"] = {
+		Name = "Corrupted Void Touched Neon Albino",
+		RarityMultiplier = 1,
+		EventOnly = true,
+	},
+	["Corrupted+VoidTouched+Rainbow+Neon"] = {
+		Name = "Corrupted Void Touched Rainbow Neon",
+		RarityMultiplier = 1,
+		EventOnly = true,
+	},
 }
 Catalog.Equipment = {
 	StarterRod = {

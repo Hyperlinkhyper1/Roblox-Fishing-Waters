@@ -8,10 +8,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const folder = await mkdtemp(join(tmpdir(), 'fishing-menu-'));
 try {
   const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
+  const bobberSkins = await readFile(join(root, 'src/shared/BobberSkins.luau'), 'utf8');
+  const bobberModel = (await readFile(join(root, 'src/shared/FishingBobber.luau'), 'utf8'))
+    .replace('require(script.Parent.BobberSkins)', () => `(function() ${bobberSkins} end)()`);
   let program = await readFile(join(root, 'scripts/player-menu.luau'), 'utf8');
   if (process.argv.includes('--bag-only')) {
     const setupEnd = program.indexOf('player:SetAttribute("DrydockScreenOpen", true)');
-    const bagStart = program.indexOf('open("Equipmentbag")\ncheck(contains("Your equipment bag is empty")');
+    const bagStart = program.indexOf('-- BAG_CHECKS_START');
     const bagEnd = program.indexOf('open("Journal")', bagStart);
     if (setupEnd < 0 || bagStart < 0 || bagEnd < 0) throw new Error('Missing bag test hooks');
     program = program.slice(0, setupEnd) + program.slice(bagStart, bagEnd)
@@ -55,6 +58,10 @@ print("Auto Store shop: " .. checks .. " desktop/mobile UI checks passed (record
     program = program.slice(0, program.indexOf('Menu.start()'))
       + await readFile(join(root, 'scripts/equipment-bag.luau'), 'utf8');
   }
+  if (process.argv.includes('--bobbers-only')) {
+    program = program.slice(0, program.indexOf('Menu.start()'))
+      + await readFile(join(root, 'scripts/bobber-bag.luau'), 'utf8');
+  }
   if (process.argv.includes('--settings-only')) {
     program = program.slice(0, program.indexOf('Menu.start()')) + `
 Menu.start()
@@ -75,7 +82,19 @@ for _, width in {1020, 362} do
   click("PerformanceTab")
   click("Shadows")
   check(not profile.Angler.Settings.Shadows, "Shadows toggle saves")
+  check(not Lighting.GlobalShadows, "Manual shadows toggle applies to lighting")
+  advance(1)
+  check(not Lighting.GlobalShadows and content:FindFirstChild("Shadows", true).Text == "Off", "Profile refresh preserves manual shadows and the displayed value")
+  failSave = true
   click("Shadows")
+  check(not Lighting.GlobalShadows, "Failed setting save does not change session performance")
+  failSave = false
+  click("Shadows")
+  click("WeatherEffects")
+  check(player:GetAttribute("WeatherEffectsEnabled") == false, "Manual weather toggle applies")
+  advance(1)
+  check(player:GetAttribute("WeatherEffectsEnabled") == false, "Profile refresh preserves manual weather")
+  click("WeatherEffects")
   click("AudioTab")
   local before = profile.Angler.Settings.MasterVolume
   click("MasterVolumeDown")
@@ -106,6 +125,8 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(script.Parent:WaitForChild\("EquipmentBag"\)\)/g, 'EquipmentBag')
       .replace(/require\(ReplicatedStorage.Shared.FishingRod\)/g, 'FishingRod')
       .replace(/require\(ReplicatedStorage.Shared.RodSkins\)/g, () => `(function() ${rodSkins} end)()`)
+      .replace(/require\(ReplicatedStorage.Shared.BobberSkins\)/g, () => `(function() ${bobberSkins} end)()`)
+      .replace(/require\(ReplicatedStorage.Shared.FishingBobber\)/g, () => `(function() ${bobberModel} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.BoatCatalog\)/g, 'BoatCatalog')
       .replace(/require\(ReplicatedStorage.Shared.FishModels\)/g, 'nil')
       .replace(/require\(script.Parent.PlayerSettings\)/g, 'Settings')

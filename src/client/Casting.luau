@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 local CastAnimation = require(script.Parent.CastAnimation)
 local FishingAudio = require(script.Parent.FishingAudio)
 local Reel = require(script.Parent.ReelMinigame)
+local FishingBobber = require(ReplicatedStorage.Shared.FishingBobber)
 
 local Casting = {}
 local CHARGE_SECONDS = 1
@@ -39,6 +40,19 @@ local function newLine(tool: Tool)
 	band.Shape = Enum.PartType.Cylinder
 	local stem = shape("Stem", "Part", Vector3.new(0.24, 0.05, 0.05), Color3.fromRGB(36, 42, 43), folder)
 	stem.Shape = Enum.PartType.Cylinder
+	local customBobber: Model? = nil
+	local skin = tool:GetAttribute("BobberSkin")
+	if type(skin) == "string" and skin ~= "" then
+		bobber.Transparency, band.Transparency, stem.Transparency = 1, 1, 1
+		customBobber = FishingBobber.build(skin)
+		customBobber:ScaleTo(1.45)
+		for _, part in customBobber:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = true
+			end
+		end
+		customBobber.Parent = folder
+	end
 	local terrain = workspace.Terrain
 	local from, to, splashPoint = Instance.new("Attachment"), Instance.new("Attachment"), Instance.new("Attachment")
 	from.Name, to.Name, splashPoint.Name = "CastLineTip", "CastLineBobber", "CastSplash"
@@ -69,6 +83,7 @@ local function newLine(tool: Tool)
 		bobber = bobber,
 		band = band,
 		stem = stem,
+		customBobber = customBobber,
 		from = from,
 		to = to,
 		splashPoint = splashPoint,
@@ -88,6 +103,11 @@ local function setBuiltInBobber(tool: Tool, visible: boolean)
 		local part = tool:FindFirstChild(name)
 		if part and part:IsA("BasePart") then
 			part.LocalTransparencyModifier = if visible then 0 else 1
+			for _, detail in part:GetDescendants() do
+				if detail:IsA("BasePart") then
+					detail.LocalTransparencyModifier = if visible then 0 else 1
+				end
+			end
 		end
 	end
 	local hanging = tool:FindFirstChild("HangingLine")
@@ -152,6 +172,9 @@ local function updateLine(line, target: Vector3, castAt: number, phase: string, 
 	line.bobber.CFrame = frame
 	line.band.CFrame = frame * CFrame.new(0, -0.03, 0) * CFrame.Angles(0, 0, math.pi / 2)
 	line.stem.CFrame = frame * CFrame.new(0, 0.26, 0) * CFrame.Angles(0, 0, math.pi / 2)
+	if line.customBobber then
+		line.customBobber:PivotTo(frame)
+	end
 	-- Attachment X axes point down: slack line sags from the tip and drops into the bobber.
 	local down = CFrame.fromMatrix(Vector3.zero, -Vector3.yAxis, Vector3.xAxis)
 	line.from.WorldCFrame = down + tipPosition

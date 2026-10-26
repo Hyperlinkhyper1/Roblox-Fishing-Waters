@@ -21,6 +21,7 @@ local length = sizing.catchLength
 local heldLength = sizing.heldLength
 local catalog = luau.load(luau.compile(read("src/shared/AnglerCatalog.luau")), "catalog", {
 	Color3 = { fromRGB = function(...) return { ... } end },
+	string = string,
 })()
 local checks = 0
 local function check(ok, message)
@@ -60,11 +61,16 @@ check(math.abs(heldLength(8) / heldLength(1) - 2) < 1e-9,
 for _, kg in { 0.01, 0.09, 1.2, 35, 1100 } do
 	check(math.abs(heldLength(kg, "Normal") - heldLength(kg)) < 1e-9, "Normal catches retain weight sizing")
 	check(math.abs(heldLength(kg, "Big") / heldLength(kg) - 1.5) < 1e-9, "Big catches get a 1.5x length boost")
-	check(math.abs(heldLength(kg, "Huge") / heldLength(kg) - 3) < 1e-9, "Huge catches get a 3x length boost")
+	check(math.abs(heldLength(kg, "Huge") / heldLength(kg) - 6) < 1e-9, "Huge catches get a 6x length boost")
 end
-check(heldLength(3.6, "Huge") > heldLength(1.2, "Normal") * 4,
-	"Even a low-weight Huge trout towers over an average trout")
-check(heldLength(1100, "Huge") > 45, "Record Huge sharks exceed 45 studs in hand")
+check(heldLength(catalog.Fish.Trout.AverageKg * 3, "Huge") > 12,
+	"Even the lightest Huge trout is much longer than a standard player is tall")
+check(heldLength(catalog.Fish.Clownfish.AverageKg * 3, "Huge") > 6,
+	"Huge clownfish still grow beyond standard player height")
+check(heldLength(catalog.Fish.YellowfinTuna.AverageKg * 3, "Huge")
+	> heldLength(catalog.Fish.Clownfish.AverageKg * 3, "Huge") * 7,
+	"Huge sizes keep the substantial difference between naturally large and small species")
+check(heldLength(1100, "Huge") > 90, "Record Huge sharks exceed 90 studs in hand")
 check(heldLength(1100) > heldLength(35) * 3,
 	"Record catches remain visibly larger than heavy catches in hand")
 -- Exercise the scaling with elongated, tall and wide model bounds: every

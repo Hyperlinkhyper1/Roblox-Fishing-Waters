@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 local CastAnimation = {}
 -- Shoulder pitch in torso space: 0 hangs down, pi/2 holds the rod forward.
 local REST, COCKED, FOLLOW = math.pi / 2, 2.9, 1.0
+local HOLD_WEIGHT = 0.92
 local BACKSWING, WHIP, SETTLE = 0.12, 0.16, 0.45
 local started = false
 local intents = {}
@@ -54,7 +55,9 @@ local function shoulder(character: Model): Motor6D?
 end
 
 function CastAnimation.start()
-	if started then return end
+	if started then
+		return
+	end
 	started = true
 	local poses = {}
 	RunService.PreSimulation:Connect(function(dt)
@@ -63,8 +66,12 @@ function CastAnimation.start()
 		local seen = {}
 		for _, tool in CollectionService:GetTagged("FishingRod") do
 			local character = tool.Parent
-			local humanoid = if character and character:IsA("Model") then character:FindFirstChildOfClass("Humanoid") else nil
-			if not humanoid or humanoid.Health <= 0 then continue end
+			local humanoid = if character and character:IsA("Model")
+				then character:FindFirstChildOfClass("Humanoid")
+				else nil
+			if not humanoid or humanoid.Health <= 0 then
+				continue
+			end
 			local angle: number? = nil
 			if character == localCharacter then
 				local intent = intents[tool]
@@ -72,7 +79,9 @@ function CastAnimation.start()
 					angle = windUpAngle(now - intent.at)
 				elseif intent then
 					angle = swingAngle(now - intent.at, intent.from)
-					if not angle then intents[tool] = nil end
+					if not angle then
+						intents[tool] = nil
+					end
 				end
 			else
 				local castAt = tool:GetAttribute("CastAt")
@@ -84,28 +93,30 @@ function CastAnimation.start()
 				end
 			end
 			local pose = poses[tool]
-			if not angle and not pose then continue end
 			if not pose or pose.character ~= character or not pose.joint:IsDescendantOf(character) then
 				local joint = shoulder(character)
-				if not joint then continue end
+				if not joint then
+					continue
+				end
 				pose = { character = character, joint = joint, weight = 0, angle = REST }
 				poses[tool] = pose
 			end
 			seen[tool] = true
-			pose.angle = angle or pose.angle
-			pose.weight += ((if angle then 1 else 0) - pose.weight) * (1 - math.exp(-16 * math.min(dt, 0.1)))
+			local blend = 1 - math.exp(-16 * math.min(dt, 0.1))
+			pose.angle = if angle then angle else pose.angle + (REST - pose.angle) * blend
+			pose.weight += ((if angle then 1 else HOLD_WEIGHT) - pose.weight) * blend
 			-- R6 shoulders use rotated joint bases; rotate in torso space.
 			local rotation = pose.joint.C0.Rotation
 			local target = rotation:Inverse() * CFrame.Angles(pose.angle, 0, 0) * rotation
-			-- Transform already holds this frame's tool-hold animation, so the swing blends in and out of it.
+			-- Keep a small amount of the Animator's motion, but stop walking packs
+			-- from swinging the rod arm sideways between casts.
 			pose.joint.Transform = pose.joint.Transform:Lerp(target, pose.weight)
-			if not angle and pose.weight < 0.01 then
-				poses[tool] = nil
-			end
 		end
 		for tool, pose in poses do
 			if not seen[tool] then
-				if pose.joint.Parent then pose.joint.Transform = CFrame.identity end
+				if pose.joint.Parent then
+					pose.joint.Transform = CFrame.identity
+				end
 				poses[tool] = nil
 				intents[tool] = nil
 			end

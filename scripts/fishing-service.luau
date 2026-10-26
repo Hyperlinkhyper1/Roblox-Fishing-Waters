@@ -164,6 +164,13 @@ end
 function methods:FireClient(player, ...)
 	table.insert(self.messages, { player = player, values = { ... } })
 end
+function methods:IsInGroupAsync(groupId)
+	assert(groupId == 772704145, "Only the configured group may authorize rewards")
+	if self.groupError then
+		error("Membership service unavailable")
+	end
+	return self.groupMember == true
+end
 function methods:UnequipTools()
 	for _, item in self.Parent:GetChildren() do
 		if item:IsA("Tool") then
@@ -293,11 +300,12 @@ local dependencies = {
 		end,
 	},
 	FishingRod = {
-		build = function(skinId)
+		build = function(skinId, bobberSkinId)
 			builds += 1
 			local tool = Instance.new("Tool")
 			tool:SetAttribute("RodId", "StarterRod")
 			tool:SetAttribute("RodSkin", skinId or "")
+			tool:SetAttribute("BobberSkin", bobberSkinId or "")
 			return tool
 		end,
 	},
@@ -557,6 +565,9 @@ local SkinData = (function()
 end)()
 dependencies.BoatData.openRodCrate = SkinData.openRodCrate
 dependencies.BoatData.equipRodSkin = SkinData.equipRodSkin
+dependencies.BoatData.claimGroupRod = SkinData.claimGroupRod
+dependencies.BoatData.openBobberCrate = SkinData.openBobberCrate
+dependencies.BoatData.equipBobberSkin = SkinData.equipBobberSkin
 local storedSkins = SkinData.decode(nil)
 storedSkins.OwnedRods.StarterRod, storedSkins.Cash = true, 1400
 local failSkinSave, skinSaves = false, 0
@@ -574,6 +585,7 @@ dependencies.BoatService.updateProgress = function(player, transform)
 	storedSkins = SkinData.decode(nextProfile)
 	player:SetAttribute("RodSkin", storedSkins.EquippedRodSkin or "")
 	player:SetAttribute("RodSkinSerial", storedSkins.EquippedRodSkinSerial or 0)
+	player:SetAttribute("BobberSkin", storedSkins.EquippedBobberSkin or "")
 	return true, "Saved."
 end
 local cratePrompt = Instance.new("ProximityPrompt")
@@ -621,6 +633,131 @@ send(loading, "EquipRodSkin", "")
 check(
 	storedSkins.EquippedRodSkinSerial == nil and storedSkins.EquippedRodSkin == nil,
 	"Bag remote restores the plain rod"
+)
+
+storedSkins.Cash = 750
+local copiesBeforeNovelty = #storedSkins.RodSkinCopies
+send(loading, "OpenRodCrate", "NoveltyCrate")
+reward = feedback.messages[#feedback.messages].values
+check(reward[1] == "CrateResult" and reward[2] == true, "Novelty Crate succeeds through the shop remote")
+check(
+	storedSkins.Cash == 0 and #storedSkins.RodSkinCopies == copiesBeforeNovelty + 1,
+	"Novelty retry saves one reward and charges $750 once"
+)
+local noveltyId, noveltySerial = reward[4], reward[5]
+send(loading, "EquipRodSkin", { SkinId = noveltyId, Serial = noveltySerial })
+check(
+	storedSkins.EquippedRodSkin == noveltyId and storedSkins.EquippedRodSkinSerial == noveltySerial,
+	"New crate rewards equip through the inventory remote"
+)
+
+local copiesBeforeGroup = #storedSkins.RodSkinCopies
+local savesBeforeGroup = skinSaves
+now += 10
+send(loading, "ClaimGroupReward", { GroupId = 1, Member = true })
+check(
+	#storedSkins.RodSkinCopies == copiesBeforeGroup and skinSaves == savesBeforeGroup,
+	"Forged client membership cannot authorize the group reward"
+)
+loading.groupError = true
+now += 10
+send(loading, "ClaimGroupReward")
+check(skinSaves == savesBeforeGroup and not storedSkins.GroupRodClaimed, "Membership errors never award or save")
+loading.groupError, loading.groupMember, failSkinSave = false, true, true
+now += 10
+send(loading, "ClaimGroupReward")
+check(
+	not storedSkins.GroupRodClaimed and #storedSkins.RodSkinCopies == copiesBeforeGroup,
+	"Failed saves leave the group claim and serial available for retry"
+)
+failSkinSave = false
+now += 10
+send(loading, "ClaimGroupReward")
+check(
+	storedSkins.GroupRodClaimed
+		and storedSkins.RodSkins.TideboundRod == 1
+		and storedSkins.NextRodSkinSerial.TideboundRod == 2,
+	"Retried transaction commits exactly one group rod"
+)
+check(
+	string.find(feedback.messages[#feedback.messages].values[2], "Serial #000001", 1, true),
+	"Successful claim reports the committed serial"
+)
+savesBeforeGroup = skinSaves
+now += 10
+send(loading, "ClaimGroupReward")
+check(
+	skinSaves == savesBeforeGroup and #storedSkins.RodSkinCopies == copiesBeforeGroup + 1,
+	"Repeated claims never save or award again"
+)
+storedSkins = SkinData.decode(nil)
+local member = makePlayer(777, true, "Loading")
+member.groupMember = true
+Players.PlayerAdded:Fire(member)
+flush()
+check(not storedSkins.GroupRodClaimed, "Auto claim waits for inventory readiness")
+member:SetAttribute("BoatDataStatus", "Ready")
+flush()
+check(
+	storedSkins.GroupRodClaimed and #storedSkins.RodSkinCopies == 1,
+	"Existing group members automatically receive one rod after loading"
+)
+
+-- Bobber purchases require their own stand and share the atomic wallet save.
+local bobberCounter = Instance.new("Part")
+bobberCounter.Position, bobberCounter.Parent = Vector3.new(-15, 0, 0), shop
+local bobberPrompt = Instance.new("ProximityPrompt")
+bobberPrompt.Name, bobberPrompt.MaxActivationDistance, bobberPrompt.Parent = "OpenBobberCratePrompt", 8, bobberCounter
+storedSkins.Cash = 700
+local savesBeforeBobbers = skinSaves
+send(member, "OpenBobberCrate", "BobberCase")
+check(
+	skinSaves == savesBeforeBobbers and feedback.messages[#feedback.messages].values[2] == false,
+	"Rod stand cannot authorize a distant bobber case purchase"
+)
+member.Character:FindFirstChild("HumanoidRootPart").Position = bobberCounter.Position
+ProximityPromptService.PromptTriggered:Fire(bobberPrompt, member)
+check(feedback.messages[#feedback.messages].values[1] == "OpenBobberCrates", "Bobber stand opens its own menu")
+send(member, "OpenBobberCrate", "BobberCase")
+reward = feedback.messages[#feedback.messages].values
+local bobberId = reward[4]
+check(
+	reward[1] == "BobberCrateResult"
+		and reward[2]
+		and storedSkins.Cash == 350
+		and storedSkins.BobberSkins[bobberId] == 1,
+	"Save retries charge $350 and award one bobber"
+)
+failSkinSave = true
+send(member, "OpenBobberCrate", "BobberCase")
+check(
+	feedback.messages[#feedback.messages].values[2] == false and storedSkins.Cash == 350,
+	"A failed bobber save reveals no reward and keeps cash"
+)
+failSkinSave = false
+storedSkins.Cash = 349
+savesBeforeBobbers = skinSaves
+send(member, "OpenBobberCrate", "BobberCase")
+check(
+	skinSaves == savesBeforeBobbers and feedback.messages[#feedback.messages].values[2] == false,
+	"Insufficient bobber funds do not save"
+)
+send(member, "OpenBobberCrate", "TideCrate")
+check(skinSaves == savesBeforeBobbers, "Bobber remote rejects rod crate ids")
+send(member, "EquipBobberSkin", "Bogus")
+check(skinSaves == savesBeforeBobbers, "Unknown bobber selection cannot save")
+send(member, "EquipBobberSkin", bobberId)
+local selectedTool = member:FindFirstChildOfClass("Backpack"):FindFirstChildOfClass("Tool")
+check(
+	storedSkins.EquippedBobberSkin == bobberId
+		and selectedTool:GetAttribute("BobberSkin") == bobberId
+		and rodCount(member) == 1,
+	"Equipping a bobber rebuilds exactly one rod with the saved selection"
+)
+send(member, "EquipBobberSkin", "")
+check(
+	storedSkins.EquippedBobberSkin == nil and storedSkins.BobberSkins[bobberId] == 1,
+	"Bobber can be removed without losing its copy"
 )
 
 print(

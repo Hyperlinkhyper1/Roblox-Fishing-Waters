@@ -93,10 +93,15 @@ function Boating.start()
 	end
 	-- Native shapes keep the small HUD icon independent of image downloads.
 	local cloudColor = Color3.fromRGB(234, 240, 247)
-	weatherPart("CloudLeft", 2, 9, 17, 17, cloudColor)
-	weatherPart("CloudTop", 11, 2, 21, 24, cloudColor)
-	weatherPart("CloudRight", 24, 12, 14, 14, cloudColor)
-	weatherPart("CloudBase", 10, 17, 21, 9, cloudColor)
+	local clouds = {
+		weatherPart("CloudLeft", 2, 9, 17, 17, cloudColor),
+		weatherPart("CloudTop", 11, 2, 21, 24, cloudColor),
+		weatherPart("CloudRight", 24, 12, 14, 14, cloudColor),
+		weatherPart("CloudBase", 10, 17, 21, 9, cloudColor),
+	}
+	local voidRing = weatherPart("BlackHoleRing", 2, 1, 34, 34, Color3.fromRGB(177, 68, 255))
+	local voidCore = weatherPart("BlackHoleCore", 7, 6, 24, 24, Color3.new(0, 0, 0))
+	voidCore.ZIndex = 3
 	local drops = {}
 	for index = 1, 4 do
 		local drop = weatherPart("Rain" .. index, 5 + (index - 1) * 8, 28, 2, 7, Color3.fromRGB(137, 204, 255))
@@ -115,10 +120,15 @@ function Boating.start()
 			return
 		end
 		currentWeather = kind
-		weatherIcon.Visible = kind == "LightRain" or kind == "Rain" or kind == "Storm"
+		local blackHole = kind == "BlackHole"
+		weatherIcon.Visible = blackHole or kind == "LightRain" or kind == "Rain" or kind == "Storm"
+		voidRing.Visible, voidCore.Visible = blackHole, blackHole
+		for _, cloud in clouds do
+			cloud.Visible = not blackHole
+		end
 		lightning.Visible = kind == "Storm"
 		for index, drop in drops do
-			drop.Visible = if kind == "Storm" then index <= 2 else kind == "Rain" or index % 2 == 1
+			drop.Visible = not blackHole and (if kind == "Storm" then index <= 2 else kind == "Rain" or index % 2 == 1)
 		end
 	end
 	refreshWeather()
@@ -821,6 +831,7 @@ function Boating.start()
 	end)
 
 	local sinceInput, sinceShopCheck = 0, 0
+	local sentThrottle: number?, sentSteer: number? = nil, nil
 	local previousSeat: VehicleSeat? = nil
 	local sinceWeatherCheck = 0
 	RunService.Heartbeat:Connect(function(dt)
@@ -855,13 +866,18 @@ function Boating.start()
 				)
 			end
 			sinceInput += dt
-			if sinceInput >= 0.1 then
+			-- Send changes at once (capped for analog sticks); repeat held input so
+			-- the server's input timeout never releases the helm.
+			local throttle, steer = seat.ThrottleFloat, seat.SteerFloat
+			if (sinceInput >= 1 / 30 and (throttle ~= sentThrottle or steer ~= sentSteer)) or sinceInput >= 0.1 then
 				sinceInput = 0
-				request:FireServer("Row", seat.ThrottleFloat, seat.SteerFloat)
+				sentThrottle, sentSteer = throttle, steer
+				request:FireServer("Row", throttle, steer)
 			end
 			previousSeat = seat
 		else
 			previousSeat, sinceInput = nil, 0
+			sentThrottle, sentSteer = nil, nil
 		end
 		sinceShopCheck += dt
 		if overlay.Visible and sinceShopCheck > 0.4 then

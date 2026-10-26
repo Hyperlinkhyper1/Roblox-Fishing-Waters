@@ -132,7 +132,7 @@ assert(pending[#pending] == firstDiveTween, "Surface margin must avoid flickerin
 move(0, 5, 0)
 surfaceFog()
 assert(firstDiveTween.cancelled, "Rapid resurfacing must cancel the in-flight dive transition")
-assert(Terrain.WaterTransparency == 0.55 and grading.Brightness == 0, "Surface clarity and grading restored")
+assert(Terrain.WaterTransparency == 0.3 and grading.Brightness == 0, "Surface clarity and grading restored")
 assert(Lighting.Ambient.R == 0, "Surface ambient must be restored")
 for _, biome in Biomes.list do
   move(biome.center.X, -8, biome.center.Y, 0.6)
@@ -150,10 +150,10 @@ surfaceFog()
 assert(rgbEqual(Terrain.WaterColor, Biomes.Volcanic.look.waterColor), "Crossing biomes underwater must restore the new biome")
 move(Biomes.MapHalfSize + 20, -8, 0, 0.6)
 surfaceFog()
-assert(Terrain.WaterTransparency == 0.55, "Below sea level outside the ocean is not underwater")
+assert(Terrain.WaterTransparency == 0.3, "Below sea level outside the ocean is not underwater")
 move(0, Biomes.SeaFloor - 5, 0, 0.6)
 surfaceFog()
-assert(Terrain.WaterTransparency == 0.55, "Below the sea floor is not underwater")
+assert(Terrain.WaterTransparency == 0.3, "Below the sea floor is not underwater")
 workspace.CurrentCamera = nil
 render(1/60)
 workspace.CurrentCamera = { CFrame = { Position = { X = 0, Y = -8, Z = 0 } } }
@@ -190,6 +190,22 @@ move(0, 5, 0, 0.6)
 assert(Lighting.Brightness == dayBrightness and rgbEqual(Lighting.OutdoorAmbient, dayAmbient), "Daylight returns")
 attributes.ClockOverride = nil
 print("PASS day/night: shared clock, darker nights, daylight restored")
+weather = { kind = 'BlackHole', rain = 0, storm = 0, cloudCover = 1 }
+move(0, 5, 0, 0.6)
+assert(Lighting.Brightness == 0.45 and grading.Brightness < 0,
+  'Black-hole weather darkens daylight throughout every biome')
+assert(Terrain.WaterColor.B > Terrain.WaterColor.R and Terrain.WaterColor.R > Terrain.WaterColor.G,
+  'Black-hole weather turns the ocean purple')
+move(3700, -8, 300, 0.6)
+assert(atmosphere.Parent == nil and math.abs(Lighting.FogEnd - 10 / 0.28) < 0.00001,
+  'Black-hole weather preserves short underwater visibility')
+assert(Terrain.WaterColor.R > Terrain.WaterColor.G, 'The void palette reaches underwater biomes')
+weather = { rain = 0, storm = 0, cloudCover = 0 }
+move(0, 5, 0, 0.6)
+surfaceFog()
+assert(rgbEqual(Terrain.WaterColor, Biomes.Normal.look.waterColor) and grading.Brightness == 0,
+  'Ending black-hole weather restores the current biome and ordinary grading')
+print('PASS black-hole purple/dark atmosphere, underwater visibility and normal-weather restoration')
 `;
 const temporary = mkdtempSync(join(tmpdir(), 'fishing-underwater-'));
 try {

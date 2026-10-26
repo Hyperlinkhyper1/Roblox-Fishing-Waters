@@ -48,7 +48,7 @@ local function load(role, callback)
 end
 
 -- Status text lives beside the viewport: nested GUI objects do not render in it.
-function Preview.show(view: ViewportFrame, role: string, status: TextLabel)
+function Preview.show(view: ViewportFrame, role: string, status: TextLabel, portrait: boolean?)
 	local camera = Instance.new("Camera")
 	camera.FieldOfView = 32
 	camera.Parent = view
@@ -56,16 +56,16 @@ function Preview.show(view: ViewportFrame, role: string, status: TextLabel)
 	view.Ambient = Color3.fromRGB(185, 185, 185)
 	view.LightColor = Color3.fromRGB(255, 244, 226)
 	view.LightDirection = Vector3.new(-1, -1, -2)
-	local angle, bounds, center = math.rad(20), nil, nil
+	local angle, bounds, center = if portrait then 0 else math.rad(20), nil, nil
 	local function frame()
 		if not bounds or not view.Parent then
 			return
 		end
 		local aspect = math.max(0.1, view.AbsoluteSize.X / math.max(1, view.AbsoluteSize.Y))
 		-- Fit every angle, including the shoulders when the preview is narrow.
-		local width = math.sqrt(bounds.X * bounds.X + bounds.Z * bounds.Z)
+		local width = if portrait then bounds.X else math.sqrt(bounds.X * bounds.X + bounds.Z * bounds.Z)
 		local distance = math.max(bounds.Y, width / aspect) / (2 * math.tan(math.rad(camera.FieldOfView / 2)))
-		distance = distance * 1.12 + width / 2
+		distance = if portrait then distance * 1.04 else distance * 1.12 + width / 2
 		camera.CFrame = CFrame.lookAt(
 			center + Vector3.new(math.sin(angle) * distance, bounds.Y * 0.035, -math.cos(angle) * distance),
 			center
@@ -78,7 +78,7 @@ function Preview.show(view: ViewportFrame, role: string, status: TextLabel)
 			return
 		end
 		if not template then
-			status.Text = "Preview unavailable. Reopen Staff to retry."
+			status.Text = "Preview unavailable. Reopen Workers to retry."
 			return
 		end
 		local world = Instance.new("WorldModel")
@@ -89,6 +89,13 @@ function Preview.show(view: ViewportFrame, role: string, status: TextLabel)
 		local box
 		box, bounds = model:GetBoundingBox()
 		center = box.Position
+		if portrait then
+			-- Frame the head and torso, including headwear, instead of shrinking the
+			-- entire rig into a card. The lower body is deliberately cropped.
+			local height = bounds.Y * 0.58
+			center += Vector3.new(0, (bounds.Y - height) / 2, 0)
+			bounds = Vector3.new(bounds.X, height, bounds.Z)
+		end
 		status.Visible = false
 		frame()
 	end)

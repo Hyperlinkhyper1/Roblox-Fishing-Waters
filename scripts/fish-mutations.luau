@@ -36,6 +36,9 @@ for key, multiplier in
 		Albino = 2.5,
 		Rainbow = 3,
 		Astral = 11,
+		VoidTouched = 3,
+		["Corrupted+VoidTouched"] = 4.5,
+		["Corrupted+VoidTouched+Rainbow+Neon"] = 10.5,
 		["Neon+Albino"] = 6,
 		["Rainbow+Neon"] = 7,
 		["Astral+Rainbow"] = 21,
@@ -46,7 +49,10 @@ end
 check(near(FishMutations.multiplier("Corrupted", { "Tail" }), 2.5), "One corrupted part adds 150%")
 check(near(FishMutations.multiplier("Corrupted", { "Tail", "Bone", "Eye" }), 5.5), "Corrupted parts stack")
 check(near(FishMutations.multiplier("Corrupted+Rainbow+Neon", { "Fin", "Eye" }), 10), "Corruption stacks on combos")
-check(FishMutations.value(10, "Neon") == 20 and FishMutations.value(1, "Normal") == 1, "Value rounds the multiplied worth")
+check(
+	FishMutations.value(10, "Neon") == 20 and FishMutations.value(1, "Normal") == 1,
+	"Value rounds the multiplied worth"
+)
 
 -- Every rollable key is in the catalog with a rarity matching its odds.
 local keys = FishMutations.keys()
@@ -55,7 +61,8 @@ local listed = 0
 for key in Catalog.Mutations do
 	listed += 1
 end
-check(listed == #keys + 1, "Catalog lists every key plus Normal")
+local eventKeys = FishMutations.eventKeys()
+check(listed == #keys + #eventKeys + 1, "Catalog lists every natural and event key plus Normal")
 for _, key in keys do
 	local entry = Catalog.Mutations[key]
 	check(entry ~= nil, key .. " is in the catalog")
@@ -63,6 +70,17 @@ for _, key in keys do
 	local expected = 1 / FishMutations.chance(key, FishMutations.parts(key).Astral == true)
 	check(math.abs(entry.RarityMultiplier - expected) <= 1, key .. " rarity matches its odds")
 	check(entry.Name == FishMutations.label(key), key .. " catalog name matches its label")
+end
+
+for _, key in eventKeys do
+	local entry = Catalog.Mutations[key]
+	check(entry and entry.EventOnly and entry.RarityMultiplier == 1, "Event variants add no invented natural rarity")
+	check(FishMutations.key(FishMutations.parts(key)) == key, key .. " is canonical")
+	check(entry.Name == FishMutations.label(key), key .. " has a readable catalog label")
+	check(
+		FishMutations.chance(key, false) == 0 and FishMutations.chance(key, true) == 0,
+		"Void Touched never rolls naturally"
+	)
 end
 for _, night in { false, true } do
 	local total = 0
@@ -96,7 +114,10 @@ for _, night in { false, true } do
 		if traits.Corruptions then
 			local seen = {}
 			for _, part in traits.Corruptions do
-				check(table.find(FishMutations.Corruptions, part) and not seen[part], "Corrupted parts are distinct kinds")
+				check(
+					table.find(FishMutations.Corruptions, part) and not seen[part],
+					"Corrupted parts are distinct kinds"
+				)
 				seen[part] = true
 			end
 		end
@@ -108,20 +129,65 @@ for _, night in { false, true } do
 	else
 		check(astral == 0, "Astral never surfaces by day")
 	end
-	check((counts.Neon or 0) > (counts.Albino or 0) and (counts.Albino or 0) > (counts.Rainbow or 0), "Neon is most common")
-	print(string.format(
-		"%s: %.3f%% mutated, astral 1 in %s, neon %d, albino %d, rainbow %d",
-		if night then "Night" else "Day",
-		rate * 100,
-		if astral > 0 then string.format("%.0f", ROLLS / astral) else "never",
-		counts.Neon or 0,
-		counts.Albino or 0,
-		counts.Rainbow or 0
-	))
+	check(
+		(counts.Neon or 0) > (counts.Albino or 0) and (counts.Albino or 0) > (counts.Rainbow or 0),
+		"Neon is most common"
+	)
+	print(
+		string.format(
+			"%s: %.3f%% mutated, astral 1 in %s, neon %d, albino %d, rainbow %d",
+			if night then "Night" else "Day",
+			rate * 100,
+			if astral > 0 then string.format("%.0f", ROLLS / astral) else "never",
+			counts.Neon or 0,
+			counts.Albino or 0,
+			counts.Rainbow or 0
+		)
+	)
 end
 for _ = 1, 20000 do
 	check(FishMutations.roll(Catalog.Fish[junkId], true, rng).Mutation == "Normal", "Junk never mutates")
 end
+for _, nearHole in { false, true } do
+	local event = { corrupted = true, voidTouched = nearHole }
+	local additionalCorruption, colours, astral = 0, 0, 0
+	for _ = 1, 20000 do
+		local traits = FishMutations.roll(trout, true, rng, { mutation = 0.02, astral = 0.04 }, event)
+		local set = FishMutations.parts(traits.Mutation)
+		check(
+			set.Corrupted and traits.Corruptions and #traits.Corruptions >= 1,
+			"Black hole guarantees at least one corruption everywhere"
+		)
+		check((set.VoidTouched == true) == nearHole, "Void Touched follows the supplied fishing location")
+		check(Catalog.Mutations[traits.Mutation] ~= nil, "Every event combination can be saved")
+		if #traits.Corruptions > 1 then
+			additionalCorruption += 1
+		end
+		if set.Neon or set.Rainbow or set.Albino then
+			colours += 1
+		end
+		if set.Astral then
+			astral += 1
+		end
+		local seen = {}
+		for _, part in traits.Corruptions do
+			check(table.find(FishMutations.Corruptions, part) and not seen[part], "Event corruptions remain distinct")
+			seen[part] = true
+		end
+	end
+	check(
+		additionalCorruption > 0 and colours > 0 and astral > 0,
+		"Event preserves extra corruptions, normal mutations and rod bonuses"
+	)
+	check(
+		FishMutations.roll(Catalog.Fish[junkId], true, rng, nil, event).Mutation == "Normal",
+		"Admin weather never mutates junk"
+	)
+end
+check(
+	FishMutations.label("Corrupted+VoidTouched+Neon", "Purple") == "Corrupted Void Touched Purple Neon",
+	"Void Touched has a readable combined label"
+)
 check(FishMutations.label("Corrupted+Neon+Albino", "Red") == "Corrupted Red Neon Albino", "Label names the neon colour")
 
 -- Saved catches keep their traits and reject malformed ones.
@@ -133,6 +199,18 @@ check(caught.Hand.NeonColor == "Blue" and caught.Hand.Corruptions[1] == "Tail", 
 check(caught.Hand.Rarity == 10 * Catalog.Mutations["Corrupted+Neon"].RarityMultiplier, "Mutation rarity counts")
 check(caught.Catches.Trout.Mutations["Corrupted+Neon"] == 1, "Bestiary counts the combined key")
 check(Data.decode(caught).Hand.Corruptions[2] == "Eye", "Traits survive a reload")
+for _, key in eventKeys do
+	local saved = Data.recordCatch(nil, "Trout", key, 3, 90, 100, species, Catalog.Mutations, "Big", traits)
+	local restored = Data.decode(saved)
+	check(
+		restored.Hand.Mutation == key and restored.Hand.Corruptions[1] == "Bone",
+		"Event traits survive a profile reload"
+	)
+	check(
+		restored.Catches.Trout.Mutations[key] == 1 and restored.Hand.Rarity == 10,
+		"Bestiary and finite rarity survive for event variants"
+	)
+end
 local plain = Data.recordCatch(nil, "Trout", "Normal", 3, 30, 100, species, Catalog.Mutations)
 check(plain.Hand.NeonColor == nil and plain.Hand.Corruptions == nil, "Normal fish carry no traits")
 local bad = Data.decode(caught)

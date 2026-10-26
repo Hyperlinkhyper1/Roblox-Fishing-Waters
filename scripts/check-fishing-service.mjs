@@ -14,14 +14,14 @@ try {
   let source = await readFile(join(root, 'src/server/FishingService.luau'), 'utf8');
   const harness = await readFile(join(root, 'scripts/fishing-service.luau'), 'utf8');
   const skinSources = {};
-  for (const [name, location] of [['AnglerData', 'server'], ['RodUpgrades', 'shared'], ['RodSkins', 'shared'], ['BoatCatalog', 'shared']]) {
+  for (const [name, location] of [['AnglerData', 'server'], ['RodUpgrades', 'shared'], ['RodSkins', 'shared'], ['BobberSkins', 'shared'], ['BoatCatalog', 'shared']]) {
     skinSources[name] = await readFile(join(root, 'src', location, name + '.luau'), 'utf8');
   }
 
   let skinData = await readFile(join(root, 'src/server/BoatData.luau'), 'utf8');
   skinData = skinData.replace('local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")',
     () => `local AnglerData = (function()\n${skinSources.AnglerData}\nend)()`);
-  for (const name of ['RodUpgrades', 'RodSkins', 'BoatCatalog']) {
+  for (const name of ['RodUpgrades', 'RodSkins', 'BobberSkins', 'BoatCatalog']) {
     const start = skinData.indexOf('local ' + name + ' = if script');
     const end = skinData.indexOf('\n', skinData.indexOf('else require(', start));
     if (start < 0 || end < 0) throw new Error('Missing data dependency: ' + name);
@@ -34,6 +34,7 @@ try {
     ['local BoatData = require(script.Parent.BoatData)', 'local BoatData = dependencies.BoatData'],
     ['local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)', 'local RodUpgrades = dependencies.RodUpgrades'],
     ['local RodSkins = require(ReplicatedStorage.Shared.RodSkins)', `local RodSkins = (function()\n${await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8')}\nend)()`],
+    ['local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)', `local BobberSkins = (function()\n${skinSources.BobberSkins}\nend)()`],
   ]) {
     if (!source.includes(hook)) throw new Error(`FishingService dependency hook changed: ${hook}`);
     source = source.replace(hook, replacement);

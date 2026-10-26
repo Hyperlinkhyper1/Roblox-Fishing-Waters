@@ -5,15 +5,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local LowPoly = require(script.Parent.LowPoly)
 local Props = require(script.Parent.Props)
+local SeabedLife = require(script.Parent.SeabedLife)
 
 local SeabedDetails = {}
-local VERSION = 1
+local VERSION = 2
 local TAU = math.pi * 2
 local M = Enum.Material
 local rgb = Color3.fromRGB
 
 type Style = {
 	count: number,
+	shoreCount: number,
 	stone: Color3,
 	weed: Color3,
 	sand: Color3?,
@@ -23,25 +25,27 @@ type Style = {
 
 local STYLES: { [string]: Style } = {
 	normal = {
-		count = 150,
+		count = 240,
+		shoreCount = 220,
 		stone = rgb(158, 151, 130),
 		weed = rgb(67, 103, 61),
 		sand = rgb(218, 202, 162),
 		coral = { rgb(192, 67, 61), rgb(215, 116, 76), rgb(178, 99, 134), rgb(221, 179, 98) },
 		vegetation = 1,
 	},
-	swamp = { count = 55, stone = rgb(91, 89, 67), weed = rgb(77, 91, 40), vegetation = 1 },
+	swamp = { count = 75, shoreCount = 60, stone = rgb(91, 89, 67), weed = rgb(77, 91, 40), vegetation = 1 },
 	tropical = {
-		count = 90,
+		count = 160,
+		shoreCount = 120,
 		stone = rgb(180, 172, 139),
 		weed = rgb(54, 128, 92),
 		sand = rgb(233, 220, 181),
 		coral = { rgb(232, 113, 101), rgb(234, 173, 89), rgb(160, 114, 186), rgb(85, 174, 158) },
 		vegetation = 0.8,
 	},
-	volcanic = { count = 45, stone = rgb(61, 58, 55), weed = rgb(72, 79, 54), vegetation = 0.15 },
-	ice = { count = 45, stone = rgb(110, 133, 141), weed = rgb(65, 94, 81), vegetation = 0.35 },
-	open = { count = 100, stone = rgb(93, 105, 108), weed = rgb(69, 96, 66), vegetation = 0.55 },
+	volcanic = { count = 60, shoreCount = 40, stone = rgb(61, 58, 55), weed = rgb(72, 79, 54), vegetation = 0.15 },
+	ice = { count = 60, shoreCount = 40, stone = rgb(110, 133, 141), weed = rgb(65, 94, 81), vegetation = 0.35 },
+	open = { count = 180, shoreCount = 0, stone = rgb(93, 105, 108), weed = rgb(69, 96, 66), vegetation = 0.55 },
 }
 
 local function model(name: string, parent: Instance): Model
@@ -83,14 +87,15 @@ end
 local function stones(parent: Model, ground: Vector3, rng: Random, color: Color3)
 	local cluster = model("SeabedStones", parent)
 	local radius = rng:NextNumber(1.3, 3.8)
-	LowPoly.boulder(
-		ground + Vector3.new(0, -radius * 0.15, 0),
-		radius,
-		rng,
-		Props.shade(color, rng, 0.1),
-		cluster,
-		M.Rock
-	)
+	-- Only the exposed crown needs geometry; bury the open base in the bed.
+	local ring = {}
+	local spin = rng:NextNumber(0, TAU)
+	for side = 1, 5 do
+		local angle = spin + side / 5 * TAU
+		local reach = radius * rng:NextNumber(0.8, 1.1)
+		ring[side] = ground + Vector3.new(math.cos(angle) * reach, -radius * 0.8, math.sin(angle) * reach)
+	end
+	LowPoly.pyramid(ring, ground + Vector3.yAxis * radius * 0.8, Props.shade(color, rng, 0.1), cluster, M.Rock)
 	return radius
 end
 
@@ -150,20 +155,47 @@ end
 local function garden(parent: Instance, hit: RaycastResult, style: Style, rng: Random, params: RaycastParams)
 	local patch = model("SeabedGarden", parent)
 	local ground = hit.Position
-	if style.sand and hit.Normal.Y > 0.98 then
+	if style.sand and hit.Normal.Y > 0.98 and rng:NextNumber() < 0.45 then
 		sandDrift(patch, ground, rng, Props.shade(style.sand, rng, 0.035), params)
 	end
 	local radius = stones(patch, ground, rng, style.stone)
-	for _ = 1, rng:NextInteger(4, 7) do
+	for _ = 1, rng:NextInteger(3, 5) do
 		local angle, distance = rng:NextNumber(0, TAU), rng:NextNumber(radius + 1.5, 13)
 		local point = sample(params, ground.X + math.cos(angle) * distance, ground.Z + math.sin(angle) * distance)
 		if point and math.abs(point.Position.Y - ground.Y) < 4 then
 			if style.coral and rng:NextNumber() < 0.42 then
-				coral(patch, point.Position, rng, style.coral)
+				local kind = rng:NextNumber()
+				if kind < 0.35 then
+					SeabedLife.fan(patch, point.Position, rng, style.coral)
+				elseif kind < 0.6 then
+					SeabedLife.sponges(patch, point.Position, rng, style.coral)
+				else
+					coral(patch, point.Position, rng, style.coral)
+				end
 			elseif rng:NextNumber() < style.vegetation then
-				seaweed(patch, point.Position, rng, style.weed)
+				local kind = rng:NextNumber()
+				if kind < 0.3 then
+					SeabedLife.kelp(patch, point.Position, rng, style.weed, Biomes.WaterLevel)
+				elseif kind < 0.7 then
+					SeabedLife.grass(patch, point.Position, rng, style.weed)
+				else
+					seaweed(patch, point.Position, rng, style.weed)
+				end
 			else
 				pebbles(patch, point.Position, rng, style.stone)
+			end
+		end
+	end
+	-- Small finds sit between the vegetation rather than on top of the rocks.
+	if rng:NextNumber() < 0.7 then
+		local angle = rng:NextNumber(0, TAU)
+		local point =
+			sample(params, ground.X + math.cos(angle) * (radius + 2), ground.Z + math.sin(angle) * (radius + 2))
+		if point and math.abs(point.Position.Y - ground.Y) < 3 then
+			if rng:NextNumber() < 0.4 then
+				SeabedLife.starfish(patch, point.Position, point.Normal, rng)
+			else
+				SeabedLife.shells(patch, point.Position, point.Normal, rng)
 			end
 		end
 	end
@@ -178,41 +210,92 @@ local function garden(parent: Instance, hit: RaycastResult, style: Style, rng: R
 	patch.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 end
 
--- Give the harbour's swimming coves and underwater apron a denser belt of life.
--- Query its actual mesh bounds so this follows the coastline when the map moves.
-local function harbourGardens(parent: Instance, root: Instance, params: RaycastParams)
-	local harbour = root:FindFirstChild("Harbour Isle", true)
-	local ground = harbour and harbour:FindFirstChild("Ground")
-	if not ground or not ground:IsA("Model") then
-		return
-	end
-	local frame, size = ground:GetBoundingBox()
-	local rng = Random.new(Biomes.Seed + 700)
+-- Dress swimming coves and island aprons more densely than the deep sea.
+-- Sample actual mesh bounds so the gardens follow saved or regenerated coasts.
+local function shoreGardens(
+	parent: Instance,
+	biome: Biomes.Biome,
+	style: Style,
+	surfaces: { Instance },
+	params: RaycastParams,
+	seed: number
+)
+	local rng = Random.new(seed)
 	local candidates: { RaycastResult } = {}
-	for x = frame.Position.X - size.X / 2, frame.Position.X + size.X / 2, 48 do
-		for z = frame.Position.Z - size.Z / 2, frame.Position.Z + size.Z / 2, 48 do
-			local hit = sample(params, x + rng:NextNumber(-5, 5), z + rng:NextNumber(-5, 5))
-			if hit and hit.Position.Y > Biomes.WaterLevel - 34 and Biomes.at(hit.Position) == Biomes.Normal then
-				table.insert(candidates, hit)
+	local harbourCandidates: { RaycastResult } = {}
+	for _, ground in surfaces do
+		if not ground:IsA("Model") or ground.Name ~= "Ground" then
+			continue
+		end
+		local frame, size = ground:GetBoundingBox()
+		if Biomes.at(frame.Position) ~= biome then
+			continue
+		end
+		for x = frame.Position.X - size.X / 2 - 24, frame.Position.X + size.X / 2 + 24, 36 do
+			for z = frame.Position.Z - size.Z / 2 - 24, frame.Position.Z + size.Z / 2 + 24, 36 do
+				local hit = sample(params, x + rng:NextNumber(-3, 3), z + rng:NextNumber(-3, 3))
+				if hit and hit.Position.Y > Biomes.WaterLevel - 44 and Biomes.at(hit.Position) == biome then
+					local isHarbour = ground.Parent and ground.Parent.Name == "Harbour Isle"
+					table.insert(if isHarbour then harbourCandidates else candidates, hit)
+				end
+			end
+			task.wait()
+		end
+	end
+	for _, list in { candidates, harbourCandidates } do
+		for i = #list, 2, -1 do
+			local j = rng:NextInteger(1, i)
+			list[i], list[j] = list[j], list[i]
+		end
+	end
+	-- Reserve the first gardens for the main swimming coves, then the archipelago.
+	local ordered: { RaycastResult } = {}
+	for index = 1, math.min(#harbourCandidates, 140) do
+		table.insert(ordered, harbourCandidates[index])
+	end
+	for _, hit in candidates do
+		table.insert(ordered, hit)
+	end
+	for index = 141, #harbourCandidates do
+		table.insert(ordered, harbourCandidates[index])
+	end
+	local placed: { Vector2 } = {}
+	for _, hit in ordered do
+		if #placed >= style.shoreCount then
+			break
+		end
+		local position = Vector2.new(hit.Position.X, hit.Position.Z)
+		local clear = true
+		for _, other in placed do
+			if (other - position).Magnitude < 30 then
+				clear = false
+				break
 			end
 		end
-		task.wait()
-	end
-	for i = #candidates, 2, -1 do
-		local j = rng:NextInteger(1, i)
-		candidates[i], candidates[j] = candidates[j], candidates[i]
-	end
-	for index = 1, math.min(#candidates, 90) do
-		garden(parent, candidates[index], STYLES.normal, rng, params)
+		if not clear then
+			continue
+		end
+		garden(parent, hit, style, rng, params)
+		table.insert(placed, position)
+		local index = #placed
 		if index % 15 == 0 then
 			task.wait()
 		end
 	end
+	return placed
 end
 
-local function scatter(parent: Instance, biome: Biomes.Biome, style: Style, params: RaycastParams, seed: number)
+local function scatter(
+	parent: Instance,
+	biome: Biomes.Biome,
+	style: Style,
+	params: RaycastParams,
+	seed: number,
+	occupied: { Vector2 }?
+)
 	local rng = Random.new(seed)
 	local placed: { Vector2 } = {}
+	local blocked = occupied or {}
 	for attempt = 1, style.count * 5 do
 		if #placed >= style.count then
 			break
@@ -231,7 +314,7 @@ local function scatter(parent: Instance, biome: Biomes.Biome, style: Style, para
 			continue
 		end
 		local clear = true
-		for _, other in placed do
+		for _, other in blocked do
 			if (other - position).Magnitude < 36 then
 				clear = false
 				break
@@ -242,6 +325,7 @@ local function scatter(parent: Instance, biome: Biomes.Biome, style: Style, para
 			if hit then
 				garden(parent, hit, style, rng, params)
 				table.insert(placed, position)
+				table.insert(blocked, position)
 			end
 		end
 		if attempt % 20 == 0 then
@@ -288,10 +372,8 @@ function SeabedDetails.ensure(root: Instance)
 		local folder = Instance.new("Folder")
 		folder.Name = biome.name
 		folder.Parent = details
-		if biome == Biomes.Normal then
-			harbourGardens(folder, root, params)
-		end
-		scatter(folder, biome, STYLES[biome.id], params, Biomes.Seed + 600 + index)
+		local occupied = shoreGardens(folder, biome, STYLES[biome.id], surfaces, params, Biomes.Seed + 700 + index)
+		scatter(folder, biome, STYLES[biome.id], params, Biomes.Seed + 600 + index, occupied)
 	end
 	local open = Instance.new("Folder")
 	open.Name = Biomes.OpenSea.name

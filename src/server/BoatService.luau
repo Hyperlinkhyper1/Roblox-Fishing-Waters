@@ -19,6 +19,7 @@ local BoatLaunchCollision = require(script.Parent.BoatLaunchCollision)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local BoatMotion = require(ReplicatedStorage.Shared.BoatMotion)
 local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
+local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
@@ -93,6 +94,10 @@ local function publish(player: Player, state)
 	end
 	player:SetAttribute("RodSkin", state.profile.EquippedRodSkin or "")
 	player:SetAttribute("RodSkinSerial", state.profile.EquippedRodSkinSerial or 0)
+	for id in BobberSkins.Skins do
+		player:SetAttribute("BobberSkinCount" .. id, state.profile.BobberSkins[id] or 0)
+	end
+	player:SetAttribute("BobberSkin", state.profile.EquippedBobberSkin or "")
 	local level, levelXP, requiredXP = BoatData.levelProgress(state.profile)
 	player:SetAttribute("Level", level)
 	player:SetAttribute("LevelXP", levelXP)
@@ -333,15 +338,18 @@ local function setFromCommand(player: Player, message: string)
 	local kinds = {}
 	local selected
 	for kind in Weather.Presets do
-		table.insert(kinds, kind)
-		if string.lower(kind) == argument then
-			selected = kind
+		if kind ~= "BlackHole" then
+			table.insert(kinds, kind)
+			if string.lower(kind) == argument then
+				selected = kind
+			end
 		end
 	end
 	table.sort(kinds)
 	if argument == "list" then
 		notify(player, "Weather types: " .. table.concat(kinds, ", ") .. ".")
 	elseif selected then
+		workspace:SetAttribute("BlackHolePosition", nil)
 		workspace:SetAttribute("WeatherOverride", selected)
 		notify(player, "Weather set to " .. selected .. ".")
 	else
@@ -492,7 +500,9 @@ end
 local function waterAhead(boat, direction: Vector3): boolean
 	local parameters = RaycastParams.new()
 	parameters.FilterType = Enum.RaycastFilterType.Exclude
-	local excluded = { boat.model }
+	-- Other hulls collide physically. Seeing one (or an invisible trigger, line or
+	-- bobber) here zeroed the speed and made the boat stutter back up from rest.
+	local excluded = { workspace:FindFirstChild("PlayerBoats") or boat.model }
 	for _, player in Players:GetPlayers() do
 		if player.Character then
 			table.insert(excluded, player.Character)
@@ -500,6 +510,7 @@ local function waterAhead(boat, direction: Vector3): boolean
 	end
 	parameters.FilterDescendantsInstances = excluded
 	parameters.IgnoreWater = false
+	parameters.RespectCanCollide = true
 	local position = boat.root.Position + direction * (boat.spec.Length / 2 + 2)
 	local result = workspace:Raycast(
 		Vector3.new(position.X, Biomes.WaterLevel + 14, position.Z),
@@ -916,9 +927,8 @@ function BoatService.start()
 			then
 				return
 			end
-			if os.clock() - boat.lastInput < 0.06 then
-				return
-			end
+			-- Always keep the newest input. Network jitter bunches packets, and
+			-- dropping the later one left a released key held until the next send.
 			boat.throttle, boat.steer, boat.lastInput = throttle, steer, os.clock()
 		elseif action == "BrowseRowboat" then
 			openShop(player)
@@ -1005,10 +1015,9 @@ function BoatService.start()
 				then actualForward.Unit
 				else CFrame.Angles(0, boat.yaw, 0).LookVector
 			-- Like a real boat (or car), reversing mirrors the steering direction.
-			boat.yaw = BoatMotion.heading(
-				boat.yaw - turn * (if speed < 0 then -1 else 1) * math.min(dt, 0.1),
-				math.atan2(-actualForward.X, -actualForward.Z)
-			)
+			local yawRateCommand = -turn * (if speed < 0 then -1 else 1)
+			local actualYaw = math.atan2(-actualForward.X, -actualForward.Z)
+			boat.yaw = BoatMotion.heading(boat.yaw + yawRateCommand * math.min(dt, 0.1), actualYaw)
 			-- Seat welds change assembly mass when passengers board or leave.
 			updateSuspension(boat)
 			local wave = Weather.sample(boat.root.Position, serverTime)
@@ -1074,6 +1083,14 @@ function BoatService.start()
 			local driveYaw = Vector3.new(0, math.clamp(yawRate, -boat.spec.TurnRate, boat.spec.TurnRate), 0)
 			local movement = actualForward * speed + driveYaw:Cross(lever)
 			boat.velocity.PlaneVelocity = Vector2.new(movement.X, movement.Z)
+			-- The heading spring alone starts a turn late and keeps swinging the hull
+			-- after the helm is released. Feed the steering rate in directly while the
+			-- hull keeps up; a blocked hull falls behind and is left to bounded torque.
+			local headingLag = math.atan2(math.sin(boat.yaw - actualYaw), math.cos(boat.yaw - actualYaw))
+			if math.abs(headingLag) < 0.2 then
+				local spin = root.AssemblyAngularVelocity
+				root.AssemblyAngularVelocity = Vector3.new(spin.X, yawRateCommand, spin.Z)
+			end
 		end
 	end)
 	Players.PlayerRemoving:Connect(function(player)

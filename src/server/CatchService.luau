@@ -12,6 +12,7 @@ local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
+local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
@@ -113,6 +114,7 @@ local function cast(player: Player, target: any)
 	-- Upgrades and skins changed mid-cast apply from the next cast, matching the client's fight.
 	local boosts =
 		RodSkins.apply(RodUpgrades.boosts(profile and profile.RodUpgrades), profile and profile.EquippedRodSkin)
+	boosts = BobberSkins.apply(boosts, profile and profile.EquippedBobberSkin)
 	local state = { tool = tool, target = surface, phase = "Waiting", boosts = boosts }
 	casts[player] = state
 	tool:SetAttribute("CastTarget", surface)
@@ -130,7 +132,13 @@ local function cast(player: Player, target: any)
 		local roll = FishCatch.roll(pool, Catalog.Fish, Catalog.Rarities, rng, state.boosts)
 		-- Rolled at the bite, but only revealed once the fish is landed.
 		local night = DayNight.isNight(DayNight.clockTime())
-		local traits = FishMutations.roll(Catalog.Fish[roll.FishId], night, rng, state.boosts)
+		local traits = FishMutations.roll(
+			Catalog.Fish[roll.FishId],
+			night,
+			rng,
+			state.boosts,
+			Weather.mutationContext(state.target)
+		)
 		roll.Traits = traits
 		roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)
 		state.roll, state.phase, state.hookedAt = roll, "Hooked", os.clock()

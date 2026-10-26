@@ -5,6 +5,8 @@ local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local FishingRod = require(ReplicatedStorage.Shared.FishingRod)
 local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
+local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
+local FishingBobber = require(ReplicatedStorage.Shared.FishingBobber)
 
 local Bag = {}
 local white = Color3.fromRGB(245, 245, 245)
@@ -170,6 +172,35 @@ local function rodPreview(parent, skinId)
 	framePreview()
 end
 
+local function bobberPreview(parent, skinId)
+	local view = make("ViewportFrame", parent, {
+		Name = "BobberPreview",
+		Position = UDim2.fromOffset(6, 4),
+		Size = UDim2.new(1, -12, 0, 66),
+		Ambient = Color3.fromRGB(165, 170, 175),
+		LightColor = Color3.fromRGB(255, 241, 216),
+		LightDirection = Vector3.new(-1, -1, -2),
+	})
+	local world = make("WorldModel", view, {})
+	local model = FishingBobber.build(skinId)
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+		end
+	end
+	model.Parent = world
+	local center, size = model:GetBoundingBox()
+	local camera = make("Camera", view, { FieldOfView = 32 })
+	view.CurrentCamera = camera
+	local function fit()
+		local aspect = math.max(0.3, view.AbsoluteSize.X / math.max(1, view.AbsoluteSize.Y))
+		local distance = math.max(size.Y, size.X / aspect) * 0.65 / math.tan(math.rad(16))
+		camera.CFrame = CFrame.lookAt(center.Position + Vector3.new(0, 0.08, distance), center.Position)
+	end
+	view:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+	fit()
+end
+
 function Bag.show(parent, profile, player, narrow)
 	local root = make("Frame", parent, { Name = "EquipmentCollection", Size = UDim2.fromScale(1, 1) })
 	local rods = panel(
@@ -268,6 +299,24 @@ function Bag.show(parent, profile, player, narrow)
 			end
 		end
 		local ids = {}
+		local rewardId = RodSkins.GroupReward
+		local reward = RodSkins.Skins[rewardId]
+		if
+			not profile.GroupRodClaimed
+			and not (profile.RodSkins and profile.RodSkins[rewardId])
+			and string.find(string.lower(reward.Name .. " group reward"), string.lower(state.RodQuery), 1, true)
+		then
+			table.insert(ids, {
+				Key = "GroupReward",
+				Id = rewardId,
+				GroupReward = true,
+				Info = {
+					Name = reward.Name,
+					Kind = "Group exclusive · Free",
+					Description = "+7.5% speed · +7.5% strength\nJoin our community to unlock.",
+				},
+			})
+		end
 		for id, ownedRod in profile.OwnedRods do
 			local info = Catalog.Equipment[id]
 			if
@@ -337,7 +386,7 @@ function Bag.show(parent, profile, player, narrow)
 			if id == "StarterRod" then
 				local skin = player:GetAttribute("RodSkin")
 				rodPreview(tile, if type(skin) == "string" and skin ~= "" then skin else nil)
-			elseif serial then
+			elseif serial or entry.GroupReward then
 				rodPreview(tile, id)
 			end
 			label(
@@ -345,7 +394,10 @@ function Bag.show(parent, profile, player, narrow)
 				"<i>"
 					.. (info and info.Kind or "Fishing rod")
 					.. "\n"
-					.. (if serial then string.format("Serial #%06d", serial) else "Owned")
+					.. (if serial
+						then string.format("Serial #%06d", serial)
+						elseif entry.GroupReward then "One-time reward"
+						else "Owned")
 					.. "</i>",
 				18,
 				{
@@ -381,7 +433,66 @@ function Bag.show(parent, profile, player, narrow)
 				TextColor3 = grey,
 				TextXAlignment = Enum.TextXAlignment.Center,
 			})
-			if id == "StarterRod" then
+			if entry.GroupReward then
+				local claim
+				claim = action(
+					tile,
+					"ClaimGroupReward",
+					"[Join & Claim]",
+					UDim2.new(0, 10, 1, -43),
+					UDim2.new(1, -20, 0, 34),
+					function()
+						if claim:GetAttribute("Busy") or player:GetAttribute("BoatDataStatus") ~= "Ready" then
+							return
+						end
+						claim:SetAttribute("Busy", true)
+						claim.Text = "[Checking membership…]"
+						task.spawn(function()
+							local ok, member = pcall(function()
+								return player:IsInGroupAsync(RodSkins.GroupId)
+							end)
+							if not ok or not member then
+								local prompted, status = pcall(function()
+									return game:GetService("GroupService"):PromptJoinAsync(RodSkins.GroupId)
+								end)
+								if not prompted then
+									if claim.Parent then
+										claim.Text = "[Join group on Roblox · Retry]"
+										claim:SetAttribute("Busy", false)
+									end
+									return
+								end
+								if
+									status == Enum.GroupMembershipStatus.None
+									or status == Enum.GroupMembershipStatus.JoinRequestPending
+								then
+									if claim.Parent then
+										claim.Text = if status == Enum.GroupMembershipStatus.JoinRequestPending
+											then "[Membership pending · Retry]"
+											else "[Join & Claim]"
+										claim:SetAttribute("Busy", false)
+									end
+									return
+								end
+								-- Server membership can lag behind the prompt; it still authorizes
+								-- every claim itself. This retry survives closing the equipment bag.
+								task.delay(65, function()
+									if (player:GetAttribute("RodSkinCount" .. rewardId) or 0) == 0 then
+										ReplicatedStorage.Fishing.Request:FireServer("ClaimGroupReward")
+									end
+								end)
+							end
+							ReplicatedStorage.Fishing.Request:FireServer("ClaimGroupReward")
+							if claim.Parent then
+								claim.Text = "[Claim / Check again]"
+								claim:SetAttribute("Busy", false)
+							end
+						end)
+					end,
+					true
+				)
+				claim.TextSize = 18
+			elseif id == "StarterRod" then
 				local equipped = player:GetAttribute("RodEquipped") == true
 				local equip = action(
 					tile,
@@ -458,6 +569,95 @@ function Bag.show(parent, profile, player, narrow)
 			if not child:IsA("UIListLayout") then
 				child:Destroy()
 			end
+		end
+		if state.Category == "Bobbers" then
+			local ids = {}
+			for id, count in profile.BobberSkins or {} do
+				local skin = BobberSkins.Skins[id]
+				if
+					count > 0
+					and skin
+					and string.find(string.lower(skin.Name), string.lower(state.ItemQuery), 1, true)
+				then
+					table.insert(ids, id)
+				end
+			end
+			table.sort(ids, function(a, b)
+				return if state.Reverse
+					then BobberSkins.Skins[a].Name > BobberSkins.Skins[b].Name
+					else BobberSkins.Skins[a].Name < BobberSkins.Skins[b].Name
+			end)
+			local equipped = player:GetAttribute("BobberSkin") or ""
+			if state.ItemQuery == "" then
+				local starter = panel(itemBody, "StarterBobber", UDim2.new(), UDim2.new(1, -7, 0, 110))
+				label(
+					starter,
+					"Starter Bobber\nNo bonus",
+					17,
+					{ Position = UDim2.fromOffset(8, 6), Size = UDim2.new(1, -16, 0, 50) }
+				)
+				action(
+					starter,
+					"ResetBobberSkin",
+					if equipped == "" then "[Selected]" else "[Use starter]",
+					UDim2.fromOffset(8, 65),
+					UDim2.new(1, -16, 0, 32),
+					function()
+						if player:GetAttribute("BoatDataStatus") == "Ready" then
+							ReplicatedStorage.Fishing.Request:FireServer("EquipBobberSkin", "")
+						end
+					end,
+					equipped == ""
+				)
+			end
+			for index, id in ids do
+				local skin = BobberSkins.Skins[id]
+				local selected = equipped == id
+				local tile = panel(itemBody, "Bobber:" .. id, UDim2.new(), UDim2.new(1, -7, 0, 208))
+				tile.LayoutOrder = index
+				outline(tile, if selected then mint else edge)
+				bobberPreview(tile, id)
+				label(tile, skin.Name, 17, {
+					Position = UDim2.fromOffset(8, 72),
+					Size = UDim2.new(1, -16, 0, 36),
+					TextXAlignment = Enum.TextXAlignment.Center,
+				})
+				label(
+					tile,
+					table.concat(BobberSkins.perks(id), "\n"),
+					14,
+					{ Position = UDim2.fromOffset(8, 110), Size = UDim2.new(1, -16, 0, 34), TextColor3 = grey }
+				)
+				label(
+					tile,
+					skin.Rarity .. " · Owned ×" .. profile.BobberSkins[id],
+					14,
+					{ Position = UDim2.fromOffset(8, 146), Size = UDim2.new(1, -16, 0, 19), TextColor3 = grey }
+				)
+				action(
+					tile,
+					"EquipBobberSkin",
+					if selected then "[Selected · Remove]" else "[Use bobber]",
+					UDim2.fromOffset(8, 168),
+					UDim2.new(1, -16, 0, 32),
+					function()
+						if player:GetAttribute("BoatDataStatus") == "Ready" then
+							ReplicatedStorage.Fishing.Request:FireServer("EquipBobberSkin", if selected then "" else id)
+						end
+					end,
+					selected
+				)
+			end
+			if #ids == 0 then
+				empty(
+					itemBody,
+					if state.ItemQuery ~= "" then "No matching bobbers" else "No bobber skins yet",
+					if state.ItemQuery ~= ""
+						then "Try another search."
+						else "Open the $350 Bobber Case in Tide & Tackle."
+				)
+			end
+			return
 		end
 		local boats = {}
 		if state.Category == "Boats" then

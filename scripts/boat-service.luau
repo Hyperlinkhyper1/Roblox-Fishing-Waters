@@ -552,7 +552,7 @@ local dependencies = {
 	BoatCatalog = BoatCatalog,
 	Biomes = { WaterLevel = 0 },
 	Weather = {
-		Presets = { Clear = {}, LightRain = {}, Rain = {}, Storm = {} },
+		Presets = { Clear = {}, LightRain = {}, Rain = {}, Storm = {}, BlackHole = {} },
 		sample = function(position, time)
 			waveSamplePosition, waveSampleTime = position, time
 			return { height = waveHeight, normal = waveNormal }
@@ -997,6 +997,16 @@ floatingBoat.seat.Occupant = { Parent = rich.Character }
 floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = 0, 0.5, now
 RunService.Heartbeat:Fire(1 / 60)
 check(not floatingBoat.parked and floatingBoat.turn > 0, "Steering in place must also release the hull")
+check(
+	floatingBoat.root.AssemblyAngularVelocity.Y == -floatingBoat.turn,
+	"A hull that keeps up with its heading must turn at the steering rate, not lag behind a spring"
+)
+request.OnServerEvent:Fire(rich, "Row", 1, 1)
+request.OnServerEvent:Fire(rich, "Row", 0, 0)
+check(
+	floatingBoat.throttle == 0 and floatingBoat.steer == 0,
+	"Bunched input packets must keep the newest helm, so a released key is never held"
+)
 floatingBoat.steer = 0
 for _ = 1, 300 do
 	RunService.Heartbeat:Fire(1 / 60)
@@ -1021,11 +1031,16 @@ for id, spec in BoatCatalog do
 			floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = direction, 1, now
 			-- Release first: parking deliberately clears all measured velocities.
 			RunService.Heartbeat:Fire(1 / 60)
-			root.AssemblyAngularVelocity = Vector3.new(0.12, -spec.TurnRate * direction, 0.2)
 			root.AssemblyLinearVelocity = forward * floatingBoat.speed
 			for _ = 1, 120 do
+				-- The mock has no solver; physics would report this measured spin.
+				root.AssemblyAngularVelocity = Vector3.new(0.12, -spec.TurnRate * direction, 0.2)
 				RunService.Heartbeat:Fire(1 / 60)
 			end
+			check(
+				root.AssemblyAngularVelocity.Y == -spec.TurnRate * direction,
+				id .. " a blocked hull must be left to bounded torque, not forced to spin"
+			)
 			checkSuspension(floatingBoat, id .. " while turning")
 			local headingError = math.atan2(math.sin(floatingBoat.yaw - yaw), math.cos(floatingBoat.yaw - yaw))
 			check(math.abs(headingError) <= 0.350001, id .. " steering held against a blocked hull must not wind up")
@@ -1158,7 +1173,16 @@ check(
 	"The weather list must privately show every available type"
 )
 check(workspace:GetAttribute("WeatherOverride") == "LightRain", "Listing weather must preserve the current override")
-for _, invalid in { "/set weather", "/set weather snow", "/set weather Storm extra", "/set weather list extra" } do
+for _, invalid in
+	{
+		"/set weather",
+		"/set weather snow",
+		"/set weather BlackHole",
+		"/set weather black hole",
+		"/set weather Storm extra",
+		"/set weather list extra",
+	}
+do
 	command(admin, invalid)
 	check(
 		workspace:GetAttribute("WeatherOverride") == "LightRain",

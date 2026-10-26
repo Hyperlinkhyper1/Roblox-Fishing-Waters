@@ -6,6 +6,7 @@ local modules = {
 	"Oxygen",
 	"Boating",
 	"BoatAudio",
+	"EnvironmentAudio",
 	"ParkedBoats",
 	"Fishing",
 	"RodWorkshop",
@@ -27,6 +28,7 @@ local modules = {
 	"RowingAnimation",
 	"ShoreWaves",
 	"Weather",
+	"BlackHoleWeather",
 	"WaterWaves",
 }
 local required = { Boating = true, Fishing = true, Oxygen = true, RodPhysics = true, PlayerMenu = true }

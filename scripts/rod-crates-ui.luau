@@ -79,7 +79,9 @@ feedback.Name, feedback.Parent, feedback.OnClientEvent = "Feedback", remotes, si
 local requests = {}
 function request:FireServer(action, value)
 	table.insert(requests, { action, value })
-	check(not player:GetAttribute("RodCratesOpen"), "Menu closes immediately before purchase request")
+	if action == "OpenRodCrate" or action == "OpenBobberCrate" then
+		check(not player:GetAttribute("RodCratesOpen"), "Menu closes immediately before purchase request")
+	end
 end
 local interiors = Instance.new("Folder")
 interiors.Name, interiors.Parent = "Interiors", workspace
@@ -159,4 +161,91 @@ advance(3.1)
 check(not caption.Visible and not player:GetAttribute("RodCrateOpening"), "Fallback caption cleans up")
 heartbeat:Fire(0.3)
 check(caption:FindFirstChildOfClass("UIScale").Scale < 1, "Reward caption fits a phone screen")
-print(`Rod crate menu: {checks} checks passed (recording mocks; no Studio rendering)`)
+advance(1)
+feedback.OnClientEvent:Fire("OpenCrates")
+local window = overlay.RodCrateWindow
+window.CrateTabs.SelectNoveltyCrate.Activated:Fire()
+check(
+	window.SkinsNoveltyCrate.Visible and not window.SkinsTideCrate.Visible,
+	"Selecting the new crate switches reward grids"
+)
+check(
+	window.SkinsNoveltyCrate:FindFirstChild("LightsaberRod")
+		and window.SkinsNoveltyCrate:FindFirstChild("SelfieStickRod"),
+	"New crate displays its rewards"
+)
+check(string.find(open.Text, "$750", 1, true), "New crate displays its $750 price")
+player:SetAttribute("Cash", 749)
+check(not open.Active, "Cannot open the new crate with $749")
+player:SetAttribute("Cash", 750)
+check(open.Active, "Can open the new crate with exactly $750")
+local requestCount = #requests
+open.Activated:Fire()
+window.CrateTabs.SelectTideCrate.Activated:Fire()
+check(
+	#requests == requestCount + 1 and requests[#requests][2] == "NoveltyCrate",
+	"Purchase sends the selected crate id"
+)
+feedback.OnClientEvent:Fire("CrateResult", true, "Unboxed!", "BaguetteRod", 3)
+local uncommonCaption = false
+for _, item in caption:GetDescendants() do
+	if item:IsA("TextLabel") and string.find(item.Text, "UNCOMMON", 1, true) then
+		uncommonCaption = true
+	end
+end
+check(uncommonCaption, "Baguette reveal uses the purchased crate rarity even if another tab is clicked while pending")
+advance(3.1)
+feedback.OnClientEvent:Fire("OpenCrates")
+window.CrateTabs.SelectTideCrate.Activated:Fire()
+check(
+	window.SkinsTideCrate.Visible and not window.SkinsNoveltyCrate.Visible and string.find(open.Text, "$350", 1, true),
+	"Original crate and price remain available"
+)
+window.Header.CloseCrates.Activated:Fire()
+local bobberStand = Instance.new("Part")
+bobberStand.Parent, bobberStand.Position = interiors, Vector3.zero
+local bobberPrompt = Instance.new("ProximityPrompt")
+bobberPrompt.Name, bobberPrompt.Parent = "OpenBobberCratePrompt", bobberStand
+local bobberScreen = playerGui:WaitForChild("BobberCrates")
+local bobberOverlay = bobberScreen.CrateOverlay
+local bobberWindow = bobberOverlay.BobberCrateWindow
+local bobberOpen = bobberWindow.Footer.OpenBobberCrate
+advance(1)
+feedback.OnClientEvent:Fire("OpenBobberCrates")
+check(bobberOverlay.Visible and not overlay.Visible, "Bobber stand opens its own case window")
+check(
+	bobberWindow.SkinsBobberCase.CrownedGoldBobber and bobberWindow.SkinsBobberCase.NeonPurpleBobber,
+	"Bobber rewards appear in the case grid"
+)
+check(string.find(bobberOpen.Text, "$350", 1, true), "Bobber case displays its budget price")
+player:SetAttribute("Cash", 349)
+check(not bobberOpen.Active, "Bobber case cannot be opened with insufficient cash")
+player:SetAttribute("Cash", 350)
+player:SetAttribute("BobberSkinCountCrownedGoldBobber", 2)
+local bobberEquip = bobberWindow.SkinsBobberCase.CrownedGoldBobber.EquipCrownedGoldBobber
+check(bobberOpen.Active and bobberEquip.Active, "Exact funds enable purchase and owned bobbers enable equip")
+bobberEquip.Activated:Fire()
+check(
+	requests[#requests][1] == "EquipBobberSkin" and requests[#requests][2] == "CrownedGoldBobber",
+	"Bobber card sends its own equip action"
+)
+player:SetAttribute("BobberSkin", "CrownedGoldBobber")
+feedback.OnClientEvent:Fire("BobberSkinResult", true, "Equipped!")
+advance(1)
+check(not bobberEquip.Active and bobberEquip.Text == "EQUIPPED", "Bobber selection follows saved attributes")
+bobberOpen.Activated:Fire()
+check(
+	not bobberOverlay.Visible and requests[#requests][1] == "OpenBobberCrate" and requests[#requests][2] == "BobberCase",
+	"Purchase targets the bobber case and closes its menu"
+)
+unavailable = false
+feedback.OnClientEvent:Fire("BobberCrateResult", true, "Unboxed!", "NeonPurpleBobber")
+revealCallbacks.reward()
+check(bobberScreen.RewardCaption.Visible and not caption.Visible, "Saved bobber gets its own reward caption")
+revealCallbacks.finish()
+heartbeat:Fire(0.3)
+check(
+	not player:GetAttribute("RodCrateOpening") and bobberWindow:FindFirstChildOfClass("UIScale").Scale < 1,
+	"Bobber reveal cleans up and the case fits a phone"
+)
+print(`Rod and bobber case menus: {checks} checks passed (recording mocks; no Studio rendering)`)

@@ -358,7 +358,25 @@ for _, beam in beams do
 end
 -- Crate skins restyle the same jointed blank: same hinges, lines and safety,
 -- and every extra piece welded into the one assembly.
-for _, skinId in { "UmbrellaRod", "BambooRod", "BoneRod", "LanternRod", "BaguetteRod", "NightRod", "MageStaff" } do
+for _, skinId in
+	{
+		"UmbrellaRod",
+		"BambooRod",
+		"BoneRod",
+		"LanternRod",
+		"BaguetteRod",
+		"NightRod",
+		"MageStaff",
+		"PencilRod",
+		"BaseballRod",
+		"MusketRod",
+		"HoneycombRod",
+		"StarRod",
+		"SelfieStickRod",
+		"LightsaberRod",
+		"TideboundRod",
+	}
+do
 	local skin = rodFactory.build(skinId)
 	check(skin:GetAttribute("RodId") == "StarterRod" and skin:GetAttribute("RodSkin") == skinId, skinId .. " identity")
 	check(skin.Name ~= tool.Name and skin:FindFirstChild("RodBobber") ~= nil, skinId .. " name and bobber")
@@ -436,6 +454,19 @@ for _, value in results do
 	check(near(value, results[1]), "spring response depends on frame rate")
 end
 
+-- Repeated gait inputs must stay subdued instead of building up shaft sway.
+for _, rate in { 30, 60, 120 } do
+	for _, frequency in { 1.5, 2, 2.5 } do
+		local state, peak = dynamics.new(), 0
+		for step = 1, rate * 6 do
+			local sway = 0.1 * math.sin(step / rate * frequency * 2 * math.pi)
+			dynamics.step(state, 1 / rate, { bendX = 0, bendZ = sway, bobX = 0, bobZ = 0 })
+			peak = math.max(peak, math.abs(state.bendZ))
+		end
+		check(peak < 0.095, `walking cadence amplified shaft sway ({rate} FPS, {frequency} Hz: {peak})`)
+	end
+end
+
 local backpack = Instance.new("Backpack")
 tool.Parent = backpack
 run.PreSimulation:Fire(1 / 60)
@@ -454,13 +485,14 @@ end
 for _ = 1, 120 do
 	tick(baseFrame)
 end
-local rest = first.Transform.UpVector
+local tip = tool:FindFirstChild("RodSegment8")
+local rest = tip.CFrame.UpVector
 local peak = 0
 for step = 1, 60 do
 	tick(CFrame.new(step / 10, 4, 0) * CFrame.Angles(-0.6, step / 80, 0))
-	peak = math.max(peak, (first.Transform.UpVector - rest).Magnitude)
+	peak = math.max(peak, (tip.CFrame.UpVector - rest).Magnitude)
 end
-check(peak > 0.001, `walking and turning did not flex the rod (base hinge deflection {peak})`)
+check(peak > 0.01, `walking and turning did not flex the rod (tip deflection {peak})`)
 local sideways = CFrame.new(6, 4, 0) * CFrame.Angles(0, 0, math.pi / 2)
 for _ = 1, 600 do
 	tick(sideways)

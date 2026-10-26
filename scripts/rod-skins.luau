@@ -53,7 +53,7 @@ for _, rarity in RodSkins.RarityOrder do
 	local best = 0
 	for _, id in crate.Skins do
 		local skin = RodSkins.Skins[id]
-		if skin.Rarity == rarity then
+		if RodSkins.rarity(id, "TideCrate") == rarity then
 			check((skin.Reel or 0) + (skin.Size or 0) > 0, id .. " adds speed or strength")
 			best = math.max(best, (skin.Reel or 0) + (skin.Size or 0))
 		end
@@ -238,5 +238,100 @@ check(
 check(BoatData.equipRodSkin(profile, "MageStaff", 2) == "NotOwned", "A serial cannot be used with another skin")
 check(BoatData.equipRodSkin(profile, nil) == "Equipped" and profile.EquippedRodSkin == nil, "Back to starter")
 check(profile.EquippedRodSkinSerial == nil, "Plain look clears the equipped serial")
+
+-- The second crate keeps every requested reward in its own rarity band.
+local novelty = RodSkins.Crates.NoveltyCrate
+check(novelty.Price == 750 and #novelty.Skins == 8, "Novelty Crate costs $750 and has eight rods")
+local expectedRarities = {
+	PencilRod = "Common",
+	BaseballRod = "Common",
+	BaguetteRod = "Uncommon",
+	MusketRod = "Uncommon",
+	HoneycombRod = "Rare",
+	StarRod = "Rare",
+	SelfieStickRod = "Epic",
+	LightsaberRod = "Legendary",
+}
+local noveltyTotal = 0
+for _, id in novelty.Skins do
+	check(RodSkins.rarity(id, "NoveltyCrate") == expectedRarities[id], id .. " has the requested rarity")
+	noveltyTotal += RodSkins.chance("NoveltyCrate", id)
+end
+check(math.abs(noveltyTotal - 1) < 1e-9, "Novelty chances add up to 100%")
+check(RodSkins.roll("NoveltyCrate", 0, 0) == "PencilRod", "First novelty common")
+check(RodSkins.roll("NoveltyCrate", 0.6749, 0.99) == "BaseballRod", "Second novelty common")
+check(RodSkins.roll("NoveltyCrate", 0.676, 0) == "BaguetteRod", "Baguette is uncommon in Novelty Crate")
+check(RodSkins.roll("NoveltyCrate", 0.926, 0) == "HoneycombRod", "First novelty rare")
+check(RodSkins.roll("NoveltyCrate", 0.926, 0.99) == "StarRod", "Second novelty rare")
+check(RodSkins.roll("NoveltyCrate", 0.976, 0) == "SelfieStickRod", "Novelty epic")
+check(RodSkins.roll("NoveltyCrate", 0.999999, 0.999999) == "LightsaberRod", "Novelty legendary")
+check(RodSkins.chance("NoveltyCrate", "MageStaff") == 0, "Old rewards cannot leak into Novelty Crate")
+local buyer = BoatData.decode({ Version = 1, Cash = 749, OwnedBoats = {} })
+check(
+	BoatData.openRodCrate(buyer, "NoveltyCrate", "LightsaberRod") == "InsufficientFunds",
+	"$749 cannot buy the new crate"
+)
+check(buyer.Cash == 749 and not buyer.RodSkins.LightsaberRod, "Failed purchase cannot change cash or inventory")
+buyer.Cash = 750
+check(
+	BoatData.openRodCrate(buyer, "TideCrate", "LightsaberRod") == "UnknownCrate",
+	"Cannot buy a new rod from the cheaper crate"
+)
+local bought, newSerial = BoatData.openRodCrate(buyer, "NoveltyCrate", "LightsaberRod")
+check(bought == "Opened" and newSerial == 1 and buyer.Cash == 0, "New crate charges exactly $750")
+check(buyer.Angler.Stats.CoinsSpent == 750, "Novelty spend is recorded")
+check(BoatData.equipRodSkin(buyer, "LightsaberRod", newSerial) == "Equipped", "New reward can be equipped")
+local reloaded = BoatData.decode(buyer)
+check(
+	reloaded.RodSkins.LightsaberRod == 1 and reloaded.EquippedRodSkin == "LightsaberRod",
+	"New reward and equip survive reload"
+)
+buyer.Cash = 1500
+BoatData.openRodCrate(buyer, "TideCrate", "BaguetteRod")
+BoatData.openRodCrate(buyer, "NoveltyCrate", "BaguetteRod")
+check(
+	buyer.RodSkins.BaguetteRod == 2 and buyer.NextRodSkinSerial.BaguetteRod == 3,
+	"Baguette copies from either crate share saved ownership"
+)
+
+local groupProfile = BoatData.decode(nil)
+local groupBoosts = RodSkins.apply(base, RodSkins.GroupReward)
+check(
+	math.abs(groupBoosts.reel - base.reel - 0.075) < 1e-9 and math.abs(groupBoosts.size - base.size - 0.075) < 1e-9,
+	"Group reward adds exactly 7.5% speed and strength on top of upgrades"
+)
+check(
+	RodSkins.perks(RodSkins.GroupReward)[1] == "+7.5% reel per hit"
+		and RodSkins.perks(RodSkins.GroupReward)[2] == "+7.5% big fish chance",
+	"Fractional percentages are not rounded to 8%"
+)
+local claim, groupSerial = BoatData.claimGroupRod(groupProfile)
+check(
+	claim == "Claimed" and groupSerial == 1 and groupProfile.GroupRodClaimed,
+	"First group claim awards a serial and receipt"
+)
+check(groupProfile.Cash == 0 and groupProfile.Angler.Stats.CoinsSpent == 0, "Group reward is free")
+groupProfile = BoatData.decode(groupProfile)
+check(
+	BoatData.claimGroupRod(groupProfile) == "AlreadyClaimed"
+		and #groupProfile.RodSkinCopies == 1
+		and groupProfile.NextRodSkinSerial.TideboundRod == 2,
+	"Saved claims cannot duplicate rods or advance serials"
+)
+check(
+	BoatData.equipRodSkin(groupProfile, RodSkins.GroupReward, groupSerial) == "Equipped",
+	"Group copy equips like every other skin"
+)
+check(BoatData.decode(groupProfile).EquippedRodSkinSerial == groupSerial, "Group rod selection survives reload")
+groupProfile.GroupRodClaimed = nil
+check(
+	BoatData.claimGroupRod(groupProfile) == "AlreadyClaimed"
+		and groupProfile.GroupRodClaimed
+		and #groupProfile.RodSkinCopies == 1,
+	"Existing group copy repairs a missing receipt without duplication"
+)
+for _, crateId in RodSkins.CrateOrder do
+	check(RodSkins.chance(crateId, RodSkins.GroupReward) == 0, "Group exclusive never drops from paid crates")
+end
 
 print(`Rod skins: {checks} checks passed (pure rules; no Roblox runtime)`)

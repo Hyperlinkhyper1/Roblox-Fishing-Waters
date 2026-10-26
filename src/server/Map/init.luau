@@ -50,7 +50,7 @@ local function setupEnvironment()
 	local look = Biomes.Normal.look
 
 	Terrain.WaterColor = look.waterColor
-	Terrain.WaterTransparency = 0.55
+	Terrain.WaterTransparency = 0.3
 	Terrain.WaterReflectance = 0.2
 	Terrain.WaterWaveSize = 0.1
 	Terrain.WaterWaveSpeed = 8

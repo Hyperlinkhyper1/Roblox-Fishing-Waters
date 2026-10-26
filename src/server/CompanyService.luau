@@ -190,7 +190,11 @@ local function build(base: Model, owner: Player, boatId: string)
 		rod.Size = Vector3.new(0.12, 0.12, 7)
 		rod.Color, rod.Material = Color3.fromRGB(70, 52, 38), Enum.Material.Wood
 		rod.Anchored, rod.CanCollide, rod.CanQuery, rod.CanTouch = true, false, false, false
-		rod.CFrame = stand * CFrame.new(-1.6, 0.6, 0) * CFrame.Angles(0, math.pi / 2, 0) * CFrame.Angles(math.rad(28), 0, 0) * CFrame.new(0, 0, -3.2)
+		rod.CFrame = stand
+			* CFrame.new(-1.6, 0.6, 0)
+			* CFrame.Angles(0, math.pi / 2, 0)
+			* CFrame.Angles(math.rad(28), 0, 0)
+			* CFrame.new(0, 0, -3.2)
 		rod.Parent = worker
 		worker.Parent = model
 		crew.worker = { model = worker, humanoid = humanoid, root = root }
@@ -241,7 +245,13 @@ local function landFish(crew, owner: Player)
 		return random:NextNumber()
 	end
 	local roll = FishCatch.roll(pool, Catalog.Fish, Catalog.Rarities, rng)
-	local traits = FishMutations.roll(Catalog.Fish[roll.FishId], DayNight.isNight(DayNight.clockTime()), rng)
+	local traits = FishMutations.roll(
+		Catalog.Fish[roll.FishId],
+		DayNight.isNight(DayNight.clockTime()),
+		rng,
+		nil,
+		Weather.mutationContext(position)
+	)
 	roll.Traits = traits
 	roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)
 	local full = false

@@ -200,4 +200,28 @@ check(
 	Reveal.play(stand, "BambooRod", function() end, function() end) == nil,
 	"Late saves cannot take the camera far from the stand"
 )
-print(`Rod crate reveal: {checks} checks passed (recording mocks; no Studio rendering)`)
+setup()
+lid.Name = "BobberCrateLid"
+local bobberReward = Instance.new("Model")
+local bobberRoot = Instance.new("Part")
+bobberRoot.Parent, bobberReward.PrimaryPart = bobberReward, bobberRoot
+local bobberAnnounced, bobberFinished = 0, 0
+local stopBobber = Reveal.play(stand, "CrownedGoldBobber", function()
+	bobberAnnounced += 1
+end, function()
+	bobberFinished += 1
+end, function()
+	return bobberReward
+end)
+check(stopBobber ~= nil, "Bobber lid supports the shared world reveal")
+tick(2.5)
+check(
+	bobberReward.Parent == workspace and bobberReward.scale > 4.9 and bobberAnnounced == 1,
+	"Bobber reward rises at a readable display size"
+)
+tick(3.1)
+check(
+	bobberFinished == 1 and bobberReward.Parent == nil and camera.CameraType == "Custom",
+	"Bobber reveal restores play and cleans up"
+)
+print(`Rod and bobber case reveals: {checks} checks passed (recording mocks; no Studio rendering)`)

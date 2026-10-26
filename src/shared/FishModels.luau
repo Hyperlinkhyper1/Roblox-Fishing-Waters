@@ -1259,6 +1259,7 @@ local UNPAINTED = { Eye = true, Pupil = true, EyeGlint = true, Bone = true, Bone
 local ASTRAL_GLOW = rgb(170, 70, 255)
 -- The client cycles the hue of every part carrying a RainbowHue attribute.
 FishModels.RAINBOW_TAG = "RainbowFish"
+FishModels.VOID_TAG = "VoidTouchedFish"
 
 -- A builder over an already built, unscaled fish, so corruptions can reuse the
 -- surface helpers. Body sections are the axis-aligned ellipsoids.
@@ -1405,6 +1406,59 @@ local function aurora(model: Model)
 	light.Parent = core
 end
 
+-- A rippling lens around a completely black fish. Attachments follow its body
+-- through tools, freezer models and scaling without adding physical fish parts.
+local function voidAura(model: Model)
+	local core: BasePart? = nil
+	for _, item in model:GetDescendants() do
+		if item:IsA("BasePart") then
+			item.Color = Color3.new(0, 0, 0)
+			item.Material = Enum.Material.SmoothPlastic
+			item.Reflectance = 0
+			item.Transparency = 0
+			item:SetAttribute("RainbowHue", nil)
+			if not core or item.Size.Magnitude > core.Size.Magnitude then
+				core = item
+			end
+		end
+	end
+	if not core then
+		return
+	end
+	local center = model:GetAttribute("BoundsCenter") :: Vector3
+	local size = model:GetAttribute("BoundsSize") :: Vector3
+	local radius = Vector3.new(size.X * 0.62, math.max(size.Y * 0.8, size.X * 0.18), size.Z * 0.6)
+	local localCenter = core.CFrame:PointToObjectSpace(center)
+	core:SetAttribute("VoidAuraCore", true)
+	core:SetAttribute("VoidAuraOriginalSize", core.Size)
+	core:SetAttribute("VoidAuraCenter", localCenter)
+	core:SetAttribute("VoidAuraRadius", radius)
+	local points = {}
+	for index = 1, 18 do
+		local angle = (index - 1) / 18 * math.pi * 2
+		local point = Instance.new("Attachment")
+		point.Name = "VoidLens" .. index
+		point:SetAttribute("VoidLensAngle", angle)
+		point.Position = localCenter + Vector3.new(math.cos(angle) * radius.X, math.sin(angle) * radius.Y, 0)
+		point.Parent = core
+		table.insert(points, point)
+	end
+	for index, point in points do
+		local beam = Instance.new("Beam")
+		beam.Name = "VoidDistortion"
+		beam.Attachment0, beam.Attachment1 = point, points[index % #points + 1]
+		beam.Width0, beam.Width1 = size.X * 0.018, size.X * 0.018
+		beam.Color = ColorSequence.new(rgb(99, 39, 158))
+		beam.Transparency = NumberSequence.new(0.18)
+		beam.FaceCamera = true
+		beam.LightEmission = 0.7
+		beam.LightInfluence = 0
+		beam.Segments = 1
+		beam.Parent = core
+	end
+	model:AddTag(FishModels.VOID_TAG)
+end
+
 -- Paints a freshly created, unscaled fish with a record's mutations.
 function FishModels.mutate(model: Model, traits)
 	local set = FishMutations.parts(traits and traits.Mutation)
@@ -1422,6 +1476,13 @@ function FishModels.mutate(model: Model, traits)
 				corruptions[kind](rebuild(model, seed))
 			end
 		end
+	end
+	if set.VoidTouched then
+		-- Colour mutations still contribute to value, but the void consumes their
+		-- appearance, including eyes, bones and every added corruption.
+		measure(model)
+		voidAura(model)
+		return
 	end
 	local neon = traits.NeonColor and FishMutations.NeonColors[traits.NeonColor]
 	local glow = if set.Astral then ASTRAL_GLOW elseif neon then rgb(neon[1], neon[2], neon[3]) else rgb(255, 255, 255)
@@ -1499,9 +1560,9 @@ function FishModels.catchLength(kg: number): number
 end
 
 -- Held catches keep their weight differences without the freezer's size limit.
--- Big and Huge add a trophy-size boost so rare catches tower over normal ones.
+-- Huge gets a 6x trophy boost; weight keeps small species smaller than large ones.
 function FishModels.heldLength(kg: number, size: string?): number
-	local boost = if size == "Huge" then 3 elseif size == "Big" then 1.5 else 1
+	local boost = if size == "Huge" then 6 elseif size == "Big" then 1.5 else 1
 	return 1.6 * math.max(kg, 0.01) ^ (1 / 3) * boost
 end
 

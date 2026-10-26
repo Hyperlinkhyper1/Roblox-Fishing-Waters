@@ -346,6 +346,11 @@ local function glyph(parent, name, color, position, size)
 	elseif name == "Staff" then
 		outline("Head", 7, 2, 8, 8, 4)
 		outline("Shoulders", 3, 13, 16, 8, 6)
+	elseif name == "Filter" then
+		line("Top", 11, 3, 18)
+		line("Left", 6, 8, 14, 48)
+		line("Right", 16, 8, 14, -48)
+		line("Stem", 11, 17, 8, 90)
 	elseif name == "Upgrades" then
 		line("Shaft", 11, 12, 14, 90)
 		line("TipLeft", 8, 6, 8.5, -45)
@@ -744,6 +749,7 @@ function Menu.start()
 	local active = nil
 	local settingTab, journalTab = "Performance", "Stats"
 	local homeTab = "Paths"
+	local selectedStaff, staffFilter = "Seller", "All"
 	local freezerCapacity, pantryCapacity = 0, 0
 	local busy = false
 	local render
@@ -963,7 +969,10 @@ function Menu.start()
 				pantryCapacity = result.PantryCapacity or pantryCapacity
 				if result.Profile then
 					profile = result.Profile
-					Settings.apply(profile.Angler.Settings)
+					profile.Angler.Settings = Settings.apply(
+						profile.Angler.Settings,
+						if result.Ok and action == "Setting" then key else nil
+					)
 				end
 				notice.Text = result.Message or ""
 			else
@@ -1971,7 +1980,7 @@ function Menu.start()
 			Size = if narrow then UDim2.new(1, 0, 0, tabRows * 48) else UDim2.new(0, 210, 1, -66),
 		})
 		for index, name in tabNames do
-			tabButton(tabs, name, name, homeTab == name, narrow, function()
+			tabButton(tabs, if name == "Staff" then "Workers" else name, name, homeTab == name, narrow, function()
 				homeTab = name
 				render()
 			end, {
@@ -2005,168 +2014,300 @@ function Menu.start()
 			})
 		end
 		order += 1
-		iconTitle(body, homeTab, homeTab, 24, cream, { LayoutOrder = order, Size = UDim2.new(1, -10, 0, 40) })
+		iconTitle(
+			body,
+			homeTab,
+			if homeTab == "Staff" then "Workers" else homeTab,
+			24,
+			cream,
+			{ LayoutOrder = order, Size = UDim2.new(1, -10, 0, 40) }
+		)
 		if homeTab == "Paths" then
 			paths(body, function()
 				order += 1
 				return order
 			end)
 		elseif homeTab == "Staff" then
-			local hiredCount = 0
+			local hiredCount, visibleRoles = 0, {}
 			for _, id in StaffCatalog.Order do
-				if profile.Angler.Staff and profile.Angler.Staff[id] then
+				local hired = profile.Angler.Staff and profile.Angler.Staff[id] == true
+				if hired then
 					hiredCount += 1
 				end
+				if
+					staffFilter == "All"
+					or (staffFilter == "Hired" and hired)
+					or (staffFilter == "For hire" and not hired)
+				then
+					table.insert(visibleRoles, id)
+				end
 			end
-			line(string.format("Your crew · %d/%d hired", hiredCount, #StaffCatalog.Order), 15, cream, 26)
-			line(
-				"Meet your crew. Pay once to hire; they return whenever you join.",
-				14,
-				muted,
-				if narrow then 58 else 42
-			)
-			for _, id in StaffCatalog.Order do
+			if not table.find(visibleRoles, selectedStaff) then
+				selectedStaff = visibleRoles[1]
+			end
+			order += 1
+			local toolbar = make("Frame", body, {
+				Name = "WorkerToolbar",
+				BackgroundTransparency = 1,
+				LayoutOrder = order,
+				Size = UDim2.new(1, -14, 0, 58),
+			})
+			text(toolbar, string.format("Your crew · %d/%d hired", hiredCount, #StaffCatalog.Order), 13, cream, {
+				Size = UDim2.new(1, -142, 0, 32),
+			})
+			local filter = button(toolbar, staffFilter, function()
+				staffFilter = if staffFilter == "All"
+					then "Hired"
+					elseif staffFilter == "Hired" then "For hire"
+					else "All"
+				render()
+			end, {
+				Name = "WorkerFilter",
+				Position = UDim2.new(1, -132, 0, 0),
+				Size = UDim2.fromOffset(132, 32),
+				TextSize = 13,
+			})
+			withIcon(filter, "Filter", cream, 16)
+			text(toolbar, "Select a worker to manage your crew.", 12, muted, {
+				Position = UDim2.fromOffset(0, 38),
+				Size = UDim2.new(1, 0, 0, 20),
+			})
+			order += 1
+			local grid = make("Frame", body, {
+				Name = "WorkerGrid",
+				BackgroundTransparency = 1,
+				LayoutOrder = order,
+				Size = UDim2.new(1, -16, 0, 264),
+				Visible = #visibleRoles > 0,
+			})
+			local layout = make("UIGridLayout", grid, {
+				Name = "WorkerCards",
+				CellPadding = UDim2.fromOffset(10, 10),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			})
+			local function fitGrid()
+				local width = math.max(1, grid.AbsoluteSize.X)
+				local columns = math.clamp(math.floor((width + 10) / 148), 1, 3)
+				local cellWidth = math.max(1, math.floor((width - (columns - 1) * 10) / columns))
+				local height = math.clamp(math.floor(cellWidth * 1.3), 220, 280)
+				layout.CellSize = UDim2.fromOffset(cellWidth, height)
+				layout.FillDirectionMaxCells = columns
+				grid.Size = UDim2.new(1, -16, 0, math.max(0, math.ceil(#visibleRoles / columns) * (height + 10) - 10))
+			end
+			grid:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitGrid)
+			fitGrid()
+			order += 1
+			local details = make("Frame", body, {
+				Name = "WorkerDetails",
+				BackgroundColor3 = paper,
+				LayoutOrder = order,
+				Size = UDim2.new(1, -16, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+			})
+			local cards = {}
+			local function showDetails()
+				for id, workerCard in cards do
+					local selected = id == selectedStaff
+					workerCard.ThemeBorder.Color = if selected then gold else Theme.Colors.Border
+					workerCard.ThemeBorder.Transparency = if selected then 0 else 0.65
+					workerCard.ThemeBorder.Thickness = if selected then 2 else 1
+					workerCard.SelectionAccent.Visible = selected
+				end
+				details:ClearAllChildren()
+				make("UIPadding", details, {
+					PaddingTop = UDim.new(0, 14),
+					PaddingBottom = UDim.new(0, 14),
+					PaddingLeft = UDim.new(0, 14),
+					PaddingRight = UDim.new(0, 14),
+				})
+				list(details, 8)
+				-- Recreate the panel border after clearing the previous worker's controls.
+				Theme.glassPanel(details, true)
+				if not selectedStaff then
+					text(details, "No workers in this filter.", 15, muted, { LayoutOrder = 1 })
+					return
+				end
+				local role = StaffCatalog.Roles[selectedStaff]
+				local hired = profile.Angler.Staff and profile.Angler.Staff[selectedStaff] == true
+				iconTitle(
+					details,
+					"Staff",
+					role.Name .. (if hired then " · Hired" else " · Job details"),
+					18,
+					cream,
+					{
+						LayoutOrder = 1,
+						Size = UDim2.new(1, 0, 0, 30),
+					}
+				)
+				text(details, role.Description, 13, muted, {
+					LayoutOrder = 2,
+					Size = UDim2.new(1, 0, 0, 0),
+					AutomaticSize = Enum.AutomaticSize.Y,
+				})
+				local locked = role.Requires ~= nil and not Paths.unlocked(profile, role.Requires)
+				local status = if locked
+					then "Unlocks with " .. Paths.Stages[role.Requires].Name .. " (Paths tab)"
+					elseif not hired and profile.Cash < role.Price then "$"
+						.. commas(role.Price - profile.Cash)
+						.. " more needed"
+					elseif not hired then "Select Hire on the card to add this worker to your crew."
+					elseif selectedStaff == "Fisherman" then "Choose the boat he takes out:"
+					else "Permanent crew. No daily wages. Returns whenever you join."
+				text(details, status, 12, if locked then gold else muted, {
+					LayoutOrder = 3,
+					Size = UDim2.new(1, 0, 0, 0),
+					AutomaticSize = Enum.AutomaticSize.Y,
+				})
+				if hired and selectedStaff == "Fisherman" then
+					local boats = {}
+					for boatId in BoatCatalog do
+						if profile.OwnedBoats[boatId] then
+							table.insert(boats, boatId)
+						end
+					end
+					table.sort(boats, function(a, b)
+						return BoatCatalog[a].Price < BoatCatalog[b].Price
+					end)
+					if #boats == 0 then
+						text(details, "Buy a boat at the drydock first.", 13, gold, { LayoutOrder = 4 })
+					end
+					for index, boatId in boats do
+						local chosen = profile.Angler.FishermanBoat == boatId
+						local pick = button(
+							details,
+							BoatCatalog[boatId].Name .. (if chosen then " · Assigned" else " · Assign boat"),
+							function()
+								if not chosen then
+									request("AssignBoat", boatId)
+								end
+							end,
+							{
+								Name = "Assign" .. boatId,
+								LayoutOrder = index + 3,
+								Size = UDim2.new(1, 0, 0, 40),
+								TextSize = 13,
+							}
+						)
+						Theme.glassButton(pick, if chosen then "Selected" else "Normal")
+						withIcon(pick, if chosen then "Check" else "Equipmentbag", cream, 16)
+					end
+				end
+			end
+			for index, id in visibleRoles do
 				local role = StaffCatalog.Roles[id]
 				local hired = profile.Angler.Staff and profile.Angler.Staff[id] == true
-				order += 1
-				local row = make("Frame", body, {
+				local locked = role.Requires ~= nil and not Paths.unlocked(profile, role.Requires)
+				local enabled = not hired and not locked and profile.Cash >= role.Price
+				local workerCard = make("Frame", grid, {
 					Name = id .. "Staff",
 					BackgroundColor3 = paper,
-					BorderSizePixel = 0,
-					Size = UDim2.new(1, -10, 0, if narrow then 442 else 264),
-					LayoutOrder = order,
+					LayoutOrder = index,
 				})
-				local portrait = make("Frame", row, {
+				Theme.corner(workerCard, 6)
+				cards[id] = workerCard
+				local accent =
+					decoration(workerCard, "SelectionAccent", gold, UDim2.fromOffset(8, 0), UDim2.new(1, -16, 0, 3))
+				Theme.corner(accent, 2)
+				local portrait = make("Frame", workerCard, {
 					Name = id .. "Portrait",
-					BackgroundColor3 = navy,
-					Position = UDim2.fromOffset(14, 14),
-					Size = if narrow then UDim2.new(1, -28, 0, 202) else UDim2.fromOffset(156, 236),
+					BackgroundTransparency = 1,
+					Position = UDim2.fromOffset(1, 4),
+					Size = UDim2.new(1, -2, 1, -70),
+					ClipsDescendants = true,
 				})
 				local view = make("ViewportFrame", portrait, {
 					Name = id .. "Preview",
 					BackgroundTransparency = 1,
-					Size = UDim2.new(1, 0, 1, -42),
+					Size = UDim2.fromScale(1, 1),
 				})
-				local loading = text(portrait, "Loading preview…", 13, muted, {
+				local loading = text(portrait, "Loading preview…", 12, muted, {
 					Name = "PreviewStatus",
 					Position = UDim2.fromOffset(8, 8),
-					Size = UDim2.new(1, -16, 1, -58),
+					Size = UDim2.new(1, -16, 1, -16),
 					TextXAlignment = Enum.TextXAlignment.Center,
+					ZIndex = 2,
 				})
-				local turn = StaffPreview.show(view, id, loading)
-				for _, direction in { -1, 1 } do
-					button(portrait, if direction == -1 then "‹" else "›", function()
-						turn(direction)
-					end, {
-						Name = id .. (if direction == -1 then "TurnLeft" else "TurnRight"),
-						Position = if direction == -1 then UDim2.new(0, 6, 1, -42) else UDim2.new(1, -50, 1, -42),
-						Size = UDim2.fromOffset(44, 38),
-						TextSize = 26,
-					})
-				end
-				text(portrait, "Turn", 11, muted, {
-					Position = UDim2.new(0, 50, 1, -42),
-					Size = UDim2.new(1, -100, 0, 38),
-					TextXAlignment = Enum.TextXAlignment.Center,
+				StaffPreview.show(view, id, loading, true)
+				local fade = decoration(
+					portrait,
+					"PortraitFade",
+					Color3.fromRGB(8, 8, 8),
+					UDim2.new(0, 0, 1, -44),
+					UDim2.new(1, 0, 0, 44)
+				)
+				fade.ZIndex = 2
+				make("UIGradient", fade, {
+					Rotation = 90,
+					Transparency = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, 1),
+						NumberSequenceKeypoint.new(1, 0.15),
+					}),
 				})
-				local left = if narrow then 14 else 188
-				local inset = left + 14
-				text(row, role.Name .. (if hired then " · Hired" else ""), 19, if hired then green else cream, {
-					Position = UDim2.fromOffset(left, if narrow then 230 else 14),
-					Size = UDim2.new(1, -inset, 0, 28),
-					Font = Enum.Font.GothamBold,
-				})
-				text(row, role.Description, 14, muted, {
-					Position = UDim2.fromOffset(left, if narrow then 266 else 52),
-					Size = UDim2.new(1, -inset, 0, if narrow then 66 else 86),
-					TextYAlignment = Enum.TextYAlignment.Top,
-				})
-				local afford = profile.Cash >= role.Price
-				local locked = role.Requires ~= nil and not Paths.unlocked(profile, role.Requires)
-				local assigned = profile.Angler.FishermanBoat
-				text(row, "Permanent hire · $" .. commas(role.Price), 14, cream, {
-					Position = UDim2.fromOffset(left, if narrow then 336 else 148),
-					Size = UDim2.new(1, -inset, 0, 24),
-				})
+				local badge = decoration(
+					workerCard,
+					"RoleBadge",
+					Theme.Colors.Inset,
+					UDim2.new(1, -36, 0, 10),
+					UDim2.fromOffset(26, 26)
+				)
+				Theme.corner(badge, 5)
+				glyph(
+					badge,
+					if id == "Seller" then "Coin" elseif id == "Porter" then "Equipmentbag" else "Fish",
+					cream,
+					UDim2.fromOffset(13, 13),
+					16
+				)
 				text(
-					row,
-					if locked
-						then "Unlocks with " .. Paths.Stages[role.Requires].Name .. " (Paths tab)"
-						elseif hired and id == "Fisherman" then (if assigned and BoatCatalog[assigned]
-							then "Sails your " .. BoatCatalog[assigned].Name .. ". Pick another boat below."
-							else "Choose the boat he takes out:")
-						elseif hired then "Part of your crew"
-						elseif afford then "One payment. No daily wages."
-						else "$" .. commas(role.Price - profile.Cash) .. " more needed",
-					12,
-					if hired and id == "Fisherman" and not assigned then gold else muted,
+					workerCard,
+					if hired then "HIRED" elseif locked then "LOCKED" else "FOR HIRE",
+					10,
+					if hired then green else muted,
 					{
-						Position = UDim2.fromOffset(left, if narrow then 362 else 176),
-						Size = UDim2.new(1, -inset, 0, 24),
+						Position = UDim2.fromOffset(10, 12),
+						Size = UDim2.new(1, -50, 0, 20),
 					}
 				)
-				local boats = {}
-				for boatId in BoatCatalog do
-					if profile.OwnedBoats[boatId] then
-						table.insert(boats, boatId)
-					end
-				end
-				table.sort(boats, function(a, b)
-					return BoatCatalog[a].Price < BoatCatalog[b].Price
+				text(workerCard, role.Name, 18, cream, {
+					Name = "WorkerName",
+					Position = UDim2.new(0, 6, 1, -76),
+					Size = UDim2.new(1, -12, 0, 26),
+					TextXAlignment = Enum.TextXAlignment.Center,
+					TextScaled = true,
+				})
+				make("UITextSizeConstraint", workerCard.WorkerName, { MinTextSize = 12, MaxTextSize = 18 })
+				-- A transparent native button keeps the entire portrait keyboard/touch selectable.
+				local select = Instance.new("TextButton")
+				select.Name, select.Text, select.BackgroundTransparency = "Select" .. id, "", 1
+				select.Size, select.ZIndex, select.Parent = UDim2.new(1, 0, 1, -48), 4, workerCard
+				select.Activated:Connect(function()
+					selectedStaff = id
+					showDetails()
 				end)
-				if hired and id == "Fisherman" and #boats > 0 then
-					-- One button per owned boat; the assigned one is highlighted.
-					for index, boatId in boats do
-						local chosen = assigned == boatId
-						local pick = button(row, BoatCatalog[boatId].Name, function()
-							if not chosen then
-								request("AssignBoat", boatId)
-							end
-						end, {
-							Name = "Assign" .. boatId,
-							Position = UDim2.new((index - 1) / #boats, left + (index - 1) * -inset / #boats + 2, 1, -54),
-							Size = UDim2.new(1 / #boats, -inset / #boats - 4, 0, 40),
-							TextSize = 14,
-							BackgroundColor3 = if chosen then green else gold,
-						})
-						-- The assigned boat reads as the active choice; the others are plain options.
-						Theme.glassButton(pick, if chosen then "Selected" else "Normal")
-						if chosen then
-							withIcon(pick, "Check", cream, 16)
+				local hire = button(
+					workerCard,
+					if hired then "Hired" elseif locked then "Locked" else "Hire · $" .. commas(role.Price),
+					function()
+						if enabled then
+							request("HireStaff", id)
 						end
-					end
-				else
-					local enabled = not hired and afford and not locked
-					local hire = button(
-						row,
-						if hired and id == "Fisherman"
-							then "Buy a boat at the drydock first"
-							elseif hired then "Hired"
-							elseif locked then "Locked"
-							else "Hire · $" .. commas(role.Price),
-						function()
-							if enabled then
-								request("HireStaff", id)
-							end
-						end,
-						{
-							Name = "Hire" .. id,
-							Position = UDim2.new(0, left, 1, -54),
-							Size = UDim2.new(1, -inset, 0, 40),
-							Active = enabled,
-							AutoButtonColor = enabled,
-							BackgroundColor3 = if hired then green elseif enabled then gold else navy,
-						}
-					)
-					Theme.glassButton(hire, if enabled then "Selected" else "Disabled")
-					withIcon(
-						hire,
-						if hired and id ~= "Fisherman" then "Check" elseif enabled then "Coin" else "Lock",
-						if enabled then cream else muted
-					)
-					hire.Selectable = enabled
+					end,
+					{
+						Name = "Hire" .. id,
+						Position = UDim2.new(0, 8, 1, -44),
+						Size = UDim2.new(1, -16, 0, 34),
+						TextSize = 13,
+						Active = enabled,
+						Selectable = enabled,
+					}
+				)
+				Theme.glassButton(hire, if enabled then "Selected" else "Disabled")
+				if hired then
+					withIcon(hire, "Check", green, 14)
 				end
 			end
+			showDetails()
 		elseif homeTab == "Overview" then
 			local stock, totalValue = {}, 0
 			local function add(records, location)
@@ -2409,6 +2550,7 @@ function Menu.start()
 			end
 		end
 		if settingTab == "Performance" then
+			text(body, Settings.description(), 13, muted, { Size = UDim2.new(1, -8, 0, 48), LayoutOrder = 0 })
 			settingRow("Shadows", "Shadows", "Disable global shadows to reduce graphics work.", "Shadows")
 			settingRow("WeatherEffects", "Weather effects", "Show rain, wind particles, and lightning flashes.", "Weather")
 		elseif settingTab == "Audio" then

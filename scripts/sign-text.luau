@@ -10,7 +10,7 @@ activeRoot = root
 local rng = Random.new(Biomes.Seed + 1)
 local village = Instance.new("Model")
 village.Name, village.Parent = "Village", root
-Harbour.buildPlaza(village, shape.toWorld({ 870, 694 }), rng)
+Harbour.buildPlaza(village, shape.toWorld({ 870, 665 }), rng)
 Harbour.buildBase(shape, root, 1, shape.toWorld({ 668, 1030 }), rng)
 dependencies.Props.signpost(root, Vector3.zero, 0.7, { { "Harbour", 0 }, { "Village", 0.5 } })
 dependencies.Mediterranean.townhouse(root, Vector3.zero, 0.7, rng, true)

@@ -21,6 +21,8 @@ Weather.Presets = {
 	LightRain = { rain = 0.24, storm = 0, cloudCover = 0.5, windSpeed = 18 },
 	Rain = { rain = 0.62, storm = 0, cloudCover = 0.8, windSpeed = 32 },
 	Storm = { rain = 1, storm = 1, cloudCover = 1, windSpeed = 52 },
+	-- Admin-only event: deliberately absent from the automatic forecast.
+	BlackHole = { rain = 0.28, storm = 0, cloudCover = 1, windSpeed = 26 },
 }
 
 -- A full front passes over the islands, with a twenty-second blend at each change.
@@ -38,6 +40,7 @@ Weather.TransitionSeconds = 20
 -- The lake shelter and boat dry-floor clearance keep harbour travel manageable.
 Weather.MaxWaveAmplitude = 4.5
 Weather.RadarHalfSize = 5200
+Weather.BlackHoleRadius = 250
 Weather.RadarResolution = 29
 Weather.CycleSeconds = 0
 for _, stage in Weather.Schedule do
@@ -88,7 +91,7 @@ Weather.BaySketch = {
 }
 Weather.MouthSketch = { { 290, 1565 }, { 430, 1340 } }
 local function sketchPoint(p: { number }): Vector3
-	return Vector3.new((p[1] - 870) * 1.05, 0, (p[2] - 1330) * 1.05)
+	return Vector3.new((p[1] - 870) * 0.85, 0, (p[2] - 1330) * 0.85)
 end
 local bay = { sketchPoint(Weather.MouthSketch[1]) }
 for _, p in Weather.BaySketch do
@@ -175,6 +178,38 @@ local function waveAmplitude(wind: number): number
 	return 0.3 + (Weather.MaxWaveAmplitude - 0.3) * math.clamp(wind / 52, 0, 1) ^ 1.65
 end
 
+-- Only the authenticated dashboard bridge supplies an event center. A bare
+-- weather override cannot activate an event or grant event mutations.
+function Weather.blackHolePosition(): Vector3?
+	if workspace:GetAttribute("WeatherOverride") ~= "BlackHole" then
+		return nil
+	end
+	local position = workspace:GetAttribute("BlackHolePosition")
+	if
+		typeof(position) ~= "Vector3"
+		or position.X ~= position.X
+		or position.Y ~= position.Y
+		or position.Z ~= position.Z
+		or math.abs(position.X) > Weather.RadarHalfSize
+		or math.abs(position.Z) > Weather.RadarHalfSize
+		or math.abs(position.Y) > 10000
+	then
+		return nil
+	end
+	return position
+end
+
+-- Catches use their server-validated fishing position, never the player's
+-- camera or a client-reported mutation flag. Distance is across the surface.
+function Weather.mutationContext(position: Vector3)
+	local center = Weather.blackHolePosition()
+	if not center then
+		return nil
+	end
+	local dx, dz = position.X - center.X, position.Z - center.Z
+	return { corrupted = true, voidTouched = dx * dx + dz * dz <= Weather.BlackHoleRadius ^ 2 }
+end
+
 function Weather.getState(serverTime: number?, position: Vector3?): State
 	local time = serverTime or workspace:GetServerTimeNow()
 	local epoch = workspace:GetAttribute("WeatherEpoch") or time
@@ -191,6 +226,9 @@ function Weather.getState(serverTime: number?, position: Vector3?): State
 	local blend = smoothstep(elapsed / Weather.TransitionSeconds)
 	-- Server-only attribute is also useful for Studio weather previews.
 	local override = workspace:GetAttribute("WeatherOverride")
+	if override == "BlackHole" and not Weather.blackHolePosition() then
+		override = nil
+	end
 	if type(override) == "string" and Weather.Presets[override] then
 		target, from, blend = Weather.Presets[override], Weather.Presets[override], 1
 	end
@@ -218,8 +256,9 @@ function Weather.getState(serverTime: number?, position: Vector3?): State
 	if position then
 		state.rain, state.storm, state.cloudCover, state.windSpeed = localConditions(position, state)
 		state.waveAmplitude = waveAmplitude(state.windSpeed) * Weather.lakeExposure(position) ^ 2
-		state.kind = if state.storm > 0.38
-			then "Storm"
+		state.kind = if override == "BlackHole"
+			then "BlackHole"
+			elseif state.storm > 0.38 then "Storm"
 			elseif state.rain > 0.4 then "Rain"
 			elseif state.rain > 0.06 then "LightRain"
 			else "Clear"

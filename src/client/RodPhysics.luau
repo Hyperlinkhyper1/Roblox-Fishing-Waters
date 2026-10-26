@@ -134,13 +134,15 @@ function RodPhysics.start()
 		local gravity = workspace.Gravity
 		local localGravity = frame:VectorToObjectSpace(Vector3.new(0, -gravity, 0))
 		local spring = record.spring
+		-- Wrist rotations from walking packs change direction rapidly. Their
+		-- angular acceleration should add a little flex, not whip the shaft.
 		RodDynamics.step(spring, dt, {
 			bendX = (localGravity.Z * 0.14 - acceleration.Z) * 0.0028
-				- rotation.X * 0.035
-				- angularAcceleration.X * 0.003,
+				- rotation.X * 0.018
+				- angularAcceleration.X * 0.0012,
 			bendZ = (-localGravity.X * 0.14 + acceleration.X) * 0.0028
-				- rotation.Z * 0.035
-				- angularAcceleration.Z * 0.003,
+				- rotation.Z * 0.018
+				- angularAcceleration.Z * 0.0012,
 			bobX = -record.acceleration.X / math.max(gravity, 32),
 			bobZ = -record.acceleration.Z / math.max(gravity, 32),
 		})

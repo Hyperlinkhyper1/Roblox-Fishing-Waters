@@ -13,6 +13,7 @@ const read = (path) => readFile(join(root, path), 'utf8');
 try {
   const physics = await read('scripts/rod-physics.luau');
   const menu = await read('scripts/player-menu.luau');
+  const bobberSkins = await read('src/shared/BobberSkins.luau');
   const sources = {
     FISHING_ROD: await read('src/shared/FishingRod.luau'),
     REVEAL: (await read('src/client/RodCrateReveal.luau'))
@@ -23,6 +24,8 @@ try {
       .replace('require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))', 'Theme')
       .replace('require(Shared:WaitForChild("FishingRod"))', 'FishingRod')
       .replace('require(Shared:WaitForChild("RodSkins"))', 'RodSkins')
+      .replace('require(Shared:WaitForChild("BobberSkins"))', () => `(function()\n${bobberSkins}\nend)()`)
+      .replace('require(Shared:WaitForChild("FishingBobber"))', 'FishingRod')
       .replace('require(script.Parent:WaitForChild("RodCrateReveal"))', 'CrateReveal'),
   };
   for (const [name, prefix] of [
