@@ -616,8 +616,9 @@ function Reel:showCatch(payload)
 	self.footer.Text = if not payload.Saved
 		then "Your catch couldn't be saved. Please try again."
 		elseif payload.AutoStored then "Auto Store placed your catch in your boat's hold."
-		elseif payload.Stored then "Added to your hotbar. Stow it in your boat's hold or take it to your freezer."
-		else "Your hands were full, so you released it. It still counts in your bestiary."
+		elseif payload.BackpackStored then "Your hands were full, so your catch was packed into your backpack."
+		elseif payload.Stored then "Added to your hotbar. Stow it in your backpack, boat's hold or freezer."
+		else "Your hands were full and this catch wouldn't fit in your backpack, so you released it. It still counts in your bestiary."
 	holdResult(self, 5)
 	local spin = resultId
 	local camera = self.trophy.CurrentCamera

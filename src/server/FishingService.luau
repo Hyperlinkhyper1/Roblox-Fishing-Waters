@@ -293,18 +293,20 @@ local function openRodCrate(player: Player, crateId: any, bobber: boolean?): (bo
 	end
 	local skinId = skins.roll(crateId, math.random(), math.random())
 	-- Pre-check the cached profile so a rejected request never costs a save.
-	local outcome = purchase(profile, crateId, skinId)
+	local outcome = if bobber
+		then purchase(profile, crateId, skinId)
+		else BoatData.canOpenRodCrate(profile, crateId, skinId)
 	if outcome == "InsufficientFunds" then
 		return false, string.format("You need $%d to open the %s.", crate.Price, crate.Name)
 	elseif outcome ~= "Opened" then
 		return false, CRATE_FAILURES[outcome] or "That crate isn't available."
 	end
 	local serial
-	local ok, message = BoatService.updateProgress(player, function(current)
-		local result, awardedSerial = purchase(current, crateId, skinId)
+	local ok, message = BoatService.updateProgress(player, function(current, reservedSerial)
+		local result, awardedSerial = purchase(current, crateId, skinId, reservedSerial)
 		assert(result == "Opened", result)
 		serial = awardedSerial
-	end)
+	end, if bobber then nil else skinId)
 	if not ok then
 		return false, message
 	end
@@ -420,9 +422,9 @@ local function claimGroupReward(player: Player, automatic: boolean?)
 		return
 	end
 	local outcome, serial
-	local saved, message = BoatService.updateProgress(player, function(current)
-		outcome, serial = BoatData.claimGroupRod(current)
-	end)
+	local saved, message = BoatService.updateProgress(player, function(current, reservedSerial)
+		outcome, serial = BoatData.claimGroupRod(current, reservedSerial)
+	end, RodSkins.GroupReward)
 	state.groupBusy = false
 	if not saved then
 		notify(player, message .. " Claim your group rod again from the equipment bag.")

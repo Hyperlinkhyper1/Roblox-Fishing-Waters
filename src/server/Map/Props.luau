@@ -727,6 +727,11 @@ local DOCK_PILE = rgb(77, 55, 39)
 
 -- Local -Z runs along the section. Every board has a level top at local Y = 0.3.
 local function dockDeck(parent: Model, frame: CFrame, width: number, length: number, rng: Random)
+	-- A single walking surface keeps plank seams out of the navmesh and physics.
+	local surface =
+		part(parent, Vector3.new(width, 0.6, length), frame * CFrame.new(0, 0, -length / 2), DOCK_WOOD, M.Wood)
+	surface.Name = "DeckSurface"
+	surface.Transparency, surface.CastShadow = 1, false
 	local count = math.ceil(length / 1.3)
 	local pitch = length / count
 	for i = 1, count do
@@ -734,6 +739,7 @@ local function dockDeck(parent: Model, frame: CFrame, width: number, length: num
 		local color = DOCK_WOOD:Lerp(DOCK_WORN, rng:NextNumber(0.08, 0.8))
 		local board = part(parent, Vector3.new(width, 0.6, pitch - 0.055), frame * CFrame.new(0, 0, z), color, M.Wood)
 		board.Name = "DeckPlank"
+		board.CanCollide, board.CanQuery = false, false
 		if i % 3 == 1 then
 			for _, side in { -1, 1 } do
 				dockDetail(

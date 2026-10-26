@@ -48,12 +48,6 @@ local function send(player: Player, kind: string, payload: any?)
 	end
 end
 
-local function holding(player: Player, roll): boolean
-	local profile = BoatService.getProfile(player)
-	local hand = profile and profile.Angler.Hand
-	return hand ~= nil and hand.FishId == roll.FishId and hand.Kg == roll.Kg
-end
-
 local function clear(player: Player, reason: string?)
 	local state = casts[player]
 	if not state then
@@ -97,10 +91,6 @@ local function cast(player: Player, target: any)
 		return
 	end
 	local profile = BoatService.getProfile(player)
-	if profile and profile.Angler.Hand then
-		send(player, "Cancelled", "Your hands are full. Stow the fish in your boat's hold or your shop freezer first.")
-		return
-	end
 	local offset = target - root.Position
 	if Vector3.new(offset.X, 0, offset.Z).Magnitude > MAX_CAST_DISTANCE + 4 or math.abs(offset.Y) > 60 then
 		send(player, "Cancelled", "That's too far to cast.")
@@ -155,10 +145,11 @@ end
 local function award(player: Player, roll)
 	local saved = false
 	local autoStored = false
+	local destination
 	for attempt = 1, 4 do
 		local traits = roll.Traits
 		local message
-		saved, message, autoStored =
+		saved, message, autoStored, destination =
 			AnglerService.recordCatch(player, roll.FishId, traits.Mutation, roll.Kg, roll.Value, roll.Size, traits)
 		if saved or player.Parent ~= Players then
 			break
@@ -175,7 +166,8 @@ local function award(player: Player, roll)
 		Corruptions = roll.Traits.Corruptions,
 		Saved = saved,
 		AutoStored = autoStored,
-		Stored = saved and holding(player, roll),
+		BackpackStored = saved and destination == "Backpack",
+		Stored = saved and destination == "Hand",
 	})
 end
 

@@ -15,6 +15,7 @@ local modules = {
 	"Casting",
 	"CastAnimation",
 	"CargoHold",
+	"BackpackShop",
 	"MutationEffects",
 	"Sprint",
 	"ShopCustomers",

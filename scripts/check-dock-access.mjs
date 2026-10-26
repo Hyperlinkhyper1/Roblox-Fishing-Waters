@@ -12,7 +12,7 @@ const mocks = read('scripts/drydock-geometry.luau').split('local function loadLo
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
 const harbour = read('src/server/Map/Harbour.luau');
 const first = harbour.indexOf('local function ensureDockAccess(');
-const last = harbour.indexOf('local function buildBaseDocks(', first);
+const last = harbour.indexOf('local function buildBase(', first);
 if (first < 0 || last < 0) throw new Error('Dock access migration section missing');
 const ensureFirst = harbour.indexOf('function Harbour.ensureDocks(');
 const ensureLast = harbour.indexOf('-- Add the boat shop', ensureFirst);
@@ -24,11 +24,10 @@ ${props}
 end)()
 local QUAY = Color3.fromRGB(132, 126, 118)
 local M = Enum.Material
-${harbour.slice(first, last)}
 local Harbour = { BASE_TAG = "PlayerBase" }
-local DOCK_DETAIL_VERSION = 1
+${harbour.match(/local DOCK_DETAIL_VERSION = \d+/)[0]}
+${harbour.slice(first, last)}
 local CollectionService = { HasTag = function() return true end }
-local function buildBaseDocks() error("Current decorated docks should not be rebuilt") end
 ${harbour.slice(ensureFirst, ensureLast)}
 ${read('scripts/dock-access.luau')}`;
 const temporary = mkdtempSync(join(tmpdir(), 'dock-access-'));

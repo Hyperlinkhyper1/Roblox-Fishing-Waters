@@ -23,7 +23,7 @@ Furniture.Items = {
 		Price = 750,
 		Room = "Shop",
 		MaxPlaced = 4,
-		Description = "Another chilled display. Holds 4 more fish for customers to buy.",
+		Description = "Another chilled display for customers. Smaller fish leave room for more stock.",
 		-- Body footprint, plus the strip customers stand on in front (+Z) and behind (-Z).
 		Width = 9,
 		Depth = 3.6,
@@ -183,7 +183,9 @@ local function inside(a: { number }, room: { number }): boolean
 end
 
 local function onGrid(value: number): boolean
-	return type(value) == "number" and value == value and math.abs(value) <= 64
+	return type(value) == "number"
+		and value == value
+		and math.abs(value) <= 64
 		and math.abs(value / Furniture.GRID - math.round(value / Furniture.GRID)) < 1e-6
 end
 
@@ -206,7 +208,9 @@ function Furniture.check(placed, itemId: string, x: number, z: number, r: number
 		end
 	end
 	for index, other in placed do
-		if index ~= skip and overlaps(area, Furniture.footprint(other.ItemId, other.X, other.Z, other.R) :: { number }) then
+		if
+			index ~= skip and overlaps(area, Furniture.footprint(other.ItemId, other.X, other.Z, other.R) :: { number })
+		then
 			return "That spot is taken by other furniture."
 		end
 	end

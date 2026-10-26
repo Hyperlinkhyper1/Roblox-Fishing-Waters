@@ -12,13 +12,13 @@ local Weather = require(ReplicatedStorage.Shared.Weather)
 local EnvironmentAudio = {}
 local started = false
 local SAMPLE_INTERVAL = 0.4
+local SPLASH_DURATION = 0.55
+local SPLASH_FADE = 0.15
+local SPLASH_DRY_TIME = 0.25
 -- Roblox's bundled character audio needs no uploaded/private audio permissions.
 local WIND = "rbxasset://sounds/action_falling.mp3"
 local SPLASH = "rbxasset://sounds/impact_water.mp3"
 local SWIM = "rbxasset://sounds/action_swim.mp3"
--- Roblox Creator Store / Pro Sound Effects: beach waves, surf, seaside.
--- https://create.roblox.com/store/asset/9114586981/Giant-Splash-3-SFX
-local SURF = "rbxassetid://9114586981"
 local WATER_PROBES = {
 	Vector3.zero,
 	Vector3.new(32, 0, 0),
@@ -74,10 +74,17 @@ function EnvironmentAudio.start()
 	local ambience = Instance.new("Folder")
 	ambience.Name = "EnvironmentAudio"
 	ambience.Parent = SoundService
-	local waves = sound(ambience, "OceanWaves", SURF, true)
+	-- Filter continuous noise for a gentle sea wash; a looped splash recording
+	-- repeats a distinct impact everywhere the camera can hear the ocean.
+	local waves = sound(ambience, "OceanWaves", WIND, true)
+	waves.PlaybackSpeed = 0.65
+	local surfFilter = Instance.new("EqualizerSoundEffect")
+	surfFilter.LowGain, surfFilter.MidGain, surfFilter.HighGain = 0, -12, -28
+	surfFilter.Parent = waves
 	local wind = sound(ambience, "CoastalWind", WIND, true)
 	wind.PlaybackSpeed = 0.85
-	local underwater = sound(ambience, "UnderwaterWash", SURF, true)
+	-- A continuous filtered rumble avoids repeating the surf clip's splash impact.
+	local underwater = sound(ambience, "UnderwaterWash", WIND, true)
 	underwater.PlaybackSpeed = 0.7
 	local muffled = Instance.new("EqualizerSoundEffect")
 	muffled.LowGain, muffled.MidGain, muffled.HighGain = 2, -18, -40
@@ -85,7 +92,7 @@ function EnvironmentAudio.start()
 	-- Preload asynchronously so the loading screen never waits on audio delivery.
 	task.spawn(function()
 		pcall(function()
-			ContentProvider:PreloadAsync({ SURF, WIND, SPLASH, SWIM })
+			ContentProvider:PreloadAsync({ WIND, SPLASH, SWIM })
 		end)
 	end)
 
@@ -156,7 +163,7 @@ function EnvironmentAudio.start()
 		local windVolume = (0.14 + strength * 0.46) * gust * (if lake then 0.8 else 1)
 		fade(waves, waveVolume * exposure, dt)
 		fade(wind, windVolume * exposure * (if ocean then 1 else 0), dt)
-		fade(underwater, if submerged then 0.32 else 0, dt)
+		fade(underwater, if submerged then 0.12 else 0, dt)
 	end)
 
 	-- The default controller rewrites swimming volume every frame and makes
@@ -182,8 +189,17 @@ function EnvironmentAudio.start()
 		if characters[character] then
 			return
 		end
-		characters[character] =
-			{ owned = {}, muted = {}, initialized = false, wet = false, lastSplash = -math.huge, lastDown = 0 }
+		characters[character] = {
+			owned = {},
+			muted = {},
+			initialized = false,
+			wet = false,
+			lastSplash = -math.huge,
+			lastDown = 0,
+			splashVolume = 0,
+			splashArmed = true,
+			dryTime = 0,
+		}
 	end
 	local function watch(other: Player)
 		other.CharacterAdded:Connect(add)
@@ -239,13 +255,34 @@ function EnvironmentAudio.start()
 				and humanoid.FloorMaterial == Enum.Material.Air
 			local wet = alive and humanoid.SeatPart == nil and inOcean(position) and (swimming or stillSubmerged)
 			local near = camera ~= nil and (camera.CFrame.Position - position).Magnitude < 110
-			if record.initialized and wet and not record.wet and near and now - record.lastSplash > 0.65 then
+			if record.initialized and wet and record.splashArmed and near and now - record.lastSplash > 0.65 then
 				local impact = math.clamp(math.max(record.lastDown, -velocity.Y) / 65, 0, 1)
-				record.Splash.Volume = 0.5 + impact * 0.5
+				record.splashVolume = 0.5 + impact * 0.5
+				record.Splash.Volume = record.splashVolume
 				record.Splash.PlaybackSpeed = 1.08 - impact * 0.2
 				record.Splash.TimePosition = 0
 				record.Splash:Play()
 				record.lastSplash = now
+			end
+			-- Humanoid state flicker and bobbing at the surface must not rearm a plunge.
+			local clearOfWater = position.Y > Biomes.WaterLevel + 1.5 or humanoid.FloorMaterial ~= Enum.Material.Air
+			if not wet and alive and humanoid.SeatPart == nil and clearOfWater then
+				record.dryTime += dt
+				if record.dryTime >= SPLASH_DRY_TIME then
+					record.splashArmed = true
+				end
+			else
+				record.dryTime = 0
+				if wet then
+					record.splashArmed = false
+				end
+			end
+			if record.Splash.IsPlaying then
+				local age = now - record.lastSplash
+				record.Splash.Volume = record.splashVolume * math.clamp((SPLASH_DURATION - age) / SPLASH_FADE, 0, 1)
+				if age >= SPLASH_DURATION then
+					record.Splash:Stop()
+				end
 			end
 			local speed = velocity.Magnitude
 			local moving = wet and swimming and near and (speed > 1 or humanoid.MoveDirection.Magnitude > 0.05)

@@ -147,6 +147,11 @@ local dependencies = {
 			return boosts
 		end,
 	},
+	BobberSkins = {
+		apply = function(boosts)
+			return boosts
+		end,
+	},
 	RodUpgrades = {
 		boosts = function()
 			return { reel = 0 }
@@ -164,8 +169,11 @@ local dependencies = {
 	AnglerService = {
 		recordCatch = function(_, id, mutation, kg, value, size, traits)
 			saved = { FishId = id, Mutation = mutation, Kg = kg, Value = value, Size = size, Traits = traits }
-			profile.Angler.Hand = saved
-			return true
+			local destination = if profile.Angler.Hand then "Backpack" else "Hand"
+			if destination == "Hand" then
+				profile.Angler.Hand = saved
+			end
+			return true, "Saved", false, destination
 		end,
 	},
 	AnglerData = {
@@ -232,8 +240,8 @@ for _, item in instances do
 	end
 end
 check(request ~= nil, "Real catch service registers its request handler")
-local function rodCatch(atCast, atBite, targetX, playerX, expected, value)
-	profile.Angler.Hand, saved = nil, nil
+local function rodCatch(atCast, atBite, targetX, playerX, expected, value, held)
+	profile.Angler.Hand, saved = held, nil
 	clockNow += 20
 	root.Position = Vector3.new(playerX, 3, 0)
 	eventActive = atCast
@@ -256,11 +264,19 @@ local function rodCatch(atCast, atBite, targetX, playerX, expected, value)
 		caught.kind == "Caught" and caught.payload.Mutation == expected and caught.payload.Value == value,
 		"Caught payload agrees with saved traits and price"
 	)
+	check(
+		caught.payload.BackpackStored == (held ~= nil) and caught.payload.Stored == (held == nil),
+		"Caught payload reports whether the new catch went to hand or backpack"
+	)
+	if held then
+		check(profile.Angler.Hand == held, "Casting with a held fish preserves it")
+	end
 end
 rodCatch(true, true, 14, 5, "Corrupted+VoidTouched", 45)
 rodCatch(true, true, 4, 13, "Corrupted", 25)
 rodCatch(false, true, 14, 5, "Corrupted+VoidTouched", 45)
 rodCatch(true, false, 14, 5, "Normal", 10)
+rodCatch(true, false, 14, 5, "Normal", 10, { FishId = "Test", Kg = 1 })
 local landFish = (function()
 	-- COMPANY_CATCH_SOURCE --
 end)()

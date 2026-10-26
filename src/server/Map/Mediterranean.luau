@@ -1037,6 +1037,52 @@ function Med.planter(parent: Instance, ground: Vector3, rng: Random, tree: strin
 	return m
 end
 
+-- Keep the individual stones as decoration, with one smooth collision box per wall.
+local function simplifyStoneWall(wall: Model)
+	if wall:GetAttribute("CollisionVersion") == 1 then
+		return
+	end
+	local stones = {}
+	local frame: CFrame? = nil
+	local minimum = Vector3.new(math.huge, math.huge, math.huge)
+	local maximum = -minimum
+	for _, stone in wall:GetChildren() do
+		if not stone:IsA("BasePart") then
+			continue
+		end
+		frame = frame or stone.CFrame
+		table.insert(stones, stone)
+		for x = -1, 1, 2 do
+			for y = -1, 1, 2 do
+				for z = -1, 1, 2 do
+					local corner = frame:PointToObjectSpace(
+						stone.CFrame:PointToWorldSpace(
+							Vector3.new(stone.Size.X * x, stone.Size.Y * y, stone.Size.Z * z) / 2
+						)
+					)
+					minimum = minimum:Min(corner)
+					maximum = maximum:Max(corner)
+				end
+			end
+		end
+	end
+	if not frame then
+		return
+	end
+	local hitbox = part(wall, maximum - minimum, frame * CFrame.new((minimum + maximum) / 2), STONE_WALL, M.Slate)
+	hitbox.Name = "WallHitbox"
+	hitbox.CanCollide = true
+	hitbox.CanQuery = true
+	hitbox.Transparency = 1
+	hitbox.CastShadow = false
+	for _, stone in stones do
+		stone.CanCollide = false
+		stone.CanTouch = false
+		stone.CanQuery = false
+	end
+	wall:SetAttribute("CollisionVersion", 1)
+end
+
 -- Dry-stone wall between two ground points.
 function Med.stoneWall(parent: Instance, a: Vector3, b: Vector3, rng: Random): Model
 	local m = newModel("StoneWall", parent)
@@ -1055,7 +1101,17 @@ function Med.stoneWall(parent: Instance, a: Vector3, b: Vector3, rng: Random): M
 			M.Slate
 		)
 	end
+	simplifyStoneWall(m)
 	return m
+end
+
+-- Upgrade borders already baked into a saved map without rebuilding their stones.
+function Med.ensureStoneWalls(root: Instance)
+	for _, wall in root:GetDescendants() do
+		if wall:IsA("Model") and wall.Name == "StoneWall" then
+			simplifyStoneWall(wall)
+		end
+	end
 end
 
 -- Rows of vines on posts and wires over a patch of tilled earth, walled on three sides.

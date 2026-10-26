@@ -1577,6 +1577,28 @@ function FishModels.scaleCatch(model: Model, kg: number): Vector3
 	return scaleToLength(model, FishModels.catchLength(kg))
 end
 
+-- Cache unscaled geometry by species and shape mutations, not by catch weight.
+local catchBounds = {}
+function FishModels.catchBounds(record): Vector3?
+	local corrupted = FishMutations.parts(record.Mutation).Corrupted
+	local shapes = if corrupted then record.Corruptions or { "Eye" } else {}
+	local key = record.FishId .. ":" .. table.concat(shapes, ",")
+	local size = catchBounds[key]
+	if not size then
+		local model = FishModels.create(
+			record.FishId,
+			if corrupted then { Mutation = "Corrupted", Corruptions = shapes } else nil
+		)
+		if not model then
+			return nil
+		end
+		size = model:GetAttribute("BoundsSize")
+		catchBounds[key] = size
+		model:Destroy()
+	end
+	return size * (FishModels.catchLength(record.Kg) / math.max(size.X, size.Y, size.Z, 0.1))
+end
+
 function FishModels.scaleHeldCatch(model: Model, kg: number, size: string?): Vector3
 	return scaleToLength(model, FishModels.heldLength(kg, size))
 end

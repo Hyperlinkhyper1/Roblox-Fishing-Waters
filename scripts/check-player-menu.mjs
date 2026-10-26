@@ -1,3 +1,4 @@
+import { freezerRuntime, injectFreezer } from './freezer-test-runtime.mjs';
 // Execute actual menu/service code with recording UI/remotes. No Studio rendering claims.
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,6 +13,10 @@ try {
   const bobberModel = (await readFile(join(root, 'src/shared/FishingBobber.luau'), 'utf8'))
     .replace('require(script.Parent.BobberSkins)', () => `(function() ${bobberSkins} end)()`);
   let program = await readFile(join(root, 'scripts/player-menu.luau'), 'utf8');
+  if (process.argv.includes('--service-only')) {
+    program = program.slice(0, program.indexOf('local thunder ='))
+      + '\nprint("Angler service: " .. checks .. " rank, respawn, title and remote checks passed (recording mocks).")';
+  }
   if (process.argv.includes('--bag-only')) {
     const setupEnd = program.indexOf('player:SetAttribute("DrydockScreenOpen", true)');
     const bagStart = program.indexOf('-- BAG_CHECKS_START');
@@ -115,7 +120,9 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
     ['THEME', 'src/first/UITheme.luau'], ['PREVIEW', 'src/client/StaffPreview.luau'], ['BAG', 'src/client/EquipmentBag.luau'], ['MENU', 'src/client/PlayerMenu.luau'], ['SETTINGS', 'src/client/PlayerSettings.luau'], ['SERVICE', 'src/server/AnglerService.luau'],
   ]) {
     let source = await readFile(join(root, file), 'utf8');
+    if (marker === 'DATA') source = injectFreezer(source);
     source = source.replace(/require\(ReplicatedStorage.Shared.AnglerCatalog\)/g, 'Catalog')
+      .replace(/require\(ReplicatedStorage.Shared.BackpackCatalog\)/g, `(function() ${await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8')} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.Gamepasses\)/g, `(function() ${await readFile(join(root, 'src/shared/Gamepasses.luau'), 'utf8')} end)()`)
       .replace(/require\(script.Parent.GamepassService\)/g, '{ start = function() end, ownsAutoStore = function() return false end }')
       .replace(/require\(ReplicatedStorage.Shared.Aboard\)/g, 'function() return false end')
@@ -133,7 +140,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(game:GetService\("ReplicatedFirst"\):WaitForChild\("UITheme"\)\)/g, 'Theme')
       .replace(/require\(script.Parent.BoatService\)/g, 'BoatService')
       .replace(/require\(script.Parent.AnglerData\)/g, 'Data');
-    for (const pure of ['Paths', 'Recipes']) {
+    for (const pure of ['Paths', 'Recipes', 'FishingRanks']) {
       const inlined = `(function() ${await readFile(join(root, `src/shared/${pure}.luau`), 'utf8')} end)()`;
       source = source.replace(new RegExp(`require\\(ReplicatedStorage.Shared.${pure}\\)`, 'g'), () => inlined);
     }
@@ -271,7 +278,7 @@ check(not player:GetAttribute("DrydockScreenOpen") and cameraStops > 0, "Finishi
 print("Boat selection UI: preview, funds, purchases, separate ownership, dock chooser and both driver seats passed (recording mocks).")
 `);
   const target = join(folder, 'menu.luau');
-  await writeFile(target, program);
+  await writeFile(target, await freezerRuntime() + program);
   const result = spawnSync(process.env.LUTE || 'lute', ['run', target], { cwd: root, encoding: 'utf8', timeout: 30000 });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

@@ -492,7 +492,7 @@ local function auditDocks(base, label)
 				local low, high = bounds(item, reference)
 				check(math.abs(high.Y - 3.3) < EPS, label .. " has an uneven or raised deck plank")
 				check((item.CFrame.UpVector - Vector3.yAxis).Magnitude < EPS, label .. " has a tilted deck plank")
-				check(item.CanCollide, label .. " has a nonphysical walking plank")
+				check(not item.CanCollide and not item.CanQuery, label .. " plank seams affect dock navigation")
 				table.insert(boards, { low = low[axis], high = high[axis] })
 			elseif item.Name == "Pile" then
 				piles += 1
@@ -511,6 +511,9 @@ local function auditDocks(base, label)
 				supports += 1
 			end
 		end
+		local surface = model:FindFirstChild("DeckSurface")
+		check(surface and surface.CanCollide and surface.Anchored and surface.Transparency == 1,
+			label .. " needs continuous support beneath the visible planks")
 		check(#boards >= 12, label .. " " .. model.Name .. " is missing its individual timber boards")
 		check(
 			piles >= (if model.Name == "Dock" then 6 else 3),
@@ -1672,13 +1675,30 @@ local function checkLaunchFlow()
 		check(DrydockLaunch.reserve(shop, launchPlayer, "UnknownBoat") == nil, "Unknown boats cannot reserve the slipway")
 		reservation = assert(DrydockLaunch.reserve(shop, launchPlayer, boatId))
 		local selected = reservation.preview
+		local rootOffset = if boatId == "PatrolBoat" then -0.6 else -0.4
+		local launchOffset = if boatId == "PatrolBoat" then CFrame.new(0, 0, -10.5) else CFrame.new()
 		if boatId == "RacingSpeedboat" then
 			check(selected:GetAttribute("ModelVersion") == dependencies.RacingSpeedboat.VERSION, "On-demand racing hull must use the current model")
 		end
 		check(selected:GetAttribute("BoatId") == boatId and shop:GetAttribute("LaunchingBoatId") == boatId,
 			"Purchase must build and reserve the selected hull")
-		check((selected:GetPivot().Position - (previewOrigin.Position + Vector3.new(0, -0.4, 0))).Magnitude < EPS,
-			"Selected hull must start on the center launch cradle")
+		check((selected:GetPivot().Position - (previewOrigin * launchOffset * CFrame.new(0, rootOffset, 0)).Position).Magnitude < EPS,
+			"Selected hull must start at its launch position")
+		if boatId == "PatrolBoat" then
+			local headwall = shop:FindFirstChild("RearHeadwall", true)
+			for _, piece in selected:GetDescendants() do
+				if piece:IsA("BasePart") then
+					for _, x in { -0.5, 0.5 } do
+						for _, y in { -0.5, 0.5 } do
+							for _, z in { -0.5, 0.5 } do
+								local point = headwall.CFrame:PointToObjectSpace(piece.CFrame * Vector3.new(piece.Size.X * x, piece.Size.Y * y, piece.Size.Z * z))
+								check(point.Z > headwall.Size.Z / 2, "Enlarged patrol hull must clear the drydock headwall")
+							end
+						end
+					end
+				end
+			end
+		end
 		check(nextPreview.Parent == nil, "Default rowboat must leave the world during another launch")
 		check(DrydockLaunch.reserve(shop, launchPlayer, boatId) == nil, "Temporary hull must keep the bay reserved")
 		for _, piece in selected:GetDescendants() do
@@ -1696,7 +1716,7 @@ local function checkLaunchFlow()
 		check(DrydockLaunch.run(reservation, function(player, launchFrame, model)
 			check(player == launchPlayer and model == selected and model:GetAttribute("BoatId") == boatId,
 				"Purchase must activate the selected hull")
-			check((model:GetPivot().Position - (launchFrame.Position + Vector3.new(0, -0.4, 0))).Magnitude < EPS,
+			check((model:GetPivot().Position - (launchFrame.Position + Vector3.new(0, rootOffset, 0))).Magnitude < EPS,
 				"Hull must reach the shared waterline before activation")
 			model.Name, model.Parent = "Purchased" .. boatId, root
 			return true

@@ -1,4 +1,5 @@
--- Pure saved-progress regression checks. No Roblox network or DataStore claims.
+-- Run through node scripts/check-freezers.mjs for model geometry dependencies.
+-- Saved-progress checks; no Roblox network or DataStore claims.
 local Data = require("../src/server/AnglerData")
 local BoatData = require("../src/server/BoatData")
 local checks = 0
@@ -9,7 +10,8 @@ end
 local function rejects(raw)
 	check(not pcall(Data.decode, raw), "Malformed saved progress must be rejected")
 end
-local fish = { Trout = { AverageKg = 2, RarityDenominator = 10 }, Shark = { AverageKg = 100, RarityDenominator = 500 } }
+local fish =
+	{ Trout = { AverageKg = 2, RarityDenominator = 10 }, Yellowshark = { AverageKg = 100, RarityDenominator = 500 } }
 local mutations = { Normal = {}, Albino = { RarityMultiplier = 100 } }
 local fresh = Data.decode(nil)
 check(fresh.Stats.TotalCaught == 0 and next(fresh.Catches) == nil, "No invented catches")
@@ -19,11 +21,14 @@ fresh.Settings.MasterVolume = 0
 check(other.Settings.MasterVolume == 100, "Profiles must not share settings")
 local a = Data.recordCatch(nil, "Trout", "Normal", 3, 48, 100, fish, mutations)
 local b = Data.recordCatch(a, "Trout", "Albino", 4, 150, 200, fish, mutations)
-local c = Data.recordCatch(b, "Shark", "Normal", 110, 1000, 300, fish, mutations)
+local c = Data.recordCatch(b, "Yellowshark", "Normal", 110, 1000, 300, fish, mutations)
 check(c.Stats.TotalCaught == 3 and c.Stats.CatchStreak == 3 and c.Stats.HighestCatchStreak == 3, "Catch/streak totals")
 check(c.Catches.Trout.Count == 2 and c.Catches.Trout.BiggestKg == 4, "Per-species count and maximum")
 check(c.Catches.Trout.Mutations.Normal == 1 and c.Catches.Trout.Mutations.Albino == 1, "Independent mutation counts")
-check(c.Findings.HighestValue.FishId == "Shark" and c.Findings.Largest.Kg == 110, "Highest value and absolute largest")
+check(
+	c.Findings.HighestValue.FishId == "Yellowshark" and c.Findings.Largest.Kg == 110,
+	"Highest value and absolute largest"
+)
 check(c.Findings.Rarest.Mutation == "Albino" and c.Findings.Rarest.Rarity == 1000, "Mutation-adjusted rarity")
 check(
 	c.Findings.RelativeLargest.FishId == "Trout" and c.Findings.RelativeLargest.Relative == 2,
@@ -84,16 +89,16 @@ check(
 	purchased.Angler.Catches.Trout.Count == 2 and purchased.Angler.Settings.EffectsVolume == 20,
 	"Boat purchases preserve catches and settings"
 )
-local rod = BoatData.purchaseRod(purchased)
+local rod = BoatData.decode(purchased)
 check(
 	rod.Angler.Stats.CoinsSpent == 500 and rod.Angler.Catches.Trout.Mutations.Albino == 1,
-	"Free rod doesn't change spending or catches"
+	"Profile decoding preserves spending and catches"
 )
 rod.Angler.Catches.Trout.Mutations.Albino = 900
 check(purchased.Angler.Catches.Trout.Mutations.Albino == 1, "Nested progress never aliases between transactions")
 check(c.Hand.Kg == 3 and c.Hand.FishId == "Trout", "The first catch goes into the angler's hand")
 check(
-	c.Catches.Shark.Count == 1 and c.Stats.TotalCaught == 3,
+	c.Catches.Yellowshark.Count == 1 and c.Stats.TotalCaught == 3,
 	"Catches with full hands are released but still count in the bestiary"
 )
 c.Hand.Kg = 999
@@ -128,11 +133,14 @@ end
 -- Moving fish between hand, hold and water.
 local shaped = {
 	Trout = { AverageKg = 2, RarityDenominator = 10, Shapes = { Normal = { "##" }, Huge = { "###", "###" } } },
-	Squid = { AverageKg = 1, RarityDenominator = 20, Shapes = { Normal = { "#.", "##" } } },
+	ArrowSquid = { AverageKg = 1, RarityDenominator = 20, Shapes = { Normal = { "#.", "##" } } },
 }
 local tiny = { Hold = { "####", "####", "####" }, StarterParts = { { PartId = "Engine", X = 1, Y = 1, R = 0 } } }
-local angler = Data.recordCatch(nil, "Squid", "Normal", 1, 20, 50, shaped, mutations)
-check(not Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 1, Y = 1, R = 0 }, shaped), "Fish can't overlap boat parts")
+local angler = Data.recordCatch(nil, "ArrowSquid", "Normal", 1, 20, 50, shaped, mutations)
+check(
+	not Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 1, Y = 1, R = 0 }, shaped),
+	"Fish can't overlap boat parts"
+)
 check(not Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 4, Y = 1, R = 0 }, shaped), "Fish can't hang off the hull")
 local stowed = Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 3, Y = 1, R = 2 }, shaped)
 check(stowed and stowed.Hand == nil and #stowed.Holds.Tiny == 2, "Hand fish rotate into a free spot")
@@ -148,9 +156,12 @@ check(not Data.moveCargo(stowed, "Tiny", tiny, 1, "Release", shaped), "Boat part
 local engine = Data.moveCargo(stowed, "Tiny", tiny, 1, { X = 1, Y = 2, R = 0 }, shaped)
 check(engine and engine.Holds.Tiny[1].Y == 2 and engine.Holds.Tiny[1].PartId == "Engine", "Boat parts rearrange")
 local taken = Data.moveCargo(stowed, "Tiny", tiny, 2, "Hand", shaped)
-check(taken and taken.Hand.FishId == "Squid" and #taken.Holds.Tiny == 1, "Hold fish return to the hand")
+check(taken and taken.Hand.FishId == "ArrowSquid" and #taken.Holds.Tiny == 1, "Hold fish return to the hand")
 local released = Data.moveCargo(angler, nil, nil, "Hand", "Release", shaped)
-check(released and released.Hand == nil and released.Catches.Squid.Count == 1, "Releasing keeps the bestiary entry")
+check(
+	released and released.Hand == nil and released.Catches.ArrowSquid.Count == 1,
+	"Releasing keeps the bestiary entry"
+)
 check(not Data.moveCargo(stowed, nil, nil, 2, "Hand", shaped), "An out-of-reach hold can't be used")
 for _, spot in { { X = 0, Y = 1, R = 0 }, { X = 1.5, Y = 1, R = 0 }, { X = 1, Y = 1, R = 4 }, { X = 1, Y = 1 } } do
 	check(not Data.moveCargo(angler, "Tiny", tiny, "Hand", spot, shaped), "Malformed spots are rejected")
@@ -162,30 +173,46 @@ stocking.Hand = table.clone(huge.Hand)
 stocking.Cooler = { table.clone(c.Findings.Largest) }
 stocking.Holds = {
 	Rowboat = { { Fish = table.clone(a.Hand), X = 2, Y = 2, R = 0 } },
-	FishingBoat = { { PartId = "Engine", X = 3, Y = 7, R = 0 }, { Fish = table.clone(angler.Hand), X = 3, Y = 3, R = 0 } },
+	FishingBoat = {
+		{ PartId = "Engine", X = 3, Y = 7, R = 0 },
+		{ Fish = table.clone(angler.Hand), X = 3, Y = 3, R = 0 },
+	},
 }
 check(Data.unstocked(stocking) == 4, "Unstocked fish counts hand, cooler and holds")
 local stocked, count = Data.stockFreezer(stocking)
 check(count == 1 and #stocked.Freezer == 1 and stocked.Hand == nil, "Stocking places one fish")
-check(stocked.Freezer[1].Size == "Huge" and #stocked.Cooler == 1, "Only the hand fish is stocked; old cooler stays intact")
+check(
+	stocked.Freezer[1].Size == "Huge" and #stocked.Cooler == 1,
+	"Only the hand fish is stocked; old cooler stays intact"
+)
 check(#stocked.Holds.Rowboat == 1 and #stocked.Holds.FishingBoat == 2, "Fish in every boat hold stay aboard")
 check(stocked.Holds.FishingBoat[1].PartId == "Engine", "Boat parts stay aboard")
 check(Data.unstocked(stocking) == 4, "Stocking is copy-on-write")
 local emptyHand, emptyCount = Data.stockFreezer(stocked)
-check(emptyCount == 0 and #emptyHand.Freezer == 1 and Data.unstocked(emptyHand) == 3, "Repeated stocking cannot pull fish from storage")
+check(
+	emptyCount == 0 and #emptyHand.Freezer == 1 and Data.unstocked(emptyHand) == 3,
+	"Repeated stocking cannot pull fish from storage"
+)
 local pickedUp = Data.moveCargo(stocked, "FishingBoat", tiny, 2, "Hand", shaped)
 local nextStocked, nextCount = Data.stockFreezer(pickedUp)
-check(nextCount == 1 and #nextStocked.Freezer == 2 and nextStocked.Hand == nil, "The next fish must first be picked up from the boat")
+check(
+	nextCount == 1 and #nextStocked.Freezer == 2 and nextStocked.Hand == nil,
+	"The next fish must first be picked up from the boat"
+)
 local packed = Data.decode(nil)
-for index = 1, Data.FREEZER_CAPACITY - 1 do
-	packed.Freezer[index] = table.clone(huge.Hand)
+while Data.canFreeze(packed, a.Hand) do
+	table.insert(packed.Freezer, table.clone(a.Hand))
 end
+table.remove(packed.Freezer)
 packed.Hand, packed.Cooler = table.clone(a.Hand), { table.clone(huge.Hand) }
 local leftover, fitted = Data.stockFreezer(packed)
 check(fitted == 1 and leftover.Hand == nil and #leftover.Cooler == 1, "A full freezer leaves the rest waiting")
-leftover.Hand = table.clone(c.Findings.Largest)
+leftover.Hand = table.clone(a.Hand)
 local full, fullCount = Data.stockFreezer(leftover)
-check(fullCount == 0 and full.Hand.FishId == "Shark" and #full.Freezer == Data.FREEZER_CAPACITY, "A full freezer preserves the carried fish")
+check(
+	fullCount == 0 and full.Hand.FishId == "Trout" and #full.Freezer == #leftover.Freezer,
+	"A full freezer preserves the carried fish"
+)
 local forSale = Data.decode(stocked)
 forSale.Hand = table.clone(c.Findings.Largest)
 forSale = Data.stockFreezer(forSale)
@@ -205,7 +232,7 @@ rejects({ Holds = { Rowboat = "full" } })
 -- doorways or other furniture, and never picked up from under stored fish.
 local Furniture = require("../src/shared/FurnitureCatalog")
 local home = Data.decode(nil)
-check(Data.freezerCapacity(home) == 4 and Data.storageCapacity(home) == 0, "Built-in freezer only")
+check(Data.freezerCount(home) == 1 and Data.storageCapacity(home) == 0, "Built-in freezer only")
 check(Data.placeFurniture(home, "Freezer", -10, 9, 1) == nil, "Unbought furniture cannot be placed")
 home = Data.buyFurniture(home, "Freezer")
 home = Data.buyFurniture(home, "StorageRack")
@@ -221,7 +248,7 @@ check(Data.placeFurniture(home, "Freezer", -18, 7, 1) == nil, "Built-in freezer 
 check(Data.placeFurniture(home, "Freezer", -10.25, 9, 1) == nil, "Placements snap to the grid")
 home = assert(Data.placeFurniture(home, "Freezer", -10, 9, 1))
 check(home.FurnitureStock.Freezer == nil and #home.Furniture == 1, "Placing uses the stock")
-check(Data.freezerCapacity(home) == 8, "A placed freezer adds four slots")
+check(Data.freezerCount(home) == 2, "A placed freezer adds another ice bed")
 home = assert(Data.placeFurniture(home, "StorageRack", 16, -12, 2))
 check(Data.placeFurniture(home, "StorageRack", 16, -12, 2) == nil, "Furniture cannot overlap")
 home = assert(Data.placeFurniture(home, "StorageRack", 16, -6, 2))
@@ -236,11 +263,21 @@ check(Data.takeStored(stash) == nil, "Empty racks give nothing")
 stash = assert(Data.storeFish(stash))
 check(stash.Hand == nil and #stash.Storage == 1, "Carried fish goes onto a rack")
 check(Data.storeFish(stash) == nil, "Nothing to store with empty hands")
-check(Data.pickUpFurniture(stash, 2) and Data.pickUpFurniture(Data.pickUpFurniture(stash, 2), 2) == nil, "The last rack holding fish stays")
-stash.Freezer = { stash.Storage[1], stash.Storage[1], stash.Storage[1], stash.Storage[1], stash.Storage[1] }
+check(
+	Data.pickUpFurniture(stash, 2) and Data.pickUpFurniture(Data.pickUpFurniture(stash, 2), 2) == nil,
+	"The last rack holding fish stays"
+)
+while Data.canFreeze({ Freezer = stash.Freezer, Furniture = {} }, stash.Storage[1]) do
+	table.insert(stash.Freezer, stash.Storage[1])
+end
+table.insert(stash.Freezer, stash.Storage[1])
+local frozenBeforeRestock = #stash.Freezer
 check(Data.pickUpFurniture(stash, 1) == nil, "A freezer holding overflow fish stays")
 local restocked = Data.restockFish(stash, stash.Storage[1])
-check(restocked and #restocked.Freezer == 6 and #restocked.Storage == 0, "Rack fish restocks a freezer")
+check(
+	restocked and #restocked.Freezer == frozenBeforeRestock + 1 and #restocked.Storage == 0,
+	"Rack fish restocks a freezer"
+)
 local back = assert(Data.takeStored(stash))
 check(back.Hand and #back.Storage == 0, "Stored fish returns to the hand")
 stash = Data.pickUpFurniture(Data.decode({ Furniture = { { ItemId = "Register", X = -12, Z = 10, R = 1 } } }), 1)
@@ -248,5 +285,4 @@ check(stash and stash.FurnitureStock.Register == 1 and #stash.Furniture == 0, "P
 rejects({ Furniture = { { ItemId = "Freezer", X = 1, Z = 1, R = 7 } } })
 rejects({ Storage = { { FishId = "Trout" } } })
 rejects({ FurnitureStock = { Freezer = -1 } })
-print("Angler progress: "
- .. checks .. " checks passed (pure data; no Roblox runtime).")
+print("Angler progress: " .. checks .. " checks passed (pure data; no Roblox runtime).")

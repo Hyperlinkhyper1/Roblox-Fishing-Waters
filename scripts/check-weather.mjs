@@ -112,10 +112,36 @@ close(Weather.lakeExposure(lake), 0.18)
 close(Weather.lakeExposure(sea), 1)
 close(Weather.lakeExposure(Vector3.new(-650, 0, 0)), 1)
 close(Weather.lakeExposure(Vector3.new(0, 0, -950)), 1)
-local mouth = Vector3.new(((290 + 430) / 2 - 870) * 1.05, 0, ((1565 + 1340) / 2 - 1330) * 1.05)
+local mouth = Vector3.new(((290 + 430) / 2 - 870) * 0.85, 0, ((1565 + 1340) / 2 - 1330) * 0.85)
 local mouthExposure = Weather.lakeExposure(mouth)
 assert(mouthExposure > 0.99, 'Bay mouth must join the open ocean without a wave wall')
 local state = Weather.getState(now)
+-- Check both sides of every bay edge, including the headlands at the mouth.
+local boundary = { Weather.MouthSketch[1] }
+for _, point in Weather.BaySketch do table.insert(boundary, point) end
+table.insert(boundary, Weather.MouthSketch[2])
+local function world(point)
+  return Vector3.new((point[1] - 870) * 0.85, 0, (point[2] - 1330) * 0.85)
+end
+local previous = world(boundary[#boundary])
+for _, point in boundary do
+  local current = world(point)
+  local edge = current - previous
+  local normal = Vector3.new(-edge.Z, 0, edge.X).Unit
+  for _, fraction in { 0.1, 0.5, 0.9 } do
+    local center = previous:Lerp(current, fraction)
+    local a, b = center - normal * 0.05, center + normal * 0.05
+    assert(math.abs(Weather.lakeExposure(a) - Weather.lakeExposure(b)) < 0.002,
+      'Shelter must remain continuous across the whole bay boundary')
+    for _, time in { now, now + 3, now + 7 } do
+      local first, second = Weather.sample(a, time, state), Weather.sample(b, time, state)
+      assert(math.abs(first.height - second.height) < 0.03 and (first.normal - second.normal).Magnitude < 0.03,
+        'Adjacent headland samples must not snap wave height or tilt')
+    end
+  end
+  previous = current
+end
+print('PASS continuous bay-edge heights and normals at the actual island scale')
 local lakeEnergy, seaEnergy = 0, 0
 local lakeMax, seaMax = 0, 0
 for step = 0, 1200 do

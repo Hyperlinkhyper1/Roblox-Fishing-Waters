@@ -33,9 +33,6 @@ local STAFF_WALK_SPEED = 16
 local WAIT_SECONDS = 150
 local ARRIVAL_SECONDS = 25
 local SERVE_DISTANCE = 14
-local DISPLAY_LIMIT = 24
--- Full-depth row keeps the same world size as held fish, including large catches.
-local DISPLAY_ROWS = { (FishFreezer.ICE_Z.X + FishFreezer.ICE_Z.Y) / 2 }
 local MAX_USER_ID = 3_000_000_000
 -- Default R15 animations; NPCs have no Animate script of their own.
 local IDLE_ANIMATION = "rbxassetid://507766666"
@@ -170,7 +167,8 @@ end
 
 local function spawnCustomer(position: Vector3, staffRole: string?): Model
 	local description = if staffRole then StaffCatalog.description(staffRole) else randomAvatar()
-	local ok, model = pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
+	local ok, model =
+		pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
 	description:Destroy()
 	if not ok then
 		error(model)
@@ -261,10 +259,18 @@ local function freezerFrames(shop, profile): { CFrame }
 end
 
 local function recordKey(record): string
-	return string.format("%s:%s:%s:%s:%s:%s", record.FishId, record.Mutation, record.Size or "", record.Kg, record.CaughtAt, record.Value)
+	return string.format(
+		"%s:%s:%s:%s:%s:%s",
+		record.FishId,
+		record.Mutation,
+		record.Size or "",
+		record.Kg,
+		record.CaughtAt,
+		record.Value
+	) .. ":" .. table.concat(record.Corruptions or {}, ",")
 end
 
--- The owner's frozen fish on the ice beds, oldest first, four to a freezer. The
+-- The owner's frozen fish use the authoritative size-based cooler layout. The
 -- fish customers have taken are left out until they are sold or put back.
 local function refreshDisplay(shop)
 	local owner = ownerOf(shop.base)
@@ -282,9 +288,9 @@ local function refreshDisplay(shop)
 	table.sort(takenKeys)
 	local keys = { tostring(owner and owner.UserId), table.concat(takenKeys, ","), tostring(#frames) }
 	for _, frame in frames do
-		table.insert(keys, tostring(frame.Position))
+		table.insert(keys, tostring(frame))
 	end
-	for index = 1, math.min(#frozen, DISPLAY_LIMIT) do
+	for index = 1, #frozen do
 		table.insert(keys, recordKey(frozen[index]))
 	end
 	local signature = table.concat(keys, "|")
@@ -299,47 +305,29 @@ local function refreshDisplay(shop)
 	display.Name = "FrozenFishDisplay"
 	shop.display = display
 	shop.displayFish = {}
-	local left, right = FishFreezer.ICE_X.X + 0.15, FishFreezer.ICE_X.Y - 0.15
-	local slot, row, x = 0, 1, left
+	local placements = if profile then AnglerData.freezerLayout(profile.Angler) else {}
 	shop.shown = 0
-	for index = 1, math.min(#frozen, DISPLAY_LIMIT) do
-		local record = frozen[index]
-		local freezer = math.floor((index - 1) / AnglerData.FREEZER_CAPACITY) + 1
-		local frame = frames[freezer]
-		if not frame then
-			break
-		elseif freezer ~= slot then
-			slot, row, x = freezer, 1, left
+	for index, record in frozen do
+		local placement = placements[index]
+		local key = recordKey(record)
+		-- Taken fish keep their reserved space until the sale completes.
+		if (taken[key] or 0) > 0 then
+			taken[key] -= 1
+			continue
 		end
-
-		local fish, size = fishModel(record, true)
+		if not placement then
+			continue
+		end
+		local frame = frames[placement.Freezer]
+		local fish = fishModel(record, true)
 		if not fish then
 			continue
 		end
-		-- Flatfish and rays lie flat; everything else lies on its side.
-		local flat = size.Z > size.Y
-		local footprint = if flat then size.Z else size.Y
-		if x + footprint > right then
-			row, x = row + 1, left
-			if row > #DISPLAY_ROWS then
-				fish:Destroy()
-				continue
-			end
-		end
-		local center = x + footprint / 2
-		x += footprint + 0.08
-		shop.shown = index
-		local key = recordKey(record)
-		if (taken[key] or 0) > 0 then
-			taken[key] -= 1
-			fish:Destroy()
-			continue
-		end
-		-- Snout towards the back; full depth is reserved for the catch's length.
-		local turn = CFrame.Angles(0, math.pi / 2, 0)
-			* (if flat then CFrame.identity else CFrame.Angles(math.pi / 2, 0, 0))
-		restOn(fish, FishFreezer.iceSurface(frame, center, DISPLAY_ROWS[row]), turn)
+		local turn = CFrame.Angles(0, if placement.Rotated then 0 else math.pi / 2, 0)
+			* (if placement.Flat then CFrame.identity else CFrame.Angles(math.pi / 2, 0, 0))
+		restOn(fish, FishFreezer.iceSurface(frame, placement.X, placement.Z), turn)
 		fish.Parent = display
+		shop.shown += 1
 		table.insert(shop.displayFish, { record = record, model = fish, freezer = frame })
 	end
 	display.Parent = shop.freezerPrompt.Parent.Parent
@@ -353,14 +341,14 @@ local function setAnchored(model: Model, anchored: boolean)
 	end
 end
 
-local function carry(customer, fish: Model)
+local function carry(customer, fish: Model, stackIndex: number?)
 	local hand = customer.model:FindFirstChild("RightHand") :: BasePart?
 	if not hand then
 		return
 	end
 	setAnchored(fish, false)
 	-- Held by the middle just in front of the hand, snout forward.
-	fish:PivotTo(hand.CFrame * CFrame.new(0, -0.3, -0.5) * CFrame.Angles(0, math.pi / 2, 0))
+	fish:PivotTo(hand.CFrame * CFrame.new(0, -0.3 + (stackIndex or 0) * 0.45, -0.5) * CFrame.Angles(0, math.pi / 2, 0))
 	fish.Parent = customer.model
 	local grip = Instance.new("WeldConstraint")
 	grip.Name, grip.Part0, grip.Part1, grip.Parent = "FishGrip", hand, fish.PrimaryPart, hand
@@ -398,7 +386,14 @@ end
 -- Cooked dishes (Supermarket path) sit in the placed food display cases, oldest
 -- first, six to a case. Like frozen fish, a dish stays saved until it is paid for.
 local function dishKey(dish): string
-	return string.format("%s:%s:%s:%s:%s", dish.RecipeId, dish.FishId, tostring(dish.Kg), tostring(dish.MadeAt), tostring(dish.Value))
+	return string.format(
+		"%s:%s:%s:%s:%s",
+		dish.RecipeId,
+		dish.FishId,
+		tostring(dish.Kg),
+		tostring(dish.MadeAt),
+		tostring(dish.Value)
+	)
 end
 
 -- A carriable dish: every part welded to one anchor whose pivot is the plate's base.
@@ -499,8 +494,14 @@ local function refreshShelves(shop)
 	refreshFoodDisplay(shop)
 end
 
-local function walk(customer, target: Vector3, allowed: (() -> boolean)?, stayOnGround: boolean?): boolean
-	return NpcNavigation.walk(customer, target, allowed, stayOnGround)
+local function walk(
+	customer,
+	target: Vector3,
+	allowed: (() -> boolean)?,
+	stayOnGround: boolean?,
+	straight: boolean?
+): boolean
+	return NpcNavigation.walk(customer, target, allowed, stayOnGround, straight)
 end
 
 local function face(customer, position: Vector3)
@@ -656,19 +657,17 @@ local function sell(player: Player, customer, worker)
 		end
 		if worker then
 			local desk = ShopDesk.frame(shop.frame)
-			return shop.staff.Seller == worker and worker.active and worker.humanoid.Health > 0
-				and profile.Angler.Staff.Seller == true and worker.model.Parent ~= nil
+			return shop.staff.Seller == worker
+				and worker.active
+				and worker.humanoid.Health > 0
+				and profile.Angler.Staff.Seller == true
+				and worker.model.Parent ~= nil
 				and (worker.root.Position - desk.Position).Magnitude <= SERVE_DISTANCE
 		end
 		return near(player, customer.root.Position, SERVE_DISTANCE)
 	end
 	local profile = BoatService.getProfile(player)
-	if
-		customer.leaving
-		or customer.selling
-		or not profile
-		or not authorized(profile)
-	then
+	if customer.leaving or customer.selling or not profile or not authorized(profile) then
 		return
 	end
 	customer.selling = true
@@ -680,7 +679,9 @@ local function sell(player: Player, customer, worker)
 		end
 		return AnglerData.sellFrozen(angler, customer.record)
 	end
-	local gone = if customer.food then "That dish is no longer on your kitchen pass." else "That fish is no longer in your freezer."
+	local gone = if customer.food
+		then "That dish is no longer on your kitchen pass."
+		else "That fish is no longer in your freezer."
 	local ok, message = BoatService.updateProgress(player, function(profile)
 		assert(authorized(profile), "This customer can no longer be served.")
 		local data, paid = pay(profile.Angler)
@@ -728,14 +729,20 @@ local function dockedBoat(shop, owner: Player): (string?, Model?)
 	local id, model = BoatService.activeBoat(owner)
 	local marker = shop.base:FindFirstChild("BoatSpawn")
 	local root = model and model.PrimaryPart
-	if ownerOf(shop.base) ~= owner or not marker or not marker:IsA("BasePart") or not root
+	if
+		ownerOf(shop.base) ~= owner
+		or not marker
+		or not marker:IsA("BasePart")
+		or not root
 		or model:GetAttribute("OwnerUserId") ~= owner.UserId
 	then
 		return nil, nil
 	end
 	local delta = root.Position - marker.Position
-	if Vector3.new(delta.X, 0, delta.Z).Magnitude > PORTER_DOCK_DISTANCE
-		or math.abs(delta.Y) > 12 or root.AssemblyLinearVelocity.Magnitude > 2
+	if
+		Vector3.new(delta.X, 0, delta.Z).Magnitude > PORTER_DOCK_DISTANCE
+		or math.abs(delta.Y) > 12
+		or root.AssemblyLinearVelocity.Magnitude > 2
 	then
 		return nil, nil
 	end
@@ -752,11 +759,43 @@ local function storageRoute(shop, rack: CFrame, worker): { Vector3 }
 	local function at(x: number, z: number): Vector3
 		return (shop.frame * CFrame.new(x, 0.16, z)).Position
 	end
-	return { at(12, 4), at(12, -2), (rack * CFrame.new(0, 0, StorageRack.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4)).Position }
+	return {
+		at(12, 4),
+		at(12, -2),
+		(rack * CFrame.new(0, 0, StorageRack.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4)).Position,
+	}
+end
+
+-- A rig below the deck cannot use the dock's walking-only route back up.
+local function belowDock(shop, worker): boolean
+	local dock = shop.base:GetAttribute("BoatDockFrame")
+	if typeof(dock) ~= "CFrame" then
+		return false
+	end
+	local position = dock:PointToObjectSpace(worker.root.Position)
+	local feet = position.Y - worker.humanoid.HipHeight - worker.root.Size.Y / 2
+	return math.abs(position.X) <= 25 and position.Z >= -48 and position.Z <= 8 and feet < 2.2
+end
+
+-- Each fish has a visual copy; saved inventory changes only after delivery.
+local function carryLoad(worker, load): boolean
+	worker.load = {}
+	for index, entry in load do
+		local fish = fishModel(entry.Record, true)
+		if not fish then
+			return false
+		end
+		local carried = { fish = fish }
+		table.insert(worker.load, carried)
+		carry(worker, fish, index - 1)
+		carried.grip = worker.grip
+		worker.grip = nil
+	end
+	return true
 end
 
 -- Boat to the freezer, or to a storage rack once the freezers are full.
-local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Model, index: number, record, rack: CFrame?)
+local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Model, load, rack: CFrame?)
 	local dock = shop.base:GetAttribute("BoatDockFrame")
 	if typeof(dock) ~= "CFrame" then
 		return
@@ -766,41 +805,95 @@ local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Mod
 		if currentBoat ~= boat and companyDock then
 			currentId, currentBoat = companyDock(shop, owner)
 		end
-		return worker.active and shop.staff.Porter == worker and worker.humanoid.Health > 0
-			and currentId == boatId and currentBoat == boat
+		return worker.active
+			and shop.staff.Porter == worker
+			and worker.humanoid.Health > 0
+			and currentId == boatId
+			and currentBoat == boat
 	end
-	local function go(position: Vector3): boolean
-		return valid() and walk(worker, position, valid, true) and valid()
+	local function go(position: Vector3, straight: boolean?): boolean
+		if not valid() then
+			return false
+		end
+		local reached = walk(worker, position, valid, true, straight)
+		if not reached and valid() and belowDock(shop, worker) then
+			worker.stranded = true
+		end
+		return reached and valid()
 	end
-	local landing = (dock * CFrame.new(17, 5.9, 11)).Position
-	local pier = (dock * CFrame.new(17, 3.2, -38)).Position
-	local pickup = (dock * CFrame.new(0, 3.2, -38)).Position
+	local side = if dock:PointToObjectSpace(worker.root.Position).X < 0 then -1 else 1
+	local pier = (dock * CFrame.new(side * 17, 3.3, -38)).Position
+	local pickup = (dock * CFrame.new(0, 3.3, -38)).Position
 	-- Collect from the pier's center, never the boat-side edge. Company hulls
 	-- have no collision, so stepping toward them leaves no ground underfoot.
 	local moorPier = boat:GetAttribute("PorterPier")
 	if typeof(moorPier) == "Vector3" then
 		pier, pickup = moorPier, moorPier
-		local side = if dock:PointToObjectSpace(pier).X < 0 then -1 else 1
-		landing = (dock * CFrame.new(side * 17, 5.9, 11)).Position
+		side = if dock:PointToObjectSpace(pier).X < 0 then -1 else 1
 	end
+	local landing = (dock * CFrame.new(side * 17, 5.9, 11)).Position
+	local foot = (dock * CFrame.new(side * 17, 3.3, -2)).Position
 	bubble(worker, "Porter · Collecting fish")
-	-- Navigate from the current position; forcing the front door here sends
-	-- a porter already outside back into the shop before collecting cargo.
-	if not (go(landing) and go(pier) and go(pickup)) then
+	local current = dock:PointToObjectSpace(worker.root.Position)
+	local feet = current.Y - worker.humanoid.HipHeight - worker.root.Size.Y / 2
+	local onPier = math.abs(math.abs(current.X) - 17) <= 3 and current.Z >= -43 and current.Z <= 11 and feet >= 2.2
+	local onLink = math.abs(current.X) <= 17 and math.abs(current.Z + 38) <= 1 and feet >= 2.2
+	if onLink then
+		-- Retry from the crosswalk instead of walking back to the quay first.
+		if not go((dock * CFrame.new(current.X, 3.3, -38)).Position, true) then
+			return
+		end
+		if typeof(moorPier) == "Vector3" then
+			if not go((dock * CFrame.new(side * 17, 3.3, -38)).Position, true) then
+				return
+			end
+			if not go(pier, true) then
+				return
+			end
+		end
+	elseif onPier then
+		local currentSide = if current.X < 0 then -1 else 1
+		local y = math.max(3.3, 3.2 + 2.7 * math.clamp(current.Z / 8, 0, 1))
+		if not go((dock * CFrame.new(currentSide * 17, y, current.Z)).Position, true) then
+			return
+		end
+		if currentSide ~= side then
+			-- Change piers over the crosswalk, never across the boat berth.
+			if
+				not (
+					go((dock * CFrame.new(currentSide * 17, 3.3, -38)).Position, true)
+					and go((dock * CFrame.new(side * 17, 3.3, -38)).Position, true)
+				)
+			then
+				return
+			end
+		end
+		if not go(pier, true) then
+			return
+		end
+	else
+		if not (go(landing) and go(foot, true) and go(pier, true)) then
+			return
+		end
+	end
+	if not go(pickup, true) then
 		return
 	end
-	local fish = fishModel(record, true)
-	if not fish then
+	if not carryLoad(worker, load) then
 		return
 	end
-	worker.fish = fish
-	carry(worker, fish)
-	bubble(worker, if rack then "Porter · Bringing fish to storage" else "Porter · Bringing fish to freezer")
+	bubble(worker, string.format("Porter · Bringing %d fish to %s", #load, if rack then "storage" else "freezer"))
 	local route = if rack
 		then storageRoute(shop, rack, worker)
-		else { (FishFreezer.frame(shop.frame) * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4)).Position }
+		else {
+			(FishFreezer.frame(shop.frame) * CFrame.new(
+				0,
+				0,
+				FishFreezer.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4
+			)).Position,
+		}
 	-- Once off the pier, let pathfinding choose the doorway to the destination.
-	if not (go(pier) and go(landing)) then
+	if not (go(pier, true) and go(foot, true) and go(landing, true)) then
 		return
 	end
 	for _, position in route do
@@ -812,17 +905,24 @@ local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Mod
 	-- fish while the porter walked; the saved fish never leaves its hold early.
 	BoatService.updateProgress(owner, function(current)
 		assert(valid() and current.Angler.Staff.Porter, "The porter is no longer unloading this boat.")
-		local data = AnglerData.unloadFish(current.Angler, boatId, index, record, rack ~= nil)
-		assert(data, "The fish moved or the shelf is full.")
+		local data = current.Angler
+		-- Preserve pickup order so freezer packing matches the planned load.
+		-- Earlier removals shift each later cargo slot down by one.
+		for index, entry in load do
+			data = AnglerData.unloadFish(data, boatId, entry.Index - index + 1, entry.Record, rack ~= nil)
+			assert(data, "The fish moved or the shelf is full.")
+		end
 		current.Angler = data
 	end)
 	refreshDisplay(shop)
 end
 
 -- A storage rack to the freezer, whenever a freezer has room again.
-local function restockTrip(shop, worker, owner: Player, record, rack: CFrame)
+local function restockTrip(shop, worker, owner: Player, load, rack: CFrame)
 	local function valid(): boolean
-		return worker.active and shop.staff.Porter == worker and worker.humanoid.Health > 0
+		return worker.active
+			and shop.staff.Porter == worker
+			and worker.humanoid.Health > 0
 			and ownerOf(shop.base) == owner
 	end
 	local function go(position: Vector3): boolean
@@ -835,20 +935,24 @@ local function restockTrip(shop, worker, owner: Player, record, rack: CFrame)
 			return
 		end
 	end
-	local fish = fishModel(record, true)
-	if not fish then
+	if not carryLoad(worker, load) then
 		return
 	end
-	worker.fish = fish
-	carry(worker, fish)
-	local freezerSpot = (FishFreezer.frame(shop.frame) * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4)).Position
+	local freezerSpot = (FishFreezer.frame(shop.frame) * CFrame.new(
+		0,
+		0,
+		FishFreezer.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4
+	)).Position
 	if not (go(route[2]) and go(route[1]) and go(freezerSpot)) then
 		return
 	end
 	BoatService.updateProgress(owner, function(current)
 		assert(valid() and current.Angler.Staff.Porter, "The porter is no longer restocking.")
-		local data = AnglerData.restockFish(current.Angler, record)
-		assert(data, "The fish moved or the freezer is full.")
+		local data = current.Angler
+		for _, entry in load do
+			data = AnglerData.restockFish(data, entry.Record)
+			assert(data, "The fish moved or the freezer is full.")
+		end
 		current.Angler = data
 	end)
 	refreshDisplay(shop)
@@ -860,36 +964,60 @@ local function porterTrip(shop, worker, owner: Player)
 		return
 	end
 	local data = profile.Angler
-	local freezerRoom = #data.Freezer < AnglerData.freezerCapacity(data)
-	local storageRoom = #data.Storage < AnglerData.storageCapacity(data)
-	local racks = if freezerRoom and #data.Storage == 0 then {} else rackFrames(shop, profile)
+	local speed, capacity = StaffCatalog.porterStats(data)
+	worker.humanoid.WalkSpeed = speed
+	local storageRoom = math.max(0, AnglerData.storageCapacity(data) - #data.Storage)
+	local racks = rackFrames(shop, profile)
 	local boatId, boat = dockedBoat(shop, owner)
-	local index, record
-	local function firstFish()
-		index, record = nil, nil
+	local ownBoatId, ownBoat = boatId, boat
+	local load = {}
+	local toStorage = false
+	local room = math.min(storageRoom, AnglerData.RACK_CAPACITY - #data.Storage % AnglerData.RACK_CAPACITY)
+	local function collectFish()
+		load = {}
+		local preview = table.clone(data)
+		preview.Freezer = table.clone(data.Freezer)
 		for slot, item in if boatId then data.Holds[boatId] or {} else {} do
-			if item.Fish then
-				index, record = slot, item.Fish
-				break
+			if item.Fish and #load < capacity then
+				local fits = if toStorage then #load < room else AnglerData.canFreeze(preview, item.Fish)
+				if fits then
+					table.insert(load, { Index = slot, Record = item.Fish })
+					table.insert(preview.Freezer, item.Fish)
+				end
 			end
 		end
 	end
-	firstFish()
-	-- The player's own boat first, then the fisherman's.
-	if not record and companyDock then
-		boatId, boat = companyDock(shop, owner)
-		firstFish()
-	end
-	if record and freezerRoom then
-		unloadTrip(shop, worker, owner, boatId :: string, boat :: Model, index, record)
-	elseif record and storageRoom then
-		-- Racks fill in placement order, so the next free one gets the fish.
-		local rack = racks[math.floor(#data.Storage / AnglerData.RACK_CAPACITY) + 1]
-		if rack then
-			unloadTrip(shop, worker, owner, boatId :: string, boat :: Model, index, record, rack)
+	local function collectFromBoats()
+		collectFish()
+		if #load == 0 and companyDock then
+			boatId, boat = companyDock(shop, owner)
+			collectFish()
 		end
-	elseif freezerRoom and #data.Storage > 0 and racks[1] then
-		restockTrip(shop, worker, owner, data.Storage[1], racks[1])
+	end
+	collectFromBoats()
+	if #load == 0 and room > 0 then
+		toStorage = true
+		boatId, boat = ownBoatId, ownBoat
+		collectFromBoats()
+	end
+	if #load > 0 then
+		local rack = if toStorage then racks[math.floor(#data.Storage / AnglerData.RACK_CAPACITY) + 1] else nil
+		if not toStorage or rack then
+			unloadTrip(shop, worker, owner, boatId :: string, boat :: Model, load, rack)
+		end
+	elseif #data.Storage > 0 and racks[1] then
+		local preview = table.clone(data)
+		preview.Freezer = table.clone(data.Freezer)
+		for index = 1, math.min(#data.Storage, AnglerData.RACK_CAPACITY) do
+			local record = data.Storage[index]
+			if #load < capacity and AnglerData.canFreeze(preview, record) then
+				table.insert(load, { Record = record })
+				table.insert(preview.Freezer, record)
+			end
+		end
+		if #load > 0 then
+			restockTrip(shop, worker, owner, load, racks[1])
+		end
 	end
 end
 
@@ -898,8 +1026,16 @@ local function runPorter(shop, worker, owner: Player)
 		return
 	end
 	worker.busy = true
+	worker.stranded = false
 	task.spawn(function()
 		local ok, failure = pcall(porterTrip, shop, worker, owner)
+		for _, carried in worker.load or {} do
+			if carried.grip then
+				carried.grip:Destroy()
+			end
+			carried.fish:Destroy()
+		end
+		worker.load = nil
 		if worker.grip then
 			worker.grip:Destroy()
 			worker.grip = nil
@@ -909,6 +1045,14 @@ local function runPorter(shop, worker, owner: Player)
 			worker.fish = nil
 		end
 		worker.busy = false
+		-- A pushed/fallen porter cannot climb back through the pier from below.
+		-- Retire the stranded rig; ensureStaff replaces it at its normal spawn.
+		-- Fish stay in the hold until the complete delivery transaction succeeds.
+		if worker.stranded and worker.active and shop.staff.Porter == worker and ownerOf(shop.base) == owner then
+			worker.active = false
+			worker.model:Destroy()
+			shop.staff.Porter = nil
+		end
 		if worker.active and worker.model.Parent then
 			bubble(worker, "Porter · Waiting for docked cargo / shelf space")
 		end
@@ -936,7 +1080,8 @@ local function ensureStaff(shop, owner: Player, role: string)
 		local model
 		local ok, failure = pcall(function()
 			local desk = ShopDesk.frame(shop.frame)
-			local position = if role == "Seller" then (desk * CFrame.new(0, 0, ShopDesk.DEPTH / 2 + 1.4)).Position
+			local position = if role == "Seller"
+				then (desk * CFrame.new(0, 0, ShopDesk.DEPTH / 2 + 1.4)).Position
 				else (shop.frame * CFrame.new(-10, 0.16, 10)).Position
 			model = spawnCustomer(position, role)
 			if ownerOf(shop.base) ~= owner then
@@ -947,7 +1092,9 @@ local function ensureStaff(shop, owner: Player, role: string)
 			model:SetAttribute("OwnerUserId", owner.UserId)
 			model:SetAttribute("StaffRole", role)
 			local member = {
-				model = model, active = true, humanoid = model:FindFirstChildOfClass("Humanoid"),
+				model = model,
+				active = true,
+				humanoid = model:FindFirstChildOfClass("Humanoid"),
 				root = model:FindFirstChild("HumanoidRootPart"),
 			}
 			shop.staff[role] = member
@@ -979,28 +1126,39 @@ local function stock(player: Player, shop, prompt: ProximityPrompt)
 		notify(player, "Your tackle box is still loading. Try again in a moment.")
 		return
 	elseif not CargoService.isCarrying(player, profile.Angler.Hand) then
-		notify(player, "Equip a fish from your hotbar and carry it to the freezer. Pick up boat cargo one fish at a time.")
+		notify(
+			player,
+			"Equip a fish from your hotbar and carry it to the freezer. Pick up boat cargo one fish at a time."
+		)
 		return
-	elseif #profile.Angler.Freezer >= AnglerData.freezerCapacity(profile.Angler) then
+	elseif not AnglerData.canFreeze(profile.Angler, profile.Angler.Hand) then
 		notify(
 			player,
 			if frozenCount(shop, player) < #profile.Angler.Freezer
 				then "A customer is still holding a fish from your freezer. Sell it to free the spot."
-				else "Your freezers are full. Sell some fish or put it on a storage rack."
+				else "That fish does not fit in the remaining cooler space. Sell some fish or use a storage rack."
 		)
 		return
 	end
 	stocking[player] = true
 	local moved = 0
 	local ok, message = BoatService.updateProgress(player, function(current)
-		assert(ownerOf(shop.base) == player
-			and near(player, position, reach)
-			and CargoService.isCarrying(player, current.Angler.Hand), "Carry a fish to your freezer first.")
+		assert(
+			ownerOf(shop.base) == player
+				and near(player, position, reach)
+				and CargoService.isCarrying(player, current.Angler.Hand),
+			"Carry a fish to your freezer first."
+		)
 		current.Angler, moved = AnglerData.stockFreezer(current.Angler)
 	end)
 	stocking[player] = nil
 	if ok then
-		notify(player, if moved == 1 then "Placed one fish in the freezer." else "Your freezers are full. Sell some fish first.")
+		notify(
+			player,
+			if moved == 1
+				then "Placed one fish in the freezer."
+				else "That fish does not fit in the remaining cooler space. Sell some fish first."
+		)
 		update:FireClient(player, "Stocked")
 		refreshDisplay(shop)
 	else
@@ -1258,6 +1416,8 @@ function CustomerService.start()
 						if profile.Angler.Staff[role] then
 							local worker = ensureStaff(shop, owner, role)
 							if worker and role == "Porter" then
+								local speed = StaffCatalog.porterStats(profile.Angler)
+								worker.humanoid.WalkSpeed = speed
 								runPorter(shop, worker, owner)
 							elseif worker then
 								for _, customer in shop.customers do
@@ -1275,9 +1435,9 @@ function CustomerService.start()
 					end
 				end
 				local label = string.format(
-					"Freezer · %d/%d fish",
+					"Freezer · %d fish · %d%% space used",
 					frozenCount(shop, owner),
-					if profile then AnglerData.freezerCapacity(profile.Angler) else AnglerData.FREEZER_CAPACITY
+					if profile then AnglerData.freezerUsage(profile.Angler) else 0
 				)
 				shop.freezerPrompt.ObjectText = label
 				local cooking = profile ~= nil and Paths.unlocked(profile, "Supermarket")
@@ -1301,7 +1461,6 @@ function CustomerService.start()
 				if owner and os.clock() >= shop.nextArrival then
 					arrive(shop)
 				end
-
 			end
 		end
 	end)

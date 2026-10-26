@@ -37,6 +37,7 @@ export type Profile = {
 	RodSkins: { [string]: number },
 	RodSkinCopies: { { SkinId: string, Serial: number } },
 	NextRodSkinSerial: { [string]: number },
+	RodSerialScope: string?,
 	EquippedRodSkin: string?,
 	EquippedRodSkinSerial: number?,
 	GroupRodClaimed: boolean?,
@@ -56,6 +57,7 @@ function BoatData.decode(raw: any): Profile
 			RodSkins = {},
 			RodSkinCopies = {},
 			NextRodSkinSerial = {},
+			RodSerialScope = "GlobalV1",
 			BobberSkins = {},
 			Angler = AnglerData.decode(nil),
 		}
@@ -90,6 +92,7 @@ function BoatData.decode(raw: any): Profile
 	end
 	assert(raw.EquippedRodSkin == nil or type(raw.EquippedRodSkin) == "string", "Invalid equipped rod skin")
 	local profile = table.clone(raw)
+	assert(raw.RodSerialScope == nil or raw.RodSerialScope == "GlobalV1", "Unsupported rod serial scope")
 	assert(raw.GroupRodClaimed == nil or type(raw.GroupRodClaimed) == "boolean", "Invalid group reward claim")
 	profile.OwnedBoats = table.clone(raw.OwnedBoats)
 	profile.OwnedRods = table.clone(raw.OwnedRods or {})
@@ -105,8 +108,8 @@ function BoatData.decode(raw: any): Profile
 			profile.RodSkins[id] = count
 		end
 	end
-	-- Each skin has its own sequence. Numeric counters belong to the old shared
-	-- sequence; migrate those copies in award order and preserve the selected copy.
+	-- Normalize historical per-player counters for RodSerials.migrate. Numbers
+	-- already in the global format survive decoding without being renumbered.
 	local savedCounts = profile.RodSkins
 	profile.RodSkins, profile.RodSkinCopies, profile.NextRodSkinSerial = {}, {}, {}
 	local perSkinSerials = type(raw.NextRodSkinSerial) == "table"
@@ -266,9 +269,7 @@ function BoatData.upgradeRod(profile: Profile, stat: string): string
 	return "Upgraded"
 end
 
--- Mutates a decoded profile in place: pays for one crate and adds the skin the
--- caller already rolled (RodSkins.roll), so UpdateAsync retries award the same skin.
-function BoatData.openRodCrate(profile: Profile, crateId: string, skinId: string): (string, number?)
+function BoatData.canOpenRodCrate(profile: Profile, crateId: string, skinId: string): string
 	local crate = RodSkins.Crates[crateId]
 	if not crate or not table.find(crate.Skins, skinId) then
 		return "UnknownCrate"
@@ -279,8 +280,24 @@ function BoatData.openRodCrate(profile: Profile, crateId: string, skinId: string
 	if profile.Cash < crate.Price then
 		return "InsufficientFunds"
 	end
-	local serial = profile.NextRodSkinSerial[skinId] or 1
-	assert(serial < 2 ^ 53 - 1, "Skin serial limit reached")
+	return "Opened"
+end
+
+-- The server reserves a GLOBAL number before UpdateAsync, then supplies the same
+-- number on every retry. Profile counters remain only for decoding older saves.
+function BoatData.openRodCrate(profile: Profile, crateId: string, skinId: string, serial: number): (string, number?)
+	local outcome = BoatData.canOpenRodCrate(profile, crateId, skinId)
+	if outcome ~= "Opened" then
+		return outcome
+	end
+	assert(
+		type(serial) == "number" and serial >= 1 and serial < 2 ^ 53 - 1 and serial % 1 == 0,
+		"Missing global skin serial"
+	)
+	for _, copy in profile.RodSkinCopies do
+		assert(copy.SkinId ~= skinId or copy.Serial ~= serial, "Skin serial already owned")
+	end
+	local crate = RodSkins.Crates[crateId]
 	profile.Cash -= crate.Price
 	profile.Angler.Stats.CoinsSpent += crate.Price
 	profile.RodSkins[skinId] = (profile.RodSkins[skinId] or 0) + 1
@@ -291,7 +308,7 @@ end
 
 -- Membership is verified by FishingService. The receipt and serial are committed
 -- together in the existing wallet transaction, including UpdateAsync retries.
-function BoatData.claimGroupRod(profile: Profile): (string, number?)
+function BoatData.claimGroupRod(profile: Profile, serial: number): (string, number?)
 	local id = RodSkins.GroupReward
 	if profile.GroupRodClaimed then
 		return "AlreadyClaimed"
@@ -302,8 +319,10 @@ function BoatData.claimGroupRod(profile: Profile): (string, number?)
 			return "AlreadyClaimed", copy.Serial
 		end
 	end
-	local serial = profile.NextRodSkinSerial[id] or 1
-	assert(serial < 2 ^ 53 - 1, "Skin serial limit reached")
+	assert(
+		type(serial) == "number" and serial >= 1 and serial < 2 ^ 53 - 1 and serial % 1 == 0,
+		"Missing global skin serial"
+	)
 	profile.RodSkins[id] = (profile.RodSkins[id] or 0) + 1
 	table.insert(profile.RodSkinCopies, { SkinId = id, Serial = serial })
 	profile.NextRodSkinSerial[id] = serial + 1

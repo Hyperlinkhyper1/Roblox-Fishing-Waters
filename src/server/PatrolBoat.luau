@@ -13,6 +13,9 @@ local PORT_LAMP = Color3.fromRGB(214, 48, 44)
 local STARBOARD_LAMP = Color3.fromRGB(52, 196, 92)
 local STROBE = Color3.fromRGB(46, 112, 235)
 local THICKNESS = 0.18
+-- Match the reference cruiser's scale beside a standard player avatar.
+-- Scale around the waterline so previews and launched boats sit at the same height.
+local SCALE = 1.5
 -- The wheelhouse spans these stations; the foredeck runs up to its front wall.
 local CABIN_FRONT = 4
 local CABIN_REAR = 12.6
@@ -21,18 +24,28 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 	local isAnchored = anchored == true
 	local model = Instance.new("Model")
 	model.Name = "PatrolBoat"
-	model:SetAttribute("HullLength", 42)
-	model:SetAttribute("HullBeam", 12)
+	model:SetAttribute("HullLength", 42 * SCALE)
+	model:SetAttribute("HullBeam", 12 * SCALE)
 	model:SetAttribute("PassengerSeats", 2)
 	model:SetAttribute("DriverSeat", "HelmSeat")
-	model:SetAttribute("DryFloorHeight", 1.1)
-	model:SetAttribute("DryFloorHalfBeam", 5.4)
-	model:SetAttribute("DryFloorHalfLength", 21)
+	model:SetAttribute("DryFloorHeight", 1.1 * SCALE)
+	model:SetAttribute("DryFloorHalfBeam", 5.4 * SCALE)
+	model:SetAttribute("DryFloorHalfLength", 21 * SCALE)
+
+	local function scaledFrame(localFrame: CFrame): CFrame
+		return frame
+			* CFrame.fromMatrix(
+				localFrame.Position * SCALE,
+				localFrame.RightVector,
+				localFrame.UpVector,
+				localFrame.ZVector
+			)
+	end
 
 	local root = Instance.new("Part")
 	root.Name = "HullRoot"
-	root.Size = Vector3.new(7, 0.5, 28)
-	root.CFrame = frame * CFrame.new(0, -0.4, 0)
+	root.Size = Vector3.new(7, 0.5, 28) * SCALE
+	root.CFrame = scaledFrame(CFrame.new(0, -0.4, 0))
 	root.Transparency = 1
 	root.Anchored = isAnchored
 	root.CanCollide = false
@@ -43,6 +56,8 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 	model.PrimaryPart = root
 
 	local function finish(p: BasePart, name: string, color: Color3, material: Enum.Material?, collide: boolean?)
+		p.Size *= SCALE
+		p.CFrame = scaledFrame(frame:ToObjectSpace(p.CFrame))
 		p.Name = name
 		p.Anchored = isAnchored
 		p.CanCollide = collide == true
@@ -373,7 +388,8 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 			nil,
 			true
 		)
-		local bottom, top = Vector3.new(side * 1.68, 4.05, CABIN_FRONT - 0.05), Vector3.new(side * 1.68, 6.15, windshieldTop)
+		local bottom, top =
+			Vector3.new(side * 1.68, 4.05, CABIN_FRONT - 0.05), Vector3.new(side * 1.68, 6.15, windshieldTop)
 		local window = beam("Windshield", bottom, top, 3.05, 0.12, GLASS, nil, true)
 		window.Transparency = 0.22
 		beam(
@@ -488,12 +504,18 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 	part("NavConsole", Vector3.new(1.7, 1.1, 0.8), CFrame.new(-2.15, 2.5, consoleZ), HULL_GRAY)
 	part("ChartDisplay", Vector3.new(1.4, 0.5, 0.12), CFrame.new(-2.15, 3.17, consoleZ + 0.44), DARK)
 
-
 	-- Open aft cockpit with forward-facing benches and a transom boarding gate.
 	local benchZ = CABIN_REAR + 2.4
 	for _, side in { -1, 1 } do
 		-- Steps up from the side decks onto the raised foredeck.
-		part("ForedeckStep", Vector3.new(2, 0.6, 0.8), CFrame.new(side * 4.55, 1.45, CABIN_FRONT + 0.4), DECK, nil, true)
+		part(
+			"ForedeckStep",
+			Vector3.new(2, 0.6, 0.8),
+			CFrame.new(side * 4.55, 1.45, CABIN_FRONT + 0.4),
+			DECK,
+			nil,
+			true
+		)
 		part("SternSeatCushion", Vector3.new(2.2, 0.3, 1.7), CFrame.new(side * 3.1, 1.9, benchZ), DARK)
 		part("SternSeatBack", Vector3.new(2.2, 1.1, 0.22), CFrame.new(side * 3.1, 2.6, benchZ + 0.75), HULL_GRAY)
 		local seat = Instance.new("Seat")

@@ -488,7 +488,52 @@ check(
 	invoke("Title", "Angler").Ok and head:FindFirstChild("AnglerTitle"),
 	"Unlocked title equips and appears above avatar"
 )
-check(invoke("Title", "").Ok and not head:FindFirstChild("AnglerTitle"), "Removing title clears avatar display")
+local nameplate = head:FindFirstChild("AnglerTitle")
+check(invoke("Title", "").Ok and not nameplate.Title.Visible, "Removing title hides the optional title row")
+check(
+	nameplate.Rank.Text == "[0] Beginner" and nameplate.PlayerName.Text == player.DisplayName,
+	"Rank appears without an equipped title or loaded level"
+)
+check(humanoid.DisplayDistanceType == Enum.HumanoidDisplayDistanceType.None, "Custom name replaces the default name")
+for _, range in
+	{
+		{ 0, 9, "Beginner" },
+		{ 10, 14, "Student Fisher" },
+		{ 15, 19, "Novice Fisher" },
+		{ 20, 24, "Good Fisher" },
+		{ 25, 34, "Experienced Fisher" },
+		{ 35, 49, "Veteran Fisher" },
+		{ 50, 74, "Master Fisher" },
+		{ 75, 100, "Poseidon" },
+	}
+do
+	for level = range[1], range[2] do
+		player:SetAttribute("Level", level)
+		check(
+			nameplate.Rank.Text == string.format("[%d] %s", level, range[3]),
+			"Rank follows the saved level, including every threshold"
+		)
+	end
+end
+check(nameplate.Rank.TextColor3[3] > nameplate.Rank.TextColor3[1], "Highest rank is purple")
+player:SetAttribute("Level", 5)
+check(nameplate.Rank.TextColor3[1] > nameplate.Rank.TextColor3[3], "Beginner is yellow")
+check(
+	head:FindFirstChild("AnglerTitle") == nameplate and #head:GetChildren() == 1,
+	"Progress updates reuse the nameplate"
+)
+local displayName = player.DisplayName
+player.DisplayName = "Renamed Angler"
+check(nameplate.PlayerName.Text == "Renamed Angler", "Name row follows the player display name")
+player.DisplayName = displayName
+local respawn = Instance.new("Model")
+local respawnHead = Instance.new("Part")
+respawnHead.Name, respawnHead.Parent = "Head", respawn
+Instance.new("Humanoid").Parent = respawn
+player.Character = respawn
+player.CharacterAdded:Fire(respawn)
+check(respawnHead.AnglerTitle.Rank.Text == "[5] Beginner", "Respawning restores the current rank")
+player.Character = character
 profile.Angler.Titles.Angler = nil
 humanoid.Died:Fire()
 check(

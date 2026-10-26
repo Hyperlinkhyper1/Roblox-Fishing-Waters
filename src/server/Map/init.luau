@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Lod = require(script.Lod)
+local Med = require(script.Mediterranean)
 local Regions = require(script.Regions)
 local Seabed = require(script.Seabed)
 local SeabedDetails = require(script.SeabedDetails)
@@ -167,8 +168,9 @@ function Map.build(onHarbourReady: ((Folder) -> ())?, onStage: ((string, number)
 	return root
 end
 
--- Update the streaming policy even when existing shells were baked in Studio.
+-- Update collision and streaming even when existing scenery was baked in Studio.
 function Map.prepareStreaming(root: Instance)
+	Med.ensureStoneWalls(root)
 	Lod.prepareStreaming(root)
 end
 

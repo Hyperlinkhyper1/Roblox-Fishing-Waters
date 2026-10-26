@@ -125,16 +125,34 @@ check(not pcall(BoatData.decode, { Version = 1, Cash = 0, OwnedBoats = {}, Equip
 -- Opening a crate: needs the rod and $350, pays once, adds one copy.
 local profile = BoatData.decode({ Version = 1, Cash = 1000, OwnedBoats = {}, OwnedRods = {} })
 profile.OwnedRods.StarterRod = nil
-check(BoatData.openRodCrate(profile, "TideCrate", "BoneRod") == "NoRod" and profile.Cash == 1000, "Crates need a rod")
+check(
+	BoatData.openRodCrate(profile, "TideCrate", "BoneRod", profile.NextRodSkinSerial["BoneRod"] or 1) == "NoRod"
+		and profile.Cash == 1000,
+	"Crates need a rod"
+)
 profile.OwnedRods.StarterRod = true
-check(BoatData.openRodCrate(profile, "TideCrate", "Bogus") == "UnknownCrate", "Skins must come from the crate")
-check(BoatData.openRodCrate(profile, "Nope", "BoneRod") == "UnknownCrate", "Unknown crates are refused")
-check(BoatData.openRodCrate(profile, "TideCrate", "BoneRod") == "Opened", "A crate opens")
+check(
+	BoatData.openRodCrate(profile, "TideCrate", "Bogus", profile.NextRodSkinSerial["Bogus"] or 1) == "UnknownCrate",
+	"Skins must come from the crate"
+)
+check(
+	BoatData.openRodCrate(profile, "Nope", "BoneRod", profile.NextRodSkinSerial["BoneRod"] or 1) == "UnknownCrate",
+	"Unknown crates are refused"
+)
+check(
+	BoatData.openRodCrate(profile, "TideCrate", "BoneRod", profile.NextRodSkinSerial["BoneRod"] or 1) == "Opened",
+	"A crate opens"
+)
 check(profile.Cash == 650 and profile.RodSkins.BoneRod == 1, "A crate costs $350 and adds the skin")
 check(profile.Angler.Stats.CoinsSpent == 350, "Crate spend counts as coins spent")
-BoatData.openRodCrate(profile, "TideCrate", "BoneRod")
+BoatData.openRodCrate(profile, "TideCrate", "BoneRod", profile.NextRodSkinSerial["BoneRod"] or 1)
 check(profile.RodSkins.BoneRod == 2 and profile.Cash == 300, "Duplicates stack")
-check(BoatData.openRodCrate(profile, "TideCrate", "BoneRod") == "InsufficientFunds" and profile.Cash == 300, "No debt")
+check(
+	BoatData.openRodCrate(profile, "TideCrate", "BoneRod", profile.NextRodSkinSerial["BoneRod"] or 1)
+			== "InsufficientFunds"
+		and profile.Cash == 300,
+	"No debt"
+)
 local roundTrip = BoatData.decode(profile)
 check(roundTrip.RodSkins.BoneRod == 2, "Skin counts save")
 check(
@@ -143,7 +161,8 @@ check(
 )
 check(roundTrip.NextRodSkinSerial.BoneRod == 3, "The next serial survives reload")
 roundTrip.Cash = 350
-local outcome, serial = BoatData.openRodCrate(roundTrip, "TideCrate", "MageStaff")
+local outcome, serial =
+	BoatData.openRodCrate(roundTrip, "TideCrate", "MageStaff", roundTrip.NextRodSkinSerial["MageStaff"] or 1)
 check(outcome == "Opened" and serial == 1, "A different skin starts its own serial sequence")
 local migrated = BoatData.decode({
 	Version = 1,
@@ -192,8 +211,10 @@ check(
 		and migratedReload.NextRodSkinSerial.BambooRod == 2,
 	"Migration is stable on reload"
 )
-local _, bambooSerial = BoatData.openRodCrate(migratedReload, "TideCrate", "BambooRod")
-local _, boneSerial = BoatData.openRodCrate(migratedReload, "TideCrate", "BoneRod")
+local _, bambooSerial =
+	BoatData.openRodCrate(migratedReload, "TideCrate", "BambooRod", migratedReload.NextRodSkinSerial["BambooRod"] or 1)
+local _, boneSerial =
+	BoatData.openRodCrate(migratedReload, "TideCrate", "BoneRod", migratedReload.NextRodSkinSerial["BoneRod"] or 1)
 check(bambooSerial == 2 and boneSerial == 3, "Opening one skin never advances another skin's sequence")
 local sparse = BoatData.decode({
 	Version = 1,
@@ -268,16 +289,19 @@ check(RodSkins.roll("NoveltyCrate", 0.999999, 0.999999) == "LightsaberRod", "Nov
 check(RodSkins.chance("NoveltyCrate", "MageStaff") == 0, "Old rewards cannot leak into Novelty Crate")
 local buyer = BoatData.decode({ Version = 1, Cash = 749, OwnedBoats = {} })
 check(
-	BoatData.openRodCrate(buyer, "NoveltyCrate", "LightsaberRod") == "InsufficientFunds",
+	BoatData.openRodCrate(buyer, "NoveltyCrate", "LightsaberRod", buyer.NextRodSkinSerial["LightsaberRod"] or 1)
+		== "InsufficientFunds",
 	"$749 cannot buy the new crate"
 )
 check(buyer.Cash == 749 and not buyer.RodSkins.LightsaberRod, "Failed purchase cannot change cash or inventory")
 buyer.Cash = 750
 check(
-	BoatData.openRodCrate(buyer, "TideCrate", "LightsaberRod") == "UnknownCrate",
+	BoatData.openRodCrate(buyer, "TideCrate", "LightsaberRod", buyer.NextRodSkinSerial["LightsaberRod"] or 1)
+		== "UnknownCrate",
 	"Cannot buy a new rod from the cheaper crate"
 )
-local bought, newSerial = BoatData.openRodCrate(buyer, "NoveltyCrate", "LightsaberRod")
+local bought, newSerial =
+	BoatData.openRodCrate(buyer, "NoveltyCrate", "LightsaberRod", buyer.NextRodSkinSerial["LightsaberRod"] or 1)
 check(bought == "Opened" and newSerial == 1 and buyer.Cash == 0, "New crate charges exactly $750")
 check(buyer.Angler.Stats.CoinsSpent == 750, "Novelty spend is recorded")
 check(BoatData.equipRodSkin(buyer, "LightsaberRod", newSerial) == "Equipped", "New reward can be equipped")
@@ -287,8 +311,8 @@ check(
 	"New reward and equip survive reload"
 )
 buyer.Cash = 1500
-BoatData.openRodCrate(buyer, "TideCrate", "BaguetteRod")
-BoatData.openRodCrate(buyer, "NoveltyCrate", "BaguetteRod")
+BoatData.openRodCrate(buyer, "TideCrate", "BaguetteRod", buyer.NextRodSkinSerial["BaguetteRod"] or 1)
+BoatData.openRodCrate(buyer, "NoveltyCrate", "BaguetteRod", buyer.NextRodSkinSerial["BaguetteRod"] or 1)
 check(
 	buyer.RodSkins.BaguetteRod == 2 and buyer.NextRodSkinSerial.BaguetteRod == 3,
 	"Baguette copies from either crate share saved ownership"
@@ -305,7 +329,7 @@ check(
 		and RodSkins.perks(RodSkins.GroupReward)[2] == "+7.5% big fish chance",
 	"Fractional percentages are not rounded to 8%"
 )
-local claim, groupSerial = BoatData.claimGroupRod(groupProfile)
+local claim, groupSerial = BoatData.claimGroupRod(groupProfile, 1)
 check(
 	claim == "Claimed" and groupSerial == 1 and groupProfile.GroupRodClaimed,
 	"First group claim awards a serial and receipt"
@@ -313,7 +337,7 @@ check(
 check(groupProfile.Cash == 0 and groupProfile.Angler.Stats.CoinsSpent == 0, "Group reward is free")
 groupProfile = BoatData.decode(groupProfile)
 check(
-	BoatData.claimGroupRod(groupProfile) == "AlreadyClaimed"
+	BoatData.claimGroupRod(groupProfile, 1) == "AlreadyClaimed"
 		and #groupProfile.RodSkinCopies == 1
 		and groupProfile.NextRodSkinSerial.TideboundRod == 2,
 	"Saved claims cannot duplicate rods or advance serials"
@@ -325,7 +349,7 @@ check(
 check(BoatData.decode(groupProfile).EquippedRodSkinSerial == groupSerial, "Group rod selection survives reload")
 groupProfile.GroupRodClaimed = nil
 check(
-	BoatData.claimGroupRod(groupProfile) == "AlreadyClaimed"
+	BoatData.claimGroupRod(groupProfile, 1) == "AlreadyClaimed"
 		and groupProfile.GroupRodClaimed
 		and #groupProfile.RodSkinCopies == 1,
 	"Existing group copy repairs a missing receipt without duplication"

@@ -10,7 +10,8 @@ local Staff = {
 		Porter = {
 			Name = "Porter",
 			Price = 400,
-			Description = "Carries fish from your boat to the freezer, one at a time. Park at your home dock to unload.",
+			Description = "Carries fish from docked boats to your freezer or storage, and restocks the freezer. "
+				.. "Upgrade his speed and the number of fish he carries per trip.",
 		},
 		-- Requires names the Paths stage that unlocks hiring.
 		Fisherman = {
@@ -22,6 +23,33 @@ local Staff = {
 		},
 	},
 }
+
+Staff.PorterUpgradeOrder = { "PorterSpeed", "PorterCapacity" }
+Staff.PorterUpgrades = {
+	PorterSpeed = {
+		Name = "Speed",
+		Unit = "studs/sec",
+		Values = { 16, 20, 24, 28, 32 },
+		Prices = { 600, 1500, 3500, 7500 },
+	},
+	PorterCapacity = {
+		Name = "Carry Capacity",
+		Unit = "fish/trip",
+		Values = { 1, 2, 3, 4, 5 },
+		Prices = { 600, 1500, 3500, 7500 },
+	},
+}
+
+function Staff.porterLevel(data, id: string): number
+	local upgrade = Staff.PorterUpgrades[id]
+	local level = data.Upgrades and data.Upgrades[id] or 0
+	return math.clamp(math.floor(level), 0, #upgrade.Prices)
+end
+
+function Staff.porterStats(data): (number, number)
+	return Staff.PorterUpgrades.PorterSpeed.Values[Staff.porterLevel(data, "PorterSpeed") + 1],
+		Staff.PorterUpgrades.PorterCapacity.Values[Staff.porterLevel(data, "PorterCapacity") + 1]
+end
 
 -- Fixed Marketplace uniforms keep each job recognizable. Account avatars can
 -- change independently of the game and bring unrelated logos or body packages.

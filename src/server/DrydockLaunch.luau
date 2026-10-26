@@ -22,7 +22,13 @@ local boats = {
 		builder = FishingBoat,
 	},
 	Speedboat = { previewName = "SpeedboatPreview", frameAttribute = "SpeedboatPreviewFrame", builder = Speedboat },
-	PatrolBoat = { previewName = "PatrolBoatPreview", frameAttribute = "PatrolBoatPreviewFrame", builder = PatrolBoat },
+	PatrolBoat = {
+		previewName = "PatrolBoatPreview",
+		frameAttribute = "PatrolBoatPreviewFrame",
+		builder = PatrolBoat,
+		-- Keep the enlarged stern ahead of the basin headwall; the bow overhangs the slipway.
+		launchOffset = CFrame.new(0, 0, -10.5),
+	},
 }
 
 local function marker(shop: Model, name: string): BasePart?
@@ -55,6 +61,8 @@ function DrydockLaunch.reserve(shop: Model, player: Player, boatId: string?)
 	then
 		return nil, "The drydock is not ready. Please try again shortly."
 	end
+	local launchOffset = spec.launchOffset or CFrame.new()
+	displayFrame *= launchOffset
 	-- Only the rowboat is displayed in the single basin. Other hulls are built
 	-- when purchased; the shop's viewport supplies their browsing previews.
 	if not preview then
@@ -77,9 +85,9 @@ function DrydockLaunch.reserve(shop: Model, player: Player, boatId: string?)
 		shop = shop,
 		player = player,
 		preview = preview,
-		start = start.CFrame,
+		start = start.CFrame * launchOffset,
 		railEnd = railEnd.CFrame,
-		finish = finish.CFrame,
+		finish = finish.CFrame * launchOffset,
 		cradle = cradle,
 		cradleStart = cradle:GetPivot(),
 		previewStart = preview:GetPivot(),
@@ -96,7 +104,7 @@ function DrydockLaunch.reserve(shop: Model, player: Player, boatId: string?)
 			rowPreview.Parent = nil
 		end
 	end
-	preview:PivotTo(start.CFrame * displayFrame:ToObjectSpace(reservation.previewStart))
+	preview:PivotTo(reservation.start * displayFrame:ToObjectSpace(reservation.previewStart))
 	preview:SetAttribute("BoatId", selectedId)
 	shop:SetAttribute("LaunchingUserId", player.UserId)
 	shop:SetAttribute("LaunchingBoatId", selectedId)

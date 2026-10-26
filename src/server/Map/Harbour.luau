@@ -10,6 +10,7 @@ local BaseHouse = require(script.Parent.BaseHouse)
 local BeachDetails = require(script.Parent.BeachDetails)
 local Drydock = require(script.Parent.Drydock)
 local FurnitureShop = require(script.Parent.FurnitureShop)
+local BackpackShop = require(script.Parent.BackpackShop)
 local Islands = require(script.Parent.Islands)
 local LowPoly = require(script.Parent.LowPoly)
 local Med = require(script.Parent.Mediterranean)
@@ -43,7 +44,8 @@ Harbour.FOOTPRINT = 820
 Harbour.BASE_TAG = "PlayerBase"
 
 -- Sea-facing coast, clockwise from the tip of the western arm round to the southern headland.
--- The north shore bulges past the sketch so the piazza keeps clear ground behind it.
+-- The north and east shores bulge past the sketch so the piazza and the eastern bases
+-- keep room for the road and a row or two of houses behind them.
 local OUTER = {
 	{ 430, 1340 },
 	{ 372, 1290 },
@@ -59,17 +61,17 @@ local OUTER = {
 	{ 950, 477 },
 	{ 1120, 510 },
 	{ 1270, 552 },
-	{ 1352, 600 },
-	{ 1405, 690 },
-	{ 1445, 800 },
-	{ 1475, 950 },
-	{ 1490, 1120 },
-	{ 1488, 1320 },
-	{ 1470, 1520 },
-	{ 1430, 1700 },
-	{ 1360, 1860 },
-	{ 1260, 1990 },
-	{ 1120, 2080 },
+	{ 1365, 600 },
+	{ 1430, 680 },
+	{ 1505, 790 },
+	{ 1565, 945 },
+	{ 1610, 1120 },
+	{ 1632, 1320 },
+	{ 1615, 1520 },
+	{ 1560, 1712 },
+	{ 1465, 1880 },
+	{ 1325, 2018 },
+	{ 1150, 2098 },
 	{ 950, 2130 },
 	{ 760, 2140 },
 	{ 580, 2110 },
@@ -933,7 +935,7 @@ end
 ----------------------------------------------------------------------------------------------------
 -- Player bases: a stone quay plot on the shore with two piers reaching into the bay
 
-local DOCK_DETAIL_VERSION = 1
+local DOCK_DETAIL_VERSION = 2
 
 local function ensureDockAccess(base: Model, frame: CFrame)
 	local existing = base:FindFirstChild("DockAccess")
@@ -1343,6 +1345,7 @@ local function buildPlaza(parent: Instance, center: Vector2, rng: Random)
 	Drydock.build(model, CFrame.new(at(0, 0, 0.8)))
 	RodShop.build(model, CFrame.new(at(0, 0, 0.8)))
 	FurnitureShop.build(model, CFrame.new(at(0, 0, 0.8)))
+	BackpackShop.build(model, CFrame.new(at(0, 0, 0.8)))
 end
 
 local HOUSE_HALF = { cube = 14, town = 10, villa = 15, green = 9 } -- half the frontage along the street
@@ -1825,6 +1828,7 @@ function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	-- The piazza's own terraces go in last, clearing any generated house or tree off their plots
 	PlazaHouses.build(village:FindFirstChild("Plaza") :: Model, CFrame.new(ground(plaza, 0.8)))
 	buildBoats(shape, island, rng, baseShores)
+	Harbour.ensureBaseOneBoatClearance(island)
 	Harbour.ensureLaunchClearance(island)
 
 	-- Buoys marking the way into the bay
@@ -1878,6 +1882,65 @@ function Harbour.ensureDocks(root: Instance)
 			end
 		end
 		buildBaseDocks(base, frame, base:GetAttribute("BaseId") or 1)
+	end
+end
+
+-- Remove the red scenery boat and the remaining boat in front of base 1,
+-- including on baked maps. Each removal has its own saved migration marker.
+-- Run after generation so the shared RNG and all other scenery stay in place.
+function Harbour.ensureBaseOneBoatClearance(root: Instance)
+	local islands = root:GetDescendants()
+	table.insert(islands, root)
+	for _, island in islands do
+		if island.Name ~= "Harbour Isle" then
+			continue
+		end
+		local bases = island:FindFirstChild("Bases")
+		local base = bases and bases:FindFirstChild("Base1")
+		local frame = base and base:GetAttribute("BoatDockFrame")
+		local boats = island:FindFirstChild("Boats")
+		if typeof(frame) ~= "CFrame" or not boats then
+			continue
+		end
+		for _, marker in { "BaseOneRedBoatRemoved", "BaseOneFrontBoatRemoved" } do
+			if island:GetAttribute(marker) then
+				continue
+			end
+			local nearest: Model? = nil
+			local distance = 220
+			for _, boat in boats:GetChildren() do
+				if not boat:IsA("Model") or boat.Name ~= "Boat" then
+					continue
+				end
+				local floor = boat:FindFirstChild("BoatFloor")
+				local red = false
+				for _, piece in boat:GetChildren() do
+					if piece:IsA("BasePart") then
+						red = red or piece.Color == BOATS[2]
+						-- Legacy baked boats have an unnamed floor.
+						if
+							not floor
+							and math.abs(piece.Size.Y - 0.4) < 0.001
+							and piece.Size.X >= 4.6
+							and piece.Size.X <= 5.6
+						then
+							floor = piece
+						end
+					end
+				end
+				if (marker == "BaseOneFrontBoatRemoved" or red) and floor and floor:IsA("BasePart") then
+					local position = frame:PointToObjectSpace(floor.Position)
+					local separation = Vector2.new(position.X, position.Z).Magnitude
+					if position.Z < 0 and separation < distance then
+						nearest, distance = boat, separation
+					end
+				end
+			end
+			if nearest then
+				nearest:Destroy()
+				island:SetAttribute(marker, true)
+			end
+		end
 	end
 end
 
@@ -1937,6 +2000,7 @@ function Harbour.ensureBoating(root: Instance)
 		end
 	end
 	Harbour.ensureDocks(root)
+	Harbour.ensureBaseOneBoatClearance(root)
 	Drydock.ensure(root)
 	Harbour.ensureLaunchClearance(root)
 end
@@ -1945,6 +2009,7 @@ end
 function Harbour.ensureFishing(root: Instance)
 	RodShop.ensure(root)
 	FurnitureShop.ensure(root)
+	BackpackShop.ensure(root)
 
 	PlazaHouses.ensure(root)
 end

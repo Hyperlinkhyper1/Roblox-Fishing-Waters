@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local TextChatService = game:GetService("TextChatService")
 
 local BoatData = require(script.Parent.BoatData)
+local RodSerials = require(script.Parent.RodSerials)
 local AdminCommands = require(script.Parent.AdminCommands)
 local Rowboat = require(script.Parent.Rowboat)
 local FishingBoat = require(script.Parent.FishingBoat)
@@ -136,7 +137,7 @@ function BoatService.getProfile(player: Player)
 	return if state and state.status == "Ready" then BoatData.decode(state.profile) else nil
 end
 
-function BoatService.updateProgress(player: Player, transform): (boolean, string)
+function BoatService.updateProgress(player: Player, transform, rodSkinId: string?): (boolean, string)
 	local state = profiles[player]
 	if not state or state.status ~= "Ready" then
 		return false, "Your progress is still loading or unavailable."
@@ -147,10 +148,16 @@ function BoatService.updateProgress(player: Player, transform): (boolean, string
 	state.busy = true
 	local awardedAt = os.time()
 	local success, saved = pcall(function()
+		assert(rodSkinId == nil or RodSkins.valid(rodSkinId), "Unknown serial skin")
+		local serial = if rodSkinId then RodSerials.reserve(store, rodSkinId) else nil
+		if profiles[player] ~= state or player.Parent ~= Players then
+			error("This session has ended")
+		end
 		return store:UpdateAsync("Player_" .. player.UserId, function(raw)
 			local profile = BoatData.decode(raw)
+			assert(profile.RodSerialScope == RodSerials.Scope, "Rod serial migration is required")
 			local previous = BoatData.decode(profile)
-			transform(profile)
+			transform(profile, serial)
 			BoatData.trackProgress(previous, profile, awardedAt)
 			return BoatData.decode(profile)
 		end)
@@ -177,7 +184,9 @@ local function loadPlayer(player: Player)
 	publish(player, state)
 	for attempt = 1, 3 do
 		local success, result = pcall(function()
-			return BoatData.decode(store:GetAsync("Player_" .. player.UserId))
+			local key = "Player_" .. player.UserId
+			local loaded = BoatData.decode(store:GetAsync(key))
+			return RodSerials.migrate(store, key, loaded)
 		end)
 		if profiles[player] ~= state then
 			return

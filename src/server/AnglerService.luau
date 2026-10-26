@@ -5,7 +5,9 @@ local Data = require(script.Parent.AnglerData)
 local GamepassService = require(script.Parent.GamepassService)
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local BackpackCatalog = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
+local FishingRanks = require(ReplicatedStorage.Shared.FishingRanks)
 local Paths = require(ReplicatedStorage.Shared.Paths)
 local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
@@ -28,9 +30,11 @@ function Service.recordCatch(
 	local caughtAt = os.time()
 	local ownsAutoStore = GamepassService.ownsAutoStore(player)
 	local autoStored = false
+	local destination
 	local ok, message = BoatService.updateProgress(player, function(profile)
 		local emptyHand = profile.Angler.Hand == nil
-		profile.Angler = Data.recordCatch(
+		local backpackLayout = BackpackCatalog.Items[profile.Angler.BackpackId] or BackpackCatalog.Items.Starter
+		profile.Angler, destination = Data.recordCatch(
 			profile.Angler,
 			fishId,
 			mutation,
@@ -40,7 +44,8 @@ function Service.recordCatch(
 			Catalog.Fish,
 			Catalog.Mutations,
 			size,
-			traits
+			traits,
+			backpackLayout
 		)
 		autoStored = false
 		if ownsAutoStore and emptyHand then
@@ -50,8 +55,11 @@ function Service.recordCatch(
 				profile.Angler, autoStored = Data.autoStore(profile.Angler, boatId, layout, Catalog.Fish)
 			end
 		end
+		if autoStored then
+			destination = "Boat"
+		end
 	end)
-	return ok, message, ok and autoStored
+	return ok, message, ok and autoStored, if ok then destination else nil
 end
 
 function Service.start()
@@ -111,6 +119,34 @@ function Service.start()
 				if key == "Fisherman" then
 					message ..= " Assign him a boat below."
 				end
+			end
+		elseif action == "UpgradePorter" then
+			local upgrade = if type(key) == "string" then StaffCatalog.PorterUpgrades[key] else nil
+			if not upgrade then
+				return { Ok = false, Message = "Choose a porter upgrade from the Workers tab." }
+			elseif not profile.Angler.Staff.Porter then
+				return { Ok = false, Message = "Hire a porter first." }
+			end
+			local level = StaffCatalog.porterLevel(profile.Angler, key)
+			local price = upgrade.Prices[level + 1]
+			if not price then
+				return { Ok = false, Message = "Porter " .. upgrade.Name .. " is already at maximum level." }
+			elseif value ~= level then
+				return { Ok = false, Message = "This upgrade changed. Select the next level again." }
+			elseif profile.Cash < price then
+				return { Ok = false, Message = "You need $" .. price .. " for this upgrade." }
+			end
+			ok, message = BoatService.updateProgress(player, function(current)
+				assert(current.Angler.Staff.Porter, "Hire a porter first")
+				assert(StaffCatalog.porterLevel(current.Angler, key) == level, "Upgrade level changed")
+				assert(current.Cash >= price, "Not enough cash for this upgrade")
+				current.Cash -= price
+				current.Angler.Stats.CoinsSpent += price
+				current.Angler.Upgrades[key] = level + 1
+			end)
+			if ok then
+				message =
+					string.format("Porter %s upgraded to %d %s!", upgrade.Name, upgrade.Values[level + 2], upgrade.Unit)
 			end
 		elseif action == "ChoosePath" then
 			local problem = Paths.chooseProblem(profile, key)
@@ -174,7 +210,7 @@ function Service.start()
 			Ok = ok,
 			Message = message,
 			Profile = current,
-			FreezerCapacity = if current then Data.freezerCapacity(current.Angler) else Data.FREEZER_CAPACITY,
+			FreezerUsage = if current then Data.freezerUsage(current.Angler) else 0,
 			PantryCapacity = if current then Data.pantryCapacity(current.Angler) else 0,
 		}
 	end
@@ -185,25 +221,41 @@ function Service.start()
 			if not head then
 				return
 			end
-			local previous = head:FindFirstChild("AnglerTitle")
-			if previous then
-				previous:Destroy()
-			end
 			local current = BoatService.getProfile(player)
 			local title = current and Catalog.Titles[current.Angler.EquippedTitle]
-			if not title or not current.Angler.Titles[current.Angler.EquippedTitle] then
-				return
+			local level = math.max(0, math.floor(player:GetAttribute("Level") or 0))
+			local rank = FishingRanks.forLevel(level)
+			local billboard = head:FindFirstChild("AnglerTitle")
+			if not billboard then
+				billboard = Instance.new("BillboardGui")
+				billboard.Name, billboard.Size = "AnglerTitle", UDim2.fromOffset(360, 84)
+				billboard.StudsOffset, billboard.MaxDistance = Vector3.new(0, 2.5, 0), 80
+				billboard.Adornee = head
+				for _, row in { { "Title", 0, 24 }, { "Rank", 24, 30 }, { "PlayerName", 54, 30 } } do
+					local label = Instance.new("TextLabel")
+					label.Name = row[1]
+					label.Position, label.Size = UDim2.fromOffset(0, row[2]), UDim2.new(1, 0, 0, row[3])
+					label.BackgroundTransparency = 1
+					label.Font = if row[1] == "Rank" then Enum.Font.SourceSansBold else Enum.Font.SourceSans
+					label.TextSize, label.TextColor3 = 24, Color3.new(1, 1, 1)
+					label.TextStrokeColor3, label.TextStrokeTransparency = Color3.new(0, 0, 0), 0
+					label.Parent = billboard
+				end
+				local titleLabel = billboard.Title
+				titleLabel.Font, titleLabel.TextSize = Enum.Font.GothamBold, 15
+				Theme.text(titleLabel)
+				billboard.Parent = head
 			end
-			local billboard = Instance.new("BillboardGui")
-			billboard.Name, billboard.Size = "AnglerTitle", UDim2.fromOffset(220, 28)
-			billboard.StudsOffset, billboard.MaxDistance = Vector3.new(0, 2.8, 0), 80
-			local label = Instance.new("TextLabel")
-			label.Size, label.BackgroundTransparency = UDim2.fromScale(1, 1), 1
-			label.Font, label.TextSize, label.Text = Enum.Font.GothamBold, 15, title.Name
-			Theme.text(label)
-			label.Parent, billboard.Parent = billboard, head
+			billboard.Rank.Text = string.format("[%d] %s", level, rank.Name)
+			billboard.Rank.TextColor3 = rank.Color
+			billboard.PlayerName.Text = player.DisplayName
+			local hasTitle = title ~= nil and current.Angler.Titles[current.Angler.EquippedTitle] == true
+			billboard.Title.Visible = hasTitle
+			billboard.Title.Text = if hasTitle then title.Name else ""
 		end
 		player:GetAttributeChangedSignal("AnglerRevision"):Connect(updateTitle)
+		player:GetAttributeChangedSignal("Level"):Connect(updateTitle)
+		player:GetPropertyChangedSignal("DisplayName"):Connect(updateTitle)
 		local function characterAdded(character)
 			local humanoid = character:WaitForChild("Humanoid", 10)
 			if not humanoid then
@@ -213,6 +265,8 @@ function Service.start()
 			if player.Character ~= character then
 				return
 			end
+			-- The custom name row replaces Roblox's default overhead display.
+			humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 			updateTitle()
 			humanoid.Died:Once(function()
 				-- Retry a concurrent purchase without discarding a death or resetting saved progress.

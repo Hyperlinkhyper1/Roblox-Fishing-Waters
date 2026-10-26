@@ -564,6 +564,7 @@ local SkinData = (function()
 	-- REAL_BOAT_DATA_SOURCE --
 end)()
 dependencies.BoatData.openRodCrate = SkinData.openRodCrate
+dependencies.BoatData.canOpenRodCrate = SkinData.canOpenRodCrate
 dependencies.BoatData.equipRodSkin = SkinData.equipRodSkin
 dependencies.BoatData.claimGroupRod = SkinData.claimGroupRod
 dependencies.BoatData.openBobberCrate = SkinData.openBobberCrate
@@ -571,14 +572,20 @@ dependencies.BoatData.equipBobberSkin = SkinData.equipBobberSkin
 local storedSkins = SkinData.decode(nil)
 storedSkins.OwnedRods.StarterRod, storedSkins.Cash = true, 1400
 local failSkinSave, skinSaves = false, 0
+local serialCounters = {}
 dependencies.BoatService.getProfile = function()
 	return SkinData.decode(storedSkins)
 end
-dependencies.BoatService.updateProgress = function(player, transform)
+dependencies.BoatService.updateProgress = function(player, transform, rodSkinId)
 	skinSaves += 1
-	transform(SkinData.decode(storedSkins)) -- discarded UpdateAsync attempt
+	local reservedSerial
+	if rodSkinId then
+		reservedSerial = (serialCounters[rodSkinId] or 0) + 1
+		serialCounters[rodSkinId] = reservedSerial
+	end
+	transform(SkinData.decode(storedSkins), reservedSerial) -- discarded UpdateAsync attempt
 	local nextProfile = SkinData.decode(storedSkins)
-	transform(nextProfile)
+	transform(nextProfile, reservedSerial)
 	if failSkinSave then
 		return false, "Save failed"
 	end
@@ -676,11 +683,11 @@ send(loading, "ClaimGroupReward")
 check(
 	storedSkins.GroupRodClaimed
 		and storedSkins.RodSkins.TideboundRod == 1
-		and storedSkins.NextRodSkinSerial.TideboundRod == 2,
+		and storedSkins.NextRodSkinSerial.TideboundRod == 3,
 	"Retried transaction commits exactly one group rod"
 )
 check(
-	string.find(feedback.messages[#feedback.messages].values[2], "Serial #000001", 1, true),
+	string.find(feedback.messages[#feedback.messages].values[2], "Serial #000002", 1, true),
 	"Successful claim reports the committed serial"
 )
 savesBeforeGroup = skinSaves

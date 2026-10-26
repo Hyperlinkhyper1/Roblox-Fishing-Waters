@@ -42,11 +42,19 @@ end
 Data.XP_PER_CATCH = 100
 Data.XP_LEVEL_STEP = 1000
 Data.WEEK_SECONDS = 7 * 24 * 60 * 60
--- Every catch lands in the angler's hand, which holds one fish; a catch made with
--- full hands is released. From the hand a fish goes into a boat's cargo hold or
--- the shop freezer, where customers buy it. Cooler only holds fish saved before
+-- Catches land in the angler's hand, which holds one fish; with full hands,
+-- gameplay packs the next catch into the backpack when it fits. From the hand,
+-- fish go into a boat's cargo hold or the shop freezer. Cooler holds fish saved before
 -- the cargo hold existed.
-Data.FREEZER_CAPACITY = 4
+local FreezerPacking, FreezerModels
+local function freezerModules()
+	if not FreezerPacking then
+		local shared = game:GetService("ReplicatedStorage").Shared
+		FreezerPacking = require(shared.FreezerPacking)
+		FreezerModels = require(shared.FishModels)
+	end
+	return FreezerPacking, FreezerModels
+end
 -- Bought furniture waits in FurnitureStock until build mode places it in the
 -- house (Furniture). Storage racks hold overflow fish (Storage) that customers
 -- never see; only freezers stock the shop.
@@ -197,6 +205,7 @@ function Data.decode(raw)
 			"Cooler",
 			"Freezer",
 			"Holds",
+			"Backpack",
 			"Staff",
 			"FurnitureStock",
 			"Furniture",
@@ -303,6 +312,16 @@ function Data.decode(raw)
 			"Invalid furniture"
 		)
 	end
+	data.BackpackId = data.BackpackId or "Starter"
+	assert(type(data.BackpackId) == "string", "Invalid backpack")
+	for index, item in data.Backpack do
+		assert(type(index) == "number" and itemValid(item) and item.PartId == nil, "Invalid backpack fish")
+	end
+	-- Preserve the old 12-cell starter grid when it already contains saved fish.
+	if data.BackpackVersion == nil and data.BackpackId == "Starter" and #data.Backpack > 0 then
+		data.BackpackId = "Cooler"
+	end
+	data.BackpackVersion = 2
 	assert(data.Hand == nil or recordValid(data.Hand), "Invalid fish in hand")
 	-- Placement is checked when items move, not here, so a later hull change can
 	-- never make a saved profile unreadable.
@@ -359,7 +378,9 @@ local function catchRecord(fishId, mutation, kg, value, caughtAt, species, mutat
 	return record
 end
 
-function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size, traits)
+-- Gameplay supplies the owned backpack layout. Returns the catch's destination
+-- so identical fish already in hand cannot be mistaken for the new catch.
+function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size, traits, backpackLayout)
 	assert(type(fishId) == "string" and species[fishId], "Unknown fish")
 	local catchXP = species[fishId].CatchXP or Data.XP_PER_CATCH
 	assert(number(catchXP, true) and catchXP > 0, "Invalid catch XP")
@@ -370,8 +391,16 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 	entry.Count += 1
 	entry.BiggestKg = math.max(entry.BiggestKg, kg)
 	entry.Mutations[mutation] = (entry.Mutations[mutation] or 0) + 1
+	local destination = "Released"
 	if data.Hand == nil then
 		data.Hand = copy(record)
+		destination = "Hand"
+	elseif backpackLayout then
+		local spot = cargo().bestSpot(backpackLayout.Hold, data.Backpack, { Fish = record }, species)
+		if spot then
+			table.insert(data.Backpack, { Fish = copy(record), X = spot.X, Y = spot.Y, R = spot.R })
+			destination = "Backpack"
+		end
 	end
 	data.Stats.TotalCaught += 1
 	data.Stats.TotalXP += catchXP
@@ -382,7 +411,7 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 			data.Findings[key] = copy(record)
 		end
 	end
-	return data
+	return data, destination
 end
 
 -- Repack an old wide patrol hold once. Install the larger engine first, then
@@ -420,10 +449,11 @@ end
 -- Moves one fish or boat part. `from` is "Hand" or an index into the hold; `to` is
 -- "Hand", "Release" (back into the water) or { X, Y, R } in the hold. `layout` is
 -- the boat's catalog entry, or nil when no hold is in reach. Returns nil and a
--- player-facing reason when the move is not allowed.
-function Data.moveCargo(raw, boatId, layout, from, to, species)
+-- player-facing reason when the move is not allowed. With backpack=true, the
+-- same placement rules operate on Backpack using its catalog layout.
+function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 	local data = Data.decode(raw)
-	local items = if layout then Data.hold(data, boatId, layout) else nil
+	local items = if backpack then data.Backpack elseif layout then Data.hold(data, boatId, layout) else nil
 	local item, index
 	if from == "Hand" then
 		if not data.Hand then
@@ -446,7 +476,11 @@ function Data.moveCargo(raw, boatId, layout, from, to, species)
 		if index then
 			table.remove(items, index)
 		end
-		data.Hand = if to == "Hand" then item.Fish else nil
+		if to == "Hand" then
+			data.Hand = item.Fish
+		elseif from == "Hand" then
+			data.Hand = nil
+		end
 	elseif type(to) == "table" then
 		if not items then
 			return nil, "Your boat's hold is out of reach."
@@ -470,7 +504,9 @@ function Data.moveCargo(raw, boatId, layout, from, to, species)
 	else
 		return nil, "That item can't go there."
 	end
-	if items then
+	if backpack then
+		data.Backpack = items
+	elseif items then
 		data.Holds[boatId] = items
 	end
 	return Data.decode(data)
@@ -502,9 +538,39 @@ local function placed(raw, itemId)
 	return count
 end
 
--- The built-in freezer plus every placed one.
-function Data.freezerCapacity(raw)
-	return Data.FREEZER_CAPACITY * (1 + placed(raw, "Freezer"))
+-- The built-in cooler and every placed cooler share one packing rule.
+function Data.freezerCount(raw)
+	return 1 + placed(raw, "Freezer")
+end
+
+local freezerLayouts = setmetatable({}, { __mode = "k" })
+function Data.freezerLayout(raw, extra)
+	local packing, models = freezerModules()
+	local count = Data.freezerCount(raw)
+	local frozen = raw.Freezer or {}
+	local cached = freezerLayouts[frozen]
+	if not extra and cached and cached.Count == count and cached.Length == #frozen then
+		return cached.Layout, cached.Fits, cached.Used
+	end
+	local records = table.clone(frozen)
+	if extra then
+		table.insert(records, extra)
+	end
+	local layout, fits, used = packing.layout(records, count, models.catchBounds)
+	if not extra then
+		freezerLayouts[frozen] = { Count = count, Length = #frozen, Layout = layout, Fits = fits, Used = used }
+	end
+	return layout, fits, used
+end
+
+function Data.canFreeze(raw, record)
+	local _, fits = Data.freezerLayout(raw, record)
+	return fits
+end
+
+function Data.freezerUsage(raw)
+	local _, fits, used = Data.freezerLayout(raw)
+	return if fits then math.clamp(math.floor(used * 100 + 0.5), 0, 100) else 100
 end
 
 function Data.storageCapacity(raw)
@@ -528,7 +594,7 @@ end
 function Data.stockFreezer(raw)
 	local data = Data.decode(raw)
 	local moved = 0
-	if data.Hand and #data.Freezer < Data.freezerCapacity(data) then
+	if data.Hand and Data.canFreeze(data, data.Hand) then
 		table.insert(data.Freezer, data.Hand)
 		data.Hand = nil
 		moved += 1
@@ -553,8 +619,12 @@ function Data.unloadFish(raw, boatId, index, record, toStorage)
 	local items = data.Holds[boatId]
 	local item = items and items[index]
 	local shelf = if toStorage then data.Storage else data.Freezer
-	local capacity = if toStorage then Data.storageCapacity(data) else Data.freezerCapacity(data)
-	if #shelf >= capacity or not item or not item.Fish or not sameFish(item.Fish, record) then
+	if not item or not item.Fish or not sameFish(item.Fish, record) then
+		return nil
+	end
+	if
+		(toStorage and #shelf >= Data.storageCapacity(data)) or (not toStorage and not Data.canFreeze(data, item.Fish))
+	then
 		return nil
 	end
 	table.insert(shelf, item.Fish)
@@ -593,7 +663,7 @@ end
 -- A porter moves one stored fish into a freezer with room.
 function Data.restockFish(raw, record)
 	local data = Data.decode(raw)
-	if #data.Freezer >= Data.freezerCapacity(data) then
+	if not Data.canFreeze(data, record) then
 		return nil
 	end
 	for index, stored in data.Storage do
@@ -666,7 +736,7 @@ function Data.pickUpFurniture(raw, index)
 		return nil, "That furniture is no longer placed."
 	end
 	table.remove(data.Furniture, index)
-	if #data.Freezer > Data.freezerCapacity(data) then
+	if entry.ItemId == "Freezer" and not Data.canFreeze(data) then
 		return nil, "Sell some fish first. They wouldn't fit in your other freezers."
 	elseif #data.Storage > Data.storageCapacity(data) then
 		return nil, "Take some fish off your racks first."
@@ -817,7 +887,8 @@ function Data.fishermanCatch(raw, boatId, layout, roll, caughtAt, species, mutat
 	local data = Data.decode(raw)
 	local traits = roll.Traits or {}
 	local mutation = traits.Mutation or "Normal"
-	local record = catchRecord(roll.FishId, mutation, roll.Kg, roll.Value, caughtAt, species, mutations, roll.Size, traits)
+	local record =
+		catchRecord(roll.FishId, mutation, roll.Kg, roll.Value, caughtAt, species, mutations, roll.Size, traits)
 	local items = Data.hold(data, boatId, layout)
 	local placement = cargo().bestSpot(layout.Hold, items, { Fish = record }, species)
 	if not placement then

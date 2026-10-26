@@ -20,7 +20,13 @@ function NpcNavigation.clearance(npc): number
 	return math.max(2, math.ceil(math.max(torso.Size.X, torso.Size.Z, npc.root.Size.Z) / 2))
 end
 
-function NpcNavigation.walk(npc, target: Vector3, allowed: (() -> boolean)?, stayOnGround: boolean?): boolean
+function NpcNavigation.walk(
+	npc,
+	target: Vector3,
+	allowed: (() -> boolean)?,
+	stayOnGround: boolean?,
+	straight: boolean?
+): boolean
 	local humanoid, root = npc.humanoid, npc.root
 	local function valid(): boolean
 		return npc.active
@@ -133,16 +139,26 @@ function NpcNavigation.walk(npc, target: Vector3, allowed: (() -> boolean)?, sta
 			elseif os.clock() - progressAt >= STUCK_SECONDS then
 				break
 			end
-			if distance < 2 then
-				-- MoveTo stops about one stud early. Finish corners precisely so
-				-- the next segment cannot shave across a wall or door jamb.
-				local delta = Vector3.new(position.X - root.Position.X, 0, position.Z - root.Position.Z)
-				humanoid:Move(delta.Unit * math.min(1, distance / math.max(1, humanoid.WalkSpeed * POLL_SECONDS)))
-			end
+			-- Refresh steering every tick, including after an overshoot or shove.
+			-- Leaving the previous Move active beyond the two-stud finish zone
+			-- sends a rig away from the waypoint until the stuck timeout expires.
+			local delta = Vector3.new(position.X - root.Position.X, 0, position.Z - root.Position.Z)
+			humanoid:Move(delta.Unit * math.min(1, distance / math.max(1, humanoid.WalkSpeed * POLL_SECONDS * 2)))
 			task.wait(POLL_SECONDS)
 		end
 		stop()
 		return valid() and not blocked() and arrived(position, radius)
+	end
+	if straight then
+		-- Known dock centerlines already describe the safe corridor. A navmesh
+		-- detour or sideways recovery can cut across the water at a junction.
+		if not valid() then
+			stop()
+			return false
+		end
+		return follow(target, CORNER_RADIUS, deadline, function()
+			return false
+		end)
 	end
 	local function recover(position: Vector3)
 		-- A new path from exactly the same jammed position often repeats the

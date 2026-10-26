@@ -8,6 +8,7 @@ const cargo = await read('src/shared/Cargo.luau');
 const data = (await read('src/server/AnglerData.luau')).replace(
   'local Cargo\n', 'local Cargo = Grid\n');
 const passes = await read('src/shared/Gamepasses.luau');
+const backpacks = await read('src/shared/BackpackCatalog.luau');
 let ownership = await read('src/server/GamepassService.luau');
 ownership = ownership.replace('require(game:GetService("ReplicatedStorage").Shared.Gamepasses)', 'Passes');
 let angler = await read('src/server/AnglerService.luau');
@@ -16,6 +17,8 @@ for (const [expression, replacement] of [
   ['script.Parent.GamepassService', 'Ownership'], ['ReplicatedStorage.Shared.Aboard', 'aboard'],
   ['ReplicatedStorage.Shared.BoatCatalog', 'layouts'], ['ReplicatedStorage.Shared.AnglerCatalog', 'catalog'],
   ['ReplicatedStorage.Shared.StaffCatalog', '{}'], ['ReplicatedStorage.Shared.Paths', '{}'],
+  ['ReplicatedStorage.Shared.FishingRanks', '{}'],
+  ['ReplicatedStorage.Shared.BackpackCatalog', 'Backpacks'],
   ['game:GetService("ReplicatedFirst"):WaitForChild("UITheme")', '{}'],
 ]) angler = angler.replace('require(' + expression + ')', replacement);
 
@@ -25,6 +28,7 @@ local function check(value, message) checks += 1 assert(value, message) end
 local Grid = (function() ${cargo} end)()
 local Data = (function() ${data} end)()
 local Passes = (function() ${passes} end)()
+local Backpacks = (function() ${backpacks} end)()
 check(Passes.AutoStore.Id == 3722004182, "Correct pass ID")
 local function signal()
  local callbacks = {}
@@ -110,12 +114,48 @@ local ok, _, stored = catch(buyer)
 check(ok and not stored and profile.Angler.Hand ~= nil, "Full hold keeps catch in hand")
 check(#profile.Angler.Holds.TestBoat == 2, "Full hold does not overlap or lose fish")
 local existing = profile.Angler.Hand
-catch(buyer)
+local destination
+ok, _, stored, destination = catch(buyer)
+check(ok and not stored and destination == "Backpack", "Full hand automatically sends next catch to backpack")
 check(profile.Angler.Hand.Kg == existing.Kg and #profile.Angler.Holds.TestBoat == 2, "Full hand does not move old fish")
+check(#profile.Angler.Backpack == 1, "New catch is retained once in the backpack")
 saveFails = true
 local before = profile.Angler.Stats.TotalCaught
 ok, _, stored = catch(buyer)
 check(not ok and not stored and profile.Angler.Stats.TotalCaught == before, "Failed save reports no auto store")
+saveFails = false
+-- Backpack overflow works on land without the pass and preserves every trait.
+onBoat, active = false, false
+profile = { Angler = Data.decode(nil) }
+ok, _, stored, destination = catch(nonOwner)
+check(ok and not stored and destination == "Hand", "First catch still lands in hand")
+existing = profile.Angler.Hand
+local traits = { NeonColor = "Blue", Corruptions = { "VoidTouched" } }
+ok, _, stored, destination = Angler.recordCatch(nonOwner, "Test", "Normal", 2, 99, "Normal", traits)
+local packed = profile.Angler.Backpack[1].Fish
+check(ok and not stored and destination == "Backpack", "Backpack needs neither boat nor gamepass")
+check(profile.Angler.Hand.Kg == existing.Kg and packed.Kg == 2 and packed.Value == 99, "Original hand and new catch stay distinct")
+check(packed.NeonColor == "Blue" and packed.Corruptions[1] == "VoidTouched", "Packed catch retains mutation traits")
+check(profile.Angler.Stats.TotalCaught == 2 and profile.Angler.Stats.TotalXP == 200, "Packed catch earns rewards exactly once")
+local snapshot = Data.decode(profile.Angler)
+ok, _, stored, destination = catch(nonOwner)
+check(#snapshot.Backpack == 1 and #profile.Angler.Backpack == 2, "Packing does not mutate previous saved state")
+profile.Angler.Backpack = {}
+for y, row in Backpacks.Items.Starter.Hold do for x = 1, #row, 2 do
+ table.insert(profile.Angler.Backpack, { Fish = packed, X = x, Y = y, R = 0 })
+end end
+local fullCount = #profile.Angler.Backpack
+ok, _, stored, destination = catch(nonOwner)
+check(ok and not stored and destination == "Released" and #profile.Angler.Backpack == fullCount and profile.Angler.Hand.Kg == 1,
+ "Full backpack releases only the new catch and reports the right destination even for identical fish")
+profile.Angler.BackpackId = "Angler"
+ok, _, stored, destination = catch(nonOwner)
+check(ok and destination == "Backpack" and #profile.Angler.Backpack == fullCount + 1, "Uses upgraded backpack capacity")
+local empty = Data.decode(nil)
+empty.Hand = existing
+local rotated, placed = Data.recordCatch(empty, "Test", "Normal", 1, 10, 1, catalog.Fish, catalog.Mutations,
+ "Normal", {}, { Hold = { "#", "#" } })
+check(placed == "Backpack" and rotated.Backpack[1].R % 2 == 1, "Auto packing rotates a catch to fit")
 -- Compare with an exhaustive fit oracle across every occupancy of a small irregular hold.
 local mask = { ".##", "###", "##." }
 local positions = {}

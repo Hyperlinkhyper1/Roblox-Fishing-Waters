@@ -1,3 +1,4 @@
+import { freezerRuntime, injectFreezer } from './freezer-test-runtime.mjs';
 // Executes production worker transactions with recording world/store doubles.
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,9 +15,11 @@ function section(start, end) {
   return source.slice(first, last);
 }
 let program = await readFile(join(root, 'scripts/home-staff.luau'), 'utf8');
-program = program.replace('-- DATA_SOURCE --', await readFile(join(root, 'src/server/AnglerData.luau'), 'utf8'))
+program = program.replace('-- DATA_SOURCE --', injectFreezer(await readFile(join(root, 'src/server/AnglerData.luau'), 'utf8')))
+  .replace('-- STAFF_SOURCE --', await readFile(join(root, 'src/shared/StaffCatalog.luau'), 'utf8'))
   .replace('-- SELL_SOURCE --', section('local function sell(', 'local function removeStaff('))
   .replace('-- PORTER_SOURCE --', section('local function dockedBoat(', 'local function ensureStaff('));
+program = await freezerRuntime() + program;
 const folder = await mkdtemp(join(tmpdir(), 'home-staff-'));
 try {
   const target = join(folder, 'workers.luau');

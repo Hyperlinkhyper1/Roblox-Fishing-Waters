@@ -1,5 +1,5 @@
--- The angler's hand (one fish, shown as a Tool in the Roblox hotbar) and their
--- launched boat's cargo hold, which is only reachable while aboard. Clients only
+-- The angler's hand, backpack, and launched boat's cargo hold. The backpack is
+-- reachable everywhere; the boat hold is only reachable while aboard. Clients only
 -- preview placements; every move is checked against the saved profile here.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,6 +8,7 @@ local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
@@ -35,11 +36,12 @@ local function state(player: Player)
 	local boatId, layout = boatInReach(player)
 	return {
 		Hand = profile.Angler.Hand,
+		BackpackId = profile.Angler.BackpackId,
+		Backpack = profile.Angler.Backpack,
 		BoatId = boatId,
 		Items = if layout then AnglerData.hold(profile.Angler, boatId, layout) else {},
 		Freezer = #profile.Angler.Freezer,
-		FreezerCapacity = AnglerData.freezerCapacity(profile.Angler),
-
+		FreezerUsage = AnglerData.freezerUsage(profile.Angler),
 	}
 end
 
@@ -69,7 +71,7 @@ local function buildFishTool(record): Tool
 		.. (if species then species.Name else record.FishId)
 		.. (if record.Size == "Huge" then " (Huge)" elseif record.Size == "Big" then " (Big)" else "")
 	tool.ToolTip = string.format(
-		"%s · $%d · stow it aboard or in your freezer",
+		"%s · $%d · stow it in your backpack, aboard or in your freezer",
 		FishCatch.formatKg(record.Kg),
 		math.floor(record.Value)
 	)
@@ -148,7 +150,11 @@ local function spot(value: any)
 	return { X = x, Y = y, R = r }
 end
 
-local function move(player: Player, from: any, to: any): (boolean, string)
+local function move(player: Player, from: any, to: any, container: any): (boolean, string)
+	if container ~= nil and container ~= "Boat" and container ~= "Backpack" then
+		return false, "Choose your backpack or boat hold."
+	end
+	local backpack = container == "Backpack"
 	if from ~= "Hand" and not (type(from) == "number" and from % 1 == 0 and from >= 1 and from <= 256) then
 		return false, "That item can't be moved."
 	end
@@ -164,19 +170,23 @@ local function move(player: Player, from: any, to: any): (boolean, string)
 	end
 	local boatId, layout, near = boatInReach(player)
 	local usesHold = from ~= "Hand" or type(to) == "table"
-	if usesHold and not near then
+	if usesHold and not backpack and not near then
 		return false, if layout then "Climb aboard your boat to use its hold." else "Launch your boat to use its hold."
 	end
 	if not near then
 		layout = nil
 	end
+	if backpack then
+		boatId = nil
+		layout = Backpacks.Items[profile.Angler.BackpackId] or Backpacks.Items.Starter
+	end
 	-- Check the cached profile first so a rejected move never costs a save.
-	local data, reason = AnglerData.moveCargo(profile.Angler, boatId, layout, from, to, Catalog.Fish)
+	local data, reason = AnglerData.moveCargo(profile.Angler, boatId, layout, from, to, Catalog.Fish, backpack)
 	if not data then
 		return false, reason
 	end
 	return BoatService.updateProgress(player, function(current)
-		local moved, failure = AnglerData.moveCargo(current.Angler, boatId, layout, from, to, Catalog.Fish)
+		local moved, failure = AnglerData.moveCargo(current.Angler, boatId, layout, from, to, Catalog.Fish, backpack)
 		assert(moved, failure)
 		current.Angler = moved
 	end)
@@ -194,7 +204,7 @@ function CargoService.start()
 	update = Instance.new("RemoteEvent")
 	update.Name, update.Parent = "Update", remotes
 	remotes.Parent = ReplicatedStorage
-	request.OnServerInvoke = function(player, action, from, to)
+	request.OnServerInvoke = function(player, action, from, to, container)
 		if action == "Get" then
 			return { Ok = true, Message = "", State = state(player) }
 		elseif action ~= "Move" then
@@ -204,7 +214,7 @@ function CargoService.start()
 			return { Ok = false, Message = "Please wait a moment and try again.", State = state(player) }
 		end
 		requests[player] = os.clock()
-		local ok, message = move(player, from, to)
+		local ok, message = move(player, from, to, container)
 		return { Ok = ok, Message = message, State = state(player) }
 	end
 	-- Every saved change and every launch or docking refreshes the client's view.

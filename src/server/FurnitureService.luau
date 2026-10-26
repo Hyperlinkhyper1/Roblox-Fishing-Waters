@@ -126,7 +126,7 @@ local function state(player: Player)
 		Stock = data.FurnitureStock,
 		Placed = data.Furniture,
 		Freezer = #data.Freezer,
-		FreezerCapacity = AnglerData.freezerCapacity(data),
+		FreezerCount = AnglerData.freezerCount(data),
 		Storage = #data.Storage,
 		StorageCapacity = AnglerData.storageCapacity(data),
 		Pantry = #data.Pantry,
@@ -441,10 +441,9 @@ local function buildPreviews(parent: Instance)
 		DiningTable = DiningRoom.buildTable,
 	}
 	for _, id in Furniture.Order do
-		local build = builders[id]
-			or function(parent, frame)
-				return Kitchen.buildStation(parent, frame, id)
-			end
+		local build = builders[id] or function(parent, frame)
+			return Kitchen.buildStation(parent, frame, id)
+		end
 		local sample = build(folder, CFrame.identity)
 		sample.Name, sample.Parent = id, folder
 		for _, part in sample:GetDescendants() do

@@ -336,7 +336,7 @@ end
 function store:UpdateAsync(key, transform)
 	self.updates += 1
 	if self.beforeUpdate then
-		self.beforeUpdate()
+		self.beforeUpdate(key)
 	end
 	local saved = transform(self.data[key])
 	if self.retryTransform then
@@ -589,7 +589,8 @@ local function makePlayer(id, cash, owned)
 	player.Character = character
 	table.insert(playerList, player)
 	if cash ~= nil then
-		store.data["Player_" .. id] = { Version = 1, Cash = cash, OwnedBoats = { Rowboat = owned == true } }
+		store.data["Player_" .. id] =
+			{ Version = 1, Cash = cash, OwnedBoats = { Rowboat = owned == true }, RodSerialScope = "GlobalV1" }
 	end
 	Service.loadPlayer(player)
 	return player, root, humanoid
@@ -1710,7 +1711,7 @@ check(
 )
 
 -- Skin copies share the wallet transaction: failed commits cannot grant copies,
--- and UpdateAsync retries cannot duplicate a reward or consume extra serials.
+-- and UpdateAsync retries reuse the one globally reserved serial.
 local skinBuyer = makePlayer(119, 1400)
 check(
 	Service.updateProgress(skinBuyer, function(profile)
@@ -1721,11 +1722,11 @@ check(
 store.retryTransform = true
 local awardedSerial
 check(
-	Service.updateProgress(skinBuyer, function(profile)
-		local outcome, serial = BoatData.openRodCrate(profile, "TideCrate", "BoneRod")
+	Service.updateProgress(skinBuyer, function(profile, reservedSerial)
+		local outcome, serial = BoatData.openRodCrate(profile, "TideCrate", "BoneRod", reservedSerial)
 		assert(outcome == "Opened")
 		awardedSerial = serial
-	end),
+	end, "BoneRod"),
 	"A skin reward commits through the wallet store"
 )
 store.retryTransform = false
@@ -1735,19 +1736,19 @@ check(
 	"Retried reward charges once and keeps one serial"
 )
 store.updateFailures = 1
-check(not Service.updateProgress(skinBuyer, function(profile)
-	assert(BoatData.openRodCrate(profile, "TideCrate", "BoneRod") == "Opened")
-end), "A failed crate commit reports failure")
+check(not Service.updateProgress(skinBuyer, function(profile, reservedSerial)
+	assert(BoatData.openRodCrate(profile, "TideCrate", "BoneRod", reservedSerial) == "Opened")
+end, "BoneRod"), "A failed serial reservation reports failure")
 skinProfile = Service.getProfile(skinBuyer)
 check(
 	#skinProfile.RodSkinCopies == 1 and skinProfile.NextRodSkinSerial.BoneRod == 2 and skinProfile.Cash == 1050,
 	"Failed saves preserve copies, serial counter and wallet"
 )
 check(
-	Service.updateProgress(skinBuyer, function(profile)
-		assert(BoatData.openRodCrate(profile, "TideCrate", "BoneRod") == "Opened")
+	Service.updateProgress(skinBuyer, function(profile, reservedSerial)
+		assert(BoatData.openRodCrate(profile, "TideCrate", "BoneRod", reservedSerial) == "Opened")
 		assert(BoatData.equipRodSkin(profile, "BoneRod", 2) == "Equipped")
-	end),
+	end, "BoneRod"),
 	"A second numbered duplicate can be saved and selected"
 )
 check(
@@ -1768,6 +1769,62 @@ skinProfile.RodSkinCopies[1].Serial = 50
 check(
 	Service.getProfile(skinBuyer).RodSkinCopies[1].Serial == 1,
 	"Client inventory snapshots cannot mutate saved serials"
+)
+store.beforeUpdate = function(key)
+	if key == "Player_119" then
+		store.beforeUpdate = nil
+		store.updateFailures = 1
+	end
+end
+check(not Service.updateProgress(skinBuyer, function(profile, reservedSerial)
+	assert(BoatData.openRodCrate(profile, "TideCrate", "BoneRod", reservedSerial) == "Opened")
+end, "BoneRod"), "A profile save can fail after a successful global reservation")
+check(
+	store.data.RodSerial_v1_BoneRod == 3 and #Service.getProfile(skinBuyer).RodSkinCopies == 2,
+	"Failed profile commit burns the reserved number without changing inventory"
+)
+local otherBuyer = makePlayer(99119, 1400)
+check(
+	Service.updateProgress(otherBuyer, function(profile, reservedSerial)
+		assert(BoatData.openRodCrate(profile, "TideCrate", "BoneRod", reservedSerial) == "Opened")
+	end, "BoneRod"),
+	"Another player's crate uses the same global counter"
+)
+check(
+	Service.getProfile(otherBuyer).RodSkinCopies[1].Serial == 4,
+	"Different players cannot receive #1 or reuse the abandoned #3"
+)
+for index, buyer in { skinBuyer, otherBuyer } do
+	check(
+		Service.updateProgress(buyer, function(profile, reservedSerial)
+			assert(BoatData.claimGroupRod(profile, reservedSerial) == "Claimed")
+		end, "TideboundRod"),
+		"Group reward uses the global allocator"
+	)
+	local profile = Service.getProfile(buyer)
+	check(
+		profile.RodSkinCopies[#profile.RodSkinCopies].Serial == index,
+		"Only the first group member receives Tidebound #1"
+	)
+end
+store.data.Player_99120 = {
+	Version = 1,
+	Cash = 200,
+	OwnedBoats = {},
+	RodSkinCopies = { { SkinId = "BoneRod", Serial = 1 } },
+	NextRodSkinSerial = { BoneRod = 2 },
+	EquippedRodSkin = "BoneRod",
+	EquippedRodSkinSerial = 1,
+}
+local legacyBuyer = makePlayer(99120)
+local migrated = Service.getProfile(legacyBuyer)
+check(
+	migrated and migrated.RodSerialScope == "GlobalV1" and migrated.RodSkinCopies[1].Serial == 5,
+	"Loading an old player renumbers local copies before exposing inventory"
+)
+check(
+	legacyBuyer:GetAttribute("RodSkinSerial") == 5 and migrated.Cash == 200,
+	"Migrated selection publishes the global serial without changing the wallet"
 )
 -- END_SKIN_INVENTORY_CHECKS --
 

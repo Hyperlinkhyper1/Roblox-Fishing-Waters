@@ -1,0 +1,31 @@
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve, dirname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { freezerRuntime, injectFreezer } from './freezer-test-runtime.mjs';
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const read = p => readFile(join(root, p), 'utf8');
+const data = injectFreezer(await read('src/server/AnglerData.luau'));
+const program = await freezerRuntime() + '\nlocal Data = (function()\n' + data + '\nend)()\n' + await read('scripts/freezer-packing.luau');
+const folder = await mkdtemp(join(tmpdir(), 'freezer-packing-'));
+try {
+  const target = join(folder, 'check.luau');
+  await writeFile(target, program);
+  const result = spawnSync(process.env.LUTE || 'lute', ['run', target], {cwd:root,encoding:'utf8',timeout:60000});
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw Error('Freezer checks failed (' + result.status + ')');
+  const moduleRoot = relative(folder, root).replaceAll('\\', '/');
+  const relativeData = data.replaceAll('require("../shared/', 'require("' + moduleRoot + '/src/shared/');
+  let existing = await read('scripts/angler-data.luau');
+  existing = existing.replace('local Data = require("../src/server/AnglerData")', 'local Data = (function()\n' + relativeData + '\nend)()');
+  existing = existing.replaceAll('require("../src/', 'require("' + moduleRoot + '/src/');
+  await writeFile(target, await freezerRuntime() + existing);
+  const saved = spawnSync(process.env.LUTE || 'lute', ['run', target], {cwd:root,encoding:'utf8',timeout:60000});
+  if (saved.stdout) process.stdout.write(saved.stdout);
+  if (saved.stderr) process.stderr.write(saved.stderr);
+  if (saved.error) throw saved.error;
+  if (saved.status !== 0) throw Error('Saved progress checks failed (' + saved.status + ')');
+} finally { await rm(folder, {recursive:true,force:true}); }

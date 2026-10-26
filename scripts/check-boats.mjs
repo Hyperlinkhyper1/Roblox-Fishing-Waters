@@ -23,6 +23,8 @@ try {
     .replace(/local BobberSkins = if script[\s\S]*?"\.\.\/shared\/BobberSkins"\)/, () => `local BobberSkins = (function()\n${bobberSkins}\nend)()`)
     .replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
   let service = await readFile(join(root, 'src/server/BoatService.luau'), 'utf8');
+  const rodSerialSource = (await readFile(join(root, 'src/server/RodSerials.luau'), 'utf8'))
+    .replace('if script then require(script.Parent.BoatData) else require("./BoatData")', 'dependencies.BoatData');
   let harness = await readFile(join(root, 'scripts/boat-service.luau'), 'utf8');
   if (process.argv.includes('--inventory-only')) {
     const setupEnd = harness.indexOf('local function makePrompt');
@@ -34,6 +36,7 @@ try {
       + '\nprint("Skin persistence: " .. checks .. " wallet, retry and reload checks passed (recording mocks).")';
   }
   service = service
+    .replace('require(script.Parent.RodSerials)', () => `(function()\n${rodSerialSource}\nend)()`)
     .replace(/require\(script.Parent.AdminCommands\)/, '{ start = function() end }')
     .replace(/local BoatData = require\(script.Parent.BoatData\)/, 'local BoatData = dependencies.BoatData')
     .replace(/local Rowboat = require\(script.Parent.Rowboat\)/, 'local Rowboat = dependencies.Rowboat')

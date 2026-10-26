@@ -208,6 +208,59 @@ local function floorAt(origin, water)
 	return { Position = ground(origin.X, origin.Z), Normal = Vector3.new(0, 1, 0),
 		Material = if water then Enum.Material.Water else "Wood" }
 end
+reset({ ground = true, onWait = function()
+	if not config.shoved and npc.root.Position.X > 8.2 then
+		config.shoved = true
+		npc.root.Position = Vector3.new(12.4, 3, 0)
+	end
+	check(npc.root.Position.X < 15, "Steering does not run away after passing a pickup waypoint")
+end })
+npc.humanoid.WalkSpeed = 16
+check(Navigation.walk(npc, ground(10), nil, true), "Correct steering after being pushed beyond the finish zone")
+check(config.shoved and #paths == 1, "Overshoot finishes the existing segment without backwards recovery loops")
+clean()
+
+reset({ ground = true, noPath = true })
+npc.humanoid.WalkSpeed = 16
+check(Navigation.walk(npc, ground(10), nil, true, true), "Known dock centerline works without the navmesh")
+check(#paths == 0 and math.abs(npc.root.Position.Z) < 0.01, "Straight dock walking never takes a lateral navmesh detour")
+
+reset({ ground = true, frozen = true })
+check(not Navigation.walk(npc, ground(10), nil, true, true), "Obstructed dock centerline stops promptly")
+check(now < 2 and npc.root.Position.X == 0 and npc.root.Position.Z == 0 and #paths == 0,
+	"Blocked dock segments do not try sideways recovery near water")
+
+for _, speed in { 16, 32 } do
+	local function deckHeight(x, z)
+		if x >= 13.5 and x <= 20.5 and z >= -43 and z <= 15 then
+			return math.max(3.3, 3.2 + 2.7 * math.clamp(z / 8, 0, 1))
+		end
+		if math.abs(x) <= 13.5 and math.abs(z + 38) <= 2.5 then return 3.3 end
+		return nil
+	end
+	reset({ groundHeight = function(x, z)
+		return assert(deckHeight(x, z), "Porter must stay on the actual deck throughout the pickup and return")
+	end, onRay = function(origin)
+		local y = deckHeight(origin.X, origin.Z)
+		if not y or y > origin.Y or y < origin.Y - 4 then return nil end
+		return { Position = ground(origin.X, origin.Z, y), Normal = Vector3.new(0, 1, 0), Material = "Wood" }
+	end })
+	npc.humanoid.WalkSpeed = speed
+	positionAt(ground(17, 11, 5.9))
+	for _, point in { ground(17, -2, 3.3), ground(17, -38, 3.3), ground(0, -38, 3.3),
+		ground(17, -38, 3.3), ground(17, -2, 3.3), ground(17, 11, 5.9) } do
+		local reached = Navigation.walk(npc, point, nil, true, true)
+		check(reached, string.format("Full dock route at speed %d: target %.1f,%.1f stopped at %.2f,%.2f,%.2f",
+			speed, point.X, point.Z, npc.root.Position.X, npc.root.Position.Y, npc.root.Position.Z))
+	end
+	check(#paths == 0, "Even the upgraded porter follows the dock centerline through both right-angle turns")
+end
+
+reset({ onRay = function(origin) return floorAt(origin, origin.X > 4) end })
+npc.humanoid.WalkSpeed = 16
+check(not Navigation.walk(npc, ground(10), nil, true, true), "Direct dock route still refuses water")
+check(npc.root.Position.X < 4 and #paths == 0, "Unsupported direct route stops without sidestepping")
+
 reset({ onRay = function(origin) return floorAt(origin, origin.X > 4) end })
 npc.humanoid.WalkSpeed = 16
 check(not Navigation.walk(npc, ground(10), nil, true), "Successful navmesh route into water fails safely")

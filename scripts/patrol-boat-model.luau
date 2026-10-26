@@ -12,12 +12,12 @@ for _, frame in { CFrame.new(35, 72, -18), CFrame.new(-42, 19, 81) * CFrame.Angl
 		local model = PatrolBoat.build(frame, anchored)
 		check(model.Name == "PatrolBoat" and model.Parent == nil, "PatrolBoat builder contract")
 		check(
-			model:GetAttribute("HullLength") == 42 and model:GetAttribute("HullBeam") == 12,
+			model:GetAttribute("HullLength") == 63 and model:GetAttribute("HullBeam") == 18,
 			"Hull dimensions match catalog"
 		)
 		check(model.PrimaryPart.Name == "HullRoot", "One physical root")
 		check(
-			(model.PrimaryPart.CFrame.Position - (frame * CFrame.new(0, -0.4, 0)).Position).Magnitude < 0.0001,
+			(model.PrimaryPart.CFrame.Position - (frame * CFrame.new(0, -0.6, 0)).Position).Magnitude < 0.0001,
 			"Correct waterline origin"
 		)
 		local parts, welds, helms, passengers = 0, 0, 0, 0
@@ -86,8 +86,8 @@ for _, frame in { CFrame.new(35, 72, -18), CFrame.new(-42, 19, 81) * CFrame.Angl
 						check(
 							not (
 									math.abs(p.X) < item.Size.X / 2 - 0.001
-									and math.abs(y - p.Y) < item.Size.Y / 2 - 0.001
-									and math.abs(z - p.Z) < item.Size.Z / 2 - 0.001
+									and math.abs(y * 1.5 - p.Y) < item.Size.Y / 2 - 0.001
+									and math.abs(z * 1.5 - p.Z) < item.Size.Z / 2 - 0.001
 								),
 							"Clear rear doorway and cabin aisle"
 						)

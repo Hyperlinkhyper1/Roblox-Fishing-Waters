@@ -607,7 +607,8 @@ local function tabButton(parent, name, iconName, selected, compact, callback, pr
 		make("UITextSizeConstraint", item.ThemeCaption, { MinTextSize = 9, MaxTextSize = item.TextSize })
 	end
 	if selected then
-		local marker = decoration(item.ThemeFace, "ActiveMarker", cream, UDim2.new(0, 0, 0.5, 0), UDim2.new(0, 3, 1, -16))
+		local marker =
+			decoration(item.ThemeFace, "ActiveMarker", cream, UDim2.new(0, 0, 0.5, 0), UDim2.new(0, 3, 1, -16))
 		marker.AnchorPoint = Vector2.new(0, 0.5)
 		Theme.corner(marker, 2)
 	end
@@ -750,7 +751,7 @@ function Menu.start()
 	local settingTab, journalTab = "Performance", "Stats"
 	local homeTab = "Paths"
 	local selectedStaff, staffFilter = "Seller", "All"
-	local freezerCapacity, pantryCapacity = 0, 0
+	local freezerUsage, pantryCapacity = 0, 0
 	local busy = false
 	local render
 	local narrow = false
@@ -965,14 +966,12 @@ function Menu.start()
 			nextRequestAt = os.clock() + 0.3
 			busy = false
 			if ok and type(result) == "table" then
-				freezerCapacity = result.FreezerCapacity or freezerCapacity
+				freezerUsage = result.FreezerUsage or freezerUsage
 				pantryCapacity = result.PantryCapacity or pantryCapacity
 				if result.Profile then
 					profile = result.Profile
-					profile.Angler.Settings = Settings.apply(
-						profile.Angler.Settings,
-						if result.Ok and action == "Setting" then key else nil
-					)
+					profile.Angler.Settings =
+						Settings.apply(profile.Angler.Settings, if result.Ok and action == "Setting" then key else nil)
 				end
 				notice.Text = result.Message or ""
 			else
@@ -1787,9 +1786,16 @@ function Menu.start()
 				Size = UDim2.fromOffset(108, 20),
 				TextXAlignment = Enum.TextXAlignment.Right,
 			})
-			local track = decoration(row, "GoalTrack", Theme.Colors.Inset, UDim2.fromOffset(0, 28), UDim2.new(1, 0, 0, 6))
+			local track =
+				decoration(row, "GoalTrack", Theme.Colors.Inset, UDim2.fromOffset(0, 28), UDim2.new(1, 0, 0, 6))
 			Theme.corner(track, 3)
-			local fill = decoration(track, "GoalFill", if done then green else gold, UDim2.new(), UDim2.fromScale(math.clamp(current / target, 0, 1), 1))
+			local fill = decoration(
+				track,
+				"GoalFill",
+				if done then green else gold,
+				UDim2.new(),
+				UDim2.fromScale(math.clamp(current / target, 0, 1), 1)
+			)
 			Theme.corner(fill, 3)
 		end
 		local function stageCard(parent, id, number, layoutOrder, width)
@@ -1826,11 +1832,17 @@ function Menu.start()
 				UDim2.fromOffset(44, 44)
 			)
 			Theme.corner(node, 22)
-			text(node, if completed then "✓" else tostring(number), 20, if completed or current or available then navy else muted, {
-				Size = UDim2.fromScale(1, 1),
-				TextXAlignment = Enum.TextXAlignment.Center,
-				Font = Enum.Font.GothamBold,
-			})
+			text(
+				node,
+				if completed then "✓" else tostring(number),
+				20,
+				if completed or current or available then navy else muted,
+				{
+					Size = UDim2.fromScale(1, 1),
+					TextXAlignment = Enum.TextXAlignment.Center,
+					Font = Enum.Font.GothamBold,
+				}
+			)
 			text(header, stage.Name, 19, cream, {
 				Position = UDim2.fromOffset(56, 0),
 				Size = UDim2.new(1, -150, 0, 26),
@@ -1849,12 +1861,18 @@ function Menu.start()
 				elseif current then math.floor(progress * 100) .. "%"
 				elseif available then "$" .. commas(stage.Price)
 				else "Locked"
-			text(header, badge, if current then 22 else 13, if completed then green elseif current then gold else muted, {
-				Position = UDim2.new(1, -92, 0, 6),
-				Size = UDim2.fromOffset(92, 30),
-				TextXAlignment = Enum.TextXAlignment.Right,
-				Font = Enum.Font.GothamBold,
-			})
+			text(
+				header,
+				badge,
+				if current then 22 else 13,
+				if completed then green elseif current then gold else muted,
+				{
+					Position = UDim2.new(1, -92, 0, 6),
+					Size = UDim2.fromOffset(92, 30),
+					TextXAlignment = Enum.TextXAlignment.Right,
+					Font = Enum.Font.GothamBold,
+				}
+			)
 			wrapped(card, stage.Description, 13, muted, 2)
 			if current or completed then
 				wrapped(card, "Unlocked: " .. table.concat(stage.Features, " · "), 12, cream, 3)
@@ -1863,7 +1881,13 @@ function Menu.start()
 				local track = decoration(card, "StageTrack", Theme.Colors.Inset, UDim2.new(), UDim2.new(1, 0, 0, 10))
 				track.LayoutOrder = 4
 				Theme.corner(track, 5)
-				local fill = decoration(track, "StageFill", if progress >= 1 then green else gold, UDim2.new(), UDim2.fromScale(progress, 1))
+				local fill = decoration(
+					track,
+					"StageFill",
+					if progress >= 1 then green else gold,
+					UDim2.new(),
+					UDim2.fromScale(progress, 1)
+				)
 				Theme.corner(fill, 5)
 				for index, goal in stage.Goals do
 					goalRow(card, goal, 4 + index)
@@ -1875,18 +1899,25 @@ function Menu.start()
 				end
 			elseif available then
 				local afford = profile.Cash >= stage.Price
-				local choose = button(card, if afford then "Open " .. stage.Name .. " · $" .. commas(stage.Price) else "$" .. commas(stage.Price - profile.Cash) .. " more needed", function()
-					if afford then
-						request("ChoosePath", id)
-					end
-				end, {
-					Name = "Choose" .. id,
-					LayoutOrder = 20,
-					Size = UDim2.new(1, 0, 0, 42),
-					Active = afford,
-					AutoButtonColor = afford,
-					BackgroundColor3 = if afford then gold else navy,
-				})
+				local choose = button(
+					card,
+					if afford
+						then "Open " .. stage.Name .. " · $" .. commas(stage.Price)
+						else "$" .. commas(stage.Price - profile.Cash) .. " more needed",
+					function()
+						if afford then
+							request("ChoosePath", id)
+						end
+					end,
+					{
+						Name = "Choose" .. id,
+						LayoutOrder = 20,
+						Size = UDim2.new(1, 0, 0, 42),
+						Active = afford,
+						AutoButtonColor = afford,
+						BackgroundColor3 = if afford then gold else navy,
+					}
+				)
 				Theme.glassButton(choose, if afford then "Selected" else "Disabled")
 				withIcon(choose, if afford then "Coin" else "Lock", if afford then cream else muted)
 				choose.Selectable = afford
@@ -1906,7 +1937,8 @@ function Menu.start()
 				LayoutOrder = layoutOrder,
 				Size = UDim2.new(1, -10, 0, 18),
 			})
-			local strip = decoration(segment, "RoadStrip", Theme.Colors.Border, UDim2.fromOffset(34, 0), UDim2.new(0, 4, 1, 0))
+			local strip =
+				decoration(segment, "RoadStrip", Theme.Colors.Border, UDim2.fromOffset(34, 0), UDim2.new(0, 4, 1, 0))
 			strip.BackgroundTransparency = 0.4
 		end
 
@@ -1932,9 +1964,16 @@ function Menu.start()
 		end
 		road(nextOrder())
 		if forked then
-			wrapped(body, "Choose a branch. The other one opens once your choice reaches 100%.", 13, gold, nextOrder(), {
-				Font = Enum.Font.GothamBold,
-			})
+			wrapped(
+				body,
+				"Choose a branch. The other one opens once your choice reaches 100%.",
+				13,
+				gold,
+				nextOrder(),
+				{
+					Font = Enum.Font.GothamBold,
+				}
+			)
 			local fork = auto("Frame", body, {
 				Name = "PathFork",
 				LayoutOrder = nextOrder(),
@@ -1963,7 +2002,13 @@ function Menu.start()
 		})
 		Theme.glassPanel(wallet, true)
 		glyph(wallet, "Coin", green, UDim2.fromOffset(26, 27), 26)
-		text(wallet, "AVAILABLE CASH", 11, muted, { Position = UDim2.fromOffset(48, 6), Size = UDim2.new(1, -54, 0, 16) })
+		text(
+			wallet,
+			"AVAILABLE CASH",
+			11,
+			muted,
+			{ Position = UDim2.fromOffset(48, 6), Size = UDim2.new(1, -54, 0, 16) }
+		)
 		text(wallet, "$" .. commas(profile.Cash), 22, cream, {
 			Position = UDim2.fromOffset(48, 22),
 			Size = UDim2.new(1, -54, 0, 26),
@@ -2159,6 +2204,68 @@ function Menu.start()
 					Size = UDim2.new(1, 0, 0, 0),
 					AutomaticSize = Enum.AutomaticSize.Y,
 				})
+				if selectedStaff == "Porter" then
+					for index, id in StaffCatalog.PorterUpgradeOrder do
+						local upgrade = StaffCatalog.PorterUpgrades[id]
+						local level = StaffCatalog.porterLevel(profile.Angler, id)
+						local price = upgrade.Prices[level + 1]
+						local enabled = hired and price ~= nil and profile.Cash >= price
+						local panel = make("Frame", details, {
+							Name = id .. "Upgrade",
+							BackgroundTransparency = 1,
+							LayoutOrder = index + 3,
+							Size = UDim2.new(1, 0, 0, 116),
+						})
+						text(
+							panel,
+							string.format("%s · Level %d/%d", upgrade.Name, level, #upgrade.Prices),
+							15,
+							cream,
+							{
+								Size = UDim2.new(1, 0, 0, 24),
+							}
+						)
+						text(
+							panel,
+							string.format(
+								"%d %s%s",
+								upgrade.Values[level + 1],
+								upgrade.Unit,
+								if price
+									then " → " .. upgrade.Values[level + 2] .. " " .. upgrade.Unit
+									else " · Maximum"
+							),
+							12,
+							muted,
+							{
+								Position = UDim2.fromOffset(0, 26),
+								Size = UDim2.new(1, 0, 0, 32),
+							}
+						)
+						local buy = button(
+							panel,
+							if not hired
+								then "Hire a porter first"
+								elseif not price then "Max level"
+								elseif not enabled then "$" .. commas(price - profile.Cash) .. " more needed"
+								else "Upgrade · $" .. commas(price),
+							function()
+								if enabled then
+									request("UpgradePorter", id, level)
+								end
+							end,
+							{
+								Name = "Upgrade" .. id,
+								Position = UDim2.fromOffset(0, 64),
+								Size = UDim2.new(1, 0, 0, 40),
+								TextSize = 13,
+								Active = enabled,
+								Selectable = enabled,
+							}
+						)
+						Theme.glassButton(buy, if enabled then "Selected" else "Disabled")
+					end
+				end
 				if hired and selectedStaff == "Fisherman" then
 					local boats = {}
 					for boatId in BoatCatalog do
@@ -2323,6 +2430,11 @@ function Menu.start()
 			if data.Hand then
 				add({ data.Hand }, "In hand")
 			end
+			local packedFish = {}
+			for _, item in data.Backpack or {} do
+				table.insert(packedFish, item.Fish)
+			end
+			add(packedFish, "Backpack")
 			add(data.Cooler, "Legacy cooler")
 			local boats = {}
 			for id in data.Holds do
@@ -2341,9 +2453,9 @@ function Menu.start()
 			line(string.format("%d fish in stock · $%s total value", #stock, commas(totalValue)), 16, gold, 44)
 			line(
 				string.format(
-					"Freezer %d/%d · %d fish waiting to be stocked",
+					"Freezer %d fish · %d%% space used · %d fish waiting to be stocked",
 					#data.Freezer,
-					freezerCapacity,
+					freezerUsage,
 					#stock - #data.Freezer
 				),
 				14,
@@ -2374,7 +2486,11 @@ function Menu.start()
 				for _, dish in data.Pantry or {} do
 					local recipe = Recipes.Items[dish.RecipeId]
 					line(
-						string.format("%s · $%s", if recipe then recipe.Name else dish.RecipeId, commas(math.floor(dish.Value))),
+						string.format(
+							"%s · $%s",
+							if recipe then recipe.Name else dish.RecipeId,
+							commas(math.floor(dish.Value))
+						),
 						14,
 						cream,
 						26
@@ -2430,15 +2546,29 @@ function Menu.start()
 			})
 			Theme.glassPanel(placeholder, true)
 			glyph(placeholder, homeTab, muted, UDim2.fromScale(0.5, 0.5), 48)
-			line(if homeTab == "Upgrades" then "No upgrades yet." else "No achievements yet.", 18, muted, 56)
+			line(if homeTab == "Upgrades" then "Porter upgrades" else "No achievements yet.", 18, muted, 56)
 			line(
 				if homeTab == "Upgrades"
-					then "Future home improvements will appear here."
+					then "Train your porter to walk faster and carry more fish per trip."
 					else "Your future milestones will appear here.",
 				14,
 				muted,
 				56
 			)
+			if homeTab == "Upgrades" then
+				local speed, capacity = StaffCatalog.porterStats(profile.Angler)
+				line(string.format("Speed: %d studs/sec · Carry: %d fish/trip", speed, capacity), 14, cream, 48)
+				order += 1
+				button(body, "Manage porter upgrades", function()
+					homeTab, selectedStaff, staffFilter = "Staff", "Porter", "All"
+					render()
+				end, {
+					Name = "ManagePorterUpgrades",
+					LayoutOrder = order,
+					Size = UDim2.new(1, -16, 0, 44),
+					TextSize = 14,
+				})
+			end
 		end
 	end
 	local function settings()
@@ -2524,35 +2654,72 @@ function Menu.start()
 				Theme.corner(switch, 17)
 				Theme.corner(switch.ThemeFace, 17)
 				Theme.corner(switch.ThemeDrop, 17)
-				local knob =
-					decoration(switch.ThemeFace, "Knob", cream, UDim2.new(if value then 1 else 0, if value then -4 else 4, 0.5, 0), UDim2.fromOffset(26, 26))
+				local knob = decoration(
+					switch.ThemeFace,
+					"Knob",
+					cream,
+					UDim2.new(if value then 1 else 0, if value then -4 else 4, 0.5, 0),
+					UDim2.fromOffset(26, 26)
+				)
 				knob.AnchorPoint = Vector2.new(if value then 1 else 0, 0.5)
 				Theme.corner(knob, 13)
 				switch.ThemeCaption.Position = UDim2.fromOffset(if value then 8 else 34, 2)
 				switch.ThemeCaption.Size = UDim2.new(1, -42, 1, -4)
 			else
 				-- Level bar plus step buttons, so the value is visible at a glance.
-				local track = decoration(row, "LevelTrack", Theme.Colors.Inset, UDim2.new(0, 14, 1, -29), UDim2.new(1, -230, 0, 8))
+				local track = decoration(
+					row,
+					"LevelTrack",
+					Theme.Colors.Inset,
+					UDim2.new(0, 14, 1, -29),
+					UDim2.new(1, -230, 0, 8)
+				)
 				Theme.corner(track, 4)
-				local fill = decoration(track, "LevelFill", gold, UDim2.new(), UDim2.fromScale(math.clamp(value / 100, 0, 1), 1))
+				local fill =
+					decoration(track, "LevelFill", gold, UDim2.new(), UDim2.fromScale(math.clamp(value / 100, 0, 1), 1))
 				Theme.corner(fill, 4)
-				settingsButton(row, "−", function()
-					request("Setting", key, math.max(0, value - 10))
-				end, { Name = key .. "Down", Position = UDim2.new(1, -196, 1, -46), Size = UDim2.fromOffset(44, 34), TextSize = 22 })
+				settingsButton(
+					row,
+					"−",
+					function()
+						request("Setting", key, math.max(0, value - 10))
+					end,
+					{
+						Name = key .. "Down",
+						Position = UDim2.new(1, -196, 1, -46),
+						Size = UDim2.fromOffset(44, 34),
+						TextSize = 22,
+					}
+				)
 				text(row, value .. "%", 16, cream, {
 					Position = UDim2.new(1, -148, 1, -46),
 					Size = UDim2.fromOffset(84, 34),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				})
-				settingsButton(row, "+", function()
-					request("Setting", key, math.min(100, value + 10))
-				end, { Name = key .. "Up", Position = UDim2.new(1, -60, 1, -46), Size = UDim2.fromOffset(44, 34), TextSize = 22 })
+				settingsButton(
+					row,
+					"+",
+					function()
+						request("Setting", key, math.min(100, value + 10))
+					end,
+					{
+						Name = key .. "Up",
+						Position = UDim2.new(1, -60, 1, -46),
+						Size = UDim2.fromOffset(44, 34),
+						TextSize = 22,
+					}
+				)
 			end
 		end
 		if settingTab == "Performance" then
 			text(body, Settings.description(), 13, muted, { Size = UDim2.new(1, -8, 0, 48), LayoutOrder = 0 })
 			settingRow("Shadows", "Shadows", "Disable global shadows to reduce graphics work.", "Shadows")
-			settingRow("WeatherEffects", "Weather effects", "Show rain, wind particles, and lightning flashes.", "Weather")
+			settingRow(
+				"WeatherEffects",
+				"Weather effects",
+				"Show rain, wind particles, and lightning flashes.",
+				"Weather"
+			)
 		elseif settingTab == "Audio" then
 			settingRow("MasterVolume", "Master volume", "Overall game audio.", "Audio")
 			settingRow("MusicVolume", "Music", "Volume for music tracks.", "Music")
@@ -2569,9 +2736,12 @@ function Menu.start()
 			field.Name = "CodeInput"
 			field.Size = UDim2.new(1, -8, 0, 42)
 			settingsOutline(field)
-			withIcon(settingsButton(body, "Redeem code", function()
-				request("Code", field.Text)
-			end, { BackgroundColor3 = gold }), "Codes")
+			withIcon(
+				settingsButton(body, "Redeem code", function()
+					request("Code", field.Text)
+				end, { BackgroundColor3 = gold }),
+				"Codes"
+			)
 		elseif settingTab == "Titles" then
 			text(body, "Choose a title you have unlocked.", 15, muted, { Size = UDim2.new(1, -8, 0, 40) })
 			-- The equipped choice is the blue one, with a tick; every other row is a plain option.
@@ -2668,7 +2838,14 @@ function Menu.start()
 		})[active]
 		if active == "Shop" then
 			local owned = player:GetAttribute("OwnsAutoStore") == true
-			iconTitle(content, "Shop", "Gamepasses", 22, cream, { Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 0, 36) })
+			iconTitle(
+				content,
+				"Shop",
+				"Gamepasses",
+				22,
+				cream,
+				{ Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 0, 36) }
+			)
 			-- One product card: icon tile, details and its buy button grouped on a panel.
 			local product = make("Frame", content, {
 				Name = "AutoStoreCard",

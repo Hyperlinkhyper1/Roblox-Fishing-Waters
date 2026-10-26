@@ -127,6 +127,43 @@ assert(enabledCount() > 0, "Open water must show crests")
 local seaRipple = workspace.Terrain.WaterWaveSize
 assert(seaRipple > 0.7 and seaRipple <= 1, "Storm surface must visibly roll within the engine wave-height limit")
 assert(strongestCrestOpacity > 0.5, "Storm crests must have clearly visible contrast")
+local bodyDepth, foamDepth
+for _, beam in pool do
+	if beam.Name == "WindSwell" then
+		bodyDepth = beam.ZOffset
+	else
+		foamDepth = beam.ZOffset
+	end
+end
+assert(foamDepth > bodyDepth and bodyDepth > 0, "Foam and swell layers must have separate surface depths")
+-- Isolate wave strength from phase and the land mask: tiny lake waves should
+-- fade away rather than drawing full-contrast foam against the terrain surface.
+local realHeightAt = dependencies.Weather.heightAt
+local testAmplitude = 0.05
+dependencies.Weather.heightAt = function()
+	return testAmplitude * 0.8, testAmplitude
+end
+tick(1 / 60)
+assert(enabledCount() == 0, "Tiny sheltered waves must not draw intersecting ribbons")
+testAmplitude = 0.24
+tick(1 / 60)
+assert(enabledCount() > 0, "Growing swells must ease into view")
+local middleOpacity = 0
+for _, beam in pool do
+	if beam.Enabled and beam.Name == "WindCrest" then
+		middleOpacity = math.max(middleOpacity, 1 - beam.LocalTransparencyModifier)
+	end
+end
+testAmplitude = 1
+tick(1 / 60)
+local fullOpacity = 0
+for _, beam in pool do
+	if beam.Enabled and beam.Name == "WindCrest" then
+		fullOpacity = math.max(fullOpacity, 1 - beam.LocalTransparencyModifier)
+	end
+end
+assert(middleOpacity > 0 and middleOpacity < fullOpacity * 0.6, "Sheltered foam must blend gradually into sea foam")
+dependencies.Weather.heightAt = realHeightAt
 local FULL_RIBBON_LENGTH = 19 * 2 - 0.5
 -- A boat beside the camera: no ribbon may draw inside its hull footprint.
 local boats = Instance.new("Folder")
@@ -231,7 +268,7 @@ for _, fps in { 30, 144 } do
 		end
 	end
 end
-local mouth = Vector3.new(((290 + 430) / 2 - 870) * 1.05, 12, ((1565 + 1340) / 2 - 1330) * 1.05)
+local mouth = Vector3.new(((290 + 430) / 2 - 870) * 0.85, 12, ((1565 + 1340) / 2 - 1330) * 0.85)
 for _, reverse in { false, true } do
 	local previousRipple = workspace.Terrain.WaterWaveSize
 	for frame = 1, 600 do

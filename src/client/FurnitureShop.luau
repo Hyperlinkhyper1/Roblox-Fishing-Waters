@@ -118,9 +118,9 @@ function FurnitureShop.start()
 		status.Text = if not state
 			then "Loading your shop…"
 			else string.format(
-				"Cash $%d · Freezers hold %d fish · Racks hold %d fish\nPress B (or Build) at home to place what you buy.",
+				"Cash $%d · %d coolers (capacity depends on fish size) · Racks hold %d fish\nPress B (or Build) at home to place what you buy.",
 				cash,
-				state.FreezerCapacity,
+				state.FreezerCount,
 				state.StorageCapacity
 			)
 		for _, id in Furniture.Order do
@@ -219,7 +219,9 @@ function FurnitureShop.start()
 	close.Activated:Connect(hide)
 	overlay.Activated:Connect(hide)
 	UserInputService.InputBegan:Connect(function(input)
-		if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB then hide() end
+		if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB then
+			hide()
+		end
 	end)
 	player.CharacterRemoving:Connect(hide)
 	update.OnClientEvent:Connect(function(kind, payload)
@@ -250,9 +252,14 @@ function FurnitureShop.start()
 				local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 				local anchor = activePrompt and activePrompt.Parent
 				local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-				local near = root and humanoid and humanoid.Health > 0 and anchor and anchor:IsA("BasePart")
+				local near = root
+					and humanoid
+					and humanoid.Health > 0
+					and anchor
+					and anchor:IsA("BasePart")
 					and anchor:IsDescendantOf(workspace)
-					and (anchor.Position - root.Position).Magnitude <= (activePrompt :: ProximityPrompt).MaxActivationDistance + 2
+					and (anchor.Position - root.Position).Magnitude
+						<= (activePrompt :: ProximityPrompt).MaxActivationDistance + 2
 				if not near then
 					hide()
 				end

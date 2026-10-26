@@ -1,6 +1,5 @@
--- Dredge-style cargo: the one fish in your hands (a Tool in the Roblox hotbar)
--- and your launched boat's hold, drawn in the shape of its hull. The panel only
--- exists while you are aboard. Click a fish to pick it up, turn it with R or
+-- Shared tile inventory for your backpack, your hand, and your launched boat.
+-- The backpack is reachable everywhere; the boat tab requires being aboard. Click a fish to pick it up, turn it with R or
 -- right-click, then click the hull to drop it. Boat parts rearrange the same way
 -- but stay aboard. The server re-checks every move; this view only previews.
 local Players = game:GetService("Players")
@@ -11,6 +10,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Cargo = require(ReplicatedStorage.Shared.Cargo)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
@@ -36,7 +36,7 @@ local CELL = 40
 local GAP = 4
 local STEP = CELL + GAP
 local PAD = 16
-local GRID_TOP = 206
+local GRID_TOP = 248
 -- How far the hull planking reaches past the outer cells, and its darker rim.
 local DECK_PAD = 6
 local RIM_PAD = 10
@@ -184,11 +184,11 @@ function CargoHold.start()
 		IgnoreGuiInset = true,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	})
-	local toggle = button(gui, "Cargo [C]", {
+	local toggle = button(gui, "Backpack [C]", {
 		Name = "OpenCargo",
 		Position = UDim2.new(1, -126, 1, -100),
 		Size = UDim2.fromOffset(112, 38),
-		TextSize = 16,
+		TextSize = 14,
 	})
 	local handDot = make("Frame", toggle, {
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -317,7 +317,7 @@ function CargoHold.start()
 		Text = "",
 		ZIndex = 6,
 	})
-	local noBoat = text(panel, "No boat launched.\nLaunch one from your dock to use its hold.", {
+	local noBoat = text(panel, "Climb aboard your own launched boat to use its hold.", {
 		Position = UDim2.fromOffset(PAD, GRID_TOP),
 		Size = UDim2.new(1, -PAD * 2, 0, 90),
 		TextColor3 = MUTED,
@@ -333,7 +333,20 @@ function CargoHold.start()
 		TextYAlignment = Enum.TextYAlignment.Top,
 	})
 
-	local state = { Hand = nil, BoatId = nil, Items = {}, Freezer = 0, FreezerCapacity = 0 }
+	local backpackTab =
+		button(panel, "Backpack", { Position = UDim2.fromOffset(PAD, 204), Size = UDim2.fromOffset(142, 30) })
+	local boatTab =
+		button(panel, "Boat hold", { Position = UDim2.fromOffset(PAD + 152, 204), Size = UDim2.fromOffset(142, 30) })
+	local container = "Backpack"
+	local state = {
+		Hand = nil,
+		BoatId = nil,
+		Items = {},
+		Backpack = {},
+		BackpackId = "Starter",
+		Freezer = 0,
+		FreezerUsage = 0,
+	}
 	-- holding = { from = "Hand" | hold index, item, r }
 	local holding = nil
 	local pending = false
@@ -348,7 +361,14 @@ function CargoHold.start()
 	local seeded = false
 
 	local function layout()
-		return if state.BoatId then BoatCatalog[state.BoatId] else nil
+		if container == "Backpack" then
+			return Backpacks.Items[state.BackpackId] or Backpacks.Items.Starter
+		end
+		return if aboard and state.BoatId then BoatCatalog[state.BoatId] else nil
+	end
+
+	local function contents()
+		return if container == "Backpack" then state.Backpack else state.Items
 	end
 
 	local render
@@ -374,7 +394,7 @@ function CargoHold.start()
 	end
 
 	local function takenFor()
-		return Cargo.occupied(state.Items, Catalog.Fish, if type(holding.from) == "number" then holding.from else nil)
+		return Cargo.occupied(contents(), Catalog.Fish, if type(holding.from) == "number" then holding.from else nil)
 	end
 
 	local function buildGhost()
@@ -391,7 +411,7 @@ function CargoHold.start()
 	end
 
 	local function setOpen(value: boolean)
-		open = value and aboard
+		open = value
 		if not open then
 			holding = nil
 			buildGhost()
@@ -402,25 +422,28 @@ function CargoHold.start()
 	render = function()
 		local spec = layout()
 		local handKey = if state.Hand then fishKey(state.Hand) else ""
-		if seeded and aboard and handKey ~= "" and handKey ~= lastHand and not open then
-			-- A fresh catch on deck opens the hold so it can be stowed straight away.
+		if seeded and handKey ~= "" and handKey ~= lastHand and not open then
+			-- A fresh catch opens inventory so it can be stowed straight away.
 			open = true
 		end
 		lastHand = handKey
 		panel.Visible = open
-		toggle.Visible = aboard
+		toggle.Visible = true
+		backpackTab.TextColor3 = if container == "Backpack" then FITS else WHITE
+		boatTab.TextColor3 = if container == "Boat" then FITS else MUTED
+		boatTab.Text = if aboard then "Boat hold" else "Boat · aboard only"
 		handDot.Visible = state.Hand ~= nil
 
 		-- Header line.
 		local used, total = 0, 0
 		if spec then
 			total = Cargo.capacity(spec.Hold)
-			for _, item in state.Items do
+			for _, item in contents() do
 				used += #Cargo.cells(shapeOf(item))
 			end
 		end
 		subtitle.Text = (if spec then string.format("%s · %d/%d cells", spec.Name, used, total) else "No boat")
-			.. string.format("  ·  Freezer %d/%d", state.Freezer or 0, state.FreezerCapacity or 0)
+			.. string.format("  ·  Freezer %d fish · %d%% used", state.Freezer or 0, state.FreezerUsage or 0)
 
 		-- Hand slot.
 		local hand = state.Hand
@@ -447,7 +470,7 @@ function CargoHold.start()
 		else
 			handStroke.Color = CELL_EDGE
 			handName.Text = ""
-			handInfo.Text = "Every fish you catch goes to your hotbar. You can only hold one."
+			handInfo.Text = "Stow the fish in your hand to make room for your next catch."
 		end
 		handView.ImageTransparency = if handHeld then 0.7 else 0
 		local holdingFish = holding ~= nil and holding.item.Fish ~= nil
@@ -464,8 +487,11 @@ function CargoHold.start()
 				columns = math.max(columns, #row)
 			end
 			areaWidth, areaHeight = columns * STEP - GAP, #spec.Hold * STEP - GAP
-			if builtFor ~= state.BoatId then
-				builtFor = state.BoatId
+			local layoutKey = container
+				.. ":"
+				.. tostring(if container == "Backpack" then state.BackpackId else state.BoatId)
+			if builtFor ~= layoutKey then
+				builtFor = layoutKey
 				for _, container in { rimLayer, deckLayer, cellLayer } do
 					for _, child in container:GetChildren() do
 						child:Destroy()
@@ -499,7 +525,7 @@ function CargoHold.start()
 			for _, child in itemLayer:GetChildren() do
 				child:Destroy()
 			end
-			for index, item in state.Items do
+			for index, item in contents() do
 				local box, squares, view = drawItem(itemLayer, item, item.R)
 				box.Position = UDim2.fromOffset((item.X - 1) * STEP, (item.Y - 1) * STEP)
 				if holding and holding.from == index then
@@ -519,8 +545,8 @@ function CargoHold.start()
 		if os.clock() >= noticeUntil then
 			footer.TextColor3 = MUTED
 			footer.Text = if holding
-				then "Click the hold to drop it · R or right-click to rotate · Esc to put it back"
-				else "Pick up one fish, equip it from your hotbar, then carry it to your freezer"
+				then "Click a tile to pack · R or Rotate to turn · Esc to cancel"
+				else "Pack your hand fish here. Take it back into your hand to move it to a boat or freezer."
 		end
 	end
 
@@ -529,12 +555,13 @@ function CargoHold.start()
 			return
 		end
 		state = next
+		state.Backpack = if type(state.Backpack) == "table" then state.Backpack else {}
 		state.Items = if type(state.Items) == "table" then state.Items else {}
 		-- Drop whatever is held if the server moved or removed it meanwhile.
 		if holding then
 			local source = if holding.from == "Hand"
 				then state.Hand and { Fish = state.Hand }
-				else state.Items[holding.from]
+				else contents()[holding.from]
 			if not source or itemKey(source) ~= itemKey(holding.item) then
 				holding = nil
 			end
@@ -547,8 +574,12 @@ function CargoHold.start()
 	-- Mirrors the server's move so the hold answers instantly; the reply replaces it.
 	local function predict(from, to)
 		local next = table.clone(state)
-		local items = table.clone(state.Items)
-		next.Items = items
+		local items = table.clone(contents())
+		if container == "Backpack" then
+			next.Backpack = items
+		else
+			next.Items = items
+		end
 		local item = if from == "Hand" then { Fish = state.Hand } else items[from]
 		if not item or (from == "Hand" and not state.Hand) then
 			return state
@@ -565,7 +596,11 @@ function CargoHold.start()
 			if from ~= "Hand" then
 				table.remove(items, from)
 			end
-			next.Hand = if to == "Hand" then item.Fish else nil
+			if to == "Hand" then
+				next.Hand = item.Fish
+			elseif from == "Hand" then
+				next.Hand = nil
+			end
 		end
 		return next
 	end
@@ -575,11 +610,12 @@ function CargoHold.start()
 			return
 		end
 		local previous = state
+		local targetContainer = container
 		pending = true
 		holding = nil
 		applyState(predict(from, to))
 		task.spawn(function()
-			local ok, response = pcall(request.InvokeServer, request, "Move", from, to)
+			local ok, response = pcall(request.InvokeServer, request, "Move", from, to, targetContainer)
 			pending = false
 			if ok and type(response) == "table" then
 				applyState(response.State or previous)
@@ -634,11 +670,11 @@ function CargoHold.start()
 		end
 		local point = gridPoint()
 		local index = Cargo.at(
-			Cargo.occupied(state.Items, Catalog.Fish),
+			Cargo.occupied(contents(), Catalog.Fish),
 			math.floor(point.X / STEP) + 1,
 			math.floor(point.Y / STEP) + 1
 		)
-		local item = index and state.Items[index]
+		local item = index and contents()[index]
 		if item then
 			pickUp(index, item, item.R)
 		end
@@ -672,6 +708,25 @@ function CargoHold.start()
 	close.Activated:Connect(function()
 		setOpen(false)
 	end)
+	local function switchContainer(value)
+		if pending then
+			return
+		end
+		if value == "Boat" and not aboard then
+			flash("Climb aboard your boat to use its hold.")
+			return
+		end
+		holding = nil
+		container = value
+		buildGhost()
+		render()
+	end
+	backpackTab.Activated:Connect(function()
+		switchContainer("Backpack")
+	end)
+	boatTab.Activated:Connect(function()
+		switchContainer("Boat")
+	end)
 	toggle.Activated:Connect(function()
 		setOpen(not open)
 	end)
@@ -703,6 +758,11 @@ function CargoHold.start()
 		local now = Aboard(player.Character, boat)
 		if now ~= aboard then
 			aboard = now
+			if not now and container == "Boat" then
+				container = "Backpack"
+				holding = nil
+				buildGhost()
+			end
 			setOpen(open)
 		end
 	end)
@@ -716,7 +776,7 @@ function CargoHold.start()
 			local viewport = camera.ViewportSize
 			scale.Scale = math.clamp(
 				math.min((viewport.X - 40) / panel.Size.X.Offset, (viewport.Y - 150) / panel.Size.Y.Offset),
-				0.45,
+				0.2,
 				1
 			)
 		end

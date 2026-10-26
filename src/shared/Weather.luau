@@ -121,7 +121,9 @@ function Weather.inLake(position: Vector3): boolean
 end
 
 function Weather.lakeExposure(position: Vector3): number
-	if not Weather.inLake(position) then
+	-- Keep the field continuous just outside the bay too. A ribbon spans several
+	-- samples: a hard polygon cutoff made its ends and normals jump at headlands.
+	if position.X < -660 or position.X > 570 or position.Z < -600 or position.Z > 440 then
 		return 1
 	end
 	-- Blend through the western mouth; the inner lake only receives short ripples.
@@ -130,7 +132,21 @@ function Weather.lakeExposure(position: Vector3): number
 	local relative = Vector3.new(position.X, 0, position.Z) - mouthA
 	local nearest = mouthA + mouth * math.clamp(relative:Dot(mouth) / mouth:Dot(mouth), 0, 1)
 	local distance = (Vector3.new(position.X, 0, position.Z) - nearest).Magnitude
-	return 1 - 0.82 * smoothstep(distance / 220)
+	local shelter = 0.82 * smoothstep(distance / 220)
+	if not Weather.inLake(position) then
+		local boundaryDistanceSquared = math.huge
+		local previous = bay[#bay]
+		for _, current in bay do
+			local dx, dz = current.X - previous.X, current.Z - previous.Z
+			local x, z = position.X - previous.X, position.Z - previous.Z
+			local t = math.clamp((x * dx + z * dz) / (dx * dx + dz * dz), 0, 1)
+			x, z = x - dx * t, z - dz * t
+			boundaryDistanceSquared = math.min(boundaryDistanceSquared, x * x + z * z)
+			previous = current
+		end
+		shelter *= 1 - smoothstep(math.sqrt(boundaryDistanceSquared) / 40)
+	end
+	return 1 - shelter
 end
 
 -- Broad rain bands contain compact storm cores. Their paths never wrap across

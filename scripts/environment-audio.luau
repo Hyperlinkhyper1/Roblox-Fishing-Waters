@@ -92,7 +92,10 @@ local services = {
 	ContentProvider = {
 		PreloadAsync = function(_, assets)
 			preloadCount += 1
-			assert(#assets == 4, "Preload surf and Roblox's bundled water/wind cues")
+			assert(#assets == 3, "Preload only continuous wind and the event-driven water cues")
+			for _, id in assets do
+				assert(id ~= "rbxassetid://9114586981", "Never preload the repeating giant splash")
+			end
 		end,
 	},
 }
@@ -129,7 +132,7 @@ local function enter(speed)
 	root.AssemblyLinearVelocity = Vector3.new(0, -speed, 0)
 	humanoid.State = Enum.HumanoidStateType.Freefall
 	root.CFrame = CFrame.new(0, 4, 0)
-	step()
+	step(0.3)
 	root.CFrame = CFrame.new(0, -1, 0)
 	root.AssemblyLinearVelocity = Vector3.zero
 	humanoid.State = Enum.HumanoidStateType.Swimming
@@ -148,7 +151,14 @@ step(3)
 assert(waves.Volume > 0.2 and wind.Volume > 0.08, "Calm weather must still have audible water and wind")
 assert(waves.PlayCount == 1 and wind.PlayCount == 1, "Steady ambience must never restart each frame")
 assert(underwater.Volume == 0, "Underwater wash must stay silent above water")
+assert(
+	underwater.SoundId ~= "rbxasset://sounds/impact_water.mp3",
+	"Underwater ambience must not loop a splash recording"
+)
+local surfFilter = waves:FindFirstChildOfClass("EqualizerSoundEffect")
+assert(surfFilter and surfFilter.HighGain <= -20, "Sea wash must be soft filtered noise")
 for _, cue in { waves, wind, underwater } do
+	assert(cue.SoundId == "rbxasset://sounds/action_falling.mp3", "Ambient loops must use continuous noise without splash impacts")
 	assert(cue:GetAttribute("AudioCategory") == "Effects", "Ambience must respect the effects slider")
 end
 local clearWind = wind.Volume
@@ -173,14 +183,14 @@ water = true
 move(0, -4, 0)
 step(3)
 assert(
-	underwater.Volume > 0.3 and waves.Volume < 0.02 and wind.Volume < 0.03,
+	underwater.Volume > 0.11 and underwater.Volume <= 0.12 and waves.Volume < 0.02 and wind.Volume < 0.03,
 	"Diving must replace outdoor noise with a muffled wash"
 )
 local eq = underwater:FindFirstChildOfClass("EqualizerSoundEffect")
 assert(eq.HighGain < -20 and eq.MidGain < -10, "Underwater wash must remove surface hiss")
 move(0, -0.05, 0)
 step(0.5)
-assert(underwater.Volume > 0.3, "Waterline hysteresis must prevent audio flicker")
+assert(underwater.Volume > 0.11, "Waterline hysteresis must prevent audio flicker")
 move(0, 8, 0)
 step(3)
 assert(
@@ -197,8 +207,21 @@ assert(splash and swim and not splash.IsPlaying and swim.Volume == 0, "Fallback 
 enter(12)
 assert(splash.PlayCount == 1 and splash.Volume >= 0.5, "A normal water entry must produce an audible splash")
 local gentle = splash.Volume
+assert(not splash.Looped, "Plunge audio must be a one-shot")
+step(0.45)
+assert(splash.IsPlaying and splash.Volume > 0 and splash.Volume < gentle, "The short splash must fade out smoothly")
+step(0.2)
+assert(not splash.IsPlaying and splash.Volume == 0, "The plunge tail must stop within 0.55 seconds")
 step(1)
 assert(splash.PlayCount == 1, "Treading water must not keep splashing")
+for _ = 1, 4 do
+	root.CFrame = CFrame.new(0, 0.4, 0)
+	humanoid.State = Enum.HumanoidStateType.Freefall
+	step(0.4)
+	humanoid.State = Enum.HumanoidStateType.Swimming
+	step(0.4)
+end
+assert(splash.PlayCount == 1, "Repeated surface bobbing beyond the cooldown must not rearm the plunge")
 root.CFrame = CFrame.new(0, -4, 0)
 humanoid.State = Enum.HumanoidStateType.Freefall
 step(1)

@@ -5,14 +5,27 @@ local function check(value, message)
 end
 
 for _, angle in { 0, 0.73, 2.1 } do
-	for _, saved in { "fresh", "blocks", "stoneRamp" } do
+	for _, saved in { "fresh", "blocks", "stoneRamp", "plankDocks" } do
 		local base = Instance.new("Model")
 		local dockFrame = CFrame.new(100, 0, -240) * CFrame.Angles(0, angle, 0)
 		base:SetAttribute("OwnerUserId", 42)
-		base:SetAttribute("DockDetailVersion", 1)
+		base:SetAttribute("DockDetailVersion", DOCK_DETAIL_VERSION)
 		base:SetAttribute("BoatDockFrame", dockFrame)
 		local unrelated = Props.part(base, Vector3.new(2, 2, 2), dockFrame * CFrame.new(24, 6, 12), QUAY)
 		local old = {}
+		local oldDock = nil
+		if saved == "plankDocks" then
+			buildBaseDocks(base, dockFrame, 1)
+			oldDock = base:FindFirstChild("Dock")
+			for _, part in base:GetDescendants() do
+				if part.Name == "DeckSurface" then
+					part:Destroy()
+				elseif part.Name == "DeckPlank" then
+					part.CanCollide = true
+				end
+			end
+			base:SetAttribute("DockDetailVersion", 1)
+		end
 		if saved == "blocks" then
 			for _, side in { -1, 1 } do
 				table.insert(
@@ -47,7 +60,49 @@ for _, angle in { 0, 0.73, 2.1 } do
 			unrelated.Parent == base and base:GetAttribute("OwnerUserId") == 42,
 			"Migration preserves plot ownership and other parts"
 		)
-		check(base:GetAttribute("DockDetailVersion") == 1, "Access repair does not rebuild the decorated piers")
+		check(
+			base:GetAttribute("DockDetailVersion") == DOCK_DETAIL_VERSION,
+			"Dock migration reaches the current surface layout"
+		)
+		if oldDock then
+			check(oldDock.Parent == nil, "Saved plank-only docks are replaced")
+			local surfaceCount = 0
+			for _, dock in base:GetChildren() do
+				if dock.Name ~= "Dock" and dock.Name ~= "DockLink" then
+					continue
+				end
+				local surface = dock:FindFirstChild("DeckSurface")
+				check(
+					surface and surface.CanCollide and surface.Anchored and surface.Transparency == 1,
+					"Every pier and crosswalk has a continuous hidden collider"
+				)
+				local p = dockFrame:PointToObjectSpace(surface.Position)
+				check(math.abs(p.Y + surface.Size.Y / 2 - 3.3) < 0.001, "Support meets the visible deck top")
+				local expectedWidth, expectedLength =
+					if dock.Name == "Dock" then 7 else 5, if dock.Name == "Dock" then 48 else 27
+				check(
+					surface.Size.X == expectedWidth and surface.Size.Z == expectedLength,
+					"Continuous support covers the entire deck without extending over water"
+				)
+				for _, part in dock:GetChildren() do
+					if part.Name == "DeckPlank" then
+						check(
+							not part.CanCollide and not part.CanQuery,
+							"Visible plank seams do not split dock navigation"
+						)
+					end
+				end
+				surfaceCount += 1
+			end
+			check(surfaceCount == 3, "Both piers and their connecting crosswalk are repaired")
+			local repairedDock = base:FindFirstChild("Dock")
+			Harbour.ensureDocks({
+				GetDescendants = function()
+					return { base }
+				end,
+			})
+			check(base:FindFirstChild("Dock") == repairedDock, "Repeated startup preserves repaired docks")
+		end
 		check(access:GetAttribute("LayoutVersion") == 2, "Saved stone ramps receive the timber layout")
 		if oldAccess then
 			check(oldAccess.Parent == nil, "Saved stone ramp model is replaced")

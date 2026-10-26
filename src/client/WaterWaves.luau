@@ -39,6 +39,9 @@ local function makeBeam(parent: Instance, a: Attachment, b: Attachment, name: st
 	beam.TextureMode = Enum.TextureMode.Stretch
 	beam.LightEmission = 0
 	beam.LightInfluence = 1
+	-- The foam and body share attachments. Give each layer a distinct depth so
+	-- the nearly flat lake-mouth crests cannot fight each other for the surface.
+	beam.ZOffset = if name == "WindCrest" then 0.12 else 0.06
 	beam.Color =
 		ColorSequence.new(if name == "WindSwell" then workspace.Terrain.WaterColor else Color3.fromRGB(205, 229, 230))
 	beam.Transparency = NumberSequence.new({
@@ -312,6 +315,9 @@ function WaterWaves.start()
 			end
 			local crest = math.clamp(height / math.max(amplitude, 0.01), 0, 1)
 			local fade = math.clamp((crest - 0.08) / 0.6, 0, 1)
+			-- Sheltered ripples are already drawn by Terrain. Raised ribbons at
+			-- that height intersect it repeatedly; ease them in as swells grow.
+			fade *= smoothstep(math.clamp((amplitude - 0.08) / 0.32, 0, 1))
 			local enabled = visible and ribbon.water == true and fade > 0.01 and from ~= nil
 			ribbon.body.Enabled, ribbon.edge.Enabled = enabled, enabled
 			if not enabled then

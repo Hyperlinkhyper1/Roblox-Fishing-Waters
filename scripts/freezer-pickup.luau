@@ -1,4 +1,5 @@
 -- Exercise the production freezer display and pickup using recording model doubles.
+local Packing = require("../src/shared/FreezerPacking")
 local fs = require("@lute/fs")
 local luau = require("@lute/luau")
 local file = fs.open("src/server/CustomerService.luau", "r")
@@ -16,48 +17,89 @@ local function model()
 	function result:Destroy()
 		self.destroyed, self.Parent = true, nil
 		for _, child in models do
-			if child.Parent == self then child:Destroy() end
+			if child.Parent == self then
+				child:Destroy()
+			end
 		end
 	end
 	table.insert(models, result)
 	return result
 end
-local frame = setmetatable({}, { __mul = function(a) return a end })
+local frame = setmetatable({}, {
+	__mul = function(a)
+		return a
+	end,
+})
 local record = { FishId = "Trout", Mutation = "Normal", Kg = 2, CaughtAt = 100, Value = 20 }
 local freezer = { record }
 local owner = { UserId = 42 }
-local api = luau.load(luau.compile(
-	section("local function recordKey(", "local function setAnchored(")
-	.. section("local function takeFromFreezer(", "local function putOnCounter(")
-	.. "\nreturn { refresh = refreshDisplay, take = takeFromFreezer }"
-), "freezer-pickup", {
-	string = string, table = table, math = math, tostring = tostring,
-	ownerOf = function() return owner end,
-	BoatService = { getProfile = function() return { Angler = { Freezer = freezer } } end },
-	DISPLAY_LIMIT = 24, DISPLAY_ROWS = { 0 },
-	AnglerData = { FREEZER_CAPACITY = 4 },
-	freezerFrames = function() return { frame } end,
-	Instance = { new = model },
-	FishFreezer = {
-		frame = function() return frame end,
-		ICE_X = { X = -5, Y = 5 },
-		iceSurface = function() return frame end,
-	},
-	CFrame = { identity = frame, Angles = function() return frame end },
-	fishModel = function(_, welded)
-		assert(welded, "Display fish must be welded for pickup")
-		return model(), { Y = 1, Z = 0.5 }
-	end,
-	restOn = function() end,
-	carry = function(customer, fish) fish.Parent = customer.model end,
-})()
+local api = luau.load(
+	luau.compile(
+		section("local function recordKey(", "local function setAnchored(")
+			.. section("local function takeFromFreezer(", "local function putOnCounter(")
+			.. "\nreturn { refresh = refreshDisplay, take = takeFromFreezer }"
+	),
+	"freezer-pickup",
+	{
+		string = string,
+		table = table,
+		math = math,
+		tostring = tostring,
+		ownerOf = function()
+			return owner
+		end,
+		BoatService = {
+			getProfile = function()
+				return { Angler = { Freezer = freezer } }
+			end,
+		},
+		AnglerData = {
+			freezerLayout = function(data)
+				return Packing.layout(data.Freezer, 1, function()
+					return { X = 1, Y = 0.5, Z = 0.3 }
+				end)
+			end,
+		},
+		freezerFrames = function()
+			return { frame }
+		end,
+		Instance = { new = model },
+		FishFreezer = {
+			frame = function()
+				return frame
+			end,
+			ICE_X = { X = -5, Y = 5 },
+			iceSurface = function()
+				return frame
+			end,
+		},
+		CFrame = {
+			identity = frame,
+			Angles = function()
+				return frame
+			end,
+		},
+		fishModel = function(_, welded)
+			assert(welded, "Display fish must be welded for pickup")
+			return model(), { Y = 1, Z = 0.5 }
+		end,
+		restOn = function() end,
+		carry = function(customer, fish)
+			fish.Parent = customer.model
+		end,
+	}
+)()
 local checks = 0
 local function check(ok, message)
 	checks += 1
 	assert(ok, message)
 end
 local shop = { freezerPrompt = { Parent = { Parent = {} } } }
-local customer = { record = record, model = { FindFirstChild = function() return true end } }
+local customer = { record = record, model = {
+	FindFirstChild = function()
+		return true
+	end,
+} }
 shop.customers = { customer }
 
 api.refresh(shop)
@@ -84,6 +126,24 @@ customer.record = table.clone(record)
 customer.record.Mutation = "Golden"
 check(api.take(shop, customer) == nil, "Pickup cannot take another mutation")
 customer.record = record
-customer.model.FindFirstChild = function() return nil end
+customer.model.FindFirstChild = function()
+	return nil
+end
 check(api.take(shop, customer) == nil and #shop.displayFish == 1, "Missing hand leaves freezer intact")
+customer.model.FindFirstChild = function()
+	return true
+end
+freezer = {}
+for index = 1, 30 do
+	local catch = table.clone(record)
+	catch.CaughtAt += index
+	table.insert(freezer, catch)
+end
+api.refresh(shop)
+check(#shop.displayFish == 30, "All packed fish display beyond the former 24-fish cap")
+customer.record = freezer[29]
+original = shop.displayFish[29].model
+check(api.take(shop, customer) == original and #shop.displayFish == 29, "Customers can pick up stock beyond index 24")
+api.refresh(shop)
+check(#shop.displayFish == 29, "A customer keeps its reserved space until payment")
 print("Freezer pickup: " .. checks .. " production display and transfer checks passed.")
