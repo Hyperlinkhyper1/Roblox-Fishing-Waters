@@ -5,6 +5,112 @@ local LowPoly = require(script.Parent.LowPoly)
 
 local Props = {}
 
+local HOUSE_COLLISION_VERSION = 1
+local HOUSE_NAMES = {
+	House = true,
+	CubeHouse = true,
+	Townhouse = true,
+	Villa = true,
+	FishingRodShop = true,
+	FurnitureShop = true,
+}
+local BASE_TRIM = {
+	SidePlinth = true,
+	EavesBeam = true,
+	TimberPost = true,
+	DoorJamb = true,
+	DoorHeader = true,
+	RidgeCap = true,
+	CeilingTie = true,
+}
+
+local function noCollision(piece: BasePart)
+	piece.CanCollide, piece.CanTouch, piece.CanQuery = false, false, false
+end
+
+-- Keep the existing solid building cores and walking surfaces. Facade details
+-- within 0.65 studs of a core share its collision instead of each adding a body.
+-- Test all eight corners in the core's frame, including on rotated houses.
+local function coveredByCore(piece: BasePart, core: BasePart): boolean
+	local half = core.Size / 2 + Vector3.new(0.65, 0.65, 0.65)
+	for _, x in { -0.5, 0.5 } do
+		for _, y in { -0.5, 0.5 } do
+			for _, z in { -0.5, 0.5 } do
+				local point = core.CFrame:PointToObjectSpace(
+					piece.CFrame * Vector3.new(piece.Size.X * x, piece.Size.Y * y, piece.Size.Z * z)
+				)
+				if math.abs(point.X) > half.X or math.abs(point.Y) > half.Y or math.abs(point.Z) > half.Z then
+					return false
+				end
+			end
+		end
+	end
+	return true
+end
+
+function Props.simplifyHouseCollision(house: Model)
+	if house:GetAttribute("HouseCollisionVersion") == HOUSE_COLLISION_VERSION then
+		return
+	end
+	if house.Name == "BaseHouse" then
+		-- Player homes are hollow: never replace their rooms with a solid box.
+		-- Only shell trim is decorative; furniture retains its own interactions.
+		local shell = house:FindFirstChild("Shell")
+		for _, piece in if shell then shell:GetDescendants() else {} do
+			if piece:IsA("BasePart") and BASE_TRIM[piece.Name] then
+				noCollision(piece)
+			end
+		end
+	else
+		local pieces, cores = {}, {}
+		for _, piece in house:GetDescendants() do
+			if piece:IsA("BasePart") and piece.CanCollide then
+				table.insert(pieces, piece)
+				-- Scenery houses already have solid, rectangular wall blocks.
+				-- Roofs, steps, stilts, balconies and exterior stairs are not cores.
+				if
+					piece:IsA("Part")
+					and piece.Shape == Enum.PartType.Block
+					and piece.Size.X >= 8
+					and piece.Size.Z >= 8
+					and piece.Size.Y >= 6
+				then
+					table.insert(cores, piece)
+				end
+			end
+		end
+		for _, piece in pieces do
+			if table.find(cores, piece) then
+				continue
+			end
+			for _, core in cores do
+				if coveredByCore(piece, core) then
+					noCollision(piece)
+					break
+				end
+			end
+		end
+	end
+	house:SetAttribute("HouseCollisionVersion", HOUSE_COLLISION_VERSION)
+end
+
+-- Baked maps keep their models, positions, ownership and furnishings.
+function Props.ensureHouseCollision(root: Instance)
+	for _, house in root:GetDescendants() do
+		if
+			house:IsA("Model")
+			and (
+				HOUSE_NAMES[house.Name]
+				or house.Name == "BaseHouse"
+				or house.Name == "PlazaHouse"
+				or string.match(house.Name, "^PlazaHouse%d+$")
+			)
+		then
+			Props.simplifyHouseCollision(house)
+		end
+	end
+end
+
 local TAU = math.pi * 2
 local rgb = Color3.fromRGB
 local M = Enum.Material
@@ -574,6 +680,7 @@ function Props.house(
 			)
 		end
 	end
+	Props.simplifyHouseCollision(m)
 	return m
 end
 
@@ -1132,6 +1239,163 @@ function Props.crabPot(parent: Instance, ground: Vector3, rng: Random): Model
 		part(m, Vector3.new(0.15, 1.8, 0.15), frame * CFrame.new(c[1] * 1.5, 0, c[2] * 1.1), IRON, M.Metal)
 	end
 	part(m, Vector3.new(0.4, 0.4, 0.4), frame * CFrame.new(0.4, 0, 0), rgb(220, 100, 60), M.Plastic)
+	return m
+end
+
+-- A crab cage the angler can buy: coated-wire box on wooden skids with a funnel
+-- entrance at each end, an orange bait box hung inside and a rope bridle on top.
+-- `frame` is the centre of its base, the long sides along X. With `float`, a rope
+-- runs to a marker float in a "Float" model that rides at CRAB_CAGE_WATERLINE.
+-- Every part is decoration: no collision, queries or touches.
+Props.CRAB_CAGE_SIZE = Vector3.new(3.2, 1.9, 2.4)
+Props.CRAB_CAGE_WATERLINE = 1.45
+function Props.crabCage(parent: Instance, frame: CFrame, float: boolean?): Model
+	local m = newModel("CrabCage", parent)
+	local coat, wire = rgb(30, 58, 50), rgb(48, 96, 80)
+	local net, rubber = rgb(226, 214, 176), rgb(28, 28, 30)
+	local size = Props.CRAB_CAGE_SIZE
+	local hw, hd, top = size.X / 2 - 0.07, size.Z / 2 - 0.07, size.Y
+	local floor = 0.3
+	local function piece(container: Instance, dimensions: Vector3, offset: CFrame, color: Color3, material): Part
+		local p = part(container, dimensions, frame * offset, color, material)
+		p.CanCollide, p.CanQuery = false, false
+		return p
+	end
+	local function bar(container: Instance, a: Vector3, b: Vector3, width: number, color: Color3, material): Part
+		local p = beam(container, frame * a, frame * b, width, color, nil, material or M.SmoothPlastic)
+		p.CanCollide, p.CanQuery = false, false
+		p.CastShadow = width > 0.06
+		return p
+	end
+	local V = Vector3.new
+	-- An invisible root at `frame` keeps the model's pivot on the cage's base,
+	-- even while a held copy is carried around welded to a Tool.
+	local root = piece(m, V(0.2, 0.2, 0.2), CFrame.new(), WOOD)
+	root.Name = "CageRoot"
+	root.Transparency, root.CastShadow = 1, false
+	m.PrimaryPart = root
+
+	-- Skids, a slatted floor and two weight bars to sink it
+	for _, z in { -(hd - 0.1), hd - 0.1 } do
+		piece(m, V(size.X + 0.3, 0.16, 0.3), CFrame.new(0, 0.08, z), WOOD_DARK, M.Wood)
+	end
+	for index, z in { -0.84, -0.28, 0.28, 0.84 } do
+		piece(
+			m,
+			V(size.X, 0.14, 0.48),
+			CFrame.new(0, 0.23, z),
+			if index % 2 == 0 then WOOD else WOOD:Lerp(WOOD_DARK, 0.3),
+			M.WoodPlanks
+		)
+	end
+	for _, x in { -(hw - 0.3), hw - 0.3 } do
+		piece(m, V(0.3, 0.14, size.Z - 0.5), CFrame.new(x, floor + 0.07, 0), IRON, M.Metal)
+	end
+
+	-- Corner posts and the top and bottom rims
+	for _, x in { -hw, hw } do
+		for _, z in { -hd, hd } do
+			bar(m, V(x, floor, z), V(x, top, z), 0.14, coat)
+		end
+	end
+	for _, y in { floor + 0.04, top } do
+		for _, z in { -hd, hd } do
+			bar(m, V(-hw, y, z), V(hw, y, z), 0.12, coat)
+		end
+		for _, x in { -hw, hw } do
+			bar(m, V(x, y, -hd), V(x, y, hd), 0.12, coat)
+		end
+	end
+	-- Wire mesh on the long sides and the top
+	for _, z in { -hd, hd } do
+		for _, x in { -1, -0.5, 0, 0.5, 1 } do
+			bar(m, V(x, floor, z), V(x, top, z), 0.05, wire)
+		end
+		for _, y in { 0.85, 1.4 } do
+			bar(m, V(-hw, y, z), V(hw, y, z), 0.05, wire)
+		end
+	end
+	for _, z in { -0.6, 0, 0.6 } do
+		bar(m, V(-hw, top, z), V(hw, top, z), 0.05, wire)
+	end
+	for _, x in { -1.05, -0.45, 0.45, 1.05 } do
+		-- The inner pair are the edges of the bait lid.
+		local lid = math.abs(x) < 1
+		bar(m, V(x, top, -hd), V(x, top, hd), if lid then 0.08 else 0.05, if lid then coat else wire)
+	end
+	-- A bungee holds the bait lid shut, hooked over the rim
+	bar(m, V(0.1, top + 0.06, 0), V(hw, top + 0.03, 0), 0.07, rubber, M.Rubber)
+	local function knob(at: Vector3, diameter: number)
+		local p = ball(m, frame * at, diameter, IRON, M.Metal)
+		p.CanCollide, p.CanQuery = false, false
+	end
+	knob(V(hw, top, 0), 0.14)
+
+	-- Funnel entrances: a net ring on each end narrowing to a dark throat inside
+	for _, side in { -1, 1 } do
+		local x, y = side * hw, 1.11
+		for _, z in { -0.66, 0.66 } do
+			bar(m, V(x, floor, z), V(x, top, z), 0.05, wire)
+		end
+		for _, rail in { 0.62, 1.6 } do
+			bar(m, V(x, rail, -hd), V(x, rail, hd), 0.05, wire)
+		end
+		local function ring(angle: number): Vector3
+			return V(x, y + math.sin(angle) * 0.4, math.cos(angle) * 0.4)
+		end
+		for k = 0, 7 do
+			bar(m, ring(k * TAU / 8), ring((k + 1) * TAU / 8), 0.08, net, M.Fabric)
+		end
+		local throatX = side * (hw - 0.55)
+		local throat = piece(m, V(0.05, 0.36, 0.36), CFrame.new(throatX, y - 0.06, 0), rgb(18, 30, 26), M.Fabric)
+		throat.Shape = Enum.PartType.Cylinder
+		throat.Transparency = 0.25
+		for k = 0, 3 do
+			local angle = k * TAU / 4 + TAU / 8
+			local inner = V(throatX, y - 0.06 + math.sin(angle) * 0.17, math.cos(angle) * 0.17)
+			bar(m, ring(angle), inner, 0.04, net, M.Fabric)
+		end
+	end
+
+	-- Bait box hung from the lid on a cord
+	piece(m, V(0.5, 0.36, 0.36), CFrame.new(0, 1.3, 0), rgb(236, 124, 42), M.SmoothPlastic)
+	piece(m, V(0.52, 0.05, 0.38), CFrame.new(0, 1.26, 0), rgb(150, 66, 22), M.SmoothPlastic)
+	piece(m, V(0.54, 0.07, 0.4), CFrame.new(0, 1.5, 0), rgb(214, 104, 32), M.SmoothPlastic)
+	bar(m, V(0, 1.52, 0), V(0, top, 0), 0.03, net, M.Fabric)
+
+	-- Rope bridle up to a shackle in the middle of the lid
+	local shackle = V(0, top + 0.47, 0)
+	for _, x in { -hw * 0.6, hw * 0.6 } do
+		bar(m, V(x, top, 0), shackle, 0.07, ROPE, M.Fabric)
+	end
+	knob(shackle, 0.16)
+
+	if float then
+		local buoy = newModel("Float", m)
+		local water = Props.CRAB_CAGE_WATERLINE
+		local at = V(hw + 0.75, water, hd - 0.3)
+		-- Upright at the waterline, so the client can bob it about its own middle.
+		buoy.WorldPivot = CFrame.new(frame * at)
+		local sag = V(hw * 0.5, water + 0.05, 0.4)
+		bar(buoy, shackle, sag, 0.07, ROPE, M.Fabric)
+		bar(buoy, sag, at + V(-0.45, 0.1, 0), 0.07, ROPE, M.Fabric)
+		local function drum(height: number, diameter: number, y: number, color: Color3, material): Part
+			local p = piece(
+				buoy,
+				V(height, diameter, diameter),
+				CFrame.new(at + V(0, y, 0)) * CFrame.Angles(0, 0, math.pi / 2),
+				color,
+				material
+			)
+			p.Shape = Enum.PartType.Cylinder
+			return p
+		end
+		drum(1.1, 0.95, 0.15, rgb(240, 112, 38), M.SmoothPlastic)
+		drum(0.22, 0.98, 0.4, WHITE, M.SmoothPlastic)
+		drum(0.14, 0.6, 0.76, rgb(200, 84, 30), M.SmoothPlastic)
+		bar(buoy, at + V(0, 0.7, 0), at + V(0, 2.9, 0), 0.09, WOOD_DARK, M.Wood)
+		piece(buoy, V(0.04, 0.5, 0.8), CFrame.new(at + V(0, 2.6, 0.42)), rgb(250, 214, 64), M.Fabric).Name = "Flag"
+	end
 	return m
 end
 

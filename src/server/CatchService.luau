@@ -6,7 +6,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local AnglerService = require(script.Parent.AnglerService)
+local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local BackpackCatalog = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
@@ -91,6 +93,15 @@ local function cast(player: Player, target: any)
 		return
 	end
 	local profile = BoatService.getProfile(player)
+	if not profile then
+		send(player, "Cancelled", "Your tackle box is still loading. Try again in a moment.")
+		return
+	end
+	local backpack = BackpackCatalog.Items[profile.Angler.BackpackId] or BackpackCatalog.Items.Starter
+	if not AnglerData.hasCatchSpace(profile.Angler, backpack, Catalog.Fish) then
+		send(player, "Cancelled", "Your hand and backpack are full. Make room before fishing.")
+		return
+	end
 	local offset = target - root.Position
 	if Vector3.new(offset.X, 0, offset.Z).Magnitude > MAX_CAST_DISTANCE + 4 or math.abs(offset.Y) > 60 then
 		send(player, "Cancelled", "That's too far to cast.")

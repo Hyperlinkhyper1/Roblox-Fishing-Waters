@@ -98,7 +98,7 @@ check(
 	"Bobber luck reaches the actual species roll"
 )
 local function mutationPick()
-	return 0.0055
+	return Mutations.CHANCE + 0.0005
 end
 local fish = { Rarity = "Common" }
 check(

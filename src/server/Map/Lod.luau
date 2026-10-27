@@ -1,6 +1,6 @@
--- Far-away stand-ins for every island. Small islands stream as one atomic unit;
--- while they're out of streaming range the client shows a coarse faceted shell instead
--- (see client/Lod), so the whole map stays on the horizon for a fraction of the parts.
+-- Far-away stand-ins for every island. Islands stream in piece by piece; until one has
+-- arrived the client shows a coarse faceted shell instead (see client/Lod), so the whole
+-- map stays on the horizon for a fraction of the parts.
 --
 -- Shells are shrink-wrapped from the finished geometry: spherecasts on a polar lattice over
 -- the island pick up the ground and any trees or buildings, so forests read as raised canopy.
@@ -344,14 +344,198 @@ local function islands(root: Instance): { Model }
 	return found
 end
 
--- Islands stream part by part, never as one atomic unit. An atomic island is thousands of
--- wedges the client has to create in a single frame, which froze the game every time one
--- came into range. Streamed normally the engine spreads them over many frames; the client
--- keeps each island's shell up until most of its ground is in (see client/Lod), so the
--- island just takes a little longer to swap in. With StreamOutBehavior LowMemory nothing
--- streams back out unless the device runs short of memory.
-function Lod.prepareIsland(island: Model)
+-- Every island is cut into pieces that stream in one at a time and are then pinned for the
+-- player they reached (see Lod.serve), so once an island is drawn it never streams back out
+-- and reloads. Plain streaming couldn't promise that: with StreamOutBehavior LowMemory the
+-- client throws out everything past StreamingMinRadius whenever the device runs short of
+-- memory, which reloaded the harbour over and over. Pinning a whole island instead meant
+-- it arrived as one atomic unit, thousands of wedges created in a single frame, which froze
+-- the game every time one came into range. A piece is small enough to arrive without a hitch.
+-- PersistentPerPlayer behaves as Atomic until the server adds the player, then as Persistent.
+local PIECE_TAG = "LodPiece"
+local PIECE_PARTS = 200 -- models up to this size stream in as one piece; bigger ones are split
+local CHUNK = 96 -- loose ground wedges are regrouped into square chunks this wide
+local PIN_BATCH = 500 -- most pieces one request may pin
+
+local pieces: { [number]: Model } = {}
+local pieceIds: { [Model]: number } = {}
+local split: { [Model]: boolean } = {}
+local lastId = 0
+
+-- Ids are handed out afresh every server start; ones baked into a saved map are replaced.
+local function addPiece(model: Model)
+	if pieceIds[model] then
+		return
+	end
+	lastId += 1
+	local id = lastId
+	pieces[id] = model
+	pieceIds[model] = id
+	model.ModelStreamingMode = Enum.ModelStreamingMode.PersistentPerPlayer
+	model:SetAttribute("PieceId", id)
+	model:AddTag(PIECE_TAG)
+end
+
+-- BaseParts under a model, or nil when it holds a model that streams by rules of its own
+local function plainParts(model: Model): number?
+	local count = 0
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			count += 1
+		elseif d:IsA("Model") and d.ModelStreamingMode ~= Enum.ModelStreamingMode.Default then
+			return nil
+		end
+	end
+	return count
+end
+
+-- Ground is thousands of anonymous wedges loose in one model (and its seabed slope), so it
+-- is regrouped by position. Nothing looks ground wedges up by name.
+local function chunkGround(container: Instance)
+	local chunks: { [string]: Model } = {}
+	for _, child in container:GetChildren() do
+		if child:IsA("BasePart") then
+			local key = math.floor(child.Position.X / CHUNK) .. "," .. math.floor(child.Position.Z / CHUNK)
+			local chunk = chunks[key]
+			if not chunk then
+				chunk = Instance.new("Model")
+				chunk.Name = "GroundChunk"
+				addPiece(chunk)
+				chunks[key] = chunk
+			end
+			child.Parent = chunk
+		elseif child:IsA("Model") then
+			if child:HasTag(PIECE_TAG) then
+				addPiece(child)
+			else
+				chunkGround(child)
+			end
+		end
+	end
+	for _, chunk in chunks do
+		chunk.Parent = container
+	end
+end
+
+-- A player base is too big for one piece, but splitting it left its quay, deck and other loose
+-- parts streaming normally, and the code that finds them by name under the base stops it
+-- being regrouped. So a base is pinned whole; pieces baked inside one by older maps go back
+-- to plain models, or their stale ids would pin the wrong pieces.
+local BASE_TAG = "PlayerBase"
+
+local function pinWhole(model: Model)
+	for _, d in model:GetDescendants() do
+		if d:IsA("Model") and d:HasTag(PIECE_TAG) then
+			d:RemoveTag(PIECE_TAG)
+			d:SetAttribute("PieceId", nil)
+			d.ModelStreamingMode = Enum.ModelStreamingMode.Default
+		end
+	end
+	addPiece(model)
+end
+
+-- Everything else keeps its place in the hierarchy: a model small enough becomes a piece as
+-- it is, a bigger one is split into its children. Loose parts in a big model stay as they
+-- were and still stream normally.
+local function splitIntoPieces(container: Instance)
+	for _, child in container:GetChildren() do
+		if child:IsA("Model") then
+			local mode = child.ModelStreamingMode
+			if child:HasTag(BASE_TAG) then
+				pinWhole(child)
+			elseif child:HasTag(PIECE_TAG) or mode == Enum.ModelStreamingMode.Atomic then
+				-- An atomic model (a shop, say) already arrives whole, so pinning changes nothing else
+				addPiece(child)
+			elseif mode == Enum.ModelStreamingMode.Default then
+				local parts = plainParts(child)
+				if parts and parts <= PIECE_PARTS then
+					addPiece(child)
+				else
+					splitIntoPieces(child)
+				end
+			end
+		elseif child:IsA("Folder") then
+			splitIntoPieces(child)
+		end
+	end
+end
+
+-- Must run before an island's contents first replicate: switching a model's streaming mode
+-- after clients have it makes it stream in all over again. So each island is split once,
+-- either as it's generated or at startup before anyone has a character.
+local function splitIsland(island: Model)
+	if split[island] then
+		return
+	end
+	split[island] = true
 	island.ModelStreamingMode = Enum.ModelStreamingMode.Default
+	for _, child in island:GetChildren() do
+		if child:IsA("Model") and child.Name == "Ground" and not child:HasTag(PIECE_TAG) then
+			chunkGround(child)
+		end
+	end
+	splitIntoPieces(island)
+end
+
+-- Called as a generated island is parented. Its trees and houses are added after that, so
+-- each is split as it goes in, in the same frame and so before it first replicates.
+function Lod.prepareIsland(island: Model)
+	if split[island] then
+		return
+	end
+	splitIsland(island)
+	island.ChildAdded:Connect(function(child)
+		if child:IsA("Model") and child.ModelStreamingMode == Enum.ModelStreamingMode.Default then
+			local parts = plainParts(child)
+			if parts and parts <= PIECE_PARTS then
+				addPiece(child)
+			else
+				splitIntoPieces(child)
+			end
+		end
+	end)
+end
+
+-- Clients report each piece as it streams in (see client/Lod) and the server pins it for
+-- them. Pins last for the session: a player who sails the whole map ends up holding all of it.
+function Lod.serve()
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	if ReplicatedStorage:FindFirstChild("LodPin") then
+		return
+	end
+	local Players = game:GetService("Players")
+	local pinned: { [Player]: { [number]: boolean } } = {}
+	Players.PlayerRemoving:Connect(function(player)
+		pinned[player] = nil
+	end)
+
+	local remote = Instance.new("RemoteEvent")
+	remote.Name = "LodPin"
+	remote.OnServerEvent:Connect(function(player, ids)
+		if typeof(ids) ~= "table" then
+			return
+		end
+		local held = pinned[player]
+		if not held then
+			held = {}
+			pinned[player] = held
+		end
+		for i, id in ids do
+			if typeof(i) ~= "number" or i > PIN_BATCH then
+				break
+			end
+			local piece = if typeof(id) == "number" then pieces[id] else nil
+			if piece and not held[id] then
+				if not piece.Parent then
+					pieces[id], pieceIds[piece] = nil, nil
+				elseif piece.ModelStreamingMode == Enum.ModelStreamingMode.PersistentPerPlayer then
+					held[id] = true
+					piece:AddPersistentPlayer(player)
+				end
+			end
+		end
+	end)
+	remote.Parent = ReplicatedStorage
 end
 
 function Lod.prepareStreaming(root: Instance)
@@ -361,7 +545,14 @@ function Lod.prepareStreaming(root: Instance)
 		shells.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 	end
 	for _, island in islands(root) do
-		Lod.prepareIsland(island)
+		splitIsland(island)
+		-- A generated harbour parents its empty Bases folder before building the bases in it,
+		-- so the island's ChildAdded split never saw them
+		for _, d in island:GetDescendants() do
+			if d:IsA("Model") and d:HasTag(BASE_TAG) and not pieceIds[d] then
+				pinWhole(d)
+			end
+		end
 		-- Counts baked into a saved map go stale whenever startup repairs rebuild some ground
 		-- (the harbour's drydock channel, say). A tile waiting for ground that no longer exists
 		-- stayed up over the finished town, so count again from the ground as it is now.

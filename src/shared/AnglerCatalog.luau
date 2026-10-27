@@ -41,6 +41,9 @@ Catalog.Fish = {
 	LeatherBoot = species("Leather Boot", "Junk", 50, 0.4, 0.8, 1.2, 1, 0, {
 		Normal = { "#.", "##" },
 	}),
+	Seaweed = species("Seaweed", "Junk", 50, 0.1, 0.3, 0.8, 1, 0, {
+		Normal = { "##", "#." },
+	}),
 	Trout = species("Trout", "Common", 4, 0.3, 1.2, 9, 10, 0.04, {
 		Normal = { "##" },
 		Big = { "###" },
@@ -138,13 +141,30 @@ Catalog.Fish = {
 		Big = { "...#..", "######", "######", ".####." },
 		Huge = { "...#...", "#######", "#######", "#######", ".#####." },
 	}),
+
+	-- Crabs only come from crab cages (Shared.CrabCages.Pool), never from a cast.
+	ShoreCrab = species("Shore Crab", "Common", 4, 0.05, 0.2, 0.9, 12, 0, {
+		Normal = { "##" },
+		Big = { "##", "##" },
+		Huge = { "###", "###" },
+	}),
+	BlueCrab = species("Blue Crab", "Uncommon", 9, 0.15, 0.45, 1.8, 26, 0, {
+		Normal = { "##" },
+		Big = { "###", "###" },
+		Huge = { "####", "####" },
+	}),
+	KingCrab = species("King Crab", "Rare", 20, 0.8, 2.6, 11, 60, 0, {
+		Normal = { "###", "###" },
+		Big = { "####", "####" },
+		Huge = { "#####", "#####", "#####" },
+	}),
 }
 
 -- CatchService picks MainLake inside the sheltered bay and OpenSea everywhere else.
 Catalog.Pools = {
 	MainLake = {
 		Name = "Main Lake",
-		Junk = { "WoodenBranch", "LeatherBoot" },
+		Junk = { "WoodenBranch", "LeatherBoot", "Seaweed" },
 		Fish = {
 			"Trout",
 			"Carp",
@@ -160,7 +180,7 @@ Catalog.Pools = {
 	},
 	OpenSea = {
 		Name = "Open Sea",
-		Junk = { "WoodenBranch", "LeatherBoot" },
+		Junk = { "WoodenBranch", "LeatherBoot", "Seaweed" },
 		Fish = {
 			"Clownfish",
 			"Sardine",
@@ -181,21 +201,21 @@ Catalog.DefaultPool = "MainLake"
 -- them in step with the roll odds.
 Catalog.Mutations = {
 	Normal = { Name = "Normal", RarityMultiplier = 1 },
-	Neon = { Name = "Neon", RarityMultiplier = 483 },
-	Albino = { Name = "Albino", RarityMultiplier = 1111 },
-	Rainbow = { Name = "Rainbow", RarityMultiplier = 2222 },
-	Astral = { Name = "Astral", RarityMultiplier = 1961 },
-	Corrupted = { Name = "Corrupted", RarityMultiplier = 1429 },
-	["Neon+Albino"] = { Name = "Neon Albino", RarityMultiplier = 3704 },
-	["Rainbow+Neon"] = { Name = "Rainbow Neon", RarityMultiplier = 5556 },
-	["Astral+Rainbow"] = { Name = "Astral Rainbow", RarityMultiplier = 11111 },
-	["Corrupted+Neon"] = { Name = "Corrupted Neon", RarityMultiplier = 4348 },
-	["Corrupted+Albino"] = { Name = "Corrupted Albino", RarityMultiplier = 10000 },
-	["Corrupted+Rainbow"] = { Name = "Corrupted Rainbow", RarityMultiplier = 20000 },
-	["Corrupted+Astral"] = { Name = "Corrupted Astral", RarityMultiplier = 17647 },
-	["Corrupted+Neon+Albino"] = { Name = "Corrupted Neon Albino", RarityMultiplier = 33333 },
-	["Corrupted+Rainbow+Neon"] = { Name = "Corrupted Rainbow Neon", RarityMultiplier = 50000 },
-	["Corrupted+Astral+Rainbow"] = { Name = "Corrupted Astral Rainbow", RarityMultiplier = 100000 },
+	Neon = { Name = "Neon", RarityMultiplier = 322 },
+	Albino = { Name = "Albino", RarityMultiplier = 741 },
+	Rainbow = { Name = "Rainbow", RarityMultiplier = 1481 },
+	Astral = { Name = "Astral", RarityMultiplier = 1307 },
+	Corrupted = { Name = "Corrupted", RarityMultiplier = 952 },
+	["Neon+Albino"] = { Name = "Neon Albino", RarityMultiplier = 2469 },
+	["Rainbow+Neon"] = { Name = "Rainbow Neon", RarityMultiplier = 3704 },
+	["Astral+Rainbow"] = { Name = "Astral Rainbow", RarityMultiplier = 7407 },
+	["Corrupted+Neon"] = { Name = "Corrupted Neon", RarityMultiplier = 2899 },
+	["Corrupted+Albino"] = { Name = "Corrupted Albino", RarityMultiplier = 6667 },
+	["Corrupted+Rainbow"] = { Name = "Corrupted Rainbow", RarityMultiplier = 13333 },
+	["Corrupted+Astral"] = { Name = "Corrupted Astral", RarityMultiplier = 11765 },
+	["Corrupted+Neon+Albino"] = { Name = "Corrupted Neon Albino", RarityMultiplier = 22222 },
+	["Corrupted+Rainbow+Neon"] = { Name = "Corrupted Rainbow Neon", RarityMultiplier = 33333 },
+	["Corrupted+Astral+Rainbow"] = { Name = "Corrupted Astral Rainbow", RarityMultiplier = 66667 },
 	-- Guaranteed event traits have no natural encounter odds or added rarity score.
 	VoidTouched = { Name = "Void Touched", RarityMultiplier = 1, EventOnly = true },
 	["VoidTouched+Astral"] = { Name = "Void Touched Astral", RarityMultiplier = 1, EventOnly = true },
@@ -238,6 +258,26 @@ Catalog.Mutations = {
 		EventOnly = true,
 	},
 }
+-- Windy (fishing under a supercell) joins every natural key, after any
+-- corruption, matching FishMutations.key order and label.
+local windy = { Windy = { Name = "Windy", RarityMultiplier = 1, EventOnly = true } }
+for key, entry in Catalog.Mutations do
+	if key ~= "Normal" and not entry.EventOnly then
+		local rest, restName = key:match("^Corrupted%+(.+)$"), entry.Name:match("^Corrupted (.+)$")
+		local windyKey = if key == "Corrupted"
+			then "Corrupted+Windy"
+			elseif rest then "Corrupted+Windy+" .. rest
+			else "Windy+" .. key
+		local name = if key == "Corrupted"
+			then "Corrupted Windy"
+			elseif restName then "Corrupted Windy " .. restName
+			else "Windy " .. entry.Name
+		windy[windyKey] = { Name = name, RarityMultiplier = 1, EventOnly = true }
+	end
+end
+for key, entry in windy do
+	Catalog.Mutations[key] = entry
+end
 Catalog.Equipment = {
 	StarterRod = {
 		Name = "Starter fishing rod",

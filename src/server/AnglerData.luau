@@ -58,7 +58,7 @@ end
 -- Bought furniture waits in FurnitureStock until build mode places it in the
 -- house (Furniture). Storage racks hold overflow fish (Storage) that customers
 -- never see; only freezers stock the shop.
-Data.RACK_CAPACITY = 8
+Data.RACK_CAPACITY = 12
 -- Cooked dishes (Supermarket path) wait on the kitchen pass, which holds this many;
 -- every placed food display case shows as many again to shop customers.
 Data.PANTRY_CAPACITY = 6
@@ -184,6 +184,7 @@ local function itemValid(item)
 		and cell(item.Y)
 		and number(item.R, true)
 		and item.R <= 3
+		and (item.Locked == nil or type(item.Locked) == "boolean")
 		and (if item.PartId ~= nil then type(item.PartId) == "string" and item.Fish == nil else recordValid(item.Fish))
 end
 function Data.validSetting(key, value)
@@ -194,6 +195,8 @@ end
 function Data.decode(raw)
 	assert(raw == nil or type(raw) == "table", "Invalid angler progress")
 	local data = copy(raw or {})
+	assert(data.ShopSign == nil or (type(data.ShopSign) == "string" and #data.ShopSign <= 96), "Invalid shop sign")
+	data.ShopSign = data.ShopSign or ""
 	for _, name in
 		{
 			"Stats",
@@ -212,7 +215,10 @@ function Data.decode(raw)
 			"Storage",
 			"Pantry",
 			"Kitchen",
+			"KitchenStorage",
 			"Upgrades",
+			"BoatPaint",
+			"BoatUpgrades",
 		}
 	do
 		assert(data[name] == nil or type(data[name]) == "table", "Invalid angler " .. name)
@@ -231,8 +237,30 @@ function Data.decode(raw)
 			"Invalid kitchen job"
 		)
 	end
+	data.KitchenStorage = data.KitchenStorage or { Targets = {}, Fish = {} }
+	assert(type(data.KitchenStorage) == "table", "Invalid kitchen storage")
+	data.KitchenStorage.Targets = data.KitchenStorage.Targets or {}
+	data.KitchenStorage.Fish = data.KitchenStorage.Fish or {}
+	assert(type(data.KitchenStorage.Targets) == "table" and type(data.KitchenStorage.Fish) == "table", "Invalid kitchen storage")
+	for rarity, count in data.KitchenStorage.Targets do
+		assert(type(rarity) == "string" and number(count, true) and count >= 0, "Invalid kitchen storage target")
+	end
+	for index, record in data.KitchenStorage.Fish do
+		assert(type(index) == "number" and recordValid(record), "Invalid kitchen storage fish")
+	end
 	for id, level in data.Upgrades do
 		assert(type(id) == "string" and number(level, true), "Invalid upgrade")
+	end
+	-- Refit dock paint per boat id (Shared.BoatUpgrades.Paints); unknown ids paint nothing.
+	for boatId, paint in data.BoatPaint do
+		assert(type(boatId) == "string" and type(paint) == "string", "Invalid boat paint")
+	end
+	-- Permanent hull fittings per boat id (for example the trawler's stern net).
+	for boatId, upgrades in data.BoatUpgrades do
+		assert(type(boatId) == "string" and type(upgrades) == "table", "Invalid boat upgrades")
+		for id, owned in upgrades do
+			assert(type(id) == "string" and type(owned) == "boolean", "Invalid boat upgrade")
+		end
 	end
 	-- Profiles from before paths start as a fish shop; their lifetime stats count
 	-- towards it, since its baseline is empty.
@@ -249,6 +277,10 @@ function Data.decode(raw)
 			and path.Unlocked[path.Active] == true,
 		"Invalid path progress"
 	)
+	path.SkipCredits = if path.SkipCredits == nil then 0 else path.SkipCredits
+	path.SkipReceipts = if path.SkipReceipts == nil then {} else path.SkipReceipts
+	assert(number(path.SkipCredits, true) and flags(path.SkipReceipts), "Invalid path skips")
+	assert(path.SkipTarget == nil or type(path.SkipTarget) == "string", "Invalid path skip target")
 	for stat, value in path.Baseline do
 		assert(type(stat) == "string" and number(value, true), "Invalid path baseline")
 	end
@@ -312,6 +344,27 @@ function Data.decode(raw)
 			"Invalid furniture"
 		)
 	end
+	-- Crab cages wait in Stock until dropped by the dock; Placed spots are dock-local
+	-- studs (Shared.CrabCages holds the rules, which are checked when cages move).
+	if data.CrabCages == nil then
+		data.CrabCages = { Stock = 0, Placed = {} }
+	end
+	local cages = data.CrabCages
+	assert(type(cages) == "table" and number(cages.Stock, true) and type(cages.Placed) == "table", "Invalid crab cages")
+	for index, cage in cages.Placed do
+		assert(
+			type(index) == "number"
+				and type(cage) == "table"
+				and type(cage.X) == "number"
+				and cage.X == cage.X
+				and type(cage.Z) == "number"
+				and cage.Z == cage.Z
+				and number(cage.Uses, true)
+				and cage.Uses >= 1
+				and number(cage.ReadyAt, true),
+			"Invalid crab cage"
+		)
+	end
 	data.BackpackId = data.BackpackId or "Starter"
 	assert(type(data.BackpackId) == "string", "Invalid backpack")
 	for index, item in data.Backpack do
@@ -340,7 +393,7 @@ function Data.decode(raw)
 		data.EquippedTitle = ""
 	end
 	assert(type(data.EquippedTitle) == "string", "Invalid equipped title")
-	if data.Holds.PatrolBoat and data.PatrolHoldVersion ~= 2 then
+	if data.Holds.PatrolBoat and data.PatrolHoldVersion ~= 3 then
 		local boatCatalog = if script
 			then require(game:GetService("ReplicatedStorage").Shared.BoatCatalog)
 			else require("../shared/BoatCatalog")
@@ -349,7 +402,7 @@ function Data.decode(raw)
 			else require("../shared/AnglerCatalog")
 		Data.migratePatrolHold(data, boatCatalog.PatrolBoat, fishCatalog.Fish)
 	elseif not data.Holds.PatrolBoat then
-		data.PatrolHoldVersion = 2
+		data.PatrolHoldVersion = 3
 	end
 	return data
 end
@@ -378,19 +431,51 @@ local function catchRecord(fishId, mutation, kg, value, caughtAt, species, mutat
 	return record
 end
 
+-- A cast is possible while the hand is empty or the backpack has an open tile.
+function Data.hasCatchSpace(raw, backpackLayout, species)
+	if not raw.Hand then
+		return true
+	end
+	local grid = cargo()
+	local taken = grid.occupied(raw.Backpack, species)
+	for y, row in backpackLayout.Hold do
+		for x = 1, #row do
+			if grid.open(backpackLayout.Hold, x, y) and not grid.at(taken, x, y) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+-- Shared bestiary, streak, XP and findings bookkeeping for every landed fish.
+-- `record` is always a fresh record owned by this transaction.
+local function registerCatch(data, record, species)
+	local entry = data.Catches[record.FishId] or { Count = 0, BiggestKg = 0, Mutations = {} }
+	data.Catches[record.FishId] = entry
+	entry.Count += 1
+	entry.BiggestKg = math.max(entry.BiggestKg, record.Kg)
+	entry.Mutations[record.Mutation] = (entry.Mutations[record.Mutation] or 0) + 1
+	local catchXP = species[record.FishId].CatchXP or Data.XP_PER_CATCH
+	assert(number(catchXP, true) and catchXP > 0, "Invalid catch XP")
+	data.Stats.TotalCaught += 1
+	data.Stats.TotalXP += catchXP
+	data.Stats.CatchStreak += 1
+	data.Stats.HighestCatchStreak = math.max(data.Stats.HighestCatchStreak, data.Stats.CatchStreak)
+	for key, field in { HighestValue = "Value", Rarest = "Rarity", Largest = "Kg", RelativeLargest = "Relative" } do
+		if not data.Findings[key] or record[field] > data.Findings[key][field] then
+			data.Findings[key] = copy(record)
+		end
+	end
+end
+
 -- Gameplay supplies the owned backpack layout. Returns the catch's destination
 -- so identical fish already in hand cannot be mistaken for the new catch.
 function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size, traits, backpackLayout)
 	assert(type(fishId) == "string" and species[fishId], "Unknown fish")
-	local catchXP = species[fishId].CatchXP or Data.XP_PER_CATCH
-	assert(number(catchXP, true) and catchXP > 0, "Invalid catch XP")
 	local record = catchRecord(fishId, mutation, kg, value, caughtAt, species, mutations, size, traits)
 	local data = Data.decode(raw)
-	local entry = data.Catches[fishId] or { Count = 0, BiggestKg = 0, Mutations = {} }
-	data.Catches[fishId] = entry
-	entry.Count += 1
-	entry.BiggestKg = math.max(entry.BiggestKg, kg)
-	entry.Mutations[mutation] = (entry.Mutations[mutation] or 0) + 1
+	registerCatch(data, record, species)
 	local destination = "Released"
 	if data.Hand == nil then
 		data.Hand = copy(record)
@@ -402,15 +487,6 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 			destination = "Backpack"
 		end
 	end
-	data.Stats.TotalCaught += 1
-	data.Stats.TotalXP += catchXP
-	data.Stats.CatchStreak += 1
-	data.Stats.HighestCatchStreak = math.max(data.Stats.HighestCatchStreak, data.Stats.CatchStreak)
-	for key, field in { HighestValue = "Value", Rarest = "Rarity", Largest = "Kg", RelativeLargest = "Relative" } do
-		if not data.Findings[key] or record[field] > data.Findings[key][field] then
-			data.Findings[key] = copy(record)
-		end
-	end
 	return data, destination
 end
 
@@ -420,6 +496,24 @@ function Data.migratePatrolHold(data, layout, species)
 	local grid = cargo()
 	local items = copy(layout.StarterParts)
 	local fish = {}
+	-- Preserve paid upgrades from the previous hold before packing fish.
+	if data.PatrolHoldVersion == 2 then
+		local starters = {}
+		for _, part in layout.StarterParts do
+			starters[part.PartId] = (starters[part.PartId] or 0) + 1
+		end
+		for _, item in data.Holds.PatrolBoat do
+			if item.PartId then
+				if (starters[item.PartId] or 0) > 0 then
+					starters[item.PartId] -= 1
+				else
+					local spot = grid.bestSpot(layout.Hold, items, item, species)
+					assert(spot, "Patrol upgrade does not fit in migrated hold")
+					table.insert(items, { PartId = item.PartId, X = spot.X, Y = spot.Y, R = spot.R })
+				end
+			end
+		end
+	end
 	for index, item in data.Holds.PatrolBoat do
 		if item.Fish then
 			table.insert(fish, { Item = item, Index = index, Area = #grid.cells(grid.shape(item, species)) })
@@ -494,7 +588,7 @@ function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 		if not grid.fits(layout.Hold, taken, grid.shape(item, species), x, y, r) then
 			return nil, "It doesn't fit there."
 		end
-		local placed = { Fish = item.Fish, PartId = item.PartId, X = x, Y = y, R = r }
+		local placed = { Fish = item.Fish, PartId = item.PartId, Locked = item.Locked, X = x, Y = y, R = r }
 		if index then
 			items[index] = placed
 		else
@@ -510,6 +604,98 @@ function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 		data.Holds[boatId] = items
 	end
 	return Data.decode(data)
+end
+
+-- Places a newly fitted boat part at the exact hold spot the player picked.
+-- The caller has already checked the upgrade limit; this only enforces the grid.
+function Data.placePart(raw, boatId, layout, partId, x, y, r, species)
+	local data = Data.decode(raw)
+	local grid = cargo()
+	local part = grid.Parts[partId]
+	local items = Data.hold(data, boatId, layout)
+	if not part then
+		return nil, "That boat part is not available."
+	elseif not (cell(x) and cell(y) and number(r, true) and r <= 3) then
+		return nil, "That isn't a spot in the hold."
+	end
+	local taken = grid.occupied(items, species)
+	if not grid.fits(layout.Hold, taken, part.Shape, x, y, r) then
+		return nil, "It doesn't fit there."
+	end
+	table.insert(items, { PartId = partId, X = x, Y = y, R = r })
+	data.Holds[boatId] = items
+	return Data.decode(data)
+end
+
+-- Packs every fish from the boat hold that fits into the backpack, largest first,
+-- and leaves boat parts and any fish that no longer fit behind. Returns nil and a
+-- player-facing reason when nothing could be moved.
+function Data.moveAllToBackpack(raw, boatId, layout, backpackLayout, species)
+	local data = Data.decode(raw)
+	local items = Data.hold(data, boatId, layout)
+	local backpack = data.Backpack or {}
+	local grid = cargo()
+	local fish = {}
+	for index, item in items do
+		if item.Fish then
+			table.insert(fish, { Item = item, Index = index, Area = #grid.cells(grid.shape(item, species)) })
+		end
+	end
+	if #fish == 0 then
+		return nil, "Your boat's hold has no fish to move."
+	end
+	table.sort(fish, function(a, b)
+		return if a.Area == b.Area then a.Index < b.Index else a.Area > b.Area
+	end)
+	local taken = {}
+	for _, entry in fish do
+		local spot = grid.bestSpot(backpackLayout.Hold, backpack, { Fish = entry.Item.Fish }, species)
+		if spot then
+			table.insert(backpack, {
+				Fish = entry.Item.Fish,
+				Locked = entry.Item.Locked,
+				X = spot.X,
+				Y = spot.Y,
+				R = spot.R,
+			})
+			taken[entry.Item] = true
+		end
+	end
+	local moved = 0
+	local remaining = {}
+	for _, item in items do
+		if taken[item] then
+			moved += 1
+		else
+			table.insert(remaining, item)
+		end
+	end
+	if moved == 0 then
+		return nil, "No room in your backpack for those fish."
+	end
+	data.Backpack = backpack
+	data.Holds[boatId] = remaining
+	return Data.decode(data), moved
+end
+
+-- Locking is specific to the fish's current backpack entry.
+function Data.setBackpackLock(raw, index, locked, expected)
+	local data = Data.decode(raw)
+	local item = data.Backpack[index]
+	if
+		not item
+		or type(locked) ~= "boolean"
+		or type(expected) ~= "table"
+		or item.X ~= expected.X
+		or item.Y ~= expected.Y
+		or item.Fish.FishId ~= expected.FishId
+		or item.Fish.Kg ~= expected.Kg
+		or item.Fish.CaughtAt ~= expected.CaughtAt
+	then
+		return nil, "That fish is no longer in that backpack spot."
+	end
+	item.Locked = if locked then true else nil
+	return data
 end
 
 -- Called within the catch's save, so the fish never needs a second transaction.
@@ -577,9 +763,9 @@ function Data.storageCapacity(raw)
 	return Data.RACK_CAPACITY * placed(raw, "StorageRack")
 end
 
--- Fish still waiting to be stocked: in hand, on storage racks, in the old cooler and in every hold.
+-- Fish still waiting to be stocked: hand, backpack, racks, old cooler and holds.
 function Data.unstocked(raw)
-	local count = (if raw.Hand then 1 else 0) + #raw.Cooler + #(raw.Storage or {})
+	local count = (if raw.Hand then 1 else 0) + #raw.Cooler + #(raw.Storage or {}) + #(raw.Backpack or {})
 	for _, items in raw.Holds do
 		for _, item in items do
 			if item.Fish then
@@ -590,14 +776,25 @@ function Data.unstocked(raw)
 	return count
 end
 
--- Places only the carried fish. Cargo stays aboard until individually picked up.
-function Data.stockFreezer(raw)
+-- Stock the equipped hand fish and every unlocked backpack fish that fits.
+function Data.stockFreezer(raw, includeHand)
 	local data = Data.decode(raw)
 	local moved = 0
-	if data.Hand and Data.canFreeze(data, data.Hand) then
+	if includeHand ~= false and data.Hand and Data.canFreeze(data, data.Hand) then
 		table.insert(data.Freezer, data.Hand)
 		data.Hand = nil
 		moved += 1
+	end
+	local index = 1
+	while index <= #data.Backpack do
+		local item = data.Backpack[index]
+		if not item.Locked and Data.canFreeze(data, item.Fish) then
+			table.insert(data.Freezer, item.Fish)
+			table.remove(data.Backpack, index)
+			moved += 1
+		else
+			index += 1
+		end
 	end
 	return data, moved
 end
@@ -632,20 +829,77 @@ function Data.unloadFish(raw, boatId, index, record, toStorage)
 	return data
 end
 
--- The carried fish goes onto a storage rack.
-function Data.storeFish(raw)
+function Data.unloadFishToKitchenStorage(raw, boatId, index, record, catalogFish)
 	local data = Data.decode(raw)
-	if not data.Hand then
-		return nil, "Equip a fish from your hotbar first."
-	elseif #data.Storage >= Data.storageCapacity(data) then
-		return nil,
-			if Data.storageCapacity(data) == 0
-				then "Place a storage rack in your storage room first."
-				else "Your storage racks are full."
+	local items = data.Holds[boatId]
+	local item = items and items[index]
+	if not item or not item.Fish or not sameFish(item.Fish, record) then
+		return nil
 	end
-	table.insert(data.Storage, data.Hand)
-	data.Hand = nil
+	if not Data.canKitchenStorageAccept(data, item.Fish, catalogFish) then
+		return nil
+	end
+	table.insert(data.KitchenStorage.Fish, item.Fish)
+	table.remove(items, index)
 	return data
+end
+
+function Data.restockFishToKitchenStorage(raw, record, catalogFish)
+	local data = Data.decode(raw)
+	for index, stored in data.Storage do
+		if sameFish(stored, record) then
+			if not Data.canKitchenStorageAccept(data, stored, catalogFish) then
+				return nil
+			end
+			table.remove(data.Storage, index)
+			table.insert(data.KitchenStorage.Fish, stored)
+			return data
+		end
+	end
+	return nil
+end
+
+-- The carried fish and every unlocked backpack fish go onto the storage racks
+-- until they are full, like stocking a freezer.
+function Data.storeFish(raw, includeHand)
+	local data = Data.decode(raw)
+	local capacity = Data.storageCapacity(data)
+	local moved = 0
+	if includeHand ~= false and data.Hand then
+		if capacity == 0 then
+			return nil, "Place a storage rack in your storage room first."
+		elseif #data.Storage >= capacity then
+			return nil, "Your storage racks are full."
+		end
+		table.insert(data.Storage, data.Hand)
+		data.Hand = nil
+		moved += 1
+	end
+	local index = 1
+	while index <= #data.Backpack and #data.Storage < capacity do
+		local item = data.Backpack[index]
+		if not item.Locked then
+			table.insert(data.Storage, item.Fish)
+			table.remove(data.Backpack, index)
+			moved += 1
+		else
+			index += 1
+		end
+	end
+	if moved == 0 then
+		if capacity == 0 then
+			return nil, "Place a storage rack in your storage room first."
+		elseif #data.Storage >= capacity then
+			return nil, "Your storage racks are full."
+		end
+		for _, item in data.Backpack do
+			if item.Locked then
+				return nil, "Your backpack fish are locked. Right-click a fish to unlock it."
+			end
+		end
+		return nil, "Equip a fish from your hotbar first."
+	end
+	return data, moved
 end
 
 -- The oldest stored fish goes back into the angler's hand.
@@ -742,6 +996,8 @@ function Data.pickUpFurniture(raw, index)
 		return nil, "Take some fish off your racks first."
 	elseif #data.Pantry > Data.pantryCapacity(data) then
 		return nil, "Sell some dishes first. They wouldn't fit in your other display cases."
+	elseif entry.ItemId == "KitchenStorage" and #data.KitchenStorage.Fish > 0 then
+		return nil, "Take the fish off your kitchen storage table first."
 	elseif data.Kitchen[entry.ItemId] then
 		return nil, "Collect the dish on this station first."
 	end
@@ -881,6 +1137,29 @@ function Data.choosePath(raw, stageId, stage)
 	return Data.decode(data)
 end
 
+-- Receipt and credit commit together in the wallet transaction, once per purchase.
+function Data.grantPathSkip(raw, purchaseId)
+	assert(type(purchaseId) == "string" and #purchaseId > 0, "Invalid path skip receipt")
+	local data = Data.decode(raw)
+	if not data.Paths.SkipReceipts[purchaseId] then
+		data.Paths.SkipReceipts[purchaseId] = true
+		data.Paths.SkipCredits += 1
+	end
+	return Data.decode(data)
+end
+
+-- The caller validates Paths.skipProblem against the whole current wallet first.
+function Data.usePathSkip(raw, stageId)
+	local data = Data.decode(raw)
+	local path = data.Paths
+	assert(path.Active == stageId and not path.Completed[stageId], "Path already finished or changed")
+	assert(path.SkipCredits > 0, "No purchased quest skip available")
+	path.SkipCredits -= 1
+	path.Completed[stageId] = true
+	path.SkipTarget = nil
+	return Data.decode(data)
+end
+
 -- Stows one fish the hired fisherman landed into his boat's hold. Returns nil when
 -- the hold has no room left for it.
 function Data.fishermanCatch(raw, boatId, layout, roll, caughtAt, species, mutations)
@@ -897,6 +1176,26 @@ function Data.fishermanCatch(raw, boatId, layout, roll, caughtAt, species, mutat
 	table.insert(items, { Fish = record, X = placement.X, Y = placement.Y, R = placement.R })
 	data.Holds[boatId] = items
 	data.Stats.FishermanCatches += 1
+	return Data.decode(data)
+end
+
+-- The trawler's stern net lands fish straight into the hold, but they still
+-- count in the bestiary, XP and findings like any other catch. Returns nil when
+-- the hold has no room, so a full boat never awards the fish.
+function Data.netCatch(raw, boatId, layout, roll, caughtAt, species, mutations)
+	local data = Data.decode(raw)
+	local traits = roll.Traits or {}
+	local mutation = traits.Mutation or "Normal"
+	local record =
+		catchRecord(roll.FishId, mutation, roll.Kg, roll.Value, caughtAt, species, mutations, roll.Size, traits)
+	local items = Data.hold(data, boatId, layout)
+	local placement = cargo().bestSpot(layout.Hold, items, { Fish = record }, species)
+	if not placement then
+		return nil
+	end
+	table.insert(items, { Fish = record, X = placement.X, Y = placement.Y, R = placement.R })
+	data.Holds[boatId] = items
+	registerCatch(data, record, species)
 	return Data.decode(data)
 end
 
@@ -930,4 +1229,107 @@ function Data.scores(raw, now)
 	},
 		start
 end
+Data.KITCHEN_STORAGE_CAPACITY = 8
+
+function Data.setKitchenStorageTargets(raw, targets)
+	local data = Data.decode(raw)
+	local total = 0
+	local clean = {}
+	for _, rarity in { "Common", "Uncommon", "Rare", "Epic", "Legendary" } do
+		local count = tonumber(targets and targets[rarity]) or 0
+		count = math.max(0, math.floor(count))
+		clean[rarity] = count
+		total += count
+	end
+	if total > Data.KITCHEN_STORAGE_CAPACITY then
+		return nil, "Kitchen storage can hold at most " .. Data.KITCHEN_STORAGE_CAPACITY .. " fish."
+	end
+	data.KitchenStorage.Targets = clean
+	return data
+end
+
+function Data.takeKitchenStorageFish(raw, fishIndex)
+	local data = Data.decode(raw)
+	if data.Hand then
+		return nil, "Your hands are already full."
+	end
+	local count = #data.KitchenStorage.Fish
+	if count == 0 then
+		return nil, "Kitchen storage is empty."
+	end
+	local idx = fishIndex or count
+	local fish = table.remove(data.KitchenStorage.Fish, idx)
+	if not fish then
+		return nil, "That fish is no longer in kitchen storage."
+	end
+	data.Hand = fish
+	return data, fish
+end
+
+function Data.neededKitchenStorage(data, catalogFish)
+	local targets = data.KitchenStorage.Targets or {}
+	local current = {}
+	for _, fish in data.KitchenStorage.Fish or {} do
+		local spec = catalogFish and catalogFish[fish.FishId]
+		local r = spec and spec.Rarity or "Common"
+		current[r] = (current[r] or 0) + 1
+	end
+	local needed = {}
+	local totalCurrent = #(data.KitchenStorage.Fish or {})
+	local totalRoom = math.max(0, Data.KITCHEN_STORAGE_CAPACITY - totalCurrent)
+	for _, rarity in { "Common", "Uncommon", "Rare", "Epic", "Legendary" } do
+		local target = targets[rarity] or 0
+		local have = current[rarity] or 0
+		if target > have and totalRoom > 0 then
+			needed[rarity] = math.min(target - have, totalRoom)
+		else
+			needed[rarity] = 0
+		end
+	end
+	return needed, totalRoom
+end
+
+function Data.canKitchenStorageAccept(data, record, catalogFish)
+	if not record then
+		return false
+	end
+	local needed, totalRoom = Data.neededKitchenStorage(data, catalogFish)
+	if totalRoom <= 0 then
+		return false
+	end
+	local spec = catalogFish and catalogFish[record.FishId]
+	local rarity = spec and spec.Rarity or "Common"
+	return (needed[rarity] or 0) > 0
+end
+
+function Data.addKitchenStorageFish(raw, record, catalogFish)
+	local data = Data.decode(raw)
+	if not Data.canKitchenStorageAccept(data, record, catalogFish) then
+		return nil, "Kitchen storage cannot accept that fish."
+	end
+	table.insert(data.KitchenStorage.Fish, record)
+	return data
+end
+
+function Data.stockKitchenStorageFromStock(raw, catalogFish)
+	local data = Data.decode(raw)
+	local moved = 0
+	local function checkAndMove(list)
+		local i = 1
+		while i <= #list do
+			local record = list[i]
+			if Data.canKitchenStorageAccept(data, record, catalogFish) then
+				table.remove(list, i)
+				table.insert(data.KitchenStorage.Fish, record)
+				moved += 1
+			else
+				i += 1
+			end
+		end
+	end
+	checkAndMove(data.Freezer)
+	checkAndMove(data.Storage)
+	return data, moved
+end
+
 return Data

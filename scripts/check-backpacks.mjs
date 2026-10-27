@@ -28,6 +28,11 @@ for (const [marker,path] of Object.entries({ GRID:'src/shared/Cargo.luau', BAGS:
  if (marker === 'PROPS') source = source.replace('require(script.Parent.LowPoly)', '{}');
  program = program.replace('-- ' + marker + '_SOURCE --', () => inject(source));
 }
+const customer = await read('src/server/CustomerService.luau');
+const stockStart = customer.indexOf('local function stock(');
+const stockEnd = customer.indexOf('\n-- Supermarket path:', stockStart);
+if (stockStart < 0 || stockEnd < 0) throw Error('Freezer stock handler not found');
+program = program.replace('-- FREEZER_STOCK_SOURCE --', () => customer.slice(stockStart, stockEnd));
 const folder = await mkdtemp(join(tmpdir(), 'fishing-backpacks-'));
 try {
  const target = join(folder,'check.luau'); await writeFile(target,await freezerRuntime() + program);

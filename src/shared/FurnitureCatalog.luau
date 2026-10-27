@@ -15,6 +15,7 @@ Furniture.Order = {
 	"GrillStation",
 	"Smoker",
 	"SushiBar",
+	"KitchenStorage",
 	"DiningTable",
 }
 Furniture.Items = {
@@ -47,7 +48,7 @@ Furniture.Items = {
 		Price = 300,
 		Room = "Storage",
 		MaxPlaced = 6,
-		Description = "Shelving for overflow stock. Holds 8 fish when your freezers are full, so you can empty your boat.",
+		Description = "Shelving for overflow stock. Holds 12 fish when your freezers are full, so you can empty your boat.",
 		Width = 6,
 		Depth = 2,
 		Front = 1.5,
@@ -102,6 +103,18 @@ Furniture.Items = {
 		Front = 2,
 		Back = 0,
 	},
+	KitchenStorage = {
+		Name = "Kitchen storage",
+		Price = 750,
+		Room = "Processing",
+		MaxPlaced = 1,
+		Requires = "Supermarket",
+		Description = "A chilled prep table. Select up to 8 fish by rarity for your porter to bring here for cooking.",
+		Width = 6,
+		Depth = 2.4,
+		Front = 2,
+		Back = 0,
+	},
 	DiningTable = {
 		Name = "Dining table",
 		Price = 400,
@@ -116,7 +129,8 @@ Furniture.Items = {
 		Back = 1.6,
 	},
 }
-Furniture.RACK_CAPACITY = 8
+Furniture.RACK_CAPACITY = 12
+Furniture.KITCHEN_STORAGE_CAPACITY = 8
 Furniture.GRID = 0.5
 
 -- Inner floor of each furnishable room, as { x1, z1, x2, z2 }.
@@ -124,13 +138,15 @@ Furniture.Rooms = {
 	Shop = { -22.6, 1.35, 22.6, 14.6 },
 	Storage = { 3.35, -14.6, 22.6, 0.65 },
 	Processing = { -22.6, -14.6, 2.65, 0.65 },
+	Kitchen = { -22.6, -14.6, 2.65, 0.65 },
 	-- The Restaurant's dining room extension behind the processing room.
 	Dining = { -22.4, -29.4, -6.1, -15.35 },
 }
 Furniture.RoomNames = {
 	Shop = "front shop room",
 	Storage = "storage room",
-	Processing = "processing room",
+	Processing = "kitchen",
+	Kitchen = "kitchen",
 	Dining = "dining room",
 }
 -- Walkways, doorways and the built-in fixtures stay clear.

@@ -8,7 +8,7 @@ local PlazaHouses = require(script.Parent.PlazaHouses)
 local Props = require(script.Parent.Props)
 local Shop = {}
 local rgb = Color3.fromRGB
-local VERSION = 2
+local VERSION = 4
 
 function Shop.build(plaza: Model, plazaFrame: CFrame): Model
 	local existing = plaza:FindFirstChild("BackpackShop")

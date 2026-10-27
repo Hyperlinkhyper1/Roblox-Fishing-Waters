@@ -19,15 +19,22 @@ local attributes = {}
 local player = {
  SetAttribute = function(_, key, value) attributes[key] = value end,
  DescendantAdded = event, GetDescendants = function() return {} end,
+ CharacterAdded = event,
 }
 local lighting, groups = {}, {}
 local input = {}
 local quality, unavailable = 0, false
 local soundService = { DescendantAdded = event, GetDescendants = function() return {} end }
-local workspace = soundService
+-- Streaming map parts must never reach a script callback: only top-level
+-- children of workspace are watched, never its descendants.
+local workspace = {
+ ChildAdded = event, GetChildren = function() return {} end,
+ DescendantAdded = { Connect = function() error("Settings must not watch every workspace descendant") end },
+}
 local services = {
  Lighting = lighting, SoundService = soundService,
- Players = { LocalPlayer = player }, UserInputService = input,
+ Players = { LocalPlayer = player, PlayerAdded = event, GetPlayers = function() return { player } end },
+ UserInputService = input,
 }
 local game = { GetService = function(_, key) return assert(services[key], key) end }
 local Instance = { new = function(class)

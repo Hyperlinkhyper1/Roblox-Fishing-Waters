@@ -1,6 +1,6 @@
 -- Shared tile inventory for your backpack, your hand, and your launched boat.
 -- The backpack is reachable everywhere; the boat tab requires being aboard. Click a fish to pick it up, turn it with R or
--- right-click, then click the hull to drop it. Boat parts rearrange the same way
+-- right-click while holding, then click the hull to drop it. Right-click a packed fish to lock it. Boat parts rearrange the same way
 -- but stay aboard. The server re-checks every move; this view only previews.
 local Players = game:GetService("Players")
 local GuiService = game:GetService("GuiService")
@@ -37,6 +37,9 @@ local GAP = 4
 local STEP = CELL + GAP
 local PAD = 16
 local GRID_TOP = 248
+-- The boat-only bulk action sits between the tabs and the hold grid.
+local MOVE_TOP = 242
+local BOAT_GRID_TOP = 284
 -- How far the hull planking reaches past the outer cells, and its darker rim.
 local DECK_PAD = 6
 local RIM_PAD = 10
@@ -142,6 +145,16 @@ local function drawItem(parent: Instance, item, rotation: number): (Frame, { Fra
 		if camera and rotation % 4 ~= 0 then
 			-- Rolling the camera turns the fish clockwise with its footprint.
 			camera.CFrame *= CFrame.Angles(0, 0, rotation * math.pi / 2)
+		end
+		if item.Locked then
+			text(box, "🔒", {
+				Name = "LockIcon",
+				Position = UDim2.fromOffset(3, 2),
+				Size = UDim2.fromOffset(20, 20),
+				TextSize = 16,
+				TextStrokeTransparency = 0.2,
+				ZIndex = 4,
+			})
 		end
 		text(box, FishCatch.formatKg(item.Fish.Kg), {
 			Position = UDim2.new(0, 3, 1, -13),
@@ -337,6 +350,12 @@ function CargoHold.start()
 		button(panel, "Backpack", { Position = UDim2.fromOffset(PAD, 204), Size = UDim2.fromOffset(142, 30) })
 	local boatTab =
 		button(panel, "Boat hold", { Position = UDim2.fromOffset(PAD + 152, 204), Size = UDim2.fromOffset(142, 30) })
+	local moveAll = button(panel, "Move all to backpack", {
+		Position = UDim2.fromOffset(PAD, MOVE_TOP),
+		Size = UDim2.new(1, -PAD * 2, 0, 30),
+		TextSize = 13,
+		Visible = false,
+	})
 	local container = "Backpack"
 	local state = {
 		Hand = nil,
@@ -344,15 +363,27 @@ function CargoHold.start()
 		Items = {},
 		Backpack = {},
 		BackpackId = "Starter",
+		Pending = nil,
 		Freezer = 0,
 		FreezerUsage = 0,
 	}
-	-- holding = { from = "Hand" | hold index, item, r }
+	-- holding = { from = "Hand" | hold index | "Draft", item, r }
 	local holding = nil
+	-- A motor or rudder reserved at the refit dock, waiting for the player to
+	-- choose its tiles. The server owns the reservation; this is its view.
+	local draft = nil
+	local cancelDraft
 	local pending = false
+	local lastRequest = -math.huge
+	local touchPoint = nil
 	local open = false
 	local aboard = false
 	local builtFor = nil
+	-- What the hand slot and the item layer currently show. Every save on the server
+	-- refreshes this view (each sale, each coin), and rebuilding every fish model in
+	-- its viewport each time was a recurring frame spike, even with the panel shut.
+	local drawnHand: string? = nil
+	local drawnItems: string? = nil
 	local ghost, ghostSquares, ghostView = nil, {}, nil
 	local lastAnchor = nil
 	local noticeUntil = 0
@@ -372,23 +403,30 @@ function CargoHold.start()
 	end
 
 	local render
-	local function flash(message: string)
+	local function flash(message: string, color: Color3?)
 		noticeUntil = os.clock() + 3
-		footer.Text, footer.TextColor3 = message, BLOCKED
+		footer.Text, footer.TextColor3 = message, color or BLOCKED
 		task.delay(3.05, function()
 			render()
 		end)
 	end
 
-	local function gridPoint(): Vector2
-		local mouse = UserInputService:GetMouseLocation()
-		-- AbsolutePosition uses the Core UI origin even with IgnoreGuiInset.
-		local inset = GuiService:GetGuiInset()
-		return (mouse - inset - grid.AbsolutePosition) / scale.Scale
+	local function gridPoint(input: InputObject?): Vector2
+		local point
+		if input and input.UserInputType == Enum.UserInputType.Touch then
+			-- InputObject positions already use the Core UI coordinate system.
+			point = Vector2.new(input.Position.X, input.Position.Y)
+		elseif not input and UserInputService:GetLastInputType() == Enum.UserInputType.Touch and touchPoint then
+			point = touchPoint
+		else
+			-- Mouse location is in screen coordinates, unlike AbsolutePosition.
+			point = UserInputService:GetMouseLocation() - GuiService:GetGuiInset()
+		end
+		return (point - grid.AbsolutePosition) / scale.Scale
 	end
 
-	local function anchor(): (number, number)
-		local point = gridPoint()
+	local function anchor(input: InputObject?): (number, number)
+		local point = gridPoint(input)
 		local _, width, height = Cargo.cells(shapeOf(holding.item), holding.r)
 		return math.floor(point.X / STEP - width / 2 + 0.5) + 1, math.floor(point.Y / STEP - height / 2 + 0.5) + 1
 	end
@@ -411,6 +449,13 @@ function CargoHold.start()
 	end
 
 	local function setOpen(value: boolean)
+		-- Closing while a refit waits for a spot puts the part back at the dock.
+		if not value and draft then
+			if not pending then
+				cancelDraft(true)
+			end
+			return
+		end
 		open = value
 		if not open then
 			holding = nil
@@ -448,12 +493,28 @@ function CargoHold.start()
 		-- Hand slot.
 		local hand = state.Hand
 		local handHeld = holding ~= nil and holding.from == "Hand"
-		for _, child in handView:GetChildren() do
-			child:Destroy()
+		local fittingDraft = draft ~= nil and holding ~= nil and holding.from == "Draft"
+		local handDrawing = if open
+			then (if hand then fishKey(hand) else "") .. (if fittingDraft then "|" .. draft.PartId else "")
+			else nil
+		local redrawHand = handDrawing ~= nil and handDrawing ~= drawnHand
+		if redrawHand then
+			drawnHand = handDrawing
+			for _, child in handView:GetChildren() do
+				child:Destroy()
+			end
 		end
 		handEmpty.Visible = hand == nil
+		if fittingDraft then
+			local part = Cargo.Parts[draft.PartId]
+			handEmpty.Text = string.upper(if part then part.Name else draft.PartId)
+		else
+			handEmpty.Text = "Empty"
+		end
 		if hand then
-			FishModels.show(handView, hand.FishId, nil, hand)
+			if redrawHand then
+				FishModels.show(handView, hand.FishId, nil, hand)
+			end
 			local species = Catalog.Fish[hand.FishId]
 			local rarity = species and Catalog.Rarities[species.Rarity]
 			handStroke.Color = if rarity then rarity.Color else CELL_EDGE
@@ -467,6 +528,11 @@ function CargoHold.start()
 				math.floor(hand.Value),
 				#Cargo.cells(shapeOf(hand))
 			)
+		elseif fittingDraft then
+			local part = Cargo.Parts[draft.PartId]
+			handStroke.Color = PART
+			handName.Text = if part then part.Name else draft.PartId
+			handInfo.Text = string.format("Pick a spot in the hold · takes %d cells", #Cargo.cells(shapeOf(draft)))
 		else
 			handStroke.Color = CELL_EDGE
 			handName.Text = ""
@@ -480,6 +546,7 @@ function CargoHold.start()
 		-- Hold grid.
 		noBoat.Visible = spec == nil
 		grid.Visible = spec ~= nil
+		moveAll.Visible = container == "Boat" and spec ~= nil
 		local areaWidth, areaHeight = 300, 90
 		if spec then
 			local columns = 0
@@ -522,10 +589,29 @@ function CargoHold.start()
 					end
 				end
 			end
-			for _, child in itemLayer:GetChildren() do
-				child:Destroy()
+			local drawing = { layoutKey, if holding then tostring(holding.from) else "" }
+			for _, item in contents() do
+				table.insert(
+					drawing,
+					string.format(
+						"%s:%s,%s,%s,%s",
+						itemKey(item),
+						tostring(item.X),
+						tostring(item.Y),
+						tostring(item.R),
+						tostring(item.Locked)
+					)
+				)
 			end
-			for index, item in contents() do
+			local itemsKey = if open then table.concat(drawing, ";") else nil
+			local redrawItems = itemsKey ~= nil and itemsKey ~= drawnItems
+			if redrawItems then
+				drawnItems = itemsKey
+				for _, child in itemLayer:GetChildren() do
+					child:Destroy()
+				end
+			end
+			for index, item in if redrawItems then contents() else {} do
 				local box, squares, view = drawItem(itemLayer, item, item.R)
 				box.Position = UDim2.fromOffset((item.X - 1) * STEP, (item.Y - 1) * STEP)
 				if holding and holding.from == index then
@@ -539,14 +625,27 @@ function CargoHold.start()
 			end
 		end
 		local panelWidth = math.max(areaWidth, 320) + PAD * 2
+		local gridTop = if container == "Boat" then BOAT_GRID_TOP else GRID_TOP
 		grid.Size = UDim2.fromOffset(areaWidth, areaHeight)
-		grid.Position = UDim2.fromOffset(math.floor((panelWidth - areaWidth) / 2), GRID_TOP)
-		panel.Size = UDim2.fromOffset(panelWidth, GRID_TOP + areaHeight + 62)
+		grid.Position = UDim2.fromOffset(math.floor((panelWidth - areaWidth) / 2), gridTop)
+		noBoat.Position = UDim2.fromOffset(PAD, gridTop)
+		panel.Size = UDim2.fromOffset(panelWidth, gridTop + areaHeight + 62)
 		if os.clock() >= noticeUntil then
-			footer.TextColor3 = MUTED
-			footer.Text = if holding
-				then "Click a tile to pack · R or Rotate to turn · Esc to cancel"
-				else "Pack your hand fish here. Take it back into your hand to move it to a boat or freezer."
+			if draft and holding and holding.from == "Draft" then
+				local part = Cargo.Parts[draft.PartId]
+				footer.TextColor3 = FITS
+				footer.Text = string.format(
+					"Click a tile to fit the %s · R or Rotate to turn · Esc to cancel",
+					string.lower(if part then part.Name else draft.PartId)
+				)
+			else
+				footer.TextColor3 = MUTED
+				footer.Text = if holding
+					then "Click a tile to pack · R or Rotate to turn · Esc to cancel"
+					else if container == "Backpack"
+						then "Right-click a fish to lock it · Unlocked fish go to the freezer"
+						else "Use Move all to fill your backpack, or take a fish in hand for the freezer."
+			end
 		end
 	end
 
@@ -558,11 +657,29 @@ function CargoHold.start()
 		state.Backpack = if type(state.Backpack) == "table" then state.Backpack else {}
 		state.Items = if type(state.Items) == "table" then state.Items else {}
 		-- Drop whatever is held if the server moved or removed it meanwhile.
-		if holding then
+		if holding and holding.from ~= "Draft" then
 			local source = if holding.from == "Hand"
 				then state.Hand and { Fish = state.Hand }
 				else contents()[holding.from]
 			if not source or itemKey(source) ~= itemKey(holding.item) then
+				holding = nil
+			end
+		end
+		-- A reserved refit opens the boat hold with the part under the cursor.
+		local nextDraft = if type(state.Pending) == "table" and type(state.Pending.PartId) == "string"
+			then state.Pending
+			else nil
+		if nextDraft then
+			local changed = draft == nil or draft.BoatId ~= nextDraft.BoatId or draft.PartId ~= nextDraft.PartId
+			draft = nextDraft
+			if changed or not holding or holding.from ~= "Draft" then
+				container = "Boat"
+				open = true
+				holding = { from = "Draft", item = { PartId = nextDraft.PartId }, r = 0 }
+			end
+		elseif draft then
+			draft = nil
+			if holding and holding.from == "Draft" then
 				holding = nil
 			end
 		end
@@ -585,7 +702,8 @@ function CargoHold.start()
 			return state
 		end
 		if type(to) == "table" then
-			local placed = { Fish = item.Fish, PartId = item.PartId, X = to.X, Y = to.Y, R = to.R }
+			local placed =
+				{ Fish = item.Fish, PartId = item.PartId, Locked = item.Locked, X = to.X, Y = to.Y, R = to.R }
 			if from == "Hand" then
 				table.insert(items, placed)
 				next.Hand = nil
@@ -605,6 +723,18 @@ function CargoHold.start()
 		return next
 	end
 
+	local function invokeCargo(action, ...)
+		-- Space requests from the previous response so the server's rate limit
+		-- cannot reject a quick follow-up, regardless of network latency.
+		local delay = 0.21 - (os.clock() - lastRequest)
+		if delay > 0 then
+			task.wait(delay)
+		end
+		local ok, response = pcall(request.InvokeServer, request, action, ...)
+		lastRequest = os.clock()
+		return ok, response
+	end
+
 	local function send(from, to)
 		if pending then
 			return
@@ -615,7 +745,7 @@ function CargoHold.start()
 		holding = nil
 		applyState(predict(from, to))
 		task.spawn(function()
-			local ok, response = pcall(request.InvokeServer, request, "Move", from, to, targetContainer)
+			local ok, response = invokeCargo("Move", from, to, targetContainer)
 			pending = false
 			if ok and type(response) == "table" then
 				applyState(response.State or previous)
@@ -629,11 +759,78 @@ function CargoHold.start()
 		end)
 	end
 
+	local function placeDraft(x: number, y: number, r: number)
+		if pending or not draft then
+			return
+		end
+		pending = true
+		local previous = state
+		task.spawn(function()
+			local ok, response = invokeCargo("Place", x, y, r)
+			pending = false
+			if ok and type(response) == "table" then
+				applyState(response.State or previous)
+				if response.Ok then
+					draft = nil
+					if holding and holding.from == "Draft" then
+						holding = nil
+					end
+					buildGhost()
+					setOpen(false)
+				elseif type(response.Message) == "string" and response.Message ~= "" then
+					flash(response.Message)
+				end
+			else
+				applyState(previous)
+				flash("Couldn't reach your hold. Try again.")
+			end
+		end)
+	end
+
+	-- Puts the reserved part back at the dock, then optionally closes the panel.
+	cancelDraft = function(closeAfter: boolean)
+		if pending or not draft then
+			return
+		end
+		pending = true
+		local previous = state
+		holding = nil
+		buildGhost()
+		render()
+		task.spawn(function()
+			local ok, response = invokeCargo("CancelPlace")
+			pending = false
+			if ok and type(response) == "table" then
+				applyState(response.State or previous)
+				if response.Ok then
+					draft = nil
+					if holding and holding.from == "Draft" then
+						holding = nil
+					end
+					buildGhost()
+					if closeAfter then
+						setOpen(false)
+					else
+						render()
+					end
+				else
+					flash(response.Message or "Couldn't cancel that refit.")
+				end
+			else
+				applyState(previous)
+				flash("Couldn't reach the dock. Try again.")
+			end
+		end)
+	end
+
 	local function pickUp(from, item, rotation: number)
 		if pending then
 			return
 		end
 		holding = { from = from, item = item, r = rotation }
+		if from == "Hand" and UserInputService:GetLastInputType() == Enum.UserInputType.Touch then
+			touchPoint = nil
+		end
 		buildGhost()
 		render()
 	end
@@ -654,13 +851,28 @@ function CargoHold.start()
 		end
 	end
 
-	hit.Activated:Connect(function()
+	local function trackTouch(input: InputObject)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			touchPoint = Vector2.new(input.Position.X, input.Position.Y)
+		end
+	end
+	hit.InputBegan:Connect(trackTouch)
+	hit.InputChanged:Connect(trackTouch)
+	hit.Activated:Connect(function(input)
 		local spec = layout()
 		if not spec or pending then
 			return
 		end
 		if holding then
-			local x, y = anchor()
+			local x, y = anchor(input)
+			if holding.from == "Draft" then
+				if Cargo.fits(spec.Hold, takenFor(), shapeOf(holding.item), x, y, holding.r) then
+					placeDraft(x, y, holding.r)
+				else
+					flash("It doesn't fit there.")
+				end
+				return
+			end
 			if Cargo.fits(spec.Hold, takenFor(), shapeOf(holding.item), x, y, holding.r) then
 				send(holding.from, { X = x, Y = y, R = holding.r })
 			else
@@ -668,7 +880,7 @@ function CargoHold.start()
 			end
 			return
 		end
-		local point = gridPoint()
+		local point = gridPoint(input)
 		local index = Cargo.at(
 			Cargo.occupied(contents(), Catalog.Fish),
 			math.floor(point.X / STEP) + 1,
@@ -679,9 +891,44 @@ function CargoHold.start()
 			pickUp(index, item, item.R)
 		end
 	end)
-	hit.MouseButton2Click:Connect(turn)
+	hit.MouseButton2Click:Connect(function()
+		if holding then
+			turn()
+			return
+		end
+		if pending or container ~= "Backpack" then
+			return
+		end
+		local point = gridPoint()
+		local index = Cargo.at(
+			Cargo.occupied(contents(), Catalog.Fish),
+			math.floor(point.X / STEP) + 1,
+			math.floor(point.Y / STEP) + 1
+		)
+		local item = index and contents()[index]
+		if not item or not item.Fish then
+			return
+		end
+		pending = true
+		local expected =
+			{ X = item.X, Y = item.Y, FishId = item.Fish.FishId, Kg = item.Fish.Kg, CaughtAt = item.Fish.CaughtAt }
+		task.spawn(function()
+			local ok, response = invokeCargo("Lock", index, not item.Locked, expected)
+			pending = false
+			if ok and type(response) == "table" then
+				applyState(response.State or state)
+				if not response.Ok then
+					flash(response.Message or "Couldn't lock that fish.")
+				end
+			else
+				flash("Couldn't reach your backpack. Try again.")
+			end
+		end)
+	end)
 	handSlot.Activated:Connect(function()
-		if holding and holding.from == "Hand" then
+		if holding and holding.from == "Draft" then
+			setOpen(false)
+		elseif holding and holding.from == "Hand" then
 			cancel()
 		elseif holding then
 			if holding.item.PartId then
@@ -696,7 +943,9 @@ function CargoHold.start()
 		end
 	end)
 	release.Activated:Connect(function()
-		if holding and holding.item.Fish then
+		if holding and holding.from == "Draft" then
+			flash("Place the part in the hold first.")
+		elseif holding and holding.item.Fish then
 			send(holding.from, "Release")
 		elseif holding then
 			flash("Boat parts stay in the hold.")
@@ -705,11 +954,35 @@ function CargoHold.start()
 		end
 	end)
 	rotate.Activated:Connect(turn)
+	moveAll.Activated:Connect(function()
+		if draft then
+			flash("Place the reserved part in the hold first.")
+			return
+		elseif pending or container ~= "Boat" then
+			return
+		end
+		pending = true
+		task.spawn(function()
+			local ok, response = invokeCargo("MoveAll")
+			pending = false
+			if ok and type(response) == "table" then
+				applyState(response.State or state)
+				if type(response.Message) == "string" and response.Message ~= "" then
+					flash(response.Message, if response.Ok then FITS else BLOCKED)
+				end
+			else
+				flash("Couldn't reach your hold. Try again.")
+			end
+		end)
+	end)
 	close.Activated:Connect(function()
 		setOpen(false)
 	end)
 	local function switchContainer(value)
 		if pending then
+			return
+		elseif draft then
+			flash("Place the reserved part in the hold first.")
 			return
 		end
 		if value == "Boat" and not aboard then
@@ -739,7 +1012,11 @@ function CargoHold.start()
 		elseif open and input.KeyCode == Enum.KeyCode.R then
 			turn()
 		elseif open and (input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB) then
-			cancel()
+			if draft then
+				setOpen(false)
+			else
+				cancel()
+			end
 		end
 	end)
 
@@ -761,6 +1038,7 @@ function CargoHold.start()
 			if not now and container == "Boat" then
 				container = "Backpack"
 				holding = nil
+				draft = nil
 				buildGhost()
 			end
 			setOpen(open)
@@ -781,6 +1059,7 @@ function CargoHold.start()
 			)
 		end
 		if ghost and holding then
+			ghost.Visible = UserInputService:GetLastInputType() ~= Enum.UserInputType.Touch or touchPoint ~= nil
 			local x, y = anchor()
 			ghost.Position = UDim2.fromOffset((x - 1) * STEP, (y - 1) * STEP)
 			local spot = x * 1000 + y

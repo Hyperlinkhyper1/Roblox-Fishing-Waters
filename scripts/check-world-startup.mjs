@@ -99,9 +99,15 @@ try {
     .replace(/require\(script\.(\w+)\)/g, 'dependencies.$1');
   await run('map', prelude + `
 local dependencies = {}
+dependencies.Props = {ensureHouseCollision=function() record("house-collision") end}
+dependencies.Mediterranean = {
+  ensureStoneWalls=function() record("stone-walls") end,
+  ensurePergolas=function() record("pergolas") end,
+  ensureBalconies=function() record("balconies") end,
+}
 dependencies.Seabed = {shelf=function() record("shelf") end}
 dependencies.SeabedDetails = {ensure=function() record("seabed") end}
-dependencies.Lod = {build=function() record("lod") end, prepareStreaming=function() end}
+dependencies.Lod = {build=function() record("lod") end, prepareStreaming=function() record("streaming") end, serve=function() end}
 dependencies.Regions = {normal=function(ctx, ready)
   check(ctx.rng.seed == Biomes.Seed + 1, "Harbour must retain its seeded RNG")
   record("harbour-built")
@@ -127,6 +133,10 @@ events = {}
 Map.build()
 check(index("lod") < math.huge, "Studio bake without a callback must still finish the full world")
 check(root.Parent == nil, "Explicit rebuild must replace the previous map")
+events = {}
+Map.prepareStreaming(workspace:FindFirstChild("Map"))
+check(index("house-collision") < index("streaming"), "Simplify saved house collisions before streaming starts")
+check(index("pergolas") < index("house-collision") and index("balconies") < index("house-collision"), "Collapse saved hitboxes before house collisions")
 print("Map startup: " .. checks .. " checks passed")
 `);
 
@@ -154,6 +164,22 @@ print("Normal region: " .. checks .. " checks passed")
   const lod = (await readFile(join(root, 'src/server/Map/Lod.luau'), 'utf8'))
     .replace('require(script.Parent.LowPoly)', '{}');
   await run('lod', prelude + `
+function methods:AddTag(tag) self._tags = self._tags or {}; self._tags[tag] = true end
+function methods:HasTag(tag) return self._tags ~= nil and self._tags[tag] == true end
+function methods:AddPersistentPlayer(player)
+  self._persistent = self._persistent or {}
+  table.insert(self._persistent, player)
+end
+local newInstance = Instance.new
+Instance.new = function(class)
+  local item = newInstance(class)
+  if class == "RemoteEvent" then
+    item.OnServerEvent = {Connect=function(_, callback) item.handler = callback end}
+  end
+  return item
+end
+local removing
+Players.PlayerRemoving = {Connect=function(_, callback) removing = callback end}
 local Lod = (function()
 ${lod}
 end)()
@@ -170,6 +196,102 @@ check(harbour.ModelStreamingMode == Enum.ModelStreamingMode.Default, "Even baked
 check(island.ModelStreamingMode == Enum.ModelStreamingMode.Default, "Islands must stream in pieces, never as one frame-freezing atomic unit")
 check(map:FindFirstChild("Lod") == shells, "Existing baked shells must remain intact")
 check(shells.ModelStreamingMode == Enum.ModelStreamingMode.Persistent, "Baked shells must never stream out/reload")
+-- Islands are cut into small pieces that stream in one at a time and are pinned once they arrive
+local function model(name, parent, mode)
+  local item = object("Model", name, parent)
+  item.ModelStreamingMode = mode or Enum.ModelStreamingMode.Default
+  return item
+end
+local function parts(parent, count, x, z)
+  for i = 1, count do
+    local part = object("BasePart", "Part", parent)
+    part.Position = Vector3.new(x or 0, 0, z or 0)
+  end
+end
+local function piece(item) return item.ModelStreamingMode == Enum.ModelStreamingMode.PersistentPerPlayer and item:HasTag("LodPiece") end
+local world = object("Folder", "World", workspace)
+local sound = object("Folder", "Normal", world)
+local isle = model("Isle", sound)
+local ground = model("Ground", isle)
+parts(ground, 3, 10, 10)
+parts(ground, 2, 10, 200)
+local slope = model("SeabedSlope", ground)
+parts(slope, 4, -300, 10)
+local pine = model("Pine", isle)
+parts(pine, 5)
+local village = model("Village", isle)
+parts(village, 250)
+local house = model("House", village)
+parts(house, 10)
+local shop = model("Shop", village, Enum.ModelStreamingMode.Atomic)
+parts(shop, 400)
+local bases = object("Folder", "Bases", isle)
+local base = model("Base", bases)
+parts(base, 3)
+Lod.prepareStreaming(world)
+check(isle.ModelStreamingMode == Enum.ModelStreamingMode.Default, "An island itself must stay a plain container")
+local chunks = {}
+for _, child in ground:GetChildren() do
+  check(child.Name ~= "Part", "No ground wedge may stay loose in the island's Ground")
+  if child.Name == "GroundChunk" then table.insert(chunks, child) end
+end
+check(#chunks == 2 and piece(chunks[1]) and piece(chunks[2]), "Ground must be regrouped into a piece per chunk")
+check(#chunks[1]:GetChildren() + #chunks[2]:GetChildren() == 5, "Every ground wedge must land in a chunk")
+check(#slope:GetChildren() == 1 and piece(slope:GetChildren()[1]), "Seabed slope wedges must be chunked too")
+check(piece(pine) and piece(house) and piece(base), "Small models must each become a piece")
+check(not piece(village) and village.ModelStreamingMode == Enum.ModelStreamingMode.Default,
+  "A model too big to arrive in one frame must be split instead")
+check(piece(shop), "A model that already arrives whole must be pinnable too")
+local pineId = pine:GetAttribute("PieceId")
+-- Added once players are in (a repair after startup, say): switching it now would re-stream it
+local late = model("Surf", isle)
+parts(late, 4)
+Lod.prepareStreaming(world)
+check(pine:GetAttribute("PieceId") == pineId and #ground:GetChildren() == 3, "Preparing twice must not re-split or renumber")
+check(not piece(late), "A model that may already have replicated must keep its streaming mode")
+
+-- Trees added to a generated island after it was parented become pieces as they go in
+local grown = model("Grown", sound)
+local onChild
+grown.ChildAdded = {Connect=function(_, callback) onChild = callback end}
+model("Ground", grown)
+Lod.prepareIsland(grown)
+local palm = model("Palm", grown)
+parts(palm, 4)
+onChild(palm)
+local crater = model("Crater", grown)
+parts(crater, 300)
+local vent = model("Vent", crater)
+parts(vent, 2)
+onChild(crater)
+check(piece(palm) and piece(vent) and not piece(crater), "Late island children must be split like the rest")
+
+-- The server pins a piece for a player once their client reports it
+Lod.serve()
+local remote = ReplicatedStorage:FindFirstChild("LodPin")
+check(remote ~= nil and remote.handler ~= nil, "The pin remote must be served")
+Lod.serve()
+local served = 0
+for _, child in ReplicatedStorage:GetChildren() do if child.Name == "LodPin" then served += 1 end end
+check(served == 1, "Serving twice must not add a second remote")
+local player = {Name="Sailor"}
+remote.handler(player, {pineId, pineId, 999999, "pine"})
+check(#pine._persistent == 1 and pine._persistent[1] == player, "A reported piece must be pinned once")
+remote.handler(player, {pineId})
+check(#pine._persistent == 1, "A piece already pinned must not be pinned again")
+local houseId = house:GetAttribute("PieceId")
+house:Destroy()
+remote.handler(player, {houseId})
+check(house._persistent == nil, "A destroyed piece must not be pinned")
+remote.handler(player, "nonsense")
+local flood = {}
+for i = 1, 600 do flood[i] = 999999 end
+flood[501] = base:GetAttribute("PieceId")
+remote.handler(player, flood)
+check(base._persistent == nil, "One request must not pin more than a batch")
+removing(player)
+remote.handler(player, {pineId})
+check(#pine._persistent == 2, "A player who left must start over")
 print("Baked streaming policy: " .. checks .. " checks passed")
 `);
 
@@ -183,11 +305,11 @@ if mode == "baked" then
   object("SpawnLocation", "HarbourSpawn", root)
 end
 local modules = {Biomes=Biomes}
-local script = {Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
+local script = {ServerUpdates="ServerUpdates", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
   BoatService="BoatService", FishingService="FishingService", WeatherService="WeatherService",
   AnglerService="AnglerService", LeaderboardService="LeaderboardService"}
 local function ready() return ReplicatedStorage:GetAttribute("FishingWatersWorldReady") == true end
-for _, name in {"BaseService", "BoatService", "FishingService", "WeatherService", "AnglerService", "LeaderboardService", "AnglerService", "LeaderboardService"} do
+for _, name in {"ServerUpdates", "BaseService", "BoatService", "FishingService", "WeatherService", "AnglerService", "LeaderboardService", "AnglerService", "LeaderboardService"} do
   modules[name] = {start=function()
     check(not ready(), "Services must start before world readiness")
     if name == "BaseService" then

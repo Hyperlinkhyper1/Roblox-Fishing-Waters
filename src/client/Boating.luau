@@ -10,6 +10,7 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local DrydockCamera = require(script.Parent.DrydockCamera)
 local BoatPreview = require(script.Parent.BoatPreview)
+local BoatCamera = require(script.Parent.BoatCamera)
 
 local Boating = {}
 
@@ -18,6 +19,7 @@ function Boating.start()
 	local remotes = ReplicatedStorage:WaitForChild("Boating")
 	local request = remotes:WaitForChild("Request") :: RemoteEvent
 	local feedback = remotes:WaitForChild("Feedback") :: RemoteEvent
+	local netRemote = ReplicatedStorage:WaitForChild("TrawlerNet") :: RemoteEvent
 	local boatIds = {}
 	for id in BoatCatalog do
 		table.insert(boatIds, id)
@@ -108,6 +110,8 @@ function Boating.start()
 		drop.Rotation = 25
 		drops[index] = drop
 	end
+	-- A narrow funnel under the cloud marks a supercell.
+	local funnel = weatherPart("Funnel", 16, 24, 6, 12, Color3.fromRGB(150, 160, 156))
 	local lightning =
 		label(weatherIcon, "ϟ", UDim2.fromOffset(21, 17), UDim2.fromOffset(17, 22), 25, Color3.fromRGB(255, 219, 109))
 	lightning.Name = "Lightning"
@@ -121,14 +125,23 @@ function Boating.start()
 		end
 		currentWeather = kind
 		local blackHole = kind == "BlackHole"
-		weatherIcon.Visible = blackHole or kind == "LightRain" or kind == "Rain" or kind == "Storm"
+		local supercell = kind == "Supercell"
+		weatherIcon.Visible = blackHole or supercell or kind == "LightRain" or kind == "Rain" or kind == "Storm"
 		voidRing.Visible, voidCore.Visible = blackHole, blackHole
 		for _, cloud in clouds do
 			cloud.Visible = not blackHole
+			cloud.BackgroundColor3 = if supercell then Color3.fromRGB(112, 128, 122) else cloudColor
 		end
-		lightning.Visible = kind == "Storm"
+		funnel.Visible = supercell
+		lightning.Visible = kind == "Storm" or supercell
 		for index, drop in drops do
-			drop.Visible = not blackHole and (if kind == "Storm" then index <= 2 else kind == "Rain" or index % 2 == 1)
+			drop.Visible = not blackHole
+				and (
+					if kind == "Storm"
+						then index <= 2
+						elseif supercell then index == 1
+						else kind == "Rain" or index % 2 == 1
+				)
 		end
 	end
 	refreshWeather()
@@ -198,6 +211,38 @@ function Boating.start()
 	end
 	refreshLevel()
 
+	local controlledBoat: Model? = nil
+	local lightsToggle = Instance.new("TextButton")
+	lightsToggle.Name = "ToggleBoatLights"
+	lightsToggle.Position = UDim2.new(1, -126, 1, -192)
+	lightsToggle.Size = UDim2.fromOffset(112, 38)
+	lightsToggle.Text = "Lights ON [L]"
+	lightsToggle.TextSize = 12
+	lightsToggle.Visible = false
+	lightsToggle.Parent = gui
+	Theme.button(lightsToggle, "Selected")
+	local previousLightsOn: boolean? = nil
+	local cameraToggle = Instance.new("TextButton")
+	cameraToggle.Name = "CycleBoatCamera"
+	cameraToggle.Position = UDim2.new(1, -126, 1, -238)
+	cameraToggle.Size = UDim2.fromOffset(112, 38)
+	cameraToggle.TextSize = 11
+	cameraToggle.TextWrapped = true
+	cameraToggle.Text = "Camera [V]\n" .. BoatCamera.label()
+	cameraToggle.Visible = false
+	cameraToggle.Parent = gui
+	Theme.button(cameraToggle, "Normal")
+	local netToggle = Instance.new("TextButton")
+	netToggle.Name = "ToggleTrawlerNet"
+	netToggle.Position = UDim2.new(1, -126, 1, -146)
+	netToggle.Size = UDim2.fromOffset(112, 38)
+	netToggle.Text = "Net IN [N]"
+	netToggle.TextSize = 12
+	netToggle.Visible = false
+	netToggle.Parent = gui
+	Theme.button(netToggle, "Normal")
+	local previousNetDeployed: boolean? = nil
+
 	local overlay = Instance.new("TextButton")
 	overlay.Name = "ShopOverlay"
 	overlay.Size = UDim2.fromScale(1, 1)
@@ -254,6 +299,7 @@ function Boating.start()
 			elseif boatId == "FishingBoat" then "Fishing boat"
 			elseif boatId == "Speedboat" then "Speedboat"
 			elseif boatId == "RacingSpeedboat" then "Racing"
+			elseif boatId == "Trawler" then "Fishing trawler"
 			else "Patrol cruiser"
 		tab.Font, tab.TextSize = Enum.Font.GothamBold, 12
 		tab.Parent = tabs
@@ -517,6 +563,7 @@ function Boating.start()
 	player:SetAttribute("DrydockScreenOpen", false)
 	player.CharacterAdded:Connect(function()
 		overlay.Visible = false
+		BoatCamera.stop()
 		if not isLaunching then
 			DrydockCamera.stop()
 		end
@@ -572,6 +619,9 @@ function Boating.start()
 		title.Text = spec.Name
 		description.Text = if selectedBoatId == "RacingSpeedboat"
 			then "Our fastest boat with the sharpest turns. Four cockpit seats and 49 cargo tiles: 15 fewer than the fishing boat."
+			elseif
+				selectedBoatId == "Trawler"
+			then "A traditional teal fishing trawler with a sheltered forward wheelhouse, stern gantry, net drum and two fishing seats. Cruise at 70 studs/s with 104 cargo tiles."
 			elseif
 				selectedBoatId == "PatrolBoat"
 			then "A long gray patrol cruiser with a wheelhouse for two, stern benches for two more, 128 cargo tiles and more speed. Pivots easily in harbour; turns a little wider than the Bluewater speedboat at speed."
@@ -712,9 +762,49 @@ function Boating.start()
 			request:FireServer("PurchaseBoat", selectedBoatId)
 		end
 	end)
-	UserInputService.InputBegan:Connect(function(input)
+	local function toggleLights()
+		if
+			controlledBoat
+			and lightsToggle.Visible
+			and not overlay.Visible
+			and not player:GetAttribute("PlayerMenuOpen")
+		then
+			request:FireServer("ToggleLights")
+		end
+	end
+	lightsToggle.Activated:Connect(toggleLights)
+	local function toggleCamera()
+		if
+			controlledBoat
+			and cameraToggle.Visible
+			and not overlay.Visible
+			and not player:GetAttribute("PlayerMenuOpen")
+		then
+			BoatCamera.cycle()
+			cameraToggle.Text = "Camera [V]\n" .. BoatCamera.label()
+		end
+	end
+	cameraToggle.Activated:Connect(toggleCamera)
+	local function toggleNet()
+		if
+			controlledBoat
+			and netToggle.Visible
+			and not overlay.Visible
+			and not player:GetAttribute("PlayerMenuOpen")
+		then
+			netRemote:FireServer("Toggle")
+		end
+	end
+	netToggle.Activated:Connect(toggleNet)
+	UserInputService.InputBegan:Connect(function(input, processed)
 		if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB then
 			overlay.Visible = false
+		elseif input.KeyCode == Enum.KeyCode.L and not processed and not UserInputService:GetFocusedTextBox() then
+			toggleLights()
+		elseif input.KeyCode == Enum.KeyCode.V and not processed and not UserInputService:GetFocusedTextBox() then
+			toggleCamera()
+		elseif input.KeyCode == Enum.KeyCode.N and not processed and not UserInputService:GetFocusedTextBox() then
+			toggleNet()
 		end
 	end)
 	feedback.OnClientEvent:Connect(function(kind, message, boatId)
@@ -784,6 +874,13 @@ function Boating.start()
 			end
 		elseif kind == "Notice" and type(message) == "string" then
 			notice(message)
+		end
+	end)
+	netRemote.OnClientEvent:Connect(function(kind, fishName, kg, value)
+		if kind == "Catch" and type(fishName) == "string" then
+			notice(string.format("Your net caught a %s · %.2f kg · $%d", fishName, tonumber(kg) or 0, tonumber(value) or 0))
+		elseif kind == "Notice" and type(fishName) == "string" then
+			notice(fishName)
 		end
 	end)
 
@@ -858,6 +955,35 @@ function Boating.start()
 			and drivenSpec ~= nil
 			and seat.Name == (drivenSpec.DriverSeat or "RowerSeat")
 			and boatModel:GetAttribute("OwnerUserId") == player.UserId
+		controlledBoat = if ownSeat then boatModel else nil
+		local helmVisible = controlledBoat ~= nil
+			and not overlay.Visible
+			and not isLaunching
+			and not player:GetAttribute("PlayerMenuOpen")
+		lightsToggle.Visible = helmVisible
+		local cameraAllowed = helmVisible
+			and not player:GetAttribute("BuildModeOpen")
+			and not player:GetAttribute("RodCrateOpening")
+		cameraToggle.Visible = cameraAllowed
+		BoatCamera.setActive(if cameraAllowed then controlledBoat else nil, if cameraAllowed then seat else nil)
+		local netAllowed = helmVisible
+			and controlledBoat ~= nil
+			and controlledBoat:GetAttribute("BoatId") == "Trawler"
+			and controlledBoat:GetAttribute("NetOwned") == true
+			and not player:GetAttribute("BoatRefitOpen")
+		netToggle.Visible = netAllowed
+		local netDeployed = netAllowed and controlledBoat:GetAttribute("NetDeployed") == true
+		if netDeployed ~= previousNetDeployed then
+			previousNetDeployed = netDeployed
+			netToggle.Text = if netDeployed then "Net OUT [N]" else "Net IN [N]"
+			Theme.button(netToggle, if netDeployed then "Selected" else "Normal")
+		end
+		local lightsOn = controlledBoat ~= nil and controlledBoat:GetAttribute("LightsEnabled") ~= false
+		if lightsOn ~= previousLightsOn then
+			previousLightsOn = lightsOn
+			lightsToggle.Text = if lightsOn then "Lights ON [L]" else "Lights OFF [L]"
+			Theme.button(lightsToggle, if lightsOn then "Selected" else "Normal")
+		end
 		if ownSeat then
 			if seat ~= previousSeat then
 				notice(
@@ -866,10 +992,20 @@ function Boating.start()
 				)
 			end
 			sinceInput += dt
-			-- Send changes at once (capped for analog sticks); repeat held input so
-			-- the server's input timeout never releases the helm.
+			-- Presses, releases and direction reversals bypass the analog rate cap.
+			-- Repeat held input so the server's input timeout never releases the helm.
 			local throttle, steer = seat.ThrottleFloat, seat.SteerFloat
-			if (sinceInput >= 1 / 30 and (throttle ~= sentThrottle or steer ~= sentSteer)) or sinceInput >= 0.1 then
+			local hull = boatModel.PrimaryPart
+			if player:GetAttribute("BoatRefitOpen") and hull then
+				-- The refit dock brakes the boat to a stop while its menu is open.
+				local speed = hull.AssemblyLinearVelocity:Dot(hull.CFrame.LookVector)
+				throttle, steer = if speed > 1 then -1 elseif speed < -1 then 1 else 0, 0
+			end
+			local changed = throttle ~= sentThrottle or steer ~= sentSteer
+			local directionChanged = seat ~= previousSeat
+				or (sentThrottle ~= nil and math.sign(throttle) ~= math.sign(sentThrottle))
+				or (sentSteer ~= nil and math.sign(steer) ~= math.sign(sentSteer))
+			if (changed and (directionChanged or sinceInput >= 1 / 30)) or sinceInput >= 0.1 then
 				sinceInput = 0
 				sentThrottle, sentSteer = throttle, steer
 				request:FireServer("Row", throttle, steer)

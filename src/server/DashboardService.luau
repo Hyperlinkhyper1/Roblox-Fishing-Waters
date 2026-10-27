@@ -50,15 +50,27 @@ local function payload(closing: boolean?)
 	local epoch = workspace:GetAttribute("WeatherEpoch") or now
 	local override = workspace:GetAttribute("WeatherOverride")
 	local blackHole = Weather.blackHolePosition()
+	local supercell = Weather.supercell(now)
+	local tornadoes = {}
+	for _, tornado in Weather.tornadoes(now) do
+		table.insert(tornadoes, {
+			x = math.round(tornado.position.X),
+			z = math.round(tornado.position.Z),
+			radius = math.round(tornado.radius),
+			strength = math.round(tornado.strength * 100) / 100,
+		})
+	end
 	local kinds, schedule, passes = {}, {}, {}
 	for kind in Weather.Presets do
 		table.insert(kinds, kind)
 	end
-	-- Calmest first, so the dashboard's weather buttons read in order.
+	-- Calmest first, so the dashboard's weather buttons read in order; the rare
+	-- supercell after ordinary weather, the admin-only black hole last.
+	local rank = { Supercell = 5, BlackHole = 10 }
 	table.sort(kinds, function(a, b)
 		local pa, pb = Weather.Presets[a], Weather.Presets[b]
-		local sa = pa.rain + pa.storm + (if a == "BlackHole" then 10 else 0)
-		local sb = pb.rain + pb.storm + (if b == "BlackHole" then 10 else 0)
+		local sa = pa.rain + pa.storm + (rank[a] or 0)
+		local sb = pb.rain + pb.storm + (rank[b] or 0)
 		return if sa == sb then a < b else sa < sb
 	end)
 	for _, stage in Weather.Schedule do
@@ -83,6 +95,16 @@ local function payload(closing: boolean?)
 			blackHole = if blackHole
 				then { x = blackHole.X, z = blackHole.Z, radius = Weather.BlackHoleRadius }
 				else nil,
+			supercell = if supercell
+				then {
+					x = math.round(supercell.position.X),
+					z = math.round(supercell.position.Z),
+					radius = Weather.SupercellRadius,
+					strength = math.round(supercell.strength * 100) / 100,
+					forced = supercell.forced,
+				}
+				else nil,
+			tornadoes = tornadoes,
 			override = if type(override) == "string" then override else nil,
 			rain = state.rain,
 			storm = state.storm,
@@ -110,24 +132,41 @@ local function apply(reply)
 	local version = reply.weatherVersion
 	if type(version) == "number" and version > appliedWeatherVersion then
 		local kind = reply.weatherOverride
-		local center
+		local center, cell
 		local valid = true
-		if kind == "BlackHole" then
-			local point = reply.blackHole
-			valid = type(point) == "table"
+		local function location(point): Vector3?
+			if
+				type(point) == "table"
 				and type(point.x) == "number"
 				and type(point.z) == "number"
 				and point.x == point.x
 				and point.z == point.z
 				and math.abs(point.x) <= Weather.RadarHalfSize
 				and math.abs(point.z) <= Weather.RadarHalfSize
-			if valid then
-				center = Vector3.new(point.x, Biomes.WaterLevel, point.z)
+			then
+				return Vector3.new(point.x, Biomes.WaterLevel, point.z)
+			end
+			return nil
+		end
+		if kind == "BlackHole" then
+			center = location(reply.blackHole)
+			valid = center ~= nil
+		elseif kind == "Supercell" then
+			-- A location is optional: without one the cell circles a random
+			-- player, so the operator's choice is actually seen by someone.
+			cell = location(reply.supercell) or location(reply.blackHole)
+			if not cell then
+				local players = Players:GetPlayers()
+				local chosen = players[math.random(math.max(1, #players))]
+				local root = chosen and chosen.Character and chosen.Character.PrimaryPart
+				cell = if root then Vector3.new(root.Position.X, Biomes.WaterLevel, root.Position.Z) else nil
 			end
 		end
 		if valid then
 			appliedWeatherVersion = version
 			workspace:SetAttribute("BlackHolePosition", center)
+			workspace:SetAttribute("SupercellPosition", cell)
+			workspace:SetAttribute("SupercellSince", if kind == "Supercell" then workspace:GetServerTimeNow() else nil)
 			workspace:SetAttribute(
 				"WeatherOverride",
 				if type(kind) == "string" and Weather.Presets[kind] then kind else nil

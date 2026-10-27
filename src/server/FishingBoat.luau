@@ -424,6 +424,86 @@ function FishingBoat.build(frame: CFrame, anchored: boolean?): Model
 		)
 	end
 
+	-- A warm bow lantern keeps the working-boat look alongside electric lighting.
+	local lanternBase = Vector3.new(0, 2.6, -8.5)
+	local lanternColor = Color3.fromRGB(255, 218, 151)
+	part("LanternStand", Vector3.new(0.16, 1.44, 0.16), CFrame.new(0, 1.82, -8.5), DARK, Enum.Material.Metal)
+	part("LanternFoot", Vector3.new(0.52, 0.12, 0.52), CFrame.new(lanternBase), DARK, Enum.Material.Metal)
+	local lantern = part(
+		"LanternGlass",
+		Vector3.new(0.36, 0.58, 0.36),
+		CFrame.new(lanternBase + Vector3.new(0, 0.35, 0)),
+		lanternColor,
+		Enum.Material.Neon
+	)
+	part(
+		"LanternCap",
+		Vector3.new(0.52, 0.12, 0.52),
+		CFrame.new(lanternBase + Vector3.new(0, 0.7, 0)),
+		DARK,
+		Enum.Material.Metal
+	)
+	for _, x in { -0.22, 0.22 } do
+		part(
+			"LanternFrame",
+			Vector3.new(0.05, 0.6, 0.05),
+			CFrame.new(lanternBase + Vector3.new(x, 0.35, 0)),
+			DARK,
+			Enum.Material.Metal
+		)
+	end
+	part(
+		"LanternHandle",
+		Vector3.new(0.12, 0.24, 0.06),
+		CFrame.new(lanternBase + Vector3.new(0, 0.88, 0)),
+		DARK,
+		Enum.Material.Metal
+	)
+	local lanternLight = Instance.new("PointLight")
+	lanternLight.Name = "LanternLight"
+	lanternLight.Color, lanternLight.Range, lanternLight.Brightness = lanternColor, 10, 0.6
+	lanternLight.Shadows = false
+	lanternLight.Parent = lantern
+
+	local lampColor = Color3.fromRGB(255, 244, 219)
+	local ceiling =
+		part("CabinLight", Vector3.new(0.8, 0.12, 0.55), CFrame.new(0, 6.72, 5.4), lampColor, Enum.Material.Neon)
+	local deckLight = Instance.new("PointLight")
+	deckLight.Name = "DeckLight"
+	deckLight.Color, deckLight.Range, deckLight.Brightness = lampColor, 18, 0.6
+	deckLight.Shadows = false
+	deckLight.Parent = ceiling
+	-- Keep the lamps above the bow sides, with beams pointing along local -Z.
+	for _, side in { -1, 1 } do
+		part(
+			"HeadlightStand",
+			Vector3.new(0.16, 1.4, 0.16),
+			CFrame.new(side * 1.15, 1.8, -8.7),
+			DARK,
+			Enum.Material.Metal
+		)
+		part(
+			"HeadlightHousing",
+			Vector3.new(0.7, 0.5, 0.55),
+			CFrame.new(side * 1.15, 2.75, -8.7),
+			DARK,
+			Enum.Material.Metal
+		)
+		local lens = part(
+			"HeadlightLens",
+			Vector3.new(0.54, 0.34, 0.06),
+			CFrame.new(side * 1.15, 2.75, -9.01),
+			lampColor,
+			Enum.Material.Neon
+		)
+		lens.CastShadow = false
+		local headlight = Instance.new("SpotLight")
+		headlight.Name = "Headlight"
+		headlight.Face = Enum.NormalId.Front
+		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 45, 1.2, 65
+		headlight.Shadows = false
+		headlight.Parent = lens
+	end
 	return model
 end
 

@@ -83,11 +83,22 @@ function runService:BindToRenderStep(name, _priority, callback)
 end
 local services =
 	{ Lighting = lighting, SoundService = sounds, Players = players, RunService = runService, ReplicatedStorage = {} }
+local preloaded = {}
+services.ContentProvider = {
+	PreloadAsync = function(_, assets)
+		for _, asset in assets do
+			table.insert(preloaded, asset)
+		end
+	end,
+}
 game.GetService = function(_, name)
 	return services[name]
 end
 local delayed = {}
 local task = {
+	spawn = function(callback)
+		callback()
+	end,
 	delay = function(delay, callback)
 		table.insert(delayed, { at = now + delay, callback = callback })
 	end,
@@ -136,6 +147,10 @@ end
 local clearWindRate = wind.Rate
 local rainSound = sounds:FindFirstChild("WeatherRain")
 assert(
+	#preloaded == 2 and rainSound:GetAttribute("AudioCategory") == "Effects",
+	"Weather audio must preload and use the effects mixer"
+)
+assert(
 	rainSound.SoundId == "rbxassetid://1516791621" and rainSound.Looped,
 	"Rain must loop the stock Roblox rain asset"
 )
@@ -149,6 +164,10 @@ for _, emitter in rain do
 	assert(
 		emitter.Enabled and emitter.Rate > 0 and emitter.Lifetime.Max < 0.6,
 		"Light rain must fall and end at the water"
+	)
+	assert(
+		emitter.Rate >= 100 and emitter.LightInfluence <= 0.25,
+		"Even light rain needs enough drops and contrast to remain visible at night"
 	)
 end
 assert(lightWindRate > clearWindRate, "Light rain must strengthen visible wind")
@@ -260,3 +279,30 @@ assert(
 )
 assert(#sounds:GetChildren() == 2, "Weather must reuse its two sound instances")
 print("PASS stock rain loop, intensity, shelter/diving, camera recovery, clear-weather fade and audio override")
+
+-- Replay the real shared forecast through the actual particle/audio controller.
+local realWeather = (function()
+	-- WEATHER --
+end)()
+dependencies.Weather.getState = realWeather.getState
+workspace:SetAttribute("WeatherEpoch", now)
+for _, seed in { 17, 1847, 999983 } do
+	workspace:SetAttribute("WeatherSeed", seed)
+	for _, kind in { "LightRain", "Rain", "Storm", "Supercell" } do
+		workspace:SetAttribute("WeatherOverride", kind)
+		workspace:SetAttribute("SupercellSince", now - 60)
+		for _, point in { Vector3.new(0, 8, 0), Vector3.new(-5000, 8, 5000) } do
+			camera.CFrame = CFrame.new(point)
+			step(0.2)
+			assert(
+				rain[1].Enabled and rain[1].Rate > 100,
+				"Every selected rain/storm/supercell preset must visibly rain at the camera"
+			)
+			assert(rainSound.IsPlaying and rainSound.Volume > 0.1, "Every selected wet preset must play audible rain")
+		end
+	end
+end
+workspace:SetAttribute("WeatherOverride", "Clear")
+step(5)
+assert(not rain[1].Enabled and not rainSound.IsPlaying, "Real clear preset stops rainfall and rain audio")
+print("PASS real forecast to precipitation/audio integration across selected weather, seeds and map positions")

@@ -343,6 +343,9 @@ Players.LocalPlayer, Players.PlayerAdded, Players.PlayerRemoving = player, signa
 function Players:GetPlayers()
 	return { player }
 end
+function Players:GetPlayerByUserId(userId)
+	return if player.Parent == self and player.UserId == userId then player else nil
+end
 function Players:GetUserThumbnailAsync()
 	return "mock-thumbnail"
 end
@@ -372,7 +375,12 @@ local SoundService = Instance.new("SoundService")
 local GuiService = {}
 local UserInputService = { InputBegan = signal(), GamepadEnabled = true, KeyboardEnabled = true, TouchEnabled = false }
 local passPrompts = {}
+local productPrompts, failProductPrompt = {}, false
 local MarketplaceService = {
+	PromptProductPurchase = function(_, who, productId)
+		assert(not failProductPrompt, "Purchase prompt unavailable")
+		table.insert(productPrompts, { who, productId })
+	end,
 	PromptGamePassPurchase = function(_, who, passId)
 		table.insert(passPrompts, { who, passId })
 	end,
@@ -393,6 +401,11 @@ function player:IsInGroupAsync(groupId)
 	return self.groupMember == true
 end
 local services = {
+	TextService = {
+		FilterStringAsync = function(_, value)
+			return { GetNonChatStringForBroadcastAsync = function() return value:gsub("badword", "#######") end }
+		end,
+	},
 	GroupService = GroupService,
 	MarketplaceService = MarketplaceService,
 	Players = Players,

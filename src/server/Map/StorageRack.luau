@@ -15,9 +15,9 @@ StorageRack.WIDTH = 6
 StorageRack.DEPTH = 2
 StorageRack.HEIGHT = 6.6
 local SHELVES = { 0.35, 2.4, 4.45 }
--- Crate spots: four along each of the two lower shelves.
+-- Crate spots: four along each shelf.
 local CRATE_SPOTS = {}
-for _, y in { SHELVES[1], SHELVES[2] } do
+for _, y in SHELVES do
 	for index = 0, 3 do
 		table.insert(CRATE_SPOTS, Vector3.new(-2.1 + index * 1.4, y, 0.05))
 	end

@@ -13,6 +13,17 @@ Fish Shop ──► Fish Supermarket ──► The Restaurant ─┐
 After the Supermarket, the player chooses Restaurant **or** Company first. The
 other branch opens once the first one reaches 100%.
 
+The active stage also offers **Skip quests · Robux** (developer product
+`3722698836`). The confirmation warns that the player still needs the full
+in-game money price to open the next path. A verified receipt completes only
+the current stage's quests; the player still chooses and pays for the next stage.
+No cash, staff, furniture, or quest-stat rewards are granted by skipping.
+
+`Angler.Paths.SkipReceipts` records purchase IDs in the same wallet transaction as
+the skip so retries cannot grant it twice. `SkipTarget` binds the prompt to its
+stage. Purchases received after that stage finishes, or outside the game, remain
+as `SkipCredits`; the Paths button can use them on an unfinished stage later.
+
 All rules live in [`src/shared/Paths.luau`](../src/shared/Paths.luau). It is pure
 Luau, so the server, the menu and the tests read the same table.
 

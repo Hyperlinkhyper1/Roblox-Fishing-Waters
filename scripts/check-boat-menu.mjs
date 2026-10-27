@@ -21,7 +21,11 @@ try {
       .replace('require(ReplicatedStorage.Shared.BoatCatalog)', 'BoatCatalog')
       .replace('require(ReplicatedStorage.Shared.Weather)', '{ getState = function() return { kind = "Clear" } end }')
       .replace('require(script.Parent.DrydockCamera)', 'DrydockCamera')
-      .replace('require(script.Parent.BoatPreview)', 'BoatPreview'),
+      .replace('require(script.Parent.BoatPreview)', 'BoatPreview')
+      .replace(
+        'require(script.Parent.BoatCamera)',
+        '(function() local modes = { "Trailing", "Front", "Cockpit", "Side" }; local index = 1; return { label = function() return modes[index] end, cycle = function() index = index % #modes + 1; return modes[index] end, setActive = function() end, stop = function() end } end)()',
+      ),
   };
   for (const [name, source] of Object.entries(sources)) program = program.replace(`-- ${name}_SOURCE --`, () => source);
   const path = join(folder, 'check.luau');

@@ -3,7 +3,7 @@
 -- drive it without Roblox's Random.
 local FishCatch = {}
 
-FishCatch.JUNK_CHANCE = 0.04 -- 2% each for the branch and boot, in every stocked pool.
+FishCatch.JUNK_CHANCE = 0.06 -- 2% each for the branch, boot and seaweed, in every stocked pool.
 FishCatch.BIG_CHANCE = 0.06
 FishCatch.HUGE_CHANCE = 0.012
 FishCatch.START_PROGRESS = 0.3
@@ -36,7 +36,7 @@ function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?):
 		if pick < FishCatch.JUNK_CHANCE then
 			return pool.Junk[math.floor(pick / FishCatch.JUNK_CHANCE * #pool.Junk) + 1]
 		end
-		-- Keep the existing relative fish odds within the remaining 96%.
+		-- Keep the existing relative fish odds within the remaining catch chance.
 		pick = (pick - FishCatch.JUNK_CHANCE) / (1 - FishCatch.JUNK_CHANCE)
 	end
 	local total = 0

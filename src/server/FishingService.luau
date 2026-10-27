@@ -10,6 +10,7 @@ local FishingRod = require(ReplicatedStorage.Shared.FishingRod)
 local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
+local CrabCages = require(ReplicatedStorage.Shared.CrabCages)
 
 local FishingService = {}
 local states = {}
@@ -280,9 +281,14 @@ local CRATE_FAILURES = {
 }
 
 -- Rolls before saving so every UpdateAsync retry awards the same skin.
-local function openRodCrate(player: Player, crateId: any, bobber: boolean?): (boolean, string, string?, number?)
+local function openRodCrate(player: Player, request: any, bobber: boolean?): (boolean, string, any, number?)
 	local skins = if bobber then BobberSkins else RodSkins
 	local purchase = if bobber then BoatData.openBobberCrate else BoatData.openRodCrate
+	local crateId = if type(request) == "table" then request.CrateId else request
+	local count = if type(request) == "table" then request.Count else 1
+	if count ~= 1 and count ~= 3 and count ~= 10 then
+		return false, "Choose 1, 3, or 10 crates."
+	end
 	if not skins.validCrate(crateId) then
 		return false, CRATE_FAILURES.UnknownCrate
 	end
@@ -291,33 +297,76 @@ local function openRodCrate(player: Player, crateId: any, bobber: boolean?): (bo
 	if not profile then
 		return false, "Your wallet is still loading. Try again in a moment."
 	end
-	local skinId = skins.roll(crateId, math.random(), math.random())
+	local rewards = {}
+	local skinIds = {}
+	for _ = 1, count do
+		local skinId = skins.roll(crateId, math.random(), math.random())
+		table.insert(skinIds, skinId)
+		table.insert(rewards, { SkinId = skinId })
+	end
 	-- Pre-check the cached profile so a rejected request never costs a save.
-	local outcome = if bobber
-		then purchase(profile, crateId, skinId)
-		else BoatData.canOpenRodCrate(profile, crateId, skinId)
+	local outcome = BoatData.canOpenRodCrate(profile, crateId, skinIds[1])
+	-- Bobber and rod crates have separate catalogs, but share the ownership and wallet requirements.
+	if bobber then
+		outcome = if not profile.OwnedRods.StarterRod then "NoRod" else "Opened"
+	end
+	if profile.Cash < crate.Price * count then
+		outcome = "InsufficientFunds"
+	end
 	if outcome == "InsufficientFunds" then
-		return false, string.format("You need $%d to open the %s.", crate.Price, crate.Name)
+		return false, string.format("You need $%d to open %d %s.", crate.Price * count, count, crate.Name)
 	elseif outcome ~= "Opened" then
 		return false, CRATE_FAILURES[outcome] or "That crate isn't available."
 	end
-	local serial
-	local ok, message = BoatService.updateProgress(player, function(current, reservedSerial)
-		local result, awardedSerial = purchase(current, crateId, skinId, reservedSerial)
-		assert(result == "Opened", result)
-		serial = awardedSerial
-	end, if bobber then nil else skinId)
+	local ok, message = BoatService.updateProgress(player, function(current, reservedSerials)
+		assert(current.Cash >= crate.Price * count, "InsufficientFunds")
+		for index, reward in rewards do
+			local result, serial =
+				purchase(current, crateId, reward.SkinId, if bobber then nil else reservedSerials[index])
+			assert(result == "Opened", result)
+			reward.Serial = serial
+		end
+	end, if bobber then nil else skinIds)
+	if not ok then
+		return false, message
+	end
+	if count == 1 then
+		local reward = rewards[1]
+		return true, string.format("You unboxed the %s!", skins.Skins[reward.SkinId].Name), reward.SkinId, reward.Serial
+	end
+	return true, string.format("You unboxed %d crates!", count), rewards
+end
+
+local CAGE_PROMPT = "BuyCrabCagePrompt"
+
+-- One cage per press of the prompt on the crab cage stand; CrabCageService
+-- hands it out as a hotbar Tool once the save lands.
+local function buyCrabCage(player: Player): (boolean, string)
+	local state = states[player]
+	if not state or state.cageBusy then
+		return false, "Please wait a moment and try again."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your wallet is still loading. Try again in a moment."
+	end
+	local problem = CrabCages.buyProblem(profile)
+	if problem then
+		return false, problem
+	end
+	state.cageBusy = true
+	local ok, message = BoatService.updateProgress(player, function(current)
+		CrabCages.buy(current)
+	end)
+	state.cageBusy = false
 	if not ok then
 		return false, message
 	end
 	return true,
 		string.format(
-			"You unboxed the %s%s!",
-			skins.Skins[skinId].Name,
-			if serial then string.format(" · Serial #%06d", serial) else ""
-		),
-		skinId,
-		serial
+			"Crab cage bought! Equip it from your hotbar and drop it in the water by your dock. Each cage lasts %d hauls.",
+			CrabCages.USES
+		)
 end
 
 -- "" puts the plain starter rod back on.
@@ -694,6 +743,11 @@ function FishingService.start()
 			feedback:FireClient(player, "OpenCrates")
 		elseif prompt.Name == BOBBER_PROMPT and shopPrompt(player, BOBBER_PROMPT) == prompt then
 			feedback:FireClient(player, "OpenBobberCrates")
+		elseif prompt.Name == CAGE_PROMPT and shopPrompt(player, CAGE_PROMPT) == prompt then
+			task.spawn(function()
+				local _, message = buyCrabCage(player)
+				notify(player, message)
+			end)
 		elseif prompt.Name == "RodStoreDoorPrompt" or prompt.Name == "FurnitureStoreDoorPrompt" then
 			walkThroughDoor(player, prompt)
 		end

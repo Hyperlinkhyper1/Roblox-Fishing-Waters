@@ -346,6 +346,7 @@ function PlazaHouses.house(parent: Instance, base: CFrame, spec: Spec, rng: Rand
 			Med.pot(m, at, rng, if roll < 0.75 then "flowers" else "lemon")
 		end
 	end
+	Props.simplifyHouseCollision(m)
 	return m, doorFace, leaf
 end
 

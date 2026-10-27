@@ -69,6 +69,46 @@ end
 local rotated =
 	assert(Data.moveCargo(packed, nil, Backpacks.Items.Starter, 1, { X = 2, Y = 1, R = 1 }, Catalog.Fish, true))
 check(rotated.Backpack[1].R == 1 and packed.Backpack[1].R == 0, "Fish can rotate and move")
+local expectedFish = { X = 1, Y = 1, FishId = "Test", Kg = 2, CaughtAt = 1 }
+local locked = assert(Data.setBackpackLock(packed, 1, true, expectedFish))
+check(locked.Backpack[1].Locked and not packed.Backpack[1].Locked, "Lock is saved without mutating the source")
+check(Data.decode(locked).Backpack[1].Locked, "Lock survives reload")
+check(
+	not Data.setBackpackLock(locked, 1, false, { X = 2, Y = 1, FishId = "Test", Kg = 2, CaughtAt = 1 }),
+	"Stale lock requests are rejected"
+)
+local movedLock =
+	assert(Data.moveCargo(locked, nil, Backpacks.Items.Starter, 1, { X = 2, Y = 1, R = 1 }, Catalog.Fish, true))
+check(movedLock.Backpack[1].Locked, "Rearranging a fish preserves its lock")
+local withTwo = catch(locked, 2)
+withTwo =
+	assert(Data.moveCargo(withTwo, nil, Backpacks.Items.Starter, "Hand", { X = 1, Y = 2, R = 0 }, Catalog.Fish, true))
+local bothUnlocked = assert(Data.setBackpackLock(withTwo, 1, false, expectedFish))
+local allStocked, allCount = Data.stockFreezer(catch(bothUnlocked, 3))
+check(
+	allCount == 3 and #allStocked.Backpack == 0 and allStocked.Hand == nil,
+	"One interaction stocks the equipped hand fish and every unlocked backpack fish"
+)
+local stocked, stockedCount = Data.stockFreezer(withTwo)
+check(
+	stockedCount == 1 and #stocked.Freezer == 1 and #stocked.Backpack == 1 and stocked.Backpack[1].Locked,
+	"Freezer transfers unlocked fish and leaves locked fish"
+)
+check(#withTwo.Freezer == 0 and #withTwo.Backpack == 2, "Bulk stocking is copy-on-write")
+local unlocked = assert(Data.setBackpackLock(stocked, 1, false, expectedFish))
+local stockedAgain, unlockedCount = Data.stockFreezer(unlocked)
+check(unlockedCount == 1 and #stockedAgain.Backpack == 0, "Unlocked fish can be stocked later")
+local noHand, noHandCount = Data.stockFreezer(catch(withTwo, 3), false)
+check(noHandCount == 1 and noHand.Hand.CaughtAt == 3, "An unequipped hand fish stays in hand while backpack fish stock")
+local fullFreezer = Data.decode(withTwo)
+while Data.canFreeze(fullFreezer, fullFreezer.Backpack[2].Fish) do
+	table.insert(fullFreezer.Freezer, fullFreezer.Backpack[2].Fish)
+end
+local overflow, overflowCount = Data.stockFreezer(fullFreezer)
+check(
+	overflowCount == 0 and #overflow.Backpack == 2,
+	"Full freezers leave both locked and unlocked fish in the backpack"
+)
 local released = assert(Data.moveCargo(held, nil, Backpacks.Items.Starter, 1, "Release", Catalog.Fish, true))
 check(#released.Backpack == 0 and released.Hand.CaughtAt == 2, "Release preserves the other fish in hand")
 check(
@@ -81,6 +121,42 @@ local BoatCatalog = { TestBoat = { Hold = { "####", "####", "####" }, StarterPar
 local onBoat =
 	assert(Data.moveCargo(taken, "TestBoat", BoatCatalog.TestBoat, "Hand", { X = 1, Y = 1, R = 0 }, Catalog.Fish))
 check(#onBoat.Backpack == 0 and #onBoat.Holds.TestBoat == 1, "Hand transfers backpack fish into boat cargo")
+local bulk = Data.decode(nil)
+bulk.Holds.TestBoat = {
+	{ Fish = catch(nil, 11).Hand, X = 1, Y = 1, R = 0, Locked = true },
+	{ Fish = catch(nil, 12).Hand, X = 3, Y = 1, R = 0 },
+	{ Fish = catch(nil, 13).Hand, X = 1, Y = 2, R = 0 },
+	{ PartId = "Lantern", X = 4, Y = 3, R = 0 },
+}
+local bulkMoved, bulkCount =
+	Data.moveAllToBackpack(bulk, "TestBoat", BoatCatalog.TestBoat, Backpacks.Items.Starter, Catalog.Fish)
+check(
+	bulkCount == 2 and #bulkMoved.Backpack == 2 and #bulkMoved.Holds.TestBoat == 2,
+	"Bulk move fills the backpack and leaves overflow aboard"
+)
+check(
+	bulkMoved.Backpack[1].Locked
+		and bulkMoved.Holds.TestBoat[1].Fish.CaughtAt == 13
+		and bulkMoved.Holds.TestBoat[2].PartId == "Lantern",
+	"Bulk move preserves locks and only moves fish"
+)
+local bulkFull = Data.decode(nil)
+bulkFull.Backpack = bulkMoved.Backpack
+bulkFull.Holds.TestBoat = { { Fish = catch(nil, 4).Hand, X = 1, Y = 1, R = 0 } }
+local bulkBlocked, bulkReason =
+	Data.moveAllToBackpack(bulkFull, "TestBoat", BoatCatalog.TestBoat, Backpacks.Items.Starter, Catalog.Fish)
+check(
+	bulkBlocked == nil and string.find(bulkReason, "No room"),
+	"Bulk move reports when the backpack has no room"
+)
+local bulkEmpty = Data.decode(nil)
+bulkEmpty.Holds.TestBoat = { { PartId = "Lantern", X = 1, Y = 1, R = 0 } }
+local bulkNone, bulkEmptyReason =
+	Data.moveAllToBackpack(bulkEmpty, "TestBoat", BoatCatalog.TestBoat, Backpacks.Items.Starter, Catalog.Fish)
+check(
+	bulkNone == nil and string.find(bulkEmptyReason, "no fish"),
+	"Bulk move reports an empty boat hold"
+)
 local full = Data.decode(nil)
 for y = 1, 2 do
 	for x = 1, 2, 2 do
@@ -98,6 +174,10 @@ for y = 1, 2 do
 	end
 end
 local fullHand = catch(full, 8)
+check(Data.hasCatchSpace(full, Backpacks.Items.Starter, Catalog.Fish), "Empty hand allows fishing with a full pack")
+check(Data.hasCatchSpace(held, Backpacks.Items.Starter, Catalog.Fish), "Free backpack tiles allow fishing with a full hand")
+check(not Data.hasCatchSpace(fullHand, Backpacks.Items.Starter, Catalog.Fish), "Full hand and pack prevent fishing")
+check(Data.hasCatchSpace(released, Backpacks.Items.Starter, Catalog.Fish), "Freeing backpack space allows fishing again")
 check(
 	not Data.moveCargo(fullHand, nil, Backpacks.Items.Starter, "Hand", { X = 1, Y = 1, R = 0 }, Catalog.Fish, true)
 		and fullHand.Hand ~= nil,
@@ -287,6 +367,10 @@ torso.Name = "UpperTorso"
 torso.Size = Vector3.new(2, 1.6, 1)
 torso.Parent = character
 local player = { Character = character, Parent = Players, UserId = 1 }
+-- Cargo state checks for the dock's reserved refit before the full mock below.
+player.GetAttribute = function()
+	return nil
+end
 local revisions = signal()
 player.GetAttributeChangedSignal = function()
 	return revisions
@@ -314,6 +398,7 @@ local os = {
 }
 local profile = { Cash = 20000, Angler = packed }
 local saves, failSave, aboard = 0, false, false
+local refitPending = nil
 local Boats = {
 	getProfile = function()
 		return profile
@@ -323,6 +408,7 @@ local Boats = {
 			return "TestBoat", {}
 		end
 	end,
+	refit = function() end,
 }
 function Boats.updateProgress(_, transform)
 	saves += 1
@@ -401,6 +487,49 @@ check(move("Hand", { X = 1, Y = 1, R = 0 }, "Backpack").Ok, "Hand fish packs thr
 local result = cargoRemote.OnServerInvoke(player, "Get")
 check(result.State.BackpackId == "Expedition" and #result.State.Backpack == 1, "Cargo state includes saved backpack")
 
+-- Exercise the real freezer prompt with backpack-only fish and ownership checks.
+do
+	local AnglerData, BoatService = Data, Boats
+	local stocking = {}
+	local base = {}
+	local owner = player
+	local allowed = true
+	local message = ""
+	local refreshes = 0
+	local function ownerOf()
+		return owner
+	end
+	local function near()
+		return allowed
+	end
+	local function notify(_, text)
+		message = text
+	end
+	local update = { FireClient = function() end }
+	local function refreshDisplay()
+		refreshes += 1
+	end
+	-- FREEZER_STOCK_SOURCE --
+	local previous = profile.Angler
+	profile.Angler = withTwo
+	local freezer = { base = base }
+	local prompt = { Parent = root, MaxActivationDistance = 5 }
+	stock(player, freezer, prompt)
+	check(
+		#profile.Angler.Freezer == 1 and #profile.Angler.Backpack == 1 and profile.Angler.Backpack[1].Locked,
+		"Freezer prompt stocks unlocked backpack fish without a hand fish"
+	)
+	check(refreshes == 1 and string.find(message, "1 fish"), "Stocking refreshes the freezer and reports its count")
+	owner = nil
+	stock(player, freezer, prompt)
+	check(refreshes == 1 and #profile.Angler.Backpack == 1, "Non-owners cannot stock a freezer")
+	owner = player
+	allowed = false
+	stock(player, freezer, prompt)
+	check(refreshes == 1, "Distant players cannot stock a freezer")
+	profile.Angler = previous
+end
+
 -- Run actual inventory and storefront UI code, with recording controls.
 local function event()
 	local listeners = {}
@@ -433,6 +562,8 @@ local create = Instance.new
 Instance.new = function(class)
 	local item = create(class)
 	item.Activated = event()
+	item.InputBegan = event()
+	item.InputChanged = event()
 	item.MouseButton2Click = event()
 	item.OnClientEvent = event()
 	item.Scale = 1
@@ -445,7 +576,12 @@ player.WaitForChild = function()
 	return playerGui
 end
 player.GetAttribute = function(_, name)
-	return if name == "ActiveBoatId" and aboard then "TestBoat" else nil
+	return if name == "ActiveBoatId" and aboard then "TestBoat" elseif name == "RefitPending" then refitPending else nil
+end
+player.SetAttribute = function(_, name, value)
+	if name == "RefitPending" then
+		refitPending = value
+	end
 end
 Players.LocalPlayer = player
 local mouse = Vector2.zero
@@ -453,6 +589,9 @@ local UserInputService = {
 	InputBegan = event(),
 	GetMouseLocation = function()
 		return mouse
+	end,
+	GetLastInputType = function()
+		return Enum.UserInputType.MouseButton1
 	end,
 }
 local RunService = { Heartbeat = event(), RenderStepped = event() }
@@ -521,24 +660,68 @@ check(#grid:GetChildren()[3]:GetChildren() == 48, "Boat tab cannot expose remote
 -- Click and rotate a packed fish, then submit through the real cargo remote.
 local hit = grid:GetChildren()[6]
 mouse = Vector2.new(20, 20)
+hit.MouseButton2Click:Fire()
+check(
+	profile.Angler.Backpack[1].Locked and panel:FindFirstChild("LockIcon", true),
+	"Right-click locks the fish and displays its lock"
+)
 hit.Activated:Fire()
 buttonWithText(panel, "Rotate [R]").Activated:Fire()
 mouse = Vector2.new(110, 132)
 hit.Activated:Fire()
 check(
-	profile.Angler.Backpack[1].R == 1 and profile.Angler.Backpack[1].X == 3,
+	profile.Angler.Backpack[1].R == 1 and profile.Angler.Backpack[1].X == 3 and profile.Angler.Backpack[1].Locked,
 	"UI rotation and placement update the saved backpack"
 )
+mouse = Vector2.new(110, 132)
+hit.MouseButton2Click:Fire()
+check(
+	not profile.Angler.Backpack[1].Locked and not panel:FindFirstChild("LockIcon", true),
+	"Right-click unlocks the moved fish"
+)
+profile.Angler.Holds.TestBoat = { { Fish = catch(nil, 14).Hand, X = 1, Y = 1, R = 0 } }
 aboard = true
 cargoUpdate.OnClientEvent:Fire(cargoRemote.OnServerInvoke(player, "Get").State)
 now += 1
 RunService.Heartbeat:Fire()
 buttonWithText(panel, "Boat hold").Activated:Fire()
 check(#grid:GetChildren()[3]:GetChildren() == 12, "Boat tab uses its own mask")
+local bulkButton = buttonWithText(panel, "Move all to backpack")
+check(bulkButton.Visible, "Boat hold offers the bulk backpack move")
+bulkButton.Activated:Fire()
+check(
+	#profile.Angler.Backpack == 2 and #profile.Angler.Holds.TestBoat == 0,
+	"Bulk button moves every fish that fits into the saved backpack"
+)
+-- The dock reserves a part as a string attribute; the chosen tile is saved as-is.
+refitPending = "TestBoat|Rudder|Rudder"
+now += 0.3
+local fitted = cargoRemote.OnServerInvoke(player, "Place", 1, 1, 0)
+check(
+	fitted.Ok
+		and refitPending == nil
+		and #profile.Angler.Holds.TestBoat == 1
+		and profile.Angler.Holds.TestBoat[1].PartId == "Rudder"
+		and profile.Angler.Holds.TestBoat[1].X == 1
+		and profile.Angler.Holds.TestBoat[1].Y == 1,
+	"Manual refit placement saves the chosen tile and clears the reservation"
+)
+refitPending = "TestBoat|Rudder|Rudder"
+now += 0.3
+local occupied = cargoRemote.OnServerInvoke(player, "Place", 1, 1, 0)
+check(
+	not occupied.Ok and refitPending == "TestBoat|Rudder|Rudder",
+	"A refused refit placement leaves the reservation for another try"
+)
+now += 0.3
+check(
+	cargoRemote.OnServerInvoke(player, "CancelPlace").Ok and refitPending == nil,
+	"Cancelling a refit clears its reservation"
+)
 buttonWithText(panel, "Backpack").Activated:Fire()
 check(
-	#grid:GetChildren()[3]:GetChildren() == 48 and #profile.Angler.Backpack == 1,
-	"Switching tabs preserves the packed fish"
+	#grid:GetChildren()[3]:GetChildren() == 48 and #profile.Angler.Backpack == 2 and not bulkButton.Visible,
+	"Switching tabs preserves the packed fish and hides the boat action"
 )
 local ClientShop = (function()
 	-- CLIENT_SHOP_SOURCE --

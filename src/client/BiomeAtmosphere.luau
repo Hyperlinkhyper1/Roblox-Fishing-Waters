@@ -76,6 +76,8 @@ function BiomeAtmosphere.start()
 		grading.Parent = Lighting
 	end
 	local clouds = ensure(terrain, "Clouds") :: Clouds
+	local sky = ensure(Lighting, "Sky") :: Sky
+	local celestialBodiesShown = sky.CelestialBodiesShown
 	local title = makeTitle()
 	local titleToken = 0
 	local surfaceAmbient = Lighting.Ambient
@@ -111,7 +113,13 @@ function BiomeAtmosphere.start()
 		local camera = workspace.CurrentCamera
 		local weather = Weather.getState(now, if camera then camera.CFrame.Position else Vector3.zero)
 		local rain, storm = weather.rain, weather.storm
+		local overcast = math.max(weather.cloudCover, math.clamp(rain / 0.08, 0, 1))
+		-- The built-in sky otherwise draws the moon and stars through rain clouds.
+		sky.CelestialBodiesShown = celestialBodiesShown and overcast < 0.85 and weather.kind ~= "BlackHole"
+		clouds.Enabled = true
 		local night = DayNight.darkness(DayNight.clockTime(now))
+		-- Light under a supercell turns dim and faintly green.
+		local cell = if camera then Weather.supercellCover(camera.CFrame.Position, weather.supercell) else 0
 		if weather.kind == "BlackHole" then
 			-- The admin event covers every biome, including the water beneath it.
 			Lighting.FogColor = Color3.fromRGB(29, 5, 48)
@@ -167,21 +175,24 @@ function BiomeAtmosphere.start()
 					:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5)
 					:Lerp(NIGHT_DECAY, night * 0.8),
 				Density = math.min(0.5, look.density + rain * 0.13),
-				Haze = (look.haze + rain * 1.8) * (1 - night * 0.5),
+				Haze = (look.haze + rain * 1.8) * (1 - night * 0.5 * (1 - overcast)),
 				Glare = look.glare * (1 - rain) * (1 - night),
 			})
 		end
 		blend(grading, {
 			TintColor = if underwater
 				then Color3.fromRGB(215, 240, 255)
-				else look.tint:Lerp(Color3.fromRGB(177, 193, 215), rain * 0.3):Lerp(NIGHT_TINT, night * 0.6),
+				else look.tint
+					:Lerp(Color3.fromRGB(177, 193, 215), rain * 0.3)
+					:Lerp(Color3.fromRGB(176, 214, 188), cell * 0.45)
+					:Lerp(NIGHT_TINT, night * 0.6),
 			Brightness = if underwater then 0.06 else 0,
 			Saturation = if underwater then 0.05 else look.saturation - rain * 0.12 - night * 0.15,
 			Contrast = if underwater then 0 else look.contrast + storm * 0.04,
 		})
 		blend(clouds, {
-			Cover = look.cloudCover + (1 - look.cloudCover) * weather.cloudCover,
-			Density = 0.5 + weather.cloudCover * 0.4,
+			Cover = look.cloudCover + (1 - look.cloudCover) * overcast,
+			Density = 0.5 + overcast * 0.5,
 			Color = look.cloudColor:Lerp(Color3.fromRGB(75, 83, 99), rain * 0.8):Lerp(NIGHT_CLOUDS, night * 0.8),
 		})
 		blend(Lighting, {
@@ -189,7 +200,7 @@ function BiomeAtmosphere.start()
 			OutdoorAmbient = if underwater
 				then Color3.fromRGB(145, 175, 200)
 				else look.ambient:Lerp(Color3.fromRGB(68, 78, 96), rain * 0.75):Lerp(NIGHT_AMBIENT, night * 0.85),
-			Brightness = (if underwater then 2 else 2 - rain * 0.95 - storm * 0.2) * (1 - night * 0.45),
+			Brightness = (if underwater then 2 else 2 - rain * 0.95 - storm * 0.2 - cell * 0.35) * (1 - night * 0.45),
 		})
 	end
 

@@ -8,7 +8,7 @@ for _, frame in { CFrame.new(), CFrame.new(85, 20, -47) * CFrame.Angles(0, math.
 		local boat = RacingSpeedboat.build(frame, anchored)
 		check(boat.Name == "RacingSpeedboat" and boat.Parent == nil, "Builder returns an unparented racing model")
 		check(
-			boat:GetAttribute("HullLength") == 30 and boat:GetAttribute("HullBeam") == 8,
+			boat:GetAttribute("HullLength") == 36 and boat:GetAttribute("HullBeam") == 9.6,
 			"Long narrow hull metadata matches the catalog"
 		)
 		check(

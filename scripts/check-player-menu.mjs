@@ -8,11 +8,17 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const folder = await mkdtemp(join(tmpdir(), 'fishing-menu-'));
 try {
+  const shopUpgrades = await readFile(join(root, 'src/shared/ShopUpgrades.luau'), 'utf8');
   const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
   const bobberSkins = await readFile(join(root, 'src/shared/BobberSkins.luau'), 'utf8');
   const bobberModel = (await readFile(join(root, 'src/shared/FishingBobber.luau'), 'utf8'))
     .replace('require(script.Parent.BobberSkins)', () => `(function() ${bobberSkins} end)()`);
   let program = await readFile(join(root, 'scripts/player-menu.luau'), 'utf8');
+  if (process.argv.includes('--paths-only')) {
+    program = program.slice(0, program.indexOf('Menu.start()'))
+      + await readFile(join(root, 'scripts/path-skip.luau'), 'utf8');
+    program = program.replace('-- PATH_RULES --', await readFile(join(root, 'src/shared/Paths.luau'), 'utf8'));
+  }
   if (process.argv.includes('--service-only')) {
     program = program.slice(0, program.indexOf('local thunder ='))
       + '\nprint("Angler service: " .. checks .. " rank, respawn, title and remote checks passed (recording mocks).")';
@@ -127,6 +133,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(script.Parent.GamepassService\)/g, '{ start = function() end, ownsAutoStore = function() return false end }')
       .replace(/require\(ReplicatedStorage.Shared.Aboard\)/g, 'function() return false end')
       .replace(/require\(ReplicatedStorage.Shared.StaffCatalog\)/g, 'StaffCatalog')
+      .replace(/require\(ReplicatedStorage.Shared.ShopUpgrades\)/g, () => `(function() ${shopUpgrades} end)()`)
       .replace(/require\(game:GetService\("ReplicatedStorage"\).Shared.StaffCatalog\)/g, 'StaffCatalog')
       .replace(/require\(script.Parent.StaffPreview\)/g, 'StaffPreview')
       .replace(/require\(script.Parent:WaitForChild\("EquipmentBag"\)\)/g, 'EquipmentBag')

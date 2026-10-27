@@ -60,6 +60,9 @@ end
 function frameMt.__add(a, b)
 	return frame(a.Position + b, a.RightVector, a.UpVector, a.ZVector)
 end
+function frameMt.__sub(a, b)
+	return a + -b
+end
 function CFrame.Angles(x, y, z)
 	local sx, cx, sy, cy, sz, cz = math.sin(x), math.cos(x), math.sin(y), math.cos(y), math.sin(z), math.cos(z)
 	local rx = frame(Vector3.zero, Vector3.xAxis, Vector3.new(0, cx, sx), Vector3.new(0, -sx, cx))
@@ -173,6 +176,51 @@ function instanceMethods:ApplyDescriptionAsync(description)
 end
 function instanceMethods:GetChildren()
 	return table.clone(self._children)
+end
+-- The refit lift moves during construction, before the launch scenarios below.
+-- Model pivots follow Roblox: a bounding pivot when no PrimaryPart is set.
+function instanceMethods:GetBoundingBox()
+	local low, high = Vector3.new(math.huge, math.huge, math.huge), Vector3.new(-math.huge, -math.huge, -math.huge)
+	for _, piece in self:GetDescendants() do
+		if piece:IsA("BasePart") then
+			for _, x in { -0.5, 0.5 } do
+				for _, y in { -0.5, 0.5 } do
+					for _, z in { -0.5, 0.5 } do
+						local p = piece.CFrame * Vector3.new(piece.Size.X * x, piece.Size.Y * y, piece.Size.Z * z)
+						low, high = low:Min(p), high:Max(p)
+					end
+				end
+			end
+		end
+	end
+	return CFrame.new((low + high) / 2), high - low
+end
+function instanceMethods:GetPivot()
+	if self.PrimaryPart then
+		return self.PrimaryPart.CFrame
+	end
+	return self:GetBoundingBox()
+end
+function instanceMethods:PivotTo(target)
+	local previous = self:GetPivot()
+	for _, piece in self:GetDescendants() do
+		if piece:IsA("BasePart") then
+			piece.CFrame = target * previous:ToObjectSpace(piece.CFrame)
+		end
+	end
+end
+function instanceMethods:ScaleTo(scale)
+	local ratio = scale / (self._props.ModelScale or 1)
+	local pivot = self:GetPivot()
+	for _, piece in self:GetDescendants() do
+		if piece:IsA("BasePart") then
+			local relative = pivot:ToObjectSpace(piece.CFrame)
+			piece.Size *= ratio
+			piece.CFrame = pivot
+				* CFrame.fromMatrix(relative.Position * ratio, relative.RightVector, relative.UpVector, relative.ZVector)
+		end
+	end
+	self._props.ModelScale = scale
 end
 function instanceMethods:GetDescendants()
 	local result = {}
@@ -320,6 +368,10 @@ local function loadPatrolBoat()
 	-- PATROLBOAT_SOURCE --
 end
 dependencies.PatrolBoat = loadPatrolBoat()
+local function loadTrawler()
+	-- TRAWLER_SOURCE --
+end
+dependencies.Trawler = loadTrawler()
 local function loadShipwright()
 	-- SHIPWRIGHT_SOURCE --
 end
@@ -344,6 +396,30 @@ local function loadStorageRack()
 	-- STORAGERACK_SOURCE --
 end
 dependencies.StorageRack = loadStorageRack()
+local function loadKitchen()
+	-- KITCHEN_SOURCE --
+end
+dependencies.Kitchen = loadKitchen()
+local function loadDiningRoom()
+	-- DININGROOM_SOURCE --
+end
+dependencies.DiningRoom = loadDiningRoom()
+local function loadCargo()
+	-- CARGO_SOURCE --
+end
+dependencies.Cargo = loadCargo()
+local function loadBackpackCatalog()
+	-- BACKPACKCATALOG_SOURCE --
+end
+dependencies.BackpackCatalog = loadBackpackCatalog()
+local function loadBackpackModels()
+	-- BACKPACKMODELS_SOURCE --
+end
+dependencies.BackpackModels = loadBackpackModels()
+local function loadBackpackShop()
+	-- BACKPACKSHOP_SOURCE --
+end
+dependencies.BackpackShop = loadBackpackShop()
 local function loadFurnitureShop()
 	-- FURNITURESHOP_SOURCE --
 end
@@ -1668,15 +1744,16 @@ local function checkLaunchFlow()
 	local nextPreview = shop:FindFirstChild("LaunchPreview", true)
 	check(nextPreview ~= preview and nextPreview.Parent, "Completed launch must replenish the shop preview")
 	check(preview.Parent == root, "Replenishing the preview must preserve the purchased boat")
-	for _, boatId in { "FishingBoat", "Speedboat", "RacingSpeedboat", "PatrolBoat" } do
+	local patrolScale = dependencies.BoatCatalog.PatrolBoat.Length / 42
+	for _, boatId in { "FishingBoat", "Speedboat", "RacingSpeedboat", "PatrolBoat", "Trawler" } do
 		local previewName = boatId .. "Preview"
 		local rowPivot = nextPreview:GetPivot()
 		check(not shop:FindFirstChild(previewName, true), "Larger boats must not occupy side docks")
 		check(DrydockLaunch.reserve(shop, launchPlayer, "UnknownBoat") == nil, "Unknown boats cannot reserve the slipway")
 		reservation = assert(DrydockLaunch.reserve(shop, launchPlayer, boatId))
 		local selected = reservation.preview
-		local rootOffset = if boatId == "PatrolBoat" then -0.6 else -0.4
-		local launchOffset = if boatId == "PatrolBoat" then CFrame.new(0, 0, -10.5) else CFrame.new()
+		local rootOffset = if boatId == "PatrolBoat" then -0.4 * patrolScale else -0.4
+		local launchOffset = if boatId == "PatrolBoat" or boatId == "Trawler" then CFrame.new(0, 0, -10.5) else CFrame.new()
 		if boatId == "RacingSpeedboat" then
 			check(selected:GetAttribute("ModelVersion") == dependencies.RacingSpeedboat.VERSION, "On-demand racing hull must use the current model")
 		end
@@ -1684,7 +1761,7 @@ local function checkLaunchFlow()
 			"Purchase must build and reserve the selected hull")
 		check((selected:GetPivot().Position - (previewOrigin * launchOffset * CFrame.new(0, rootOffset, 0)).Position).Magnitude < EPS,
 			"Selected hull must start at its launch position")
-		if boatId == "PatrolBoat" then
+		if boatId == "PatrolBoat" or boatId == "Trawler" then
 			local headwall = shop:FindFirstChild("RearHeadwall", true)
 			for _, piece in selected:GetDescendants() do
 				if piece:IsA("BasePart") then

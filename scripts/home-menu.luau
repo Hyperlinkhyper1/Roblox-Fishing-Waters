@@ -1,7 +1,51 @@
 -- Appended to the recording menu harness by --home-only.
+check(Data.decode(nil).ShopSign == "", "Old profiles use the default shop sign")
+check(not invoke("ShopSign", string.rep("x", 33)).Ok, "Long names are rejected")
+check(not invoke("ShopSign", "two\nlines").Ok, "Multiline names are rejected")
+check(invoke("ShopSign", "  badword fish  ").Ok, "Shop names can be saved")
+check(profile.Angler.ShopSign == "####### fish", "Only filtered names are saved")
+check(Data.decode(profile.Angler).ShopSign == "####### fish", "Shop name survives profile decoding")
+check(invoke("ShopSign", " ").Ok and profile.Angler.ShopSign == "", "Blank name resets the sign")
 check(next(Data.decode(nil).Staff) == nil, "Old profiles start without paid staff")
 check(not pcall(Data.decode, { Staff = { Seller = 1 } }), "Malformed saved hires are rejected")
 check(not pcall(Data.decode, { Staff = { Admin = true } }), "Unknown staff roles are rejected")
+check(
+	not invoke("BuyShopUpgrade", {}).Ok and not invoke("BuyShopUpgrade", "PorterSpeed").Ok,
+	"Unknown shop upgrades are rejected"
+)
+profile.Cash = 999
+check(
+	not invoke("BuyShopUpgrade", "SocialMediaAdvertisement").Ok and profile.Cash == 999,
+	"Advertisement requires enough cash"
+)
+profile.Cash = 1000
+failSave = true
+check(
+	not invoke("BuyShopUpgrade", "SocialMediaAdvertisement").Ok
+		and profile.Cash == 1000
+		and not profile.Angler.Upgrades.SocialMediaAdvertisement,
+	"Failed advertisement purchase preserves data"
+)
+failSave = false
+local adSpent = profile.Angler.Stats.CoinsSpent
+check(
+	invoke("BuyShopUpgrade", "SocialMediaAdvertisement", 0).Ok
+		and profile.Cash == 0
+		and profile.Angler.Upgrades.SocialMediaAdvertisement == 1,
+	"Advertisement purchase uses server price"
+)
+check(
+	profile.Angler.Stats.CoinsSpent == adSpent + 1000
+		and Data.decode(profile.Angler).Upgrades.SocialMediaAdvertisement == 1,
+	"Advertisement spending and ownership persist"
+)
+profile.Cash = 1000
+check(
+	not invoke("BuyShopUpgrade", "SocialMediaAdvertisement").Ok and profile.Cash == 1000,
+	"Advertisement cannot be purchased twice"
+)
+profile.Angler.Upgrades.SocialMediaAdvertisement = nil
+profile.Cash = 0
 local savedCash = profile.Cash
 check(not invoke("HireStaff", "Seller").Ok and profile.Cash == savedCash, "Insufficient funds cannot hire")
 check(not invoke("HireStaff", "Admin").Ok, "Unknown hire rejected")
@@ -287,14 +331,27 @@ for _, width in { 1020, 362 } do
 	check(contains("No fish in stock yet"), "Open overview refreshes after inventory revision")
 	click("UpgradesTab")
 	check(
-		contains("Porter upgrades") and contains("Carry: 1 fish/trip"),
-		"Upgrades tab shows porter training and current stats"
+		contains("Social Media Advertisement") and contains("Two customers every 35 seconds"),
+		"Upgrades tab describes the advertisement"
 	)
-	click("ManagePorterUpgrades")
 	check(
-		contains("Porter · Hired") and content:FindFirstChild("UpgradePorterCapacity", true),
-		"Upgrades shortcut opens the porter's upgrade controls"
+		not contains("Porter upgrades") and not content:FindFirstChild("ManagePorterUpgrades", true),
+		"Upgrades tab contains no worker upgrades"
 	)
+	check(
+		not content:FindFirstChild("BuySocialMediaAdvertisement", true).Active,
+		"Unaffordable advertisement is disabled"
+	)
+	profile.Cash = 1000
+	player:SetAttribute("AnglerRevision", (player:GetAttribute("AnglerRevision") or 0) + 1)
+	advance(1)
+	check(content:FindFirstChild("BuySocialMediaAdvertisement", true).Active, "Cash refresh enables advertisement")
+	click("BuySocialMediaAdvertisement")
+	check(
+		profile.Angler.Upgrades.SocialMediaAdvertisement == 1 and profile.Cash == 0 and contains("Owned"),
+		"Advertisement purchase refreshes the menu"
+	)
+	profile.Angler.Upgrades, profile.Cash = {}, 350
 	click("AchievementsTab")
 	check(contains("No achievements yet."), "Achievements remains empty")
 	card.CloseMenu.Activated:Fire()

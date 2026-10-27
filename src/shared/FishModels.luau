@@ -999,6 +999,42 @@ function builders.Yellowshark(b)
 	b:eye(0.4, 0.03, 0.03, rgb(20, 20, 20))
 end
 
+function builders.Seaweed(b)
+	local stem, holdfast = rgb(62, 83, 31), rgb(74, 65, 30)
+	local colors = { rgb(58, 103, 39), rgb(77, 124, 43), rgb(47, 91, 36), rgb(93, 132, 48), rgb(64, 114, 42) }
+	local root = Vector3.new(-0.46, -0.08, 0)
+	b:ellipsoid("Holdfast", CFrame.new(root), Vector3.new(0.13, 0.1, 0.13), holdfast)
+	-- Five tapered ribbons curl away from a shared stem, with raised midribs.
+	for frond = 1, 5 do
+		local spread = (frond - 3) * 0.12
+		local length = 0.82 + (if frond % 2 == 0 then 0.1 else 0)
+		local previousLeft, previousRight, previousCenter
+		for segment = 0, 6 do
+			local t = segment / 6
+			local center = root
+				+ Vector3.new(
+					length * t,
+					spread * t + math.sin(t * math.pi * 2 + frond) * 0.045 * t,
+					(frond - 3) * 0.025 * t + math.sin(t * math.pi * 2.5 + frond) * 0.065 * t
+				)
+			local width = 0.009 + math.sin(t * math.pi) * 0.055
+			local across = Vector3.new(0, width, math.sin(t * math.pi + frond) * width * 0.45)
+			local left, right = center - across, center + across
+			if previousCenter then
+				for _, points in { { previousLeft, previousRight, right }, { previousLeft, right, left } } do
+					local first, second = b:triangle(points[1], points[2], points[3], colors[frond])
+					for _, part in { first, second } do
+						part.Name = "SeaweedFrond"
+					end
+				end
+				b:limb(previousCenter, center, 0.009, stem, "Midrib")
+			end
+			previousLeft, previousRight, previousCenter = left, right, center
+		end
+	end
+	b.model:SetAttribute("ViewDirection", Vector3.new(0.25, 0.4, 1))
+end
+
 function builders.WoodenBranch(b)
 	local bark = { rgb(83, 55, 33), rgb(112, 77, 45), rgb(94, 62, 36), rgb(68, 46, 30), rgb(101, 68, 40) }
 	local wood, freshWood, split = rgb(180, 138, 82), rgb(207, 166, 105), rgb(48, 33, 23)
@@ -1217,6 +1253,224 @@ function builders.LeatherBoot(b)
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.85, 0.55, 1))
 end
 
+-- Crabs face +X like the fish: eyes and claws at the front, legs splayed out to
+-- both sides (Z). The carapace is a shell dome under a darker raised one; `look`
+-- sets the colours, the claw and leg proportions and each species' extras.
+local function crab(b, look)
+	local shell, dark, belly = look.shell, look.dark, look.belly
+	local clawColor, legColor = look.clawColor or shell, look.legColor or shell
+	local tipColor = look.tipColor or rgb(36, 30, 26)
+	local carapace = look.carapace
+	local half = carapace / 2
+	local domes = {
+		{ Vector3.new(0, 0, 0), carapace, shell },
+		{ Vector3.new(-0.01, carapace.Y * 0.2, 0), carapace * Vector3.new(0.84, 0.76, 0.84), dark },
+	}
+	b:body("Carapace", domes[1][1], domes[1][2], domes[1][3])
+	b:body("CarapaceBack", domes[2][1], domes[2][2], domes[2][3])
+	b:ellipsoid("Underside", CFrame.new(0, -carapace.Y * 0.22, 0), carapace * Vector3.new(0.94, 0.7, 0.94), belly)
+	local function height(x: number, z: number): number?
+		local best = nil
+		for _, dome in domes do
+			local h = dome[2] / 2
+			local dx, dz = (x - dome[1].X) / h.X, (z - dome[1].Z) / h.Z
+			local remaining = 1 - dx * dx - dz * dz
+			if remaining > 0 then
+				best = math.max(best or -math.huge, dome[1].Y + h.Y * math.sqrt(remaining))
+			end
+		end
+		return best
+	end
+	-- `angle` 0 is straight ahead, +-pi/2 the widest point of the shell.
+	local function rim(angle: number, reach: number): Vector3
+		return Vector3.new(math.cos(angle) * half.X * reach, 0, math.sin(angle) * half.Z * reach)
+	end
+
+	-- Saw teeth along the front edge, and the blue crab's long lateral spines.
+	for _, side in { 1, -1 } do
+		for index = 1, look.teeth do
+			local angle = side * (0.4 + (index - 1) * 1.0 / math.max(look.teeth - 1, 1))
+			b:limb(rim(angle, 0.92), rim(angle, 1.1), 0.03, shell, "Spine")
+		end
+		if look.lateral then
+			local base = rim(side * math.pi / 2 * 0.97, 0.9)
+			b:limb(base, base + Vector3.new(-0.01, 0.01, side * (half.Z * 0.12 + look.lateral)), 0.034, shell, "Spine")
+		end
+		b:ellipsoid("FrontLobe", CFrame.new(rim(side * 0.14, 0.98)), Vector3.new(0.05, 0.035, 0.05), shell)
+	end
+	b:ellipsoid(
+		"Mouth",
+		CFrame.new(half.X * 0.86, -half.Y * 0.35, 0),
+		Vector3.new(0.05, 0.05, half.Z * 0.45),
+		belly:Lerp(dark, 0.35)
+	)
+	for _, side in { 1, -1 } do
+		local root = Vector3.new(half.X * 0.82, half.Y * 0.4, side * half.Z * 0.24)
+		local top = root + Vector3.new(0.05, 0.05, side * 0.015)
+		b:limb(root, top, 0.024, shell, "EyeStalk")
+		b:ellipsoid("Eye", CFrame.new(top), Vector3.one * 0.042, rgb(18, 16, 14))
+		b:ellipsoid("EyeGlint", CFrame.new(top + Vector3.new(0.012, 0.014, 0)), Vector3.one * 0.012, rgb(255, 255, 255))
+	end
+
+	-- Claws: upper arm, forearm, a palm that turns in across the face and two
+	-- slightly parted fingers with dark tips. `offhand` shrinks the left claw.
+	for _, side in { 1, -1 } do
+		local size = look.claw * (if side == -1 then look.offhand or 1 else 1)
+		local inward = Vector3.new(0, 0, -side)
+		local shoulder = Vector3.new(half.X * 0.5, -half.Y * 0.3, side * half.Z * 0.62)
+		local elbow = shoulder + Vector3.new(0.12, 0.02, side * 0.13) * size
+		local wrist = elbow + Vector3.new(0.11, 0.025, -side * 0.035) * size
+		b:limb(shoulder, elbow, 0.055 * size, clawColor, "Arm")
+		b:limb(elbow, wrist, 0.06 * size, clawColor, "Arm")
+		b:ellipsoid("Wrist", CFrame.new(wrist), Vector3.one * 0.07 * size, clawColor)
+		local direction = Vector3.new(1, 0.08, -side * 0.55).Unit
+		local palmEnd = wrist + direction * 0.15 * size
+		b:ellipsoid(
+			"Palm",
+			CFrame.lookAt((wrist + palmEnd) / 2, palmEnd) * CFrame.Angles(0, math.pi / 2, 0),
+			Vector3.new(0.18 * size, 0.1 * size, 0.08 * size),
+			clawColor
+		)
+		for _, finger in { { -0.016, -0.006, 0.008 }, { 0.022, 0.02, -0.016 } } do
+			local root = palmEnd + Vector3.new(0, finger[1], 0) * size
+			local middle = root + (direction * 0.06 + Vector3.new(0, finger[2], 0)) * size
+			local tip = middle + (direction * 0.045 + inward * 0.02 + Vector3.new(0, finger[3], 0)) * size
+			b:limb(root, middle, 0.034 * size, clawColor, "Finger")
+			b:limb(middle, tip, 0.022 * size, tipColor, "FingerTip")
+		end
+		if look.armSpines then
+			for _, t in { 0.3, 0.7 } do
+				b:ellipsoid(
+					"Spine",
+					CFrame.new(shoulder:Lerp(elbow, t) + Vector3.new(0, 0.03 * size, 0)),
+					Vector3.new(0.016, 0.034, 0.016),
+					look.spineColor or shell
+				)
+			end
+		end
+	end
+
+	-- Walking legs, front pairs leaning forward and back pairs back. A leg is
+	-- thigh, shin and a pointed dactyl, knees raised above the shell rim.
+	local legs = look.legs
+	for _, side in { 1, -1 } do
+		for index, lean in legs.lean do
+			local x = half.X * (0.32 - (index - 1) * 0.3)
+			local root = Vector3.new(x, -half.Y * 0.35, side * half.Z * math.sqrt(1 - (x / half.X) ^ 2) * 0.85)
+			local out = Vector3.new(lean, 0, side).Unit
+			local knee = root + out * legs.thigh + Vector3.new(0, legs.lift, 0)
+			local foot = knee + out * legs.shin + Vector3.new(0, -legs.drop, 0)
+			local ankle = knee:Lerp(foot, 0.65)
+			b:limb(root, knee, legs.width, legColor, "Leg")
+			b:limb(knee, ankle, legs.width * 0.8, legColor, "Leg")
+			b:limb(ankle, foot, legs.width * 0.55, if legs.paddle then legColor else tipColor, "Leg")
+			if legs.paddle and index == #legs.lean then
+				b:ellipsoid(
+					"Paddle",
+					CFrame.lookAt((ankle + foot) / 2, foot) * CFrame.Angles(0, math.pi / 2, 0),
+					Vector3.new(0.1, 0.014, 0.065),
+					legColor
+				)
+			end
+			if look.armSpines then
+				for _, t in { 0.35, 0.75 } do
+					b:ellipsoid(
+						"Spine",
+						CFrame.new(root:Lerp(knee, t) + Vector3.new(0, legs.width * 0.5, 0)),
+						Vector3.new(0.014, 0.03, 0.014),
+						look.spineColor or shell
+					)
+				end
+			end
+		end
+	end
+
+	-- Mottling, or the king crab's spiny shell, scattered over the top dome.
+	for _, scatter in { look.spots or false, look.knobs or false } do
+		for _ = 1, if scatter then scatter.count else 0 do
+			local x, z = b.random(-half.X, half.X), b.random(-half.Z, half.Z)
+			local y = height(x, z)
+			if not y or (x / half.X) ^ 2 + (z / half.Z) ^ 2 > 0.8 then
+				continue
+			end
+			local size = b.random(scatter.size.X, scatter.size.Y)
+			if scatter == look.knobs then
+				b:ellipsoid("Spine", CFrame.new(x, y + size * 0.3, z), Vector3.new(size, size * 2, size), scatter.color)
+			else
+				b:ellipsoid("Marking", CFrame.new(x, y + 0.002, z), Vector3.new(size, 0.004, size * 0.8), scatter.color)
+			end
+		end
+	end
+	b.model:SetAttribute("ViewDirection", Vector3.new(0.9, 0.85, 0.35))
+end
+
+function builders.ShoreCrab(b)
+	crab(b, {
+		shell = rgb(92, 112, 58),
+		dark = rgb(70, 86, 44),
+		belly = rgb(214, 170, 86),
+		clawColor = rgb(104, 118, 62),
+		legColor = rgb(112, 124, 66),
+		carapace = Vector3.new(0.42, 0.14, 0.52),
+		teeth = 5,
+		claw = 1,
+		legs = {
+			lean = { 0.55, 0.15, -0.25, -0.7 },
+			thigh = 0.17,
+			shin = 0.16,
+			lift = 0.06,
+			drop = 0.17,
+			width = 0.034,
+		},
+		spots = { count = 30, size = Vector2.new(0.012, 0.03), color = rgb(150, 138, 72) },
+	})
+end
+
+function builders.BlueCrab(b)
+	crab(b, {
+		shell = rgb(96, 122, 112),
+		dark = rgb(70, 96, 92),
+		belly = rgb(236, 230, 214),
+		clawColor = rgb(66, 128, 196),
+		legColor = rgb(84, 142, 196),
+		tipColor = rgb(206, 70, 50),
+		carapace = Vector3.new(0.34, 0.12, 0.6),
+		teeth = 7,
+		lateral = 0.1,
+		claw = 1.05,
+		legs = {
+			lean = { 0.6, 0.2, -0.2, -0.95 },
+			thigh = 0.16,
+			shin = 0.16,
+			lift = 0.06,
+			drop = 0.15,
+			width = 0.032,
+			paddle = true,
+		},
+		spots = { count = 14, size = Vector2.new(0.01, 0.022), color = rgb(122, 146, 128) },
+	})
+end
+
+function builders.KingCrab(b)
+	local spine = rgb(226, 132, 104)
+	crab(b, {
+		shell = rgb(176, 52, 40),
+		dark = rgb(144, 38, 32),
+		belly = rgb(238, 214, 190),
+		clawColor = rgb(188, 64, 46),
+		legColor = rgb(186, 62, 46),
+		tipColor = rgb(84, 34, 28),
+		carapace = Vector3.new(0.38, 0.17, 0.42),
+		teeth = 3,
+		claw = 1.15,
+		offhand = 0.78,
+		armSpines = true,
+		spineColor = spine,
+		legs = { lean = { 0.45, -0.05, -0.55 }, thigh = 0.25, shin = 0.25, lift = 0.1, drop = 0.24, width = 0.044 },
+		knobs = { count = 46, size = Vector2.new(0.014, 0.024), color = spine },
+	})
+end
+
 -- World-axis bounds, so framing never depends on which part came first.
 local function measure(model: Model)
 	local low, high = Vector3.one * math.huge, -Vector3.one * math.huge
@@ -1362,8 +1616,8 @@ local function rainbow(item: BasePart, hue: number, saturation: number, value: n
 	item.Color = Color3.fromHSV(hue % 1, saturation, value)
 end
 
--- Drifting aurora motes and a faint violet glow from the biggest body part.
-local function aurora(model: Model)
+-- The biggest body part, which carries a mutation's particles and lights.
+local function bodyCore(model: Model): BasePart?
 	local core: BasePart? = nil
 	for _, item in model:GetChildren() do
 		if item:IsA("Part") and not UNPAINTED[item.Name] and not GLOWING[item.Name] then
@@ -1372,6 +1626,12 @@ local function aurora(model: Model)
 			end
 		end
 	end
+	return core
+end
+
+-- Drifting aurora motes and a faint violet glow from the biggest body part.
+local function aurora(model: Model)
+	local core = bodyCore(model)
 	if not core then
 		return
 	end
@@ -1404,6 +1664,70 @@ local function aurora(model: Model)
 	local light = Instance.new("PointLight")
 	light.Color, light.Brightness, light.Range = ASTRAL_GLOW, 0.8, 6
 	light.Parent = core
+end
+
+-- Supercell catches: a faint storm-sky sheen, slightly see-through fins, and
+-- wind streaks and gusts racing from snout to tail. Body sections are axis
+-- aligned, so the core part's -X (Left) face points down the fish to its tail.
+local WINDY_SHEEN = rgb(196, 222, 236)
+local function windswept(model: Model)
+	for _, item in model:GetDescendants() do
+		if item:IsA("BasePart") and not UNPAINTED[item.Name] then
+			item.Color = item.Color:Lerp(WINDY_SHEEN, 0.16)
+			if GLOWING[item.Name] and item.Material ~= Enum.Material.Neon then
+				item.Transparency = math.max(item.Transparency, 0.12)
+			end
+		end
+	end
+	local core = bodyCore(model)
+	if not core then
+		return
+	end
+	local streaks = Instance.new("ParticleEmitter")
+	streaks.Name = "WindyStreaks"
+	streaks.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	streaks.Orientation = Enum.ParticleOrientation.VelocityParallel
+	streaks.Squash = NumberSequence.new(-4)
+	streaks.EmissionDirection = Enum.NormalId.Left
+	streaks.Shape = Enum.ParticleEmitterShape.Box
+	streaks.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+	streaks.Color = ColorSequence.new(rgb(232, 244, 250))
+	streaks.LightEmission, streaks.LightInfluence = 0.3, 0.4
+	streaks.Lifetime = NumberRange.new(0.35, 0.6)
+	streaks.Rate = 14
+	streaks.Speed = NumberRange.new(5, 8)
+	streaks.SpreadAngle = Vector2.new(8, 8)
+	streaks.Size = NumberSequence.new(0.05)
+	streaks.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.3, 0.45),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	streaks.LockedToPart = true
+	streaks.Parent = core
+	local gusts = Instance.new("ParticleEmitter")
+	gusts.Name = "WindyGusts"
+	gusts.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	gusts.EmissionDirection = Enum.NormalId.Left
+	gusts.Color = ColorSequence.new(rgb(225, 238, 245))
+	gusts.LightEmission, gusts.LightInfluence = 0.1, 0.8
+	gusts.Lifetime = NumberRange.new(0.8, 1.2)
+	gusts.Rate = 3
+	gusts.Speed = NumberRange.new(2, 3.5)
+	gusts.SpreadAngle = Vector2.new(25, 25)
+	gusts.Rotation = NumberRange.new(0, 360)
+	gusts.RotSpeed = NumberRange.new(-220, 220)
+	gusts.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 0.9),
+	})
+	gusts.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.25, 0.82),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	gusts.LockedToPart = true
+	gusts.Parent = core
 end
 
 -- A rippling lens around a completely black fish. Attachments follow its body
@@ -1516,6 +1840,9 @@ function FishModels.mutate(model: Model, traits)
 	if set.Astral then
 		aurora(model)
 	end
+	if set.Windy then
+		windswept(model)
+	end
 	measure(model)
 end
 
@@ -1551,9 +1878,19 @@ function FishModels.create(fishId: string, traits: any?): Model?
 	return model
 end
 
+local crabSpecies = { ShoreCrab = true, BlueCrab = true, KingCrab = true }
+-- Crabs cluster tightly in weight, so the cube-root curve used by fish hides
+-- their differences. In hand they follow weight almost directly instead; the
+-- larger base keeps an average Shore Crab the same size as before while heavier
+-- crabs visibly outgrow lighter ones.
+local CRAB_HELD_BASE, CRAB_HELD_EXPONENT = 2.4, 0.9
+
 -- Compact display size for the freezer and customer hands.
-function FishModels.catchLength(kg: number): number
-	local size = math.max(kg, 0.01) ^ (1 / 3)
+function FishModels.catchLength(kg: number, fishId: string?): number
+	-- Crab weights cluster tightly, so a stronger curve makes their differences
+	-- visible while still keeping even a record crab within the freezer.
+	local exponent = if fishId and crabSpecies[fishId] then 0.65 else 1 / 3
+	local size = math.max(kg, 0.01) ^ exponent
 	-- Smoothly compress record weights while retaining differences between
 	-- catches. The longest side stays below the freezer's 3.54-stud ice depth.
 	return 0.6 + 2.6 * size / (size + 0.75)
@@ -1561,9 +1898,13 @@ end
 
 -- Held catches keep their weight differences without the freezer's size limit.
 -- Huge gets a 6x trophy boost; weight keeps small species smaller than large ones.
-function FishModels.heldLength(kg: number, size: string?): number
+function FishModels.heldLength(kg: number, size: string?, fishId: string?): number
 	local boost = if size == "Huge" then 6 elseif size == "Big" then 1.5 else 1
-	return 1.6 * math.max(kg, 0.01) ^ (1 / 3) * boost
+	local weight = math.max(kg, 0.01)
+	if fishId and crabSpecies[fishId] then
+		return CRAB_HELD_BASE * weight ^ CRAB_HELD_EXPONENT * boost
+	end
+	return 1.6 * weight ^ (1 / 3) * boost
 end
 
 local function scaleToLength(model: Model, length: number): Vector3
@@ -1574,7 +1915,7 @@ local function scaleToLength(model: Model, length: number): Vector3
 end
 
 function FishModels.scaleCatch(model: Model, kg: number): Vector3
-	return scaleToLength(model, FishModels.catchLength(kg))
+	return scaleToLength(model, FishModels.catchLength(kg, model.Name))
 end
 
 -- Cache unscaled geometry by species and shape mutations, not by catch weight.
@@ -1596,11 +1937,11 @@ function FishModels.catchBounds(record): Vector3?
 		catchBounds[key] = size
 		model:Destroy()
 	end
-	return size * (FishModels.catchLength(record.Kg) / math.max(size.X, size.Y, size.Z, 0.1))
+	return size * (FishModels.catchLength(record.Kg, record.FishId) / math.max(size.X, size.Y, size.Z, 0.1))
 end
 
 function FishModels.scaleHeldCatch(model: Model, kg: number, size: string?): Vector3
-	return scaleToLength(model, FishModels.heldLength(kg, size))
+	return scaleToLength(model, FishModels.heldLength(kg, size, model.Name))
 end
 
 function FishModels.silhouette(model: Model)

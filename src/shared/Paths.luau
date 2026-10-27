@@ -9,6 +9,7 @@ local Paths = {}
 -- Restaurant and Company both open after Supermarket and the player picks one first.
 Paths.Order = { "Fishshop", "Supermarket", "Restaurant", "Company" }
 Paths.FIRST = "Fishshop"
+Paths.SKIP_PRODUCT_ID = 3722698836
 
 -- Goal kinds (see docs/PATHS.md):
 --   Stat      Stats[Stat] gained since the stage started reaches Target.
@@ -106,6 +107,7 @@ function Paths.state(angler)
 		Unlocked = if saved and saved.Unlocked then saved.Unlocked else { [Paths.FIRST] = true },
 		Completed = if saved and saved.Completed then saved.Completed else {},
 		Baseline = if saved and saved.Baseline then saved.Baseline else {},
+		SkipCredits = if saved and saved.SkipCredits then saved.SkipCredits else 0,
 	}
 end
 
@@ -179,13 +181,10 @@ function Paths.progress(profile, stageId: string): number
 	return 1
 end
 
--- Stages that can be chosen once the active one is finished.
-function Paths.choices(profile): { string }
+-- Potential next stages, including while the current quests are unfinished.
+function Paths.nextStages(profile): { string }
 	local state = Paths.state(anglerOf(profile))
 	local result = {}
-	if Paths.progress(profile, state.Active) < 1 then
-		return result
-	end
 	for _, id in Paths.Order do
 		if not state.Unlocked[id] then
 			local ready = true
@@ -200,6 +199,33 @@ function Paths.choices(profile): { string }
 		end
 	end
 	return result
+end
+
+-- Stages that can be chosen once the active one is finished or skipped.
+function Paths.choices(profile): { string }
+	local state = Paths.state(anglerOf(profile))
+	return if Paths.progress(profile, state.Active) >= 1 then Paths.nextStages(profile) else {}
+end
+
+function Paths.skipProblem(profile, stageId: any): string?
+	local state = Paths.state(anglerOf(profile))
+	if type(stageId) ~= "string" or stageId ~= state.Active then
+		return "Your active path changed. Reopen the Paths tab."
+	elseif Paths.progress(profile, stageId) >= 1 then
+		return "These quests are already complete. You still need money to open the next path."
+	elseif #Paths.nextStages(profile) == 0 then
+		return "There are no more path levels to unlock."
+	end
+	return nil
+end
+
+function Paths.skipWarning(profile): string
+	local prices = {}
+	for _, id in Paths.nextStages(profile) do
+		table.insert(prices, Paths.Stages[id].Name .. ": $" .. commas(Paths.Stages[id].Price))
+	end
+	return "Warning: this skips quests only. You still need in-game money to open the next path"
+		.. (if #prices > 0 then " (" .. table.concat(prices, " or ") .. ")." else ".")
 end
 
 -- nil when `stageId` can be bought now, otherwise a player-facing reason.

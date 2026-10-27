@@ -26,6 +26,24 @@ try {
   const rodSerialSource = (await readFile(join(root, 'src/server/RodSerials.luau'), 'utf8'))
     .replace('if script then require(script.Parent.BoatData) else require("./BoatData")', 'dependencies.BoatData');
   let harness = await readFile(join(root, 'scripts/boat-service.luau'), 'utf8');
+  if (process.argv.includes('--crab-cages-only')) {
+    const setupEnd = harness.indexOf('local function makePrompt');
+    if (setupEnd < 0) throw new Error('Missing wallet setup hook');
+    const cageService = await readFile(join(root, 'src/server/CrabCageService.luau'), 'utf8');
+    const first = cageService.indexOf('local pendingRolls:');
+    const last = cageService.indexOf('function CrabCageService.start()', first);
+    if (first < 0 || last < 0) throw new Error('Missing crab collection hooks');
+    harness = harness.slice(0, setupEnd)
+      .replace('self.updates += 1', `self.updates += 1
+        if self.emptyResult then return nil end`)
+      + (await readFile(join(root, 'scripts/crab-cage-persistence.luau'), 'utf8'))
+        .replace('-- GRID_SOURCE --', await readFile(join(root, 'src/shared/Cargo.luau'), 'utf8'))
+        .replace('-- CATALOG_SOURCE --', await readFile(join(root, 'src/shared/AnglerCatalog.luau'), 'utf8'))
+        .replace('-- BACKPACK_SOURCE --', await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8'))
+        .replace('-- ANGLER_SOURCE --', anglerData.replace(/local Cargo\r?\n/, 'local Cargo = Grid\n'))
+        .replace('-- CRAB_RULES_SOURCE --', await readFile(join(root, 'src/shared/CrabCages.luau'), 'utf8'))
+        .replace('-- COLLECT_SOURCE --', cageService.slice(first, last));
+  }
   if (process.argv.includes('--inventory-only')) {
     const setupEnd = harness.indexOf('local function makePrompt');
     const casesStart = harness.indexOf('-- Skin copies share the wallet transaction:');
@@ -44,6 +62,7 @@ try {
     .replace(/local Speedboat = require\(script.Parent.Speedboat\)/, 'local Speedboat = dependencies.Speedboat')
     .replace(/local RacingSpeedboat = require\(script.Parent.RacingSpeedboat\)/, 'local RacingSpeedboat = dependencies.RacingSpeedboat')
     .replace(/local PatrolBoat = require\(script.Parent.PatrolBoat\)/, 'local PatrolBoat = dependencies.PatrolBoat')
+    .replace(/local Trawler = require\(script.Parent.Trawler\)/, 'local Trawler = dependencies.Trawler')
     .replace(/local DrydockLaunch = require\(script.Parent.DrydockLaunch\)/, 'local DrydockLaunch = dependencies.DrydockLaunch')
     .replace(/local BoatLaunchCollision = require\(script.Parent.BoatLaunchCollision\)/, 'local BoatLaunchCollision = dependencies.BoatLaunchCollision')
     .replace(/local BoatCatalog = require\(ReplicatedStorage.Shared.BoatCatalog\)/, 'local BoatCatalog = dependencies.BoatCatalog')
@@ -74,7 +93,7 @@ try {
     .replace('-- BOAT_SERVICE_SOURCE --', service);
   const target = join(temporary, 'boat-service.luau');
   await writeFile(target, program);
-  const checks = process.argv.includes('--inventory-only')
+  const checks = process.argv.includes('--crab-cages-only') ? [['run', target]] : process.argv.includes('--inventory-only')
     ? [['run', 'scripts/boat-data.luau'], ['run', target]]
     : [['run', 'scripts/boat-data.luau'], ['run', 'scripts/boat-motion.luau'], ['run', target]];
   for (const args of checks) {

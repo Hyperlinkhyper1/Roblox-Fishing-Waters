@@ -1812,7 +1812,7 @@ function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 		village,
 		ground(plazaRoad.position + plazaRoad.inland * -(ROAD_WIDTH / 2 + 3), 0.6),
 		facingToward(plazaRoad.position, plaza) - math.pi / 2,
-		{ { "Piazza", 0 }, { "Lighthouse", math.pi } }
+		{ { "Plaza", 0 }, { "Lighthouse", math.pi } }
 	)
 
 	Props.lighthouse(village, ground(lighthouse))

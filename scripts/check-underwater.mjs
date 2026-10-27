@@ -44,6 +44,8 @@ function Lighting:FindFirstChildOfClass(class) return self.objects[class] end
 function Lighting:FindFirstChild(name) return self.objects[name] end
 Terrain.FindFirstChildOfClass = Lighting.FindFirstChildOfClass
 local atmosphere, grading, clouds = {}, {}, {}
+local sky = { CelestialBodiesShown = true }
+Lighting.objects.Sky = sky
 local lightningGrading = { Brightness = 0.37 }
 Lighting.objects.Atmosphere, Lighting.objects.ColorCorrectionEffect = atmosphere, lightningGrading
 Lighting.objects.BiomeColorGrading = grading
@@ -57,7 +59,7 @@ local weather = { rain = 0, storm = 0, cloudCover = 0 }
 local Weather = { getState = function(time)
   assert(time == 1000, "Atmosphere must use the synchronized weather clock")
   return weather
-end }
+end, supercellCover = function() return 0 end }
 local task = { delay = function() end }
 local pending, render = {}, nil
 local TweenService = {}
@@ -182,9 +184,27 @@ local dayAmbient, dayBrightness, dayFog = Lighting.OutdoorAmbient, Lighting.Brig
 attributes.ClockOverride = 23
 move(0, 5, 0, 0.6)
 assert(Lighting.ClockTime == 23, "Clock override reaches Lighting")
+assert(sky.CelestialBodiesShown, "Clear nights retain their moon and stars")
 local function sum(c) return c.R + c.G + c.B end
 assert(Lighting.Brightness < dayBrightness and sum(Lighting.OutdoorAmbient) < sum(dayAmbient)
   and sum(atmosphere.Color) < sum(dayFog), "Night darkens the light, ambient and fog")
+for _, condition in {
+  { rain = 0.24, storm = 0, cloudCover = 0.5 },
+  { rain = 0.62, storm = 0, cloudCover = 0.8 },
+  { rain = 1, storm = 1, cloudCover = 1 },
+  { kind = 'Supercell', rain = 0.5, storm = 0.35, cloudCover = 0.95 },
+} do
+  weather = condition
+  move(0, 5, 0, 0.6)
+  assert(not sky.CelestialBodiesShown and clouds.Cover == 1 and clouds.Density == 1 and clouds.Enabled,
+    "Rain, storms and supercells obscure the night sky with a continuous cloud deck")
+  assert(atmosphere.Haze >= Biomes.Normal.look.haze + weather.rain * 1.8 - 0.00001,
+    "Night must not halve the wet-weather haze")
+end
+weather = { rain = 0, storm = 0, cloudCover = 0 }
+move(0, 5, 0, 0.6)
+assert(sky.CelestialBodiesShown, "Clearing weather restores the moon and stars")
+print("PASS overcast rain/storm/supercell nights, hidden celestial bodies and clear-sky restoration")
 attributes.ClockOverride = 12
 move(0, 5, 0, 0.6)
 assert(Lighting.Brightness == dayBrightness and rgbEqual(Lighting.OutdoorAmbient, dayAmbient), "Daylight returns")

@@ -35,6 +35,7 @@ local HEIGHTS = {
 	GrillStation = 6.3,
 	Smoker = 7.5,
 	SushiBar = 6.3,
+	KitchenStorage = 4.2,
 	DiningTable = 4.3,
 }
 -- The Restaurant's dining room extends the floor behind the house to this z.
@@ -489,6 +490,12 @@ function BuildMode.start()
 		arrow.CFrame = frame * CFrame.new(0, height + 0.2, item.Depth / 2)
 	end
 
+	-- ScreenPointToRay expects coordinates below the top bar, like InputObject.Position.
+	-- GetMouseLocation includes that inset; normalize it for previews and clicks alike.
+	local function mousePosition(): Vector2
+		return UserInputService:GetMouseLocation() - GuiService:GetGuiInset()
+	end
+
 	-- Intersect the pointer with the floor, also used for drag-to-pan at any zoom.
 	local function pointerFloor(position: Vector2): Vector3?
 		local camera = workspace.CurrentCamera
@@ -534,7 +541,7 @@ function BuildMode.start()
 		held = { ItemId = itemId, From = from, R = r }
 		spot = nil
 		buildPreview()
-		aim(UserInputService:GetMouseLocation())
+		aim(mousePosition())
 		render()
 	end
 	local function drop()
@@ -843,7 +850,7 @@ function BuildMode.start()
 		camera.Focus = CFrame.new(center)
 		-- A stationary pointer must still track its floor tile as the camera moves.
 		if held then
-			aim(if touch then Vector2.new(touch.Position.X, touch.Position.Y) else UserInputService:GetMouseLocation())
+			aim(if touch then Vector2.new(touch.Position.X, touch.Position.Y) else mousePosition())
 		end
 	end
 
@@ -964,7 +971,7 @@ function BuildMode.start()
 	rotate.Activated:Connect(function()
 		if held then
 			held.R = (held.R + 1) % 4
-			aim(UserInputService:GetMouseLocation())
+			aim(mousePosition())
 		end
 	end)
 	cancel.Activated:Connect(function()
@@ -1020,7 +1027,7 @@ function BuildMode.start()
 			return
 		elseif input.KeyCode == Enum.KeyCode.R and held then
 			held.R = (held.R + 1) % 4
-			aim(UserInputService:GetMouseLocation())
+			aim(mousePosition())
 		elseif input.KeyCode == Enum.KeyCode.X then
 			drop()
 			choose(nil)
@@ -1028,9 +1035,9 @@ function BuildMode.start()
 			pan, zoom, yaw, turnVelocity = Vector2.zero, 1, 0, 0
 		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 			dragging = true
-			dragPosition = UserInputService:GetMouseLocation()
+			dragPosition = mousePosition()
 		elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-			clickWorld(Vector2.new(input.Position.X, input.Position.Y))
+			clickWorld(mousePosition())
 		elseif input.UserInputType == Enum.UserInputType.Touch and not touch then
 			touch = input
 			touchStart = Vector2.new(input.Position.X, input.Position.Y)
@@ -1044,7 +1051,7 @@ function BuildMode.start()
 		if input.UserInputType == Enum.UserInputType.MouseWheel and not processed then
 			changeZoom(input.Position.Z)
 		elseif dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-			local position = UserInputService:GetMouseLocation()
+			local position = mousePosition()
 			if dragPosition then
 				dragView(dragPosition, position)
 			end

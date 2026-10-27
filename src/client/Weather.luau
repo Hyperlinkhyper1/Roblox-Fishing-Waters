@@ -1,5 +1,6 @@
 -- Camera-local precipitation keeps the whole ocean affordable. The shared clock
 -- drives intensity and lightning, so every player sees the same passing weather.
+local ContentProvider = game:GetService("ContentProvider")
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -51,8 +52,9 @@ local function streak(name: string, parent: Part): ParticleEmitter
 	-- VelocityParallel rotates the texture axes; negative squash stretches along
 	-- movement. This uses a bundled engine texture, without an uploaded image.
 	emitter.Squash = NumberSequence.new(-3)
-	emitter.LightInfluence = 0.65
-	emitter.LightEmission = 0.08
+	-- Retain enough contrast to read against a dark storm sky and dark water.
+	emitter.LightInfluence = 0.2
+	emitter.LightEmission = 0.12
 	emitter.Color = ColorSequence.new(Color3.fromRGB(195, 215, 225))
 	emitter.Rotation = NumberRange.new(0)
 	emitter.RotSpeed = NumberRange.new(0)
@@ -92,11 +94,11 @@ function WeatherController.start()
 			local emitter = streak("Rain", part)
 			emitter.EmissionDirection = Enum.NormalId.Bottom
 			emitter.SpreadAngle = Vector2.new(2, 2)
-			emitter.Size = NumberSequence.new(0.11)
+			emitter.Size = NumberSequence.new(0.22)
 			emitter.Transparency = NumberSequence.new({
 				NumberSequenceKeypoint.new(0, 1),
-				NumberSequenceKeypoint.new(0.08, 0.42),
-				NumberSequenceKeypoint.new(0.86, 0.52),
+				NumberSequenceKeypoint.new(0.08, 0.22),
+				NumberSequenceKeypoint.new(0.86, 0.35),
 				NumberSequenceKeypoint.new(1, 1),
 			})
 			table.insert(
@@ -123,13 +125,21 @@ function WeatherController.start()
 	thunder.Name = "WeatherThunder"
 	thunder.SoundId = soundId("WeatherThunderSoundId", THUNDER_SOUND)
 	thunder.Volume = 0.5
+	thunder:SetAttribute("AudioCategory", "Effects")
 	thunder.Parent = SoundService
 	local rainSound = Instance.new("Sound")
 	rainSound.Name = "WeatherRain"
 	rainSound.SoundId = soundId("WeatherRainSoundId", RAIN_SOUND)
 	rainSound.Looped = true
 	rainSound.Volume = 0
+	rainSound:SetAttribute("AudioCategory", "Effects")
 	rainSound.Parent = SoundService
+	-- Warm the loops without delaying the weather controller or loading screen.
+	task.spawn(function()
+		pcall(function()
+			ContentProvider:PreloadAsync({ rainSound, thunder })
+		end)
+	end)
 
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -217,7 +227,9 @@ function WeatherController.start()
 					openCells += 1
 				end
 				local emitter = cell.emitter
-				emitter.Rate = 84 * state.rain
+				-- A small drizzle still needs enough drops across each 22-stud cell
+				-- to be visible; the old rate left only a handful in the whole view.
+				emitter.Rate = if state.rain > 0.01 then 60 + 300 * state.rain else 0
 				emitter.Speed = NumberRange.new(rainSpeed * 0.94, rainSpeed)
 				emitter.Acceleration = windDirection * state.windSpeed * 1.5
 				-- End rain at terrain, water, or the nearest solid surface, rather
@@ -261,7 +273,7 @@ function WeatherController.start()
 			rainSound.SoundId = rainId
 		end
 		local exposure = if submerged then 0.08 elseif sheltered then 0.3 else 1
-		local targetVolume = state.rain * 0.55 * exposure
+		local targetVolume = math.sqrt(state.rain) * 0.65 * exposure
 		rainSound.Volume += (targetVolume - rainSound.Volume) * (1 - math.exp(-dt * 3))
 		if targetVolume > 0.001 then
 			if not rainSound.IsPlaying then

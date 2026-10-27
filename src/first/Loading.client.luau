@@ -92,27 +92,32 @@ title.Font = Enum.Font.GothamBold
 local status = label(content, "Status", "Loading the waters...", 18, muted)
 Theme.text(status, muted)
 
-local activity = Instance.new("Frame")
-activity.Name = "Activity"
-activity.AnchorPoint = Vector2.new(0.5, 0.5)
-activity.Size = UDim2.fromOffset(28, 4)
-activity.BackgroundTransparency = 1
-activity.Parent = content
-local dots = {}
-for index = 1, 3 do
-	local dot = Instance.new("Frame")
-	dot.Name = "Dot" .. index
-	dot.Position = UDim2.fromOffset((index - 1) * 12, 0)
-	dot.Size = UDim2.fromOffset(4, 4)
-	dot.BackgroundColor3 = white
-	dot.BackgroundTransparency = 0.5
-	dot.BorderSizePixel = 0
-	dot.Parent = activity
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(1, 0)
-	corner.Parent = dot
-	table.insert(dots, dot)
-end
+-- Progress reflects startup milestones rather than an estimated download percentage.
+local progressTrack = Instance.new("Frame")
+progressTrack.Name = "ProgressTrack"
+progressTrack.AnchorPoint = Vector2.new(0.5, 0.5)
+progressTrack.Size = UDim2.new(1, -96, 0, 8)
+progressTrack.BackgroundColor3 = muted
+progressTrack.BackgroundTransparency = 0.75
+progressTrack.BorderSizePixel = 0
+progressTrack.ClipsDescendants = true
+progressTrack.Parent = content
+local trackBounds = Instance.new("UISizeConstraint")
+trackBounds.MaxSize = Vector2.new(360, 8)
+trackBounds.Parent = progressTrack
+local trackCorner = Instance.new("UICorner")
+trackCorner.CornerRadius = UDim.new(1, 0)
+trackCorner.Parent = progressTrack
+
+local progressFill = Instance.new("Frame")
+progressFill.Name = "ProgressFill"
+progressFill.Size = UDim2.fromScale(0, 1)
+progressFill.BackgroundColor3 = white
+progressFill.BorderSizePixel = 0
+progressFill.Parent = progressTrack
+local fillCorner = Instance.new("UICorner")
+fillCorner.CornerRadius = UDim.new(1, 0)
+fillCorner.Parent = progressFill
 
 local detail = label(screen, "Detail", "Your starter rod is already in your inventory. Equip it to start fishing.", 15, muted)
 detail.Position = UDim2.fromScale(0.5, 0.855)
@@ -144,7 +149,7 @@ local function resize()
 	title.TextSize = math.clamp(math.min(width / 13, height / 13), 24, 48)
 	status.Position = UDim2.new(0.5, 0, 0, 179 * spacing)
 	status.TextSize = if width < 600 then 17 else 18
-	activity.Position = UDim2.new(0.5, 0, 0, 214 * spacing)
+	progressTrack.Position = UDim2.new(0.5, 0, 0, 214 * spacing)
 	detail.TextSize = if width < 600 then 14 else 15
 	continue.Position = UDim2.new(0.5, 0, 0.45, 158 * spacing)
 end
@@ -170,12 +175,9 @@ local tips = {
 	"Take a boat out and find a new stretch of shoreline.",
 }
 
+local progress = 0
 while not dismissed do
 	local elapsed = os.clock() - startedAt
-	-- Reuse the readiness tick for quiet activity; no extra render loop or timer.
-	for index, dot in dots do
-		dot.BackgroundTransparency = 0.4 + 0.45 * (0.5 + 0.5 * math.sin(elapsed * 3 - index * 0.8))
-	end
 	local connected = game:IsLoaded()
 	local worldReady = ReplicatedStorage:GetAttribute("FishingWatersWorldReady") == true
 	local clientReady = player:GetAttribute("FishingWatersClientReady") == true
@@ -195,6 +197,14 @@ while not dismissed do
 		) ~= nil
 	end
 	local safeToEnter = connected and worldReady and alive and ground
+	local targetProgress = if not connected then 0.08
+		elseif not worldReady then 0.3
+		elseif not alive or not ground then 0.6
+		elseif not clientReady then 0.85
+		else 1
+	-- Keep the bar moving forward if readiness briefly fluctuates.
+	progress = math.max(progress, targetProgress)
+	progressFill.Size = UDim2.fromScale(progress, 1)
 	local failed = player:GetAttribute("FishingWatersClientError") == true
 	local serverFailed = ReplicatedStorage:GetAttribute("FishingWatersStartupError") == true
 	if not connected then

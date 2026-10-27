@@ -12,8 +12,14 @@
 -- Once a shell has given way it never comes back while its island is still in the world.
 -- Bringing it back over missing parts flipped shells on and off over a fully drawn town, and a
 -- shell the server swaps in later picks up where the one it replaces left off.
+--
+-- Islands come in pieces the server pins for this player as each one arrives (see
+-- reportPieces), so a drawn island's ground never streams back out, not even when the device
+-- runs low on memory, and its shell has no reason to come back.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Lod = {}
@@ -27,6 +33,8 @@ local ISLAND_LOADED = 0.95 -- the same for a whole island, which has no player i
 local HANDOVER = 0.5 -- share of the ground that will do for a shell replacing one that had already given way
 local TILE_NEAR = 96 -- streaming always holds the ground this close to the player
 local TILE_INTERVAL = 0.5 -- how often tiles near the player are looked at again as they move
+local PIECE_TAG = "LodPiece"
+local PIN_BATCH = 500 -- most pieces the server pins per request
 
 type Island = {
 	model: Model,
@@ -81,9 +89,60 @@ local function playerPosition(): Vector3?
 	return if root and root:IsA("BasePart") then root.Position else nil
 end
 
+-- Tells the server about each island piece as it streams in, so it pins the piece for this
+-- player (see server/Map/Lod). Arrivals are sent once a frame, however many came in.
+local function reportPieces()
+	local queued: { number } = {}
+	local reported: { [number]: boolean } = {}
+	local remote: RemoteEvent? = nil
+	local scheduled = false
+
+	local function send()
+		scheduled = false
+		if not remote then
+			return
+		end
+		for first = 1, #queued, PIN_BATCH do
+			remote:FireServer(table.move(queued, first, math.min(first + PIN_BATCH - 1, #queued), 1, {}))
+		end
+		table.clear(queued)
+	end
+
+	local function arrived(piece: Instance)
+		local id = piece:GetAttribute("PieceId")
+		if typeof(id) == "number" and not reported[id] then
+			reported[id] = true
+			table.insert(queued, id)
+			if not scheduled then
+				scheduled = true
+				task.defer(send)
+			end
+		end
+	end
+	CollectionService:GetInstanceAddedSignal(PIECE_TAG):Connect(arrived)
+	-- A piece that streams out before its pin lands is reported again when it comes back
+	CollectionService:GetInstanceRemovedSignal(PIECE_TAG):Connect(function(piece)
+		local id = piece:GetAttribute("PieceId")
+		if typeof(id) == "number" then
+			reported[id] = nil
+		end
+	end)
+	for _, piece in CollectionService:GetTagged(PIECE_TAG) do
+		arrived(piece)
+	end
+
+	task.spawn(function()
+		remote = ReplicatedStorage:WaitForChild("LodPin", math.huge) :: RemoteEvent
+		send()
+	end)
+end
+
 function Lod.start()
+	reportPieces()
+
 	local map = workspace:WaitForChild("Map")
-	local shells = map:WaitForChild("Lod")
+	-- Shells only appear once the whole map is built, which can take a minute on a fresh server
+	local shells = map:WaitForChild("Lod", math.huge)
 
 	local byId: { [string]: Shell } = {}
 	local islands: { [string]: Island } = {}

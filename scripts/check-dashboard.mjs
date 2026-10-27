@@ -69,11 +69,13 @@ local warnings = {}
 local function warn(message) table.insert(warnings, message) end
 local Weather = {
  MaxWaveAmplitude = 4.5,
- RadarHalfSize = 5200, BlackHoleRadius = 250,
+ RadarHalfSize = 5200, BlackHoleRadius = 250, SupercellRadius = 950,
+ supercell = function() return if attributes.WeatherOverride == "Supercell" then { position = { X = 1.4, Z = 2.6 }, strength = 1, forced = true } else nil end,
+ tornadoes = function() return if attributes.WeatherOverride == "Supercell" then { { position = { X = 5.2, Z = 6 }, radius = 30.4, strength = 0.5 } } else {} end,
  blackHolePosition = function() return if attributes.WeatherOverride == "BlackHole" then attributes.BlackHolePosition else nil end,
  radar = function() return { version = 1, resolution = 2, halfSize = 5200,
   cells = { { 0, 0, 6, 0.3 }, { 1, 1, 52, 4.5 }, { 0.5, 0, 25, 1.5 }, { 0, 0, 6, 0.3 } } } end,
- Presets = { Storm = { rain = 1, storm = 1 }, Clear = { rain = 0, storm = 0 }, Rain = { rain = 0.62, storm = 0 }, BlackHole = { rain = 0.28, storm = 0 } },
+ Presets = { Storm = { rain = 1, storm = 1 }, Clear = { rain = 0, storm = 0 }, Rain = { rain = 0.62, storm = 0 }, Supercell = { rain = 0.5, storm = 0.35 }, BlackHole = { rain = 0.28, storm = 0 } },
  Schedule = { { kind = "Clear", duration = 150 }, { kind = "Rain", duration = 180 } },
  CycleSeconds = 330,
  getState = function() return { kind = "Rain", rain = 0.6, storm = 0, cloudCover = 0.8, windSpeed = 30,
@@ -110,7 +112,8 @@ check(body.weather.seed == 77 and body.weather.override == nil, "Reports the rad
 check(body.weather.maxWaveAmplitude == 4.5 and body.weather.radar.version == 1 and #body.weather.radar.cells == 4,
  "Reports the actual regional samples and higher sea limit to the admin dashboard")
 check(body.kinds[1] == "Clear" and body.kinds[3] == "Storm", "Weather kinds go calmest first")
-check(body.kinds[4] == "BlackHole", "Admin-only event appears after ordinary weather")
+check(body.kinds[4] == "Supercell" and body.kinds[5] == "BlackHole", "Rare supercell, then the admin-only event, appear after ordinary weather")
+check(body.weather.supercell == nil and #body.weather.tornadoes == 0, "No supercell or tornadoes are reported in ordinary weather")
 check(body.passes[1].key == "AutoStore" and body.passes[1].id == 3722004182, "Reports the gamepass catalogue")
 check(#body.schedule == 2 and body.schedule[2].duration == 180, "Reports the forecast schedule")
 
@@ -154,6 +157,20 @@ check(attributes.BlackHolePosition.X == 999, "A newer admin command moves the bl
 reply = { weatherVersion = 13 }
 step(15)
 check(attributes.WeatherOverride == nil and attributes.BlackHolePosition == nil, "Auto clears the event and its location")
+
+-- A supercell takes an optional location; without one it circles a player.
+reply = { weatherOverride = "Supercell", weatherVersion = 14, supercell = { x = 400, z = 600 } }
+step(15)
+check(attributes.WeatherOverride == "Supercell" and attributes.SupercellPosition.X == 400 and attributes.SupercellPosition.Z == 600 and attributes.SupercellSince == 1500, "Applies a supercell at the chosen location")
+reply = { weatherOverride = "Supercell", weatherVersion = 15, supercell = { x = 0 / 0, z = 0 } }
+step(15)
+check(attributes.SupercellPosition.X == 10.4 and attributes.SupercellPosition.Z == -20.6, "An unusable location falls back to a player's position")
+local stormy = requests[#requests].Body.weather
+check(stormy.supercell.x == 1 and stormy.supercell.z == 3 and stormy.supercell.radius == 950 and stormy.supercell.forced, "Reports the supercell to Luma")
+check(#stormy.tornadoes == 1 and stormy.tornadoes[1].x == 5 and stormy.tornadoes[1].radius == 30, "Reports active tornadoes to Luma")
+reply = { weatherVersion = 16 }
+step(15)
+check(attributes.WeatherOverride == nil and attributes.SupercellPosition == nil and attributes.SupercellSince == nil, "Auto clears the supercell and its location")
 
 -- A purchased pass stays owned when a dashboard grant is revoked.
 local buyer = player(77, "buyer")

@@ -125,7 +125,7 @@ local Instance = {
 local task = { wait = function() end }
 local game = {
 	GetService = function()
-		return { AddTag = function() end }
+		return { AddTag = function() end, JSONEncode = function() return "[]" end }
 	end,
 }
 local terrainFills = {}
@@ -191,6 +191,7 @@ local dependencies = {
 	BaseHouse = { ensure = noop },
 	RodShop = { build = noop, ensure = noop },
 	FurnitureShop = { build = noop, ensure = noop },
+	BackpackShop = { build = noop, ensure = noop },
 	Drydock = {
 		build = noop,
 		ensureDock = noop,

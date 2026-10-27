@@ -7,6 +7,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local Gamepasses = require(ReplicatedStorage.Shared.Gamepasses)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
+local ShopUpgrades = require(ReplicatedStorage.Shared.ShopUpgrades)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Paths = require(ReplicatedStorage.Shared.Paths)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
@@ -974,6 +975,14 @@ function Menu.start()
 						Settings.apply(profile.Angler.Settings, if result.Ok and action == "Setting" then key else nil)
 				end
 				notice.Text = result.Message or ""
+				if result.Ok and result.PromptProductId == Paths.SKIP_PRODUCT_ID then
+					local prompted = pcall(function()
+						MarketplaceService:PromptProductPurchase(player, Paths.SKIP_PRODUCT_ID)
+					end)
+					if not prompted then
+						notice.Text = "Could not open the quest skip purchase. Please try again."
+					end
+				end
 			else
 				notice.Text = "Could not reach your progress. Close and reopen to try again."
 			end
@@ -1889,13 +1898,66 @@ function Menu.start()
 					UDim2.fromScale(progress, 1)
 				)
 				Theme.corner(fill, 5)
-				for index, goal in stage.Goals do
-					goalRow(card, goal, 4 + index)
+				if not completed then
+					for index, goal in stage.Goals do
+						goalRow(card, goal, 4 + index)
+					end
+				end
+				if not Paths.skipProblem(profile, id) then
+					wrapped(card, Paths.skipWarning(profile), 13, gold, 16, { Name = "PathSkipWarning" })
+					local confirmation = auto("Frame", card, {
+						Name = "PathSkipConfirmation",
+						LayoutOrder = 18,
+						Size = UDim2.new(1, 0, 0, 0),
+						Visible = false,
+					})
+					stack(confirmation, 8)
+					wrapped(confirmation, "Skip all remaining quests for " .. stage.Name .. "?", 13, cream, 1)
+					local skip
+					skip = button(
+						card,
+						if state.SkipCredits > 0 then "Use purchased quest skip" else "Skip quests · Robux",
+						function()
+							confirmation.Visible = true
+							skip.Visible = false
+						end,
+						{
+							Name = "SkipPathQuests",
+							LayoutOrder = 17,
+							Size = UDim2.new(1, 0, 0, 42),
+						}
+					)
+					button(
+						confirmation,
+						if state.SkipCredits > 0 then "Confirm quest skip" else "Continue · Robux",
+						function()
+							request("PreparePathSkip", id)
+						end,
+						{
+							Name = "ConfirmPathSkip",
+							LayoutOrder = 2,
+							Size = UDim2.new(1, 0, 0, 42),
+						}
+					)
+					button(confirmation, "Cancel", function()
+						confirmation.Visible = false
+						skip.Visible = true
+					end, {
+						Name = "CancelPathSkip",
+						LayoutOrder = 3,
+						Size = UDim2.new(1, 0, 0, 36),
+					})
 				end
 				if progress >= 1 and #choices == 0 and Paths.finished(profile) then
 					wrapped(card, "Every path is complete. Your business runs on all fronts!", 14, green, 20)
 				elseif progress >= 1 then
-					wrapped(card, "Stage complete! Choose your next path below.", 14, green, 20)
+					wrapped(
+						card,
+						"Stage complete! Choose your next path below. Its money cost still applies.",
+						14,
+						green,
+						20
+					)
 				end
 			elseif available then
 				local afford = profile.Cash >= stage.Price
@@ -2416,6 +2478,18 @@ function Menu.start()
 			end
 			showDetails()
 		elseif homeTab == "Overview" then
+			line("SHOP SIGN", 16, gold, 26)
+			line("Choose a name for the sign above your shop. Leave it blank to restore the default.", 14, muted, 42)
+			order += 1
+			local signName = input(body, "Your shop name (up to 32 characters)")
+			signName.Name = "ShopSignInput"
+			signName.LayoutOrder = order
+			signName.Size = UDim2.new(1, -10, 0, 42)
+			signName.Text = profile.Angler.ShopSign or ""
+			order += 1
+			button(body, "Save shop sign", function()
+				request("ShopSign", signName.Text)
+			end, { Name = "SaveShopSign", LayoutOrder = order, Size = UDim2.new(1, -10, 0, 44) })
 			local stock, totalValue = {}, 0
 			local function add(records, location)
 				for _, record in records do
@@ -2536,6 +2610,35 @@ function Menu.start()
 					Size = UDim2.new(1, -124, 0, 26),
 				})
 			end
+		elseif homeTab == "Upgrades" then
+			local upgrade = ShopUpgrades.SocialMediaAdvertisement
+			local owned = ShopUpgrades.hasAdvertisement(profile.Angler)
+			local enabled = not owned and profile.Cash >= upgrade.Price
+			line(upgrade.Name, 18, cream, 36)
+			line(upgrade.Description, 14, muted, 48)
+			line("Two customers every 35 seconds, spaced apart.", 14, muted, 36)
+			order += 1
+			local buy = button(
+				body,
+				if owned
+					then "Owned"
+					elseif not enabled then "$" .. commas(upgrade.Price - profile.Cash) .. " more needed"
+					else "Buy · $" .. commas(upgrade.Price),
+				function()
+					if enabled then
+						request("BuyShopUpgrade", "SocialMediaAdvertisement")
+					end
+				end,
+				{
+					Name = "BuySocialMediaAdvertisement",
+					LayoutOrder = order,
+					Size = UDim2.new(1, -16, 0, 44),
+					TextSize = 14,
+					Active = enabled,
+					Selectable = enabled,
+				}
+			)
+			Theme.glassButton(buy, if enabled then "Selected" else "Disabled")
 		else
 			order += 1
 			local placeholder = make("Frame", body, {
@@ -2546,29 +2649,8 @@ function Menu.start()
 			})
 			Theme.glassPanel(placeholder, true)
 			glyph(placeholder, homeTab, muted, UDim2.fromScale(0.5, 0.5), 48)
-			line(if homeTab == "Upgrades" then "Porter upgrades" else "No achievements yet.", 18, muted, 56)
-			line(
-				if homeTab == "Upgrades"
-					then "Train your porter to walk faster and carry more fish per trip."
-					else "Your future milestones will appear here.",
-				14,
-				muted,
-				56
-			)
-			if homeTab == "Upgrades" then
-				local speed, capacity = StaffCatalog.porterStats(profile.Angler)
-				line(string.format("Speed: %d studs/sec · Carry: %d fish/trip", speed, capacity), 14, cream, 48)
-				order += 1
-				button(body, "Manage porter upgrades", function()
-					homeTab, selectedStaff, staffFilter = "Staff", "Porter", "All"
-					render()
-				end, {
-					Name = "ManagePorterUpgrades",
-					LayoutOrder = order,
-					Size = UDim2.new(1, -16, 0, 44),
-					TextSize = 14,
-				})
-			end
+			line("No achievements yet.", 18, muted, 56)
+			line("Your future milestones will appear here.", 14, muted, 56)
 		end
 	end
 	local function settings()

@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = await readFile(join(root, 'src/client/CargoHold.luau'), 'utf8');
-const start = source.indexOf('\tlocal function gridPoint()');
+const start = source.indexOf('\tlocal function gridPoint(');
 const end = source.indexOf('\n\tlocal function takenFor()', start);
 if (start < 0 || end < 0) throw new Error('Cargo pointer functions not found');
 const folder = await mkdtemp(join(tmpdir(), 'cargo-pointer-'));
@@ -18,8 +18,11 @@ vector.__index = vector
 local function point(x, y) return setmetatable({X = x, Y = y}, vector) end
 function vector.__sub(a, b) return point(a.X - b.X, a.Y - b.Y) end
 function vector.__div(a, b) return point(a.X / b, a.Y / b) end
-local mouse, inset
-local UserInputService = {GetMouseLocation = function() return mouse end}
+local mouse, inset, touchPoint
+local Enum = {UserInputType = {Touch = "Touch", MouseButton1 = "MouseButton1"}}
+local Vector2 = {new = point}
+local lastInputType = Enum.UserInputType.MouseButton1
+local UserInputService = {GetMouseLocation = function() return mouse end, GetLastInputType = function() return lastInputType end}
 local GuiService = {GetGuiInset = function() return inset, point(0, 0) end}
 local grid, scale = {}, {}
 local STEP = 44
@@ -47,6 +50,20 @@ for _, topInset in {0, 36, 58} do
           assert(math.floor(localPoint.Y / STEP) + 1 == row, "Wrong pickup row")
           local x, y = anchor()
           assert(x == column and y == row, "Preview/drop misses pointed cell")
+          -- GUI input coordinates already have the inset removed. Touch must
+          -- use the actual tap, even if the mouse is elsewhere or unavailable.
+          local touch = {UserInputType = Enum.UserInputType.Touch,
+            Position = point(mouse.X - inset.X, mouse.Y - inset.Y)}
+          mouse = point(-500, -500)
+          local tap = gridPoint(touch)
+          assert(math.floor(tap.X / STEP) + 1 == column, "Wrong touch pickup column")
+          assert(math.floor(tap.Y / STEP) + 1 == row, "Wrong touch pickup row")
+          local tx, ty = anchor(touch)
+          assert(tx == column and ty == row, "Touch drop misses tapped cell")
+          lastInputType, touchPoint = Enum.UserInputType.Touch, touch.Position
+          local px, py = anchor()
+          assert(px == tx and py == ty, "Touch preview misses tapped cell")
+          lastInputType = Enum.UserInputType.MouseButton1
           checks += 1
         end
       end

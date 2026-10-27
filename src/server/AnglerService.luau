@@ -1,5 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextService = game:GetService("TextService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local BoatService = require(script.Parent.BoatService)
 local Data = require(script.Parent.AnglerData)
 local GamepassService = require(script.Parent.GamepassService)
@@ -10,6 +12,7 @@ local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishingRanks = require(ReplicatedStorage.Shared.FishingRanks)
 local Paths = require(ReplicatedStorage.Shared.Paths)
 local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
+local ShopUpgrades = require(ReplicatedStorage.Shared.ShopUpgrades)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Service = {}
 local started = false
@@ -68,6 +71,40 @@ function Service.start()
 	end
 	started = true
 	GamepassService.start()
+	MarketplaceService.ProcessReceipt = function(receipt)
+		if receipt.ProductId ~= Paths.SKIP_PRODUCT_ID then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		local player = Players:GetPlayerByUserId(receipt.PlayerId)
+		if not player then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		-- Receipts can arrive before profile loading or during another wallet save.
+		-- Roblox does not automatically retry on a timer, so retry transient failures here.
+		for attempt = 1, 10 do
+			if player.Parent ~= Players then
+				break
+			end
+			local ok = BoatService.updateProgress(player, function(current)
+				if current.Angler.Paths.SkipReceipts[receipt.PurchaseId] then
+					return
+				end
+				current.Angler = Data.grantPathSkip(current.Angler, receipt.PurchaseId)
+				local target = current.Angler.Paths.SkipTarget
+				if target and not Paths.skipProblem(current, target) then
+					current.Angler = Data.usePathSkip(current.Angler, target)
+				else
+					-- A delayed/external purchase stays available instead of skipping a different stage.
+					current.Angler.Paths.SkipTarget = nil
+				end
+			end)
+			if ok then
+				return Enum.ProductPurchaseDecision.PurchaseGranted
+			end
+			task.wait(math.min(attempt, 5))
+		end
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
 	local remote = Instance.new("RemoteFunction")
 	remote.Name, remote.Parent = "AnglerMenu", ReplicatedStorage
 	remote.OnServerInvoke = function(player, action, key, value)
@@ -80,6 +117,7 @@ function Service.start()
 			return { Ok = false, Message = "Your progress is still loading or unavailable." }
 		end
 		local ok, message = true, ""
+		local promptProductId
 		if action == "Setting" and type(key) == "string" and Data.validSetting(key, value) then
 			ok, message = BoatService.updateProgress(player, function(current)
 				current.Angler.Settings[key] = value
@@ -93,6 +131,31 @@ function Service.start()
 				assert(key == "" or current.Angler.Titles[key], "Title is not unlocked")
 				current.Angler.EquippedTitle = key
 			end)
+		elseif action == "ShopSign" then
+			if type(key) ~= "string" or #key > 96 then
+				return { Ok = false, Message = "Enter a shop name of up to 32 characters." }
+			end
+			local name = key:match("^%s*(.-)%s*$")
+			local length = utf8.len(name)
+			if not length or length > 32 or name:find("[%c]") then
+				return { Ok = false, Message = "Enter a shop name of up to 32 characters on one line." }
+			end
+			local filtered = ""
+			if name ~= "" then
+				local success, result = pcall(function()
+					return TextService:FilterStringAsync(name, player.UserId):GetNonChatStringForBroadcastAsync()
+				end)
+				if not success or type(result) ~= "string" or #result > 96 then
+					return { Ok = false, Message = "Could not filter that name. Please try again." }
+				end
+				filtered = result
+			end
+			ok, message = BoatService.updateProgress(player, function(current)
+				current.Angler.ShopSign = filtered
+			end)
+			if ok then
+				message = if filtered == "" then "Shop sign reset." else "Shop sign updated."
+			end
 		elseif action == "HireStaff" then
 			local role = if type(key) == "string" then StaffCatalog.Roles[key] else nil
 			if not role then
@@ -119,6 +182,26 @@ function Service.start()
 				if key == "Fisherman" then
 					message ..= " Assign him a boat below."
 				end
+			end
+		elseif action == "BuyShopUpgrade" then
+			if key ~= "SocialMediaAdvertisement" then
+				return { Ok = false, Message = "Choose a valid shop upgrade." }
+			end
+			local upgrade = ShopUpgrades.SocialMediaAdvertisement
+			if ShopUpgrades.hasAdvertisement(profile.Angler) then
+				return { Ok = false, Message = "You already own this upgrade." }
+			elseif profile.Cash < upgrade.Price then
+				return { Ok = false, Message = "You need $" .. upgrade.Price .. " for this upgrade." }
+			end
+			ok, message = BoatService.updateProgress(player, function(current)
+				assert(not ShopUpgrades.hasAdvertisement(current.Angler), "Upgrade already owned")
+				assert(current.Cash >= upgrade.Price, "Not enough cash for this upgrade")
+				current.Cash -= upgrade.Price
+				current.Angler.Stats.CoinsSpent += upgrade.Price
+				current.Angler.Upgrades.SocialMediaAdvertisement = 1
+			end)
+			if ok then
+				message = "Social Media Advertisement unlocked! Customers will arrive more often."
 			end
 		elseif action == "UpgradePorter" then
 			local upgrade = if type(key) == "string" then StaffCatalog.PorterUpgrades[key] else nil
@@ -147,6 +230,27 @@ function Service.start()
 			if ok then
 				message =
 					string.format("Porter %s upgraded to %d %s!", upgrade.Name, upgrade.Values[level + 2], upgrade.Unit)
+			end
+		elseif action == "PreparePathSkip" then
+			local problem = Paths.skipProblem(profile, key)
+			if problem then
+				return { Ok = false, Message = problem }
+			end
+			local usedCredit = false
+			ok, message = BoatService.updateProgress(player, function(current)
+				local failure = Paths.skipProblem(current, key)
+				assert(not failure, failure)
+				usedCredit = current.Angler.Paths.SkipCredits > 0
+				if usedCredit then
+					current.Angler = Data.usePathSkip(current.Angler, key)
+				else
+					-- Persist the intended stage before opening the Roblox purchase prompt.
+					current.Angler.Paths.SkipTarget = key
+				end
+			end)
+			if ok then
+				promptProductId = if usedCredit then nil else Paths.SKIP_PRODUCT_ID
+				message = (if usedCredit then "Quests skipped! " else "") .. Paths.skipWarning(profile)
 			end
 		elseif action == "ChoosePath" then
 			local problem = Paths.chooseProblem(profile, key)
@@ -209,6 +313,7 @@ function Service.start()
 		return {
 			Ok = ok,
 			Message = message,
+			PromptProductId = promptProductId,
 			Profile = current,
 			FreezerUsage = if current then Data.freezerUsage(current.Angler) else 0,
 			PantryCapacity = if current then Data.pantryCapacity(current.Angler) else 0,

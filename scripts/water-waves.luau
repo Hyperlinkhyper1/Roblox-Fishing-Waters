@@ -94,9 +94,32 @@ Client.start()
 Client.start()
 local pool = beams()
 assert(#pool > 0 and #pool <= 100 and #renderStep.callbacks == 1, "Startup must keep one bounded render pool")
+for _, beam in pool do
+	assert(
+		beam.TextureSpeed == 0,
+		"Crest textures must travel with the geometry without independent sideways scrolling"
+	)
+end
 local motion, previous = false, {}
 local maximumSeaHeight = 0
 local strongestCrestOpacity = 0
+local function assertSurfaceClearance(beam)
+	local a, b = beam.Attachment0.CFrame, beam.Attachment1.CFrame
+	local p0, p3 = a.Position, b.Position
+	local p1 = p0 + a.RightVector * beam.CurveSize0
+	local p2 = p3 - b.RightVector * beam.CurveSize1
+	for segment = 0, beam.Segments do
+		local t = segment / beam.Segments
+		local u = 1 - t
+		local center = p0 * u ^ 3 + p1 * (3 * u ^ 2 * t) + p2 * (3 * u * t ^ 2) + p3 * t ^ 3
+		local side = a.UpVector:Lerp(b.UpVector, t).Unit
+		local halfWidth = (beam.Width0 + (beam.Width1 - beam.Width0) * t) / 2
+		assert(
+			center.Y - math.abs(side.Y) * halfWidth > dependencies.Biomes.WaterLevel + workspace.Terrain.WaterWaveSize,
+			"Every visible ribbon segment must clear native water, including its tilted edges"
+		)
+	end
+end
 for _ = 1, 120 do
 	tick(1 / 30)
 	for _, beam in pool do
@@ -104,6 +127,7 @@ for _ = 1, 120 do
 			continue
 		end
 		local attachment = beam.Attachment0
+		assertSurfaceClearance(beam)
 		local position = attachment.CFrame.Position
 		if previous[attachment] and (position - previous[attachment]).Magnitude > 0.1 then
 			motion = true
@@ -125,7 +149,7 @@ end
 assert(motion and maximumSeaHeight > 0.3, "Storm crests must visibly move and rise above the sea")
 assert(enabledCount() > 0, "Open water must show crests")
 local seaRipple = workspace.Terrain.WaterWaveSize
-assert(seaRipple > 0.7 and seaRipple <= 1, "Storm surface must visibly roll within the engine wave-height limit")
+assert(seaRipple > 0.15 and seaRipple <= 0.18, "Native storm ripples must stay small beneath the shared swells")
 assert(strongestCrestOpacity > 0.5, "Storm crests must have clearly visible contrast")
 local bodyDepth, foamDepth
 for _, beam in pool do
@@ -139,13 +163,17 @@ assert(foamDepth > bodyDepth and bodyDepth > 0, "Foam and swell layers must have
 -- Isolate wave strength from phase and the land mask: tiny lake waves should
 -- fade away rather than drawing full-contrast foam against the terrain surface.
 local realHeightAt = dependencies.Weather.heightAt
+local realSample = dependencies.Weather.sample
 local testAmplitude = 0.05
 dependencies.Weather.heightAt = function()
 	return testAmplitude * 0.8, testAmplitude
 end
+dependencies.Weather.sample = function()
+	return { height = testAmplitude * 0.8, normal = Vector3.yAxis }
+end
 tick(1 / 60)
 assert(enabledCount() == 0, "Tiny sheltered waves must not draw intersecting ribbons")
-testAmplitude = 0.24
+testAmplitude = 0.5
 tick(1 / 60)
 assert(enabledCount() > 0, "Growing swells must ease into view")
 local middleOpacity = 0
@@ -163,7 +191,91 @@ for _, beam in pool do
 	end
 end
 assert(middleOpacity > 0 and middleOpacity < fullOpacity * 0.6, "Sheltered foam must blend gradually into sea foam")
+-- A positive center is insufficient: ends, tilted widths and cubic handles
+-- can each pass through water independently of that center sample.
+testAmplitude = 2
+dependencies.Weather.sample = function()
+	return { height = 0.05, normal = Vector3.yAxis }
+end
+tick(1 / 60)
+assert(enabledCount() == 0, "Positive crest centers must not expose submerged ribbon ends")
+local windDirection = dependencies.Weather.getState(now).windDirection
+local across = Vector3.new(-windDirection.Z, 0, windDirection.X)
+dependencies.Weather.sample = function()
+	return { height = 1, normal = (Vector3.yAxis + windDirection * 0.4).Unit }
+end
+tick(1 / 60)
+assert(enabledCount() == 0, "Tilted wide ribbons must fade before their sides enter the water")
+dependencies.Weather.sample = function(position)
+	local sign = if position:Dot(across) % 40 < 20 then -1 else 1
+	return { height = 1, normal = (Vector3.yAxis + across * sign * 0.4).Unit }
+end
+tick(1 / 60)
+assert(enabledCount() == 0, "Cubic handles must not dip beneath otherwise clear endpoints")
+dependencies.Weather.sample = function()
+	return { height = 2, normal = Vector3.yAxis }
+end
+tick(1 / 60)
+assert(enabledCount() > 0, "Safely raised crests must remain visible")
+for _, beam in pool do
+	if beam.Enabled then
+		assertSurfaceClearance(beam)
+	end
+end
+
+-- Isolate camera recentering at frozen wave time and strength. Any entering
+-- or leaving grid row must already be transparent at the pool boundary.
+local function snapshotCrests()
+	local snapshot = {}
+	for _, beam in pool do
+		if beam.Enabled and beam.Name == "WindCrest" then
+			local center = (beam.Attachment0.CFrame.Position + beam.Attachment1.CFrame.Position) / 2
+			local key = tostring(math.round(center:Dot(across) / 40))
+				.. ":"
+				.. tostring(
+					math.round((center:Dot(windDirection) - now * dependencies.Weather.components[1].speed) / 40)
+				)
+			snapshot[key] = 1 - beam.LocalTransparencyModifier
+		end
+	end
+	return snapshot
+end
+local function assertRecenterFade(before, after)
+	local common, replaced = 0, 0
+	for key, opacity in before do
+		if after[key] then
+			common += 1
+			assert(
+				math.abs(opacity - after[key]) < 0.01,
+				"Shared crests must remain stable across a camera grid boundary"
+			)
+		else
+			replaced += 1
+			assert(opacity < 0.001, "Recycled boundary rows must fade out before disappearing")
+		end
+	end
+	assert(common > 0 and replaced > 0, "Recenter check must exercise both shared and recycled crests")
+end
+for _, axis in { across, windDirection } do
+	local center = Vector3.new(1500, 12, 0)
+	local travel = if axis == windDirection then (now * dependencies.Weather.components[1].speed) % 40 else 0
+	local boundary = math.floor((center:Dot(axis) - travel) / 40) * 40 + 20 + travel
+	center += axis * (boundary - center:Dot(axis))
+	camera.CFrame = CFrame.new(center - axis * 0.1)
+	-- Masks are probed a few ribbons per frame; let the whole grid settle first.
+	for _ = 1, 30 do
+		tick(0)
+	end
+	local before = snapshotCrests()
+	camera.CFrame = CFrame.new(center + axis * 0.1)
+	tick(0)
+	local after = snapshotCrests()
+	assertRecenterFade(before, after)
+	assertRecenterFade(after, before)
+end
+camera.CFrame = CFrame.new(1500, 12, 0)
 dependencies.Weather.heightAt = realHeightAt
+dependencies.Weather.sample = realSample
 local FULL_RIBBON_LENGTH = 19 * 2 - 0.5
 -- A boat beside the camera: no ribbon may draw inside its hull footprint.
 local boats = Instance.new("Folder")
@@ -172,9 +284,11 @@ boats.Parent = workspace
 local boat = Instance.new("Model")
 boat.Parent = boats
 local hullSize = Vector3.new(12, 6, 30)
-function boat:GetBoundingBox()
-	return CFrame.new(1500, 2, 0), hullSize
-end
+-- A real hull part, so the boat's bounding box comes from its geometry.
+local hull = Instance.new("Part")
+hull.Size = hullSize
+hull.CFrame = CFrame.new(1500, 2, 0)
+hull.Parent = boat
 local function insideHull(position)
 	return math.abs(position.X - 1500) < hullSize.X / 2 and math.abs(position.Z) < hullSize.Z / 2
 end
@@ -197,15 +311,19 @@ end
 assert(cut and enabledCount() > 0, "Ribbons next to a boat must be shortened, not all hidden")
 boats.Parent = nil
 dry = true
-tick(1)
-tick(1)
+-- Masks are rechecked a few ribbons per frame; give every ribbon its turn.
+for _ = 1, 120 do
+	tick(1 / 30)
+end
 assert(enabledCount() == 0, "Dry land must mask all swells")
 assert(
 	workspace.Terrain.WaterWaveSize < seaRipple * 0.1,
 	"Coastal viewpoints must suppress native oscillations that clip through the shoreline"
 )
 dry = false
-tick(1)
+for _ = 1, 120 do
+	tick(1 / 30)
+end
 assert(enabledCount() > 0, "Water masks must refresh after geometry changes")
 local beforeTeleport = rays
 camera.CFrame = CFrame.new(-2000, 12, 0)
@@ -219,9 +337,30 @@ camera.CFrame = CFrame.new(0, 12, 0)
 for _ = 1, 120 do
 	tick(1 / 30)
 end
-assert(enabledCount() > 0 and #beams() == #pool, "Camera recovery must reuse its render pool")
+assert(#beams() == #pool, "Camera recovery must reuse its render pool")
+assert(workspace.Terrain.WaterWaveSize > 0, "Camera recovery must resume the sheltered lake's native ripples")
 assert(workspace.Terrain.WaterWaveSize < seaRipple * 0.5, "Lake ripples must be smaller than open-sea ripples")
 assert(workspace.Terrain.WaterWaveSize < 0.3, "Inner lake must retain sheltered waves")
+-- The actual renderer must distinguish every severity, even inside the lake.
+for _, position in { Vector3.new(0, 12, 0), Vector3.new(1500, 12, 0) } do
+	camera.CFrame = CFrame.new(position)
+	local previousRipple, calmRipple = 0, 0
+	for _, kind in { "Clear", "LightRain", "Rain", "Storm" } do
+		workspace:SetAttribute("WeatherOverride", kind)
+		for _ = 1, 120 do
+			tick(1 / 30)
+		end
+		local ripple = workspace.Terrain.WaterWaveSize
+		assert(ripple > previousRipple * 1.3, "Each rain severity must visibly strengthen surface ripples")
+		if kind == "Clear" then
+			calmRipple = ripple
+		elseif kind == "Storm" then
+			assert(ripple > calmRipple * 5, "Storm water must be substantially rougher than clear water")
+		end
+		previousRipple = ripple
+	end
+end
+print("PASS wind-driven rain and storm ripples in both the sheltered lake and open sea")
 -- Small camera motion at a coastal probe boundary must not pump the entire sea
 -- between calm and exposed waves. Hold wind steady to isolate the coast blend.
 local weatherState = dependencies.Weather.getState(now)
@@ -298,13 +437,14 @@ for frame = 1, 600 do
 	tick(1 / 60)
 	busiestFrame = math.max(busiestFrame, rays - before)
 end
-assert(busiestFrame < 49 * 7 / 2, "Water masks must not probe the whole grid in one frame: " .. busiestFrame)
-assert(rays - sailingRays > 49 * 7 * 10, "Water masks must keep refreshing while sailing")
+-- Three ribbons (seven rays each) plus one coastline sample (eight rays) at most.
+assert(busiestFrame <= 3 * 7 + 8, "Water masks must not probe in bursts: " .. busiestFrame)
+assert(rays - sailingRays > 49 * 7 * 5, "Water masks must keep refreshing while sailing")
 assert(enabledCount() > 0, "Open water must keep its crests while sailing")
 camera.CFrame = CFrame.new(0, -3, 0)
 tick(0.04)
 assert(enabledCount() == 0, "Submerged camera must hide surface ribbons")
 print(
-	"PASS pooled swell movement, shared boat heights, land/hull masks, camera lifecycle, sheltered lake and smooth coast transitions"
+	"PASS swell clearance, grid recycling, fixed textures, shared boat heights, land/hull masks, camera lifecycle and smooth coasts"
 )
 print("Recording mocks only; Studio rendering and physical boat behavior remain unverified.")

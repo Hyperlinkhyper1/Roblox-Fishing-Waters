@@ -173,22 +173,22 @@ check(speedPoorResult == "InsufficientFunds" and speedPoor.Cash == 6499 and not 
 print("Speedboat catalog and purchase checks passed")
 
 local Cargo = require("../src/shared/Cargo")
-check(Catalog.PatrolBoat.Price == 25000, "Patrol cruiser costs exactly $25000")
-check(Catalog.PatrolBoat.ForwardSpeed > Catalog.Speedboat.ForwardSpeed, "Patrol cruiser is faster than the $6500 speedboat")
+check(Catalog.PatrolBoat.Price == 15000, "Patrol cruiser costs exactly $15000")
+check(Catalog.PatrolBoat.ForwardSpeed == 70 and Catalog.PatrolBoat.ForwardSpeed > Catalog.Speedboat.ForwardSpeed, "Patrol cruiser is faster than the $6500 speedboat")
 check(Catalog.PatrolBoat.TurnRate < Catalog.Speedboat.TurnRate and Catalog.PatrolBoat.TurnRate >= Catalog.Speedboat.TurnRate * 0.85, "Patrol turns slightly slower")
-check(Cargo.capacity(Catalog.PatrolBoat.Hold) == 2 * Cargo.capacity(Catalog.Speedboat.Hold), "Patrol has exactly twice the speedboat tiles")
+check(Cargo.capacity(Catalog.PatrolBoat.Hold) == 90, "Patrol has 90 cargo tiles")
 local kit = {}
 for _, item in Catalog.PatrolBoat.StarterParts do
 	check(Cargo.fits(Catalog.PatrolBoat.Hold, Cargo.occupied(kit, {}), Cargo.shape(item, {}), item.X, item.Y, item.R), "Patrol starter equipment fits without overlap")
 	table.insert(kit, item)
 end
-local patrolOwner, patrolResult = BoatData.purchase({ Version = 1, Cash = 25000, OwnedBoats = { Speedboat = true } }, "PatrolBoat")
+local patrolOwner, patrolResult = BoatData.purchase({ Version = 1, Cash = 15000, OwnedBoats = { Speedboat = true } }, "PatrolBoat")
 check(patrolResult == "Purchased" and patrolOwner.Cash == 0 and patrolOwner.OwnedBoats.PatrolBoat and patrolOwner.OwnedBoats.Speedboat, "Exact funds buy patrol and preserve speedboat")
-check(BoatData.decode(patrolOwner).OwnedBoats.PatrolBoat and patrolOwner.Angler.Stats.CoinsSpent == 25000, "Patrol ownership and spending persist")
+check(BoatData.decode(patrolOwner).OwnedBoats.PatrolBoat and patrolOwner.Angler.Stats.CoinsSpent == 15000, "Patrol ownership and spending persist")
 local patrolAgain, patrolAgainResult = BoatData.purchase(patrolOwner, "PatrolBoat")
 check(patrolAgainResult == "AlreadyOwned" and patrolAgain.Cash == 0, "Owned patrol cannot charge again")
-local patrolPoor, patrolPoorResult = BoatData.purchase({ Version = 1, Cash = 24999, OwnedBoats = {} }, "PatrolBoat")
-check(patrolPoorResult == "InsufficientFunds" and patrolPoor.Cash == 24999 and not patrolPoor.OwnedBoats.PatrolBoat, "Short balance cannot buy patrol")
+local patrolPoor, patrolPoorResult = BoatData.purchase({ Version = 1, Cash = 14999, OwnedBoats = {} }, "PatrolBoat")
+check(patrolPoorResult == "InsufficientFunds" and patrolPoor.Cash == 14999 and not patrolPoor.OwnedBoats.PatrolBoat, "Short balance cannot buy patrol")
 print("Patrol cruiser catalog, cargo and purchase checks passed")
 
 -- Racing launch trades fifteen tiles for the fastest handling in the fleet.
@@ -200,6 +200,28 @@ for id, spec in Catalog do
 	end
 end
 check(Cargo.capacity(Catalog.RacingSpeedboat.Hold) == 49, "Racing speedboat has 49 usable hold tiles")
+check(Catalog.Trawler.Price == 17500 and Catalog.Trawler.ForwardSpeed == 70, "Trawler has requested price and speed")
+check(Cargo.capacity(Catalog.Trawler.Hold) == 104, "Trawler has exactly 104 cargo tiles")
+check(#Cargo.cells(Cargo.Parts.TrawlerEngine.Shape) == 8, "Trawler engine takes eight tiles")
+check(
+	Cargo.Parts.TrawlerEngine.Shape[1] == ".##." and Cargo.Parts.TrawlerEngine.Shape[3] == "####",
+	"Trawler engine is an upside-down T"
+)
+check(Catalog.Trawler.StarterParts[1].PartId == "TrawlerEngine", "Trawler starts with its own engine")
+local trawlerKit = {}
+for _, item in Catalog.Trawler.StarterParts do
+	check(Cargo.fits(Catalog.Trawler.Hold, Cargo.occupied(trawlerKit, {}), Cargo.shape(item, {}), item.X, item.Y, item.R), "Trawler starter equipment fits without overlap")
+	table.insert(trawlerKit, item)
+end
+local trawlerInput = { Version = 1, Cash = 17500, OwnedBoats = { FishingBoat = true } }
+local trawlerOwner, trawlerResult = BoatData.purchase(trawlerInput, "Trawler")
+check(trawlerResult == "Purchased" and trawlerOwner.Cash == 0 and trawlerOwner.OwnedBoats.Trawler, "Exact funds buy trawler")
+check(trawlerOwner.OwnedBoats.FishingBoat and trawlerInput.Cash == 17500 and not trawlerInput.OwnedBoats.Trawler, "Trawler preserves previous boats and saved input")
+check(BoatData.decode(trawlerOwner).OwnedBoats.Trawler and trawlerOwner.Angler.Stats.CoinsSpent == 17500, "Trawler ownership and spending survive reload")
+local trawlerAgain, trawlerAgainResult = BoatData.purchase(trawlerOwner, "Trawler")
+check(trawlerAgainResult == "AlreadyOwned" and trawlerAgain.Cash == 0, "Repeat trawler purchase cannot charge twice")
+local trawlerPoor, trawlerPoorResult = BoatData.purchase({ Version = 1, Cash = 17499, OwnedBoats = {} }, "Trawler")
+check(trawlerPoorResult == "InsufficientFunds" and trawlerPoor.Cash == 17499 and not trawlerPoor.OwnedBoats.Trawler, "Insufficient trawler funds preserve wallet")
 check(Cargo.capacity(Catalog.FishingBoat.Hold) - Cargo.capacity(Catalog.RacingSpeedboat.Hold) == 15, "Racing hold sacrifices exactly fifteen tiles")
 local racingKit = {}
 for _, item in Catalog.RacingSpeedboat.StarterParts do

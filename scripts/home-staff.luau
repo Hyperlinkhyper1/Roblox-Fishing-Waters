@@ -25,10 +25,20 @@ end
 function vector.__add(a, b)
 	return Vector3.new(a.X + b.X, a.Y + b.Y, a.Z + b.Z)
 end
+function vector.__mul(a, b)
+	return Vector3.new(a.X * b.X, a.Y * b.Y, a.Z * b.Z)
+end
+Vector3.zero = Vector3.new(0, 0, 0)
 local cframe = {}
 local CFrame = {}
 function CFrame.new(x, y, z)
+	if type(x) == "table" then
+		x, y, z = x.X, x.Y, x.Z
+	end
 	return setmetatable({ Position = Vector3.new(x or 0, y or 0, z or 0), Kind = "CFrame" }, cframe)
+end
+function CFrame.lookAt(at)
+	return CFrame.new(at)
 end
 function cframe.__mul(a, b)
 	return CFrame.new(a.Position.X + b.Position.X, a.Position.Y + b.Position.Y, a.Position.Z + b.Position.Z)
@@ -102,16 +112,16 @@ local BoatService = {
 		return true
 	end,
 }
-local SERVE_DISTANCE, PORTER_DOCK_DISTANCE, CARRY_LENGTH = 14, 32, 1.8
+local SERVE_DISTANCE, PORTER_DOCK_DISTANCE, PORTER_TELEPORT_SECONDS, CARRY_LENGTH = 14, 32, 30, 1.8
 local ShopDesk = {
 	frame = function()
-		return CFrame.new()
+		return CFrame.new(0, 8.9, 22)
 	end,
 }
 local FishFreezer = {
 	DEPTH = 3.6,
 	frame = function()
-		return CFrame.new()
+		return CFrame.new(-14.8, 6.06, 45.8)
 	end,
 }
 local StorageRack = { DEPTH = 2 }
@@ -120,8 +130,8 @@ local NpcNavigation = {
 		return 2
 	end,
 }
-local function fixtureFrames()
-	return { CFrame.new(10, 0, -8) }
+local function fixtureFrames(shop)
+	return { shop.frame * CFrame.new(10, 0.16, -8) }
 end
 local manualNear = false
 local function near()
@@ -154,20 +164,48 @@ local function carry(worker)
 end
 local walkCount, onWalk, failWalkAt = 0, nil, nil
 local walkedPositions, groundChecks, straightChecks = {}, {}, {}
-local function walk(worker, position, _, stayOnGround, straight)
+-- Walks finish instantly; time passes only through task.wait or a test's onWalk.
+local clock = 0
+local os = {
+	clock = function()
+		return clock
+	end,
+}
+local function walk(worker, position, allowed, stayOnGround, straight)
 	walkCount += 1
 	table.insert(walkedPositions, position)
 	groundChecks[walkCount] = stayOnGround
 	straightChecks[walkCount] = straight
-	worker.root.Position = position + Vector3.new(0, worker.humanoid.HipHeight + worker.root.Size.Y / 2, 0)
+	local blocked = failWalkAt == "return" and walkCount >= 5
+	if not blocked then
+		worker.root.Position = position + Vector3.new(0, worker.humanoid.HipHeight + worker.root.Size.Y / 2, 0)
+	end
 	if onWalk then
 		onWalk()
 	end
-	return worker.active and walkCount ~= failWalkAt
+	return worker.active
+		and (allowed == nil or allowed())
+		and walkCount ~= failWalkAt
+		and not blocked
 end
 local task = {
 	spawn = function(callback)
 		callback()
+	end,
+	wait = function(seconds)
+		clock += seconds or 0
+	end,
+}
+-- Root positions the porter was set down at, in order.
+local teleports = {}
+local teleportingRoot = {
+	__newindex = function(root, key, value)
+		if key == "CFrame" then
+			table.insert(teleports, value.Position)
+			root.Position = value.Position
+		else
+			rawset(root, key, value)
+		end
 	end,
 }
 local function warn() end
@@ -194,8 +232,8 @@ local function reset()
 	profile.Angler.Holds.Rowboat = { { PartId = "Oar", X = 1, Y = 1, R = 0 }, { Fish = record, X = 2, Y = 1, R = 0 } }
 	worker = {
 		active = true,
-		humanoid = { Health = 100, HipHeight = 2 },
-		root = { Position = Vector3.new(0, 3, 0), Size = Vector3.new(2, 2, 1) },
+		humanoid = { Health = 100, HipHeight = 2, MoveTo = function() end },
+		root = setmetatable({ Position = Vector3.new(0, 8.9, 22), Size = Vector3.new(2, 2, 1) }, teleportingRoot),
 		model = {
 			Parent = true,
 			Destroy = function(self)
@@ -203,11 +241,21 @@ local function reset()
 			end,
 		},
 	}
-	shop = { base = base, frame = CFrame.new(), staff = { Seller = worker, Porter = worker } }
+	shop = { base = base, frame = CFrame.new(0, 5.9, 43), staff = { Seller = worker, Porter = worker } }
 	customer = { shop = shop, active = true, root = { Position = Vector3.new(0, 0, 0) }, record = record }
 	failSave, beforeTransform, onWalk, manualNear, walkCount = false, nil, nil, false, 0
 	walkedPositions, groundChecks, straightChecks, failWalkAt = {}, {}, {}, nil
 	visualCount, destroyedVisuals, destroyedGrips = 0, 0, 0
+	teleports = {}
+end
+-- The pickup and freezer stops as root positions of a porter set down there.
+local function setDownAtPickup(index)
+	local spot = teleports[index or 1]
+	return spot ~= nil and spot.X == 0 and spot.Z == -38 and spot.Y >= 3.3 + 3
+end
+local function setDownAtFreezer(index)
+	local spot = teleports[index or 1]
+	return spot ~= nil and spot.X == -14.8 and spot.Z == 50 and spot.Y >= 6.06
 end
 reset()
 sell(owner, customer)
@@ -258,22 +306,27 @@ check(dockedBoat(shop, owner) == nil, "Another player's boat cannot unload")
 reset()
 runPorter(shop, worker, owner)
 check(#profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1, "Porter walks a full route and delivers")
-check(walkCount == 8 and worker.fish == nil and not worker.busy, "Trip cleans its visual copy and lock")
+check(walkCount == 14 and worker.fish == nil and not worker.busy, "Trip cleans its visual copy and lock")
+check(#teleports == 0, "A walkable route never teleports the porter")
 for index = 1, walkCount do
 	check(groundChecks[index] == true, "Every unloading leg requires supported ground")
 end
 check(
-	walkedPositions[1].X == 17 and walkedPositions[1].Z == 11 and walkedPositions[1].Y == 5.9,
-	"Collection starts toward the dock without a front-door detour"
+	walkedPositions[1].X == -17 and walkedPositions[1].Z == -2 and walkedPositions[1].Y == 3.3,
+	"Collection starts down the dock without a front-door detour"
 )
 check(
-	walkedPositions[7].X == 17 and walkedPositions[7].Z == 11 and walkedPositions[8].Z == FishFreezer.DEPTH / 2 + 2.4,
-	"Return goes directly from the dock landing to the freezer"
+	walkedPositions[9].X == -17 and walkedPositions[9].Z == 13 and walkedPositions[14].X == -14.8
+		and walkedPositions[14].Z == 50,
+	"Return goes from the dock landing through the house to the freezer"
 )
-for index = 2, 7 do
+for index = 2, 11 do
 	check(straightChecks[index] == true, "Dock legs follow centerlines without navmesh detours")
 end
-check(not straightChecks[1] and not straightChecks[8], "Quay and freezer routes retain normal pathfinding")
+check(
+	not straightChecks[1] and not straightChecks[12] and not straightChecks[14],
+	"Quay, room and freezer routes retain normal pathfinding"
+)
 reset()
 worker.root.Position = Vector3.new(17, 7, 4)
 runPorter(shop, worker, owner)
@@ -285,22 +338,29 @@ for _, position in walkedPositions do
 end
 check(#profile.Angler.Freezer == 2, "Porter starting outside still delivers cargo")
 check(
-	walkedPositions[1].Z == 4 and walkedPositions[2].Z == -38,
+	walkedPositions[1].Z == -2 and walkedPositions[2].Z == -24 and walkedPositions[4].Z == -38,
 	"Porter already on the ramp continues toward the pickup instead of returning to the quay"
 )
 reset()
 worker.root.Position = Vector3.new(6, 6.3, -38)
 runPorter(shop, worker, owner)
 check(
-	walkedPositions[1].X == 6 and walkedPositions[2].X == 0 and walkedPositions[2].Z == -38,
+	walkedPositions[1].X == 0 and walkedPositions[1].Z == -38 and #profile.Angler.Freezer == 2,
 	"Pickup retry on the crosswalk goes straight to the fish without a quay detour"
 )
 check(#profile.Angler.Freezer == 2, "Crosswalk retry completes the delivery")
 reset()
+worker.root.Position = Vector3.new(6, 6.3, -36.2)
+runPorter(shop, worker, owner)
+check(
+	walkedPositions[1].X == 0 and walkedPositions[1].Z == -38 and #profile.Angler.Freezer == 2,
+	"Porter on the crosswalk's outer strip recenters before heading to pickup"
+)
+reset()
 worker.root.Position = Vector3.new(-17, 6.3, -24)
 runPorter(shop, worker, owner)
 check(
-	walkedPositions[2].X == -17 and walkedPositions[2].Z == -38 and walkedPositions[3].X == 0,
+	walkedPositions[1].X == -17 and walkedPositions[1].Z == -38 and walkedPositions[2].X == 0,
 	"Porter already on the left pier approaches the pickup from that side without overshooting to the right pier"
 )
 check(#profile.Angler.Freezer == 2, "Left-pier pickup completes the delivery")
@@ -310,19 +370,105 @@ for _, side in { -1, 1 } do
 	runPorter(shop, worker, owner)
 	check(#profile.Angler.Freezer == 2, "Moored boat can be unloaded from either pier")
 	check(
-		walkedPositions[1].X == side * 17 and walkedPositions[7].X == side * 17,
+		walkedPositions[1].X == side * 17 and walkedPositions[5].X == side * 17,
 		"Company porter uses the landing on the boat's dock side"
 	)
-	check(walkedPositions[4] == moorPier, "Company pickup stays at pier center despite legacy edge attributes")
+	check(walkedPositions[2] == moorPier, "Company pickup stays at pier center despite legacy edge attributes")
 end
 reset()
 failWalkAt = 3
 runPorter(shop, worker, owner)
 check(
-	#profile.Angler.Freezer == 1 and #profile.Angler.Holds.Rowboat == 2 and worker.fish == nil and not worker.busy,
-	"Unsafe pickup route keeps cargo aboard and releases the porter for a later retry"
+	#profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1 and walkCount == 14 and #teleports == 0,
+	"A failed pickup leg retries from where the porter stands and still delivers"
+)
+check(
+	walkedPositions[4].X == 0 and walkedPositions[4].Z == -38 and walkedPositions[5].X == -17,
+	"Pickup retry from the pier heads straight for the fish instead of the quay"
 )
 check(worker.active and shop.staff.Porter == worker, "Blocked route on the deck keeps the existing porter")
+reset()
+onWalk = function()
+	if walkCount == 2 then
+		clock += PORTER_TELEPORT_SECONDS
+	end
+end
+runPorter(shop, worker, owner)
+check(
+	setDownAtPickup() and #teleports == 1 and walkCount == 12,
+	"A porter that cannot reach the boat within the time limit is set down at the pickup"
+)
+check(
+	walkedPositions[3].X == -17 and walkedPositions[3].Z == -38,
+	"After teleporting to the boat the porter walks the normal route back"
+)
+check(
+	#profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1 and not worker.busy,
+	"Teleporting to the boat still completes the delivery"
+)
+reset()
+onWalk = function()
+	if walkCount == 6 then
+		clock += PORTER_TELEPORT_SECONDS
+	end
+end
+runPorter(shop, worker, owner)
+check(
+	setDownAtFreezer() and #teleports == 1 and walkCount == 6,
+	"A porter that cannot reach the freezer within the time limit is set down there"
+)
+check(
+	#profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1 and destroyedVisuals == 1,
+	"Teleporting to the freezer delivers the carried load exactly once"
+)
+reset()
+-- Four pickup walks and ten delivery walks: each leg stays under the limit
+-- while the whole trip does not.
+local tripStart = clock
+onWalk = function()
+	clock += 2.5
+end
+runPorter(shop, worker, owner)
+check(
+	clock - tripStart > PORTER_TELEPORT_SECONDS and #teleports == 0 and #profile.Angler.Freezer == 2,
+	"Each leg gets its own time limit"
+)
+reset()
+failWalkAt = 5
+runPorter(shop, worker, owner)
+check(
+	#profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1 and walkCount == 14,
+	"A transient return failure retries the same leg and completes delivery"
+)
+check(
+	walkedPositions[4].Z == -38 and walkedPositions[6].Z == -24 and visualCount == 1 and destroyedVisuals == 1,
+	"Return retry retains one carried visual instead of restarting the pickup"
+)
+reset()
+failWalkAt = "return"
+local blockedSince = clock
+runPorter(shop, worker, owner)
+check(
+	setDownAtFreezer() and clock - blockedSince >= PORTER_TELEPORT_SECONDS and walkCount > 7,
+	"Permanently blocked return keeps retrying until the time limit, then teleports to the freezer"
+)
+check(
+	not worker.busy and #profile.Angler.Holds.Rowboat == 1 and #profile.Angler.Freezer == 2 and destroyedVisuals == 1,
+	"Teleporting past a blocked return delivers the cargo once"
+)
+reset()
+failWalkAt = 5
+onWalk = function()
+	if walkCount == 5 then
+		activeBoat = nil
+	end
+end
+runPorter(shop, worker, owner)
+check(
+	walkCount == 5 and not worker.busy and #profile.Angler.Holds.Rowboat == 2 and destroyedVisuals == 1,
+	"Boat departure during a failed delivery cancels retries and preserves cargo"
+)
+check(#teleports == 0, "A cancelled delivery never teleports the porter")
 reset()
 failWalkAt = 1
 onWalk = function()
@@ -330,12 +476,16 @@ onWalk = function()
 end
 runPorter(shop, worker, owner)
 check(
-	not worker.active and worker.model.Parent == nil and shop.staff.Porter == nil,
-	"Porter stranded below the deck is retired so the staff loop can replace him"
+	setDownAtPickup() and #teleports == 1 and walkCount == 11,
+	"Porter stranded below the deck is set down at the pickup without waiting out the time limit"
 )
 check(
-	#profile.Angler.Freezer == 1 and #profile.Angler.Holds.Rowboat == 2 and not worker.busy,
-	"Stranded porter recovery leaves all cargo in its hold"
+	worker.active and shop.staff.Porter == worker and not worker.busy,
+	"A stranded porter keeps working instead of being replaced"
+)
+check(
+	#profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1,
+	"Stranded porter still completes the delivery"
 )
 reset()
 failWalkAt = 5
@@ -346,8 +496,12 @@ onWalk = function()
 end
 runPorter(shop, worker, owner)
 check(
-	not worker.active and worker.fish == nil and #profile.Angler.Freezer == 1 and #profile.Angler.Holds.Rowboat == 2,
-	"Falling on the return trip removes the carried visual without losing or duplicating cargo"
+	setDownAtFreezer() and #teleports == 1 and walkCount == 5 and worker.active,
+	"Falling on the return trip sets the porter down at the freezer"
+)
+check(
+	worker.fish == nil and destroyedVisuals == 1 and #profile.Angler.Freezer == 2 and #profile.Angler.Holds.Rowboat == 1,
+	"Falling on the return trip delivers the carried load without losing or duplicating cargo"
 )
 reset()
 failWalkAt = 1
@@ -357,8 +511,8 @@ onWalk = function()
 end
 runPorter(shop, worker, owner)
 check(
-	worker.active and shop.staff.Porter == worker,
-	"Owner changes cancel unloading without retiring another owner's staff"
+	worker.active and shop.staff.Porter == worker and #teleports == 0,
+	"Owner changes cancel unloading without teleporting or retiring another owner's staff"
 )
 reset()
 onWalk = function()
@@ -416,7 +570,7 @@ end
 profile.Angler.Furniture = { { ItemId = "StorageRack", X = 10, Z = -8, R = 0 } }
 runPorter(shop, worker, owner)
 check(
-	#profile.Angler.Storage == 1 and #profile.Angler.Holds.Rowboat == 1 and walkCount == 10,
+	#profile.Angler.Storage == 1 and #profile.Angler.Holds.Rowboat == 1 and walkCount == 14,
 	"Full freezer sends cargo to a storage rack"
 )
 reset()
@@ -426,8 +580,19 @@ profile.Angler.Holds.Rowboat = { { PartId = "Oar", X = 1, Y = 1, R = 0 } }
 profile.Angler.Furniture = { { ItemId = "StorageRack", X = 10, Z = -8, R = 0 } }
 runPorter(shop, worker, owner)
 check(
-	#profile.Angler.Freezer == 1 and #profile.Angler.Storage == 0 and walkCount == 6,
+	#profile.Angler.Freezer == 1 and #profile.Angler.Storage == 0 and walkCount == 11,
 	"Porter restocks the freezer from a rack"
+)
+reset()
+profile.Angler.Freezer = {}
+profile.Angler.Storage = { record }
+profile.Angler.Holds.Rowboat = { { PartId = "Oar", X = 1, Y = 1, R = 0 } }
+profile.Angler.Furniture = { { ItemId = "StorageRack", X = 10, Z = -8, R = 0 } }
+worker.root.Position = Vector3.new(10, 9.06, 38.4)
+runPorter(shop, worker, owner)
+check(
+	#profile.Angler.Freezer == 1 and #profile.Angler.Storage == 0 and walkCount == 6 and #teleports == 0,
+	"Restocking from the rack walks straight into the house instead of back to the quay"
 )
 reset()
 profile.Angler.Freezer = {}
@@ -441,6 +606,25 @@ onWalk = function()
 end
 runPorter(shop, worker, owner)
 check(#profile.Angler.Freezer == 0 and worker.fish == nil, "Player taking stored fish mid-restock cannot duplicate it")
+reset()
+profile.Angler.Freezer = {}
+profile.Angler.Storage = { record }
+profile.Angler.Holds.Rowboat = { { PartId = "Oar", X = 1, Y = 1, R = 0 } }
+profile.Angler.Furniture = { { ItemId = "StorageRack", X = 10, Z = -8, R = 0 } }
+onWalk = function()
+	if walkCount == 6 then
+		clock += PORTER_TELEPORT_SECONDS
+	end
+end
+runPorter(shop, worker, owner)
+check(
+	setDownAtFreezer() and #teleports == 1 and walkCount == 6,
+	"A restocking porter that cannot reach the freezer in time is set down there"
+)
+check(
+	#profile.Angler.Freezer == 1 and #profile.Angler.Storage == 0,
+	"Teleporting while restocking still moves the fish into the freezer"
+)
 
 local function batchSetup()
 	reset()
@@ -458,7 +642,7 @@ local beforeSaves = saves
 runPorter(shop, worker, owner)
 check(worker.humanoid.WalkSpeed == 32, "Saved speed upgrade applies to the working porter")
 check(
-	#profile.Angler.Freezer == 4 and #profile.Angler.Holds.Rowboat == 4 and walkCount == 8,
+	#profile.Angler.Freezer == 4 and #profile.Angler.Holds.Rowboat == 4 and walkCount == 14,
 	"One trip carries multiple fish and respects freezer room"
 )
 check(saves == beforeSaves + 1, "A whole porter load is committed in one transaction")
@@ -492,12 +676,12 @@ profile.Angler.Furniture = {
 	{ ItemId = "StorageRack", X = 10, Z = -8, R = 0 },
 	{ ItemId = "StorageRack", X = 10, Z = -4, R = 0 },
 }
-for index = 1, 7 do
+for index = 1, 11 do
 	profile.Angler.Storage[index] = record
 end
 runPorter(shop, worker, owner)
 check(
-	#profile.Angler.Storage == 8 and #profile.Angler.Holds.Rowboat == 7,
+	#profile.Angler.Storage == 12 and #profile.Angler.Holds.Rowboat == 7,
 	"A load stops at the physical rack's remaining space"
 )
 batchSetup()
@@ -506,7 +690,7 @@ profile.Angler.Storage = { record, record, record, record, record }
 profile.Angler.Furniture = { { ItemId = "StorageRack", X = 10, Z = -8, R = 0 } }
 runPorter(shop, worker, owner)
 check(
-	#profile.Angler.Freezer == 4 and #profile.Angler.Storage == 1 and walkCount == 6,
+	#profile.Angler.Freezer == 4 and #profile.Angler.Storage == 1 and walkCount == 11,
 	"Carry upgrades also batch restocking and respect freezer capacity"
 )
 batchSetup()

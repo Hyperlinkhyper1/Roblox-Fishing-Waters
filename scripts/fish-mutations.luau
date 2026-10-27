@@ -39,6 +39,9 @@ for key, multiplier in
 		VoidTouched = 3,
 		["Corrupted+VoidTouched"] = 4.5,
 		["Corrupted+VoidTouched+Rainbow+Neon"] = 10.5,
+		Windy = 1.5,
+		["Windy+Neon"] = 2.5,
+		["Corrupted+Windy+Rainbow"] = 5,
 		["Neon+Albino"] = 6,
 		["Rainbow+Neon"] = 7,
 		["Astral+Rainbow"] = 21,
@@ -79,7 +82,7 @@ for _, key in eventKeys do
 	check(entry.Name == FishMutations.label(key), key .. " has a readable catalog label")
 	check(
 		FishMutations.chance(key, false) == 0 and FishMutations.chance(key, true) == 0,
-		"Void Touched never rolls naturally"
+		"Event traits never roll naturally"
 	)
 end
 for _, night in { false, true } do
@@ -87,7 +90,7 @@ for _, night in { false, true } do
 	for _, key in keys do
 		total += FishMutations.chance(key, night)
 	end
-	check(math.abs(total - FishMutations.CHANCE) < 1e-12, "Mutation chances add up to 0.5%")
+	check(math.abs(total - FishMutations.CHANCE) < 1e-12, "Mutation chances add up to 0.75%")
 end
 
 -- Rolled odds.
@@ -123,9 +126,9 @@ for _, night in { false, true } do
 		end
 	end
 	local rate = mutated / ROLLS
-	check(math.abs(rate - 0.005) < 0.0004, string.format("About 0.5%% mutate (%.4f%%)", rate * 100))
+	check(math.abs(rate - 0.0075) < 0.0004, string.format("About 0.75%% mutate (%.4f%%)", rate * 100))
 	if night then
-		check(math.abs(astral / ROLLS - 1 / 1500) < 0.00012, "Astral is about 1 in 1500 at night")
+		check(math.abs(astral / ROLLS - 1 / 1000) < 0.00012, "Astral is about 1 in 1000 at night")
 	else
 		check(astral == 0, "Astral never surfaces by day")
 	end
@@ -184,6 +187,31 @@ for _, nearHole in { false, true } do
 		"Admin weather never mutates junk"
 	)
 end
+-- Under a supercell a third of catches turn Windy, keeping their normal odds.
+local windyCount, windyColours = 0, 0
+local WINDY_ROLLS = 300000
+for _ = 1, WINDY_ROLLS do
+	local traits = FishMutations.roll(trout, false, rng, nil, { windy = true })
+	local set = FishMutations.parts(traits.Mutation)
+	check(Catalog.Mutations[traits.Mutation] ~= nil, "Every windy combination can be saved")
+	check(not set.VoidTouched and (traits.Corruptions ~= nil) == (set.Corrupted == true), "Windy adds no event corruption")
+	if set.Windy then
+		windyCount += 1
+		if set.Neon or set.Albino or set.Rainbow then
+			windyColours += 1
+		end
+	end
+end
+check(math.abs(windyCount / WINDY_ROLLS - 1 / 3) < 0.005, string.format("About a third turn windy (%.3f)", windyCount / WINDY_ROLLS))
+check(windyColours > 0, "Windy fish can still roll colour mutations")
+for _ = 1, 2000 do
+	check(
+		FishMutations.roll(Catalog.Fish[junkId], false, rng, nil, { windy = true }).Mutation == "Normal",
+		"Supercells never mutate junk"
+	)
+end
+check(FishMutations.label("Corrupted+Windy+Neon", "Blue") == "Corrupted Windy Blue Neon", "Windy has a readable label")
+check(#eventKeys == 32, "Both events add their trait to every natural key")
 check(
 	FishMutations.label("Corrupted+VoidTouched+Neon", "Purple") == "Corrupted Void Touched Purple Neon",
 	"Void Touched has a readable combined label"

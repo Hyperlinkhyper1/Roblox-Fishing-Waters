@@ -291,7 +291,7 @@ local function startShop(RodSkins, bobber: boolean)
 
 	local footer = frame(window, "Footer", UDim2.new(0, 14, 1, -84), UDim2.new(1, -28, 0, 70), Color3.new())
 	footer.BackgroundTransparency = 1
-	local status = label(footer, "", UDim2.fromOffset(0, 0), UDim2.new(1, -300, 0, 36), 13, muted)
+	local status = label(footer, "", UDim2.fromOffset(0, 0), UDim2.new(1, -414, 0, 36), 13, muted)
 	status.Font = Enum.Font.GothamMedium
 	status.TextYAlignment = Enum.TextYAlignment.Top
 	local plain = button(
@@ -301,8 +301,35 @@ local function startShop(RodSkins, bobber: boolean)
 		UDim2.fromOffset(0, 40),
 		UDim2.fromOffset(200, 28)
 	)
-	local open = button(footer, openAction, "", UDim2.new(1, -284, 0, 4), UDim2.fromOffset(284, 60))
-	open.TextSize = 18
+	local opens = {}
+	for index, count in { 1, 3, 10 } do
+		local open = button(
+			footer,
+			if count == 1 then openAction else openAction .. count,
+			"",
+			UDim2.new(1, -402 + (index - 1) * 136, 0, 4),
+			UDim2.fromOffset(130, 60)
+		)
+		open.TextSize = 15
+		opens[count] = open
+	end
+
+	local results =
+		frame(overlay, "CrateResults", UDim2.fromScale(0.5, 0.5), UDim2.fromOffset(480, 410), Theme.Colors.Inset)
+	results.AnchorPoint = Vector2.new(0.5, 0.5)
+	results.Visible = false
+	results.ZIndex = 10
+	Theme.panel(results, true, 8)
+	local resultsScale = Instance.new("UIScale")
+	resultsScale.Parent = results
+	local resultsTitle = label(results, "YOUR REWARDS", UDim2.fromOffset(20, 12), UDim2.new(1, -40, 0, 30), 22, cream)
+	resultsTitle.ZIndex = 11
+	local resultsText = label(results, "", UDim2.fromOffset(20, 48), UDim2.new(1, -40, 0, 302), 16, cream)
+	resultsText.RichText = true
+	resultsText.TextYAlignment = Enum.TextYAlignment.Top
+	resultsText.ZIndex = 11
+	local resultsClose = button(results, "CloseResults", "DONE", UDim2.new(0.5, -90, 1, -48), UDim2.fromOffset(180, 36))
+	resultsClose.ZIndex = 11
 
 	-- A small reward caption stays outside the closed menu during the shop animation.
 	local reveal =
@@ -391,17 +418,20 @@ local function startShop(RodSkins, bobber: boolean)
 		local plainEnabled = idle and type(equipped) == "string" and equipped ~= ""
 		Theme.button(plain, if plainEnabled then "Selected" else "Disabled")
 		plain.Active, plain.Selectable, plain.AutoButtonColor = plainEnabled, plainEnabled, plainEnabled
-		local afford = money >= crate.Price
-		local openEnabled = idle and ownsRod and afford
-		open.Text = if pending == openAction or revealing
-			then "Opening…"
-			else string.format(
-				'OPEN CRATE\n<font color="%s">$%s</font>',
-				if afford then "#a6f0b2" else "#ff9a9d",
-				commas(crate.Price)
-			)
-		Theme.button(open, if openEnabled then "Selected" else "Disabled")
-		open.Active, open.Selectable, open.AutoButtonColor = openEnabled, openEnabled, openEnabled
+		for count, open in opens do
+			local afford = money >= crate.Price * count
+			local openEnabled = idle and ownsRod and afford
+			open.Text = if pending == openAction or revealing
+				then "Opening…"
+				else string.format(
+					'OPEN %d×\n<font color="%s">$%s</font>',
+					count,
+					if afford then "#a6f0b2" else "#ff9a9d",
+					commas(crate.Price * count)
+				)
+			Theme.button(open, if openEnabled then "Selected" else "Disabled")
+			open.Active, open.Selectable, open.AutoButtonColor = openEnabled, openEnabled, openEnabled
+		end
 		if not ready then
 			setStatus("Loading your wallet…", muted)
 		elseif not ownsRod then
@@ -450,6 +480,8 @@ local function startShop(RodSkins, bobber: boolean)
 	local function closeWindow()
 		if overlay.Visible then
 			overlay.Visible = false
+			results.Visible = false
+			window.Visible = true
 			player:SetAttribute("RodCratesOpen", false)
 		end
 	end
@@ -467,7 +499,7 @@ local function startShop(RodSkins, bobber: boolean)
 			player:SetAttribute("RodCrateOpening", true)
 		end
 		request:FireServer(action, value)
-		task.delay(8, function()
+		task.delay(if action == openAction and type(value) == "table" then 60 else 8, function()
 			if pendingId == current and pending then
 				pending = nil
 				if action == openAction then
@@ -481,7 +513,7 @@ local function startShop(RodSkins, bobber: boolean)
 	end
 
 	-- Only animate the actual skin after the server has charged and saved it.
-	local function play(skinId: string, message: string, serial: number?)
+	local function play(skinId: string, message: string, serial: number?, rewards: any?)
 		if stopReveal then
 			stopReveal()
 		end
@@ -514,6 +546,26 @@ local function startShop(RodSkins, bobber: boolean)
 				view.glow.BackgroundTransparency = 0.2
 				TweenService:Create(view.glow, TweenInfo.new(1), { BackgroundTransparency = 0.85 }):Play()
 			end
+			if rewards then
+				local lines = {}
+				for _, reward in rewards do
+					local rarity = RodSkins.rarity(reward.SkinId, crateId)
+					table.insert(
+						lines,
+						string.format(
+							'<font color="%s">%s</font>%s',
+							hex(rarityColor(rarity)),
+							RodSkins.Skins[reward.SkinId].Name,
+							if reward.Serial then string.format(" · #%06d", reward.Serial) else ""
+						)
+					)
+				end
+				resultsText.Text = table.concat(lines, "\n")
+				overlay.Visible = true
+				window.Visible = false
+				results.Visible = true
+				player:SetAttribute("RodCratesOpen", true)
+			end
 		end
 		stopReveal = CrateReveal.play(
 			standPart,
@@ -545,11 +597,18 @@ local function startShop(RodSkins, bobber: boolean)
 		end
 	end
 
-	open.Activated:Connect(function()
-		if open.Active then
-			setStatus("Finn is prying the lid off…", muted)
-			send(openAction, crateId)
-		end
+	for count, open in opens do
+		open.Activated:Connect(function()
+			if open.Active then
+				setStatus("Finn is prying the lid off…", muted)
+				send(openAction, if count == 1 then crateId else { CrateId = crateId, Count = count })
+			end
+		end)
+	end
+	resultsClose.Activated:Connect(function()
+		results.Visible = false
+		window.Visible = true
+		closeWindow()
 	end)
 	plain.Activated:Connect(function()
 		if plain.Active then
@@ -593,7 +652,9 @@ local function startShop(RodSkins, bobber: boolean)
 			openWindow()
 		elseif kind == resultEvent and type(b) == "string" then
 			pending = nil
-			if a == true and RodSkins.valid(c) then
+			if a == true and type(c) == "table" and #c > 0 and RodSkins.valid(c[1].SkinId) then
+				play(c[1].SkinId, b, c[1].Serial, c)
+			elseif a == true and RodSkins.valid(c) then
 				play(c, b, if type(d) == "number" then d else nil)
 			else
 				player:SetAttribute("RodCrateOpening", false)
@@ -645,6 +706,7 @@ local function startShop(RodSkins, bobber: boolean)
 		elapsed = 0
 		local camera = workspace.CurrentCamera
 		if camera then
+			resultsScale.Scale = math.min(1, (camera.ViewportSize.X - 24) / 480, (camera.ViewportSize.Y - 60) / 410)
 			rewardScale.Scale = math.min(1, math.max(0.3, (camera.ViewportSize.X - 24) / 520))
 			local fit =
 				math.max(0.3, math.min(1, (camera.ViewportSize.X - 24) / WIDTH, (camera.ViewportSize.Y - 60) / HEIGHT))

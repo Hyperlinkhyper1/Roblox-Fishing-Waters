@@ -64,6 +64,8 @@ function ParkedBoats.start()
 				root
 				and root.Anchored
 				and model:GetAttribute("Parked")
+				-- A hull up on the drydock lift is out of the water.
+				and not model:GetAttribute("Hoisted")
 				and typeof(rest) == "CFrame"
 				and type(parkedAt) == "number"
 			then

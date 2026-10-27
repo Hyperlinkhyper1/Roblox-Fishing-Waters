@@ -117,11 +117,46 @@ for _, id in
 		"Yellowshark",
 		"WoodenBranch",
 		"LeatherBoot",
+		"Seaweed",
+		"ShoreCrab",
+		"BlueCrab",
+		"KingCrab",
 	}
 do
 	for _, kg in { 0.01, 2, 100 } do
 		verify(fill(fish(id, kg)))
 	end
+end
+for _, id in { "ShoreCrab", "BlueCrab", "KingCrab" } do
+	local light, heavy = 0.2, 0.4
+	local heldRatio = Models.heldLength(heavy, "Normal", id) / Models.heldLength(light, "Normal", id)
+	check(
+		heldRatio > Models.heldLength(heavy, "Normal") / Models.heldLength(light, "Normal"),
+		"Crab held size responds more strongly to weight"
+	)
+	check(heldRatio > 1.8, "Doubling a crab's weight grows it substantially in hand")
+	check(
+		Models.catchLength(heavy, id) / Models.catchLength(light, id)
+			> Models.catchLength(heavy) / Models.catchLength(light),
+		"Crab freezer size responds more strongly to weight"
+	)
+	local crab = Models.create(id)
+	local display = {
+		Name = id,
+		GetAttribute = function(_, name)
+			return crab:GetAttribute(name)
+		end,
+		ScaleTo = function() end,
+	}
+	local scaled = Models.scaleCatch(display, heavy)
+	local packed = Models.catchBounds(fish(id, heavy))
+	check(
+		math.abs(scaled.X - packed.X) < 1e-6
+			and math.abs(scaled.Y - packed.Y) < 1e-6
+			and math.abs(scaled.Z - packed.Z) < 1e-6,
+		"Crab display matches its packing bounds"
+	)
+	crab:Destroy()
 end
 local corrupt = fish("Trout", 2)
 corrupt.Mutation, corrupt.Corruptions = "Corrupted", { "Eye" }

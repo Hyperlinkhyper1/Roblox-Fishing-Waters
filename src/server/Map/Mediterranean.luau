@@ -161,8 +161,7 @@ local function door(
 		frame,
 		M.Plaster
 	)
-	local leaf =
-		part(m, Vector3.new(width, height, 0.3), face * CFrame.new(0, height / 2, 0.15), color, M.WoodPlanks)
+	local leaf = part(m, Vector3.new(width, height, 0.3), face * CFrame.new(0, height / 2, 0.15), color, M.WoodPlanks)
 	if arched then
 		disc(m, face * CFrame.new(0, height + 0.5, 0.14), width + 1, 0.12, frame, M.Plaster)
 		disc(m, face * CFrame.new(0, height, 0.25), width, 0.26, color, M.WoodPlanks)
@@ -172,24 +171,65 @@ local function door(
 	return leaf
 end
 
+-- Axis-aligned bounding box of `pieces` inside `frame`: minimum and maximum corners.
+local function boundsIn(frame: CFrame, pieces: { BasePart }): (Vector3, Vector3)
+	local minimum = Vector3.new(math.huge, math.huge, math.huge)
+	local maximum = -minimum
+	for _, piece in pieces do
+		for x = -1, 1, 2 do
+			for y = -1, 1, 2 do
+				for z = -1, 1, 2 do
+					local corner = frame:PointToObjectSpace(
+						piece.CFrame:PointToWorldSpace(
+							Vector3.new(piece.Size.X * x, piece.Size.Y * y, piece.Size.Z * z) / 2
+						)
+					)
+					minimum = minimum:Min(corner)
+					maximum = maximum:Max(corner)
+				end
+			end
+		end
+	end
+	return minimum, maximum
+end
+
+-- Keep a balcony's slab and ironwork as decoration behind one bounding hitbox:
+-- a single solid body instead of a dozen thin colliders.
+local function collapseBalcony(parent: Instance, pieces: { BasePart }, frame: CFrame)
+	local minimum, maximum = boundsIn(frame, pieces)
+	local hitbox = part(parent, maximum - minimum, frame * CFrame.new((minimum + maximum) / 2), IRON, M.Slate)
+	hitbox.Name = "BalconyHitbox"
+	hitbox.Transparency = 1
+	hitbox.CastShadow = false
+	hitbox.CanCollide = true
+	hitbox.CanQuery = true
+	for _, piece in pieces do
+		piece.CanCollide, piece.CanTouch, piece.CanQuery = false, false, false
+	end
+end
+
 -- Balcony whose floor is level with `face`, with a wrought-iron railing.
 local function balcony(m: Model, face: CFrame, width: number, depth: number, slab: Color3)
-	part(m, Vector3.new(width, 0.5, depth), face * CFrame.new(0, -0.25, depth / 2), slab, M.Plaster)
+	local pieces = {}
+	local function detail(size: Vector3, at: CFrame, color: Color3, material: Enum.Material)
+		table.insert(pieces, part(m, size, at, color, material))
+	end
+	detail(Vector3.new(width, 0.5, depth), face * CFrame.new(0, -0.25, depth / 2), slab, M.Plaster)
 	local posts = math.max(3, math.floor(width / 1.1))
 	for i = 0, posts do
 		local x = -width / 2 + 0.2 + (width - 0.4) * i / posts
-		part(m, Vector3.new(0.14, 2.6, 0.14), face * CFrame.new(x, 1.3, depth - 0.2), IRON, M.Metal)
+		detail(Vector3.new(0.14, 2.6, 0.14), face * CFrame.new(x, 1.3, depth - 0.2), IRON, M.Metal)
 	end
-	part(m, Vector3.new(width - 0.2, 0.2, 0.22), face * CFrame.new(0, 2.6, depth - 0.2), IRON, M.Metal)
+	detail(Vector3.new(width - 0.2, 0.2, 0.22), face * CFrame.new(0, 2.6, depth - 0.2), IRON, M.Metal)
 	for side = -1, 1, 2 do
-		part(
-			m,
+		detail(
 			Vector3.new(0.2, 0.2, depth - 0.2),
 			face * CFrame.new(side * (width / 2 - 0.2), 2.6, depth / 2),
 			IRON,
 			M.Metal
 		)
 	end
+	collapseBalcony(m, pieces, face)
 end
 
 local function flowerBox(m: Model, face: CFrame, width: number, rng: Random)
@@ -574,6 +614,7 @@ function Med.cubeHouse(parent: Instance, ground: Vector3, facing: number, rng: R
 	if hasStair then
 		sideStair(m, base, w, d, floor, roofY, stairSide)
 	end
+	Props.simplifyHouseCollision(m)
 	return m
 end
 
@@ -679,6 +720,7 @@ function Med.townhouse(parent: Instance, ground: Vector3, facing: number, rng: R
 	if not shop and rng:NextNumber() < 0.35 then
 		Med.bougainvillea(m, front * CFrame.new(-2.6, 0, 0), rng, 7.4)
 	end
+	Props.simplifyHouseCollision(m)
 	return m
 end
 
@@ -753,6 +795,7 @@ function Med.villa(parent: Instance, ground: Vector3, facing: number, rng: Rando
 	for side = -1, 1, 2 do
 		Med.cypress(m, base:PointToWorldSpace(Vector3.new(side * (w / 2 + 2), 0, columnZ)), rng, rng:NextNumber(18, 22))
 	end
+	Props.simplifyHouseCollision(m)
 	return m
 end
 
@@ -899,6 +942,40 @@ end
 ----------------------------------------------------------------------------------------------------
 -- Piazza and garden fittings
 
+-- Keep a pergola's trellis as decoration behind one roof box, and the vines
+-- spilling over it with no hitbox at all.
+local function simplifyPergola(m: Model)
+	if m:GetAttribute("CollisionVersion") == 1 then
+		return
+	end
+	local wood = {}
+	for _, piece in m:GetDescendants() do
+		if not piece:IsA("BasePart") then
+			continue
+		end
+		if piece.Material == M.Wood then
+			table.insert(wood, piece)
+		elseif piece.Material == M.LeafyGrass or (piece:IsA("Part") and piece.Shape == Enum.PartType.Ball) then
+			piece.CanCollide, piece.CanTouch, piece.CanQuery = false, false, false
+		end
+	end
+	if #wood == 0 then
+		return
+	end
+	local frame = wood[1].CFrame
+	local minimum, maximum = boundsIn(frame, wood)
+	local hitbox = part(m, maximum - minimum, frame * CFrame.new((minimum + maximum) / 2), WOOD, M.Slate)
+	hitbox.Name = "PergolaHitbox"
+	hitbox.Transparency = 1
+	hitbox.CastShadow = false
+	hitbox.CanCollide = true
+	hitbox.CanQuery = true
+	for _, piece in wood do
+		piece.CanCollide, piece.CanTouch, piece.CanQuery = false, false, false
+	end
+	m:SetAttribute("CollisionVersion", 1)
+end
+
 -- Wooden pergola on whitewashed posts, overgrown with vines and the odd bougainvillea.
 function Med.pergola(
 	parent: Instance,
@@ -935,6 +1012,7 @@ function Med.pergola(
 			ball(m, p.Position - Vector3.new(0, 1.1, 0), 0.8, rgb(90, 40, 90), M.SmoothPlastic)
 		end
 	end
+	simplifyPergola(m)
 	return m
 end
 
@@ -1111,6 +1189,105 @@ function Med.ensureStoneWalls(root: Instance)
 		if wall:IsA("Model") and wall.Name == "StoneWall" then
 			simplifyStoneWall(wall)
 		end
+	end
+end
+
+-- Upgrade pergolas already baked into a saved map: their trellis and vines get
+-- the same one roof box and hitbox-free greenery fresh builds get.
+function Med.ensurePergolas(root: Instance)
+	for _, model in root:GetDescendants() do
+		if model:IsA("Model") and model.Name == "Pergola" then
+			simplifyPergola(model)
+		end
+	end
+end
+
+-- Balconies baked before the single-hitbox policy carry every baluster and rail
+-- as its own collider. Balcony posts are the only 0.14 x 2.6 x 0.14 ironwork in
+-- the builders, so each cluster of them marks a balcony to collapse.
+function Med.ensureBalconies(root: Instance)
+	local collidable = {}
+	for _, piece in root:GetDescendants() do
+		if piece:IsA("BasePart") and piece.CanCollide then
+			table.insert(collidable, piece)
+		end
+	end
+	local posts = {}
+	for _, piece in collidable do
+		local size = piece.Size
+		if
+			piece.Material == M.Metal
+			and math.abs(size.X - 0.14) < 0.01
+			and math.abs(size.Y - 2.6) < 0.01
+			and math.abs(size.Z - 0.14) < 0.01
+		then
+			table.insert(posts, piece)
+		end
+	end
+	local taken = {}
+	for _, seed in posts do
+		if taken[seed] then
+			continue
+		end
+		-- Balusters stand about a stud apart within one balcony; grow the
+		-- cluster until no further post joins it.
+		local group = { seed }
+		taken[seed] = true
+		local growing = true
+		while growing do
+			growing = false
+			for _, post in posts do
+				if taken[post] then
+					continue
+				end
+				for _, member in group do
+					if (post.Position - member.Position).Magnitude <= 4 then
+						taken[post] = true
+						table.insert(group, post)
+						growing = true
+						break
+					end
+				end
+			end
+		end
+		if #group < 3 then
+			continue
+		end
+		local frame = group[1].CFrame
+		local minimum, maximum = boundsIn(frame, group)
+		local pieces = table.clone(group)
+		local inGroup = {}
+		for _, piece in group do
+			inGroup[piece] = true
+		end
+		-- The balcony's rails hug the posts at their top; its slab tops out at
+		-- their feet. The door step below is deliberately left solid.
+		for _, piece in collidable do
+			if inGroup[piece] then
+				continue
+			end
+			local center = frame:PointToObjectSpace(piece.Position)
+			if
+				center.X < minimum.X - 2.5
+				or center.X > maximum.X + 2.5
+				or center.Z < minimum.Z - 2.5
+				or center.Z > maximum.Z + 2.5
+			then
+				continue
+			end
+			local top = center.Y + piece.Size.Y / 2
+			local thin = math.min(piece.Size.X, piece.Size.Y, piece.Size.Z) <= 0.25
+			local ironwork = piece.Material == M.Metal
+				and thin
+				and center.Y >= minimum.Y - 0.6
+				and center.Y <= maximum.Y + 0.6
+			local slab = math.abs(top - minimum.Y) <= 0.05
+			if ironwork or slab then
+				inGroup[piece] = true
+				table.insert(pieces, piece)
+			end
+		end
+		collapseBalcony(group[1].Parent, pieces, frame)
 	end
 end
 

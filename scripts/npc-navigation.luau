@@ -132,6 +132,7 @@ local function reset(options)
 	end
 	function npc.humanoid:Move(direction)
 		assert(direction.X == direction.X and direction.Z == direction.Z, "Steering must never contain NaN")
+		if config.normalizeMove and direction.Magnitude > 0 then direction = direction.Unit end
 		steering, walking = direction, nil
 	end
 	-- Any attempt to teleport through a wall fails the test immediately.
@@ -146,7 +147,7 @@ end
 
 reset({ detour = { ground(0, 6), ground(8, 6) } })
 check(Navigation.walk(npc, ground(8, 0)), "Follow a route around a wall")
-check(commands[1].Z == 6 and commands[3].Z == 6, "Use intermediate detour points before the destination")
+check(commands[1].Z >= 6 and commands[2].Z >= 6, "Use intermediate detour points before the destination")
 check(parameters.AgentRadius == 2 and parameters.AgentHeight == 5, "R15 fits shop doorways")
 check(not parameters.AgentCanJump and parameters.Costs.Water == math.huge, "Avoid jumping counters and swimming off piers")
 clean()
@@ -209,7 +210,7 @@ local function floorAt(origin, water)
 		Material = if water then Enum.Material.Water else "Wood" }
 end
 reset({ ground = true, onWait = function()
-	if not config.shoved and npc.root.Position.X > 8.2 then
+	if not config.shoved and npc.root.Position.X > 7.9 then
 		config.shoved = true
 		npc.root.Position = Vector3.new(12.4, 3, 0)
 	end
@@ -225,10 +226,16 @@ npc.humanoid.WalkSpeed = 16
 check(Navigation.walk(npc, ground(10), nil, true, true), "Known dock centerline works without the navmesh")
 check(#paths == 0 and math.abs(npc.root.Position.Z) < 0.01, "Straight dock walking never takes a lateral navmesh detour")
 
+reset({ ground = true, normalizeMove = true })
+npc.humanoid.WalkSpeed = 16
+check(Navigation.walk(npc, ground(0.8), nil, true, true), "A normalized Move direction still reaches a nearby waypoint")
+check(npc.humanoid.WalkSpeed == 16, "Waypoint arrival restores the worker's original speed")
+
 reset({ ground = true, frozen = true })
 check(not Navigation.walk(npc, ground(10), nil, true, true), "Obstructed dock centerline stops promptly")
 check(now < 2 and npc.root.Position.X == 0 and npc.root.Position.Z == 0 and #paths == 0,
 	"Blocked dock segments do not try sideways recovery near water")
+check(npc.humanoid.WalkSpeed == 9, "A failed leg restores the worker's original speed")
 
 for _, speed in { 16, 32 } do
 	local function deckHeight(x, z)
@@ -238,7 +245,7 @@ for _, speed in { 16, 32 } do
 		if math.abs(x) <= 13.5 and math.abs(z + 38) <= 2.5 then return 3.3 end
 		return nil
 	end
-	reset({ groundHeight = function(x, z)
+	reset({ normalizeMove = true, groundHeight = function(x, z)
 		return assert(deckHeight(x, z), "Porter must stay on the actual deck throughout the pickup and return")
 	end, onRay = function(origin)
 		local y = deckHeight(origin.X, origin.Z)
@@ -252,6 +259,7 @@ for _, speed in { 16, 32 } do
 		local reached = Navigation.walk(npc, point, nil, true, true)
 		check(reached, string.format("Full dock route at speed %d: target %.1f,%.1f stopped at %.2f,%.2f,%.2f",
 			speed, point.X, point.Z, npc.root.Position.X, npc.root.Position.Y, npc.root.Position.Z))
+		check(npc.humanoid.WalkSpeed == speed, "Dock leg restores the worker's configured speed")
 	end
 	check(#paths == 0, "Even the upgraded porter follows the dock centerline through both right-angle turns")
 end

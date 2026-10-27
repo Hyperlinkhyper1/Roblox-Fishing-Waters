@@ -15,6 +15,7 @@ local FishingBoat = require(script.Parent.FishingBoat)
 local Speedboat = require(script.Parent.Speedboat)
 local RacingSpeedboat = require(script.Parent.RacingSpeedboat)
 local PatrolBoat = require(script.Parent.PatrolBoat)
+local Trawler = require(script.Parent.Trawler)
 local DrydockLaunch = require(script.Parent.DrydockLaunch)
 local BoatLaunchCollision = require(script.Parent.BoatLaunchCollision)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
@@ -30,6 +31,7 @@ local builders = {
 	Speedboat = Speedboat,
 	PatrolBoat = PatrolBoat,
 	RacingSpeedboat = RacingSpeedboat,
+	Trawler = Trawler,
 }
 
 local BoatService = {}
@@ -40,6 +42,7 @@ local spawnTimes = {}
 local launching = {}
 local launchPurchased
 local boatLock: ((Player, string) -> string?)? = nil
+local outfitter: ((Player, string, Model) -> any)? = nil
 local started = false
 local COMMAND_USER_ID = 2541746813 -- hyperlinkhyper
 -- Studio tests use their own store; failed loads never overwrite saved data.
@@ -137,7 +140,14 @@ function BoatService.getProfile(player: Player)
 	return if state and state.status == "Ready" then BoatData.decode(state.profile) else nil
 end
 
-function BoatService.updateProgress(player: Player, transform, rodSkinId: string?): (boolean, string)
+-- decode(nil) is only valid for a first-time load. An absent save result must
+-- never replace a loaded player's live inventory with new-player defaults.
+local function committedProfile(saved)
+	assert(type(saved) == "table", "Save returned no confirmed player profile")
+	return BoatData.decode(saved)
+end
+
+function BoatService.updateProgress(player: Player, transform, rodSkinId: any): (boolean, string)
 	local state = profiles[player]
 	if not state or state.status ~= "Ready" then
 		return false, "Your progress is still loading or unavailable."
@@ -148,12 +158,21 @@ function BoatService.updateProgress(player: Player, transform, rodSkinId: string
 	state.busy = true
 	local awardedAt = os.time()
 	local success, saved = pcall(function()
-		assert(rodSkinId == nil or RodSkins.valid(rodSkinId), "Unknown serial skin")
-		local serial = if rodSkinId then RodSerials.reserve(store, rodSkinId) else nil
+		local serial
+		if type(rodSkinId) == "table" then
+			serial = {}
+			for _, skinId in rodSkinId do
+				assert(RodSkins.valid(skinId), "Unknown serial skin")
+				table.insert(serial, RodSerials.reserve(store, skinId))
+			end
+		else
+			assert(rodSkinId == nil or RodSkins.valid(rodSkinId), "Unknown serial skin")
+			serial = if rodSkinId then RodSerials.reserve(store, rodSkinId) else nil
+		end
 		if profiles[player] ~= state or player.Parent ~= Players then
 			error("This session has ended")
 		end
-		return store:UpdateAsync("Player_" .. player.UserId, function(raw)
+		local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
 			local profile = BoatData.decode(raw)
 			assert(profile.RodSerialScope == RodSerials.Scope, "Rod serial migration is required")
 			local previous = BoatData.decode(profile)
@@ -161,6 +180,7 @@ function BoatService.updateProgress(player: Player, transform, rodSkinId: string
 			BoatData.trackProgress(previous, profile, awardedAt)
 			return BoatData.decode(profile)
 		end)
+		return committedProfile(result)
 	end)
 	state.busy = false
 	if not success then
@@ -170,7 +190,7 @@ function BoatService.updateProgress(player: Player, transform, rodSkinId: string
 	if profiles[player] ~= state or player.Parent ~= Players then
 		return false, "This session has ended."
 	end
-	state.profile = BoatData.decode(saved)
+	state.profile = saved
 	publish(player, state)
 	return true, "Saved."
 end
@@ -311,11 +331,12 @@ function BoatService.setCashFromCommand(player: Player, message: string)
 	end
 	state.busy = true
 	local success, saved = pcall(function()
-		return store:UpdateAsync("Player_" .. player.UserId, function(raw)
+		local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
 			local profile = BoatData.decode(raw)
 			profile.Cash = amount
 			return profile
 		end)
+		return committedProfile(result)
 	end)
 	state.busy = false
 	if not success then
@@ -359,6 +380,14 @@ local function setFromCommand(player: Player, message: string)
 		notify(player, "Weather types: " .. table.concat(kinds, ", ") .. ".")
 	elseif selected then
 		workspace:SetAttribute("BlackHolePosition", nil)
+		-- A summoned supercell circles the admin who called it.
+		local root = player.Character and player.Character.PrimaryPart
+		local summoned = selected == "Supercell" and root
+		workspace:SetAttribute(
+			"SupercellPosition",
+			if summoned then Vector3.new(root.Position.X, Biomes.WaterLevel, root.Position.Z) else nil
+		)
+		workspace:SetAttribute("SupercellSince", if selected == "Supercell" then workspace:GetServerTimeNow() else nil)
 		workspace:SetAttribute("WeatherOverride", selected)
 		notify(player, "Weather set to " .. selected .. ".")
 	else
@@ -419,10 +448,11 @@ local function purchase(player: Player, boatId: string?)
 	launching[player] = reservation
 	state.busy = true
 	local success, saved = pcall(function()
-		return store:UpdateAsync("Player_" .. player.UserId, function(raw)
+		local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
 			local profile = BoatData.purchase(raw, id)
 			return profile
 		end)
+		return committedProfile(result)
 	end)
 	state.busy = false
 	if not success then
@@ -442,7 +472,8 @@ local function purchase(player: Player, boatId: string?)
 	state.profile = profile
 	publish(player, state)
 	if profile.OwnedBoats[id] then
-		shop:SetAttribute("LaunchStartedAt", workspace:GetServerTimeNow())
+		-- The launch camera follows the lowering, after the cradle has risen.
+		shop:SetAttribute("LaunchStartedAt", workspace:GetServerTimeNow() + DrydockLaunch.RAISE_SECONDS)
 		feedback:FireClient(player, "LaunchStarted", shop, id)
 		task.spawn(function()
 			local launched, result = pcall(function()
@@ -497,6 +528,25 @@ function BoatService.setBoatLock(check: (Player, string) -> string?)
 	boatLock = check
 end
 
+-- `outfit(player, boatId, model)` dresses one of the player's hulls with their
+-- refit dock paint and returns the spec its motors and rudders tune it to.
+function BoatService.setOutfitter(outfit: (Player, string, Model) -> any)
+	outfitter = outfit
+end
+
+-- The spec a player's hull drives with, after dressing `model` for them.
+function BoatService.outfit(player: Player, boatId: string, model: Model)
+	return outfitter and outfitter(player, boatId, model) or BoatCatalog[boatId]
+end
+
+-- Reapplies refits to the launched boat once a motor, rudder or paint is saved.
+function BoatService.refit(player: Player)
+	local boat = active[player]
+	if boat and boat.model.Parent then
+		boat.spec = BoatService.outfit(player, boat.model:GetAttribute("BoatId"), boat.model)
+	end
+end
+
 -- The player's launched boat, whose cargo hold they can reach.
 function BoatService.activeBoat(player: Player): (string?, Model?)
 	local boat = active[player]
@@ -544,6 +594,46 @@ local function updateSuspension(boat)
 	-- Approximate hull inertia; keep righting torque proportional to hull size
 	-- without the oversized gravity-based torque that pried boats off obstacles.
 	boat.heading.MaxTorque = mass * (spec.Length ^ 2 + spec.Beam ^ 2) / 12 * 20
+	boat.heading.MaxAngularVelocity = spec.TurnRate + 2
+end
+
+-- A seated avatar should not push the hull below its waterline. Preserve the
+-- original values, including accessories added while seated, and restore them
+-- as soon as the rider leaves or the boat is removed.
+local function protectSeatFromRiderWeight(seat: Seat | VehicleSeat)
+	local saved = {}
+	local addedConnection
+	local function restore()
+		if addedConnection then
+			addedConnection:Disconnect()
+			addedConnection = nil
+		end
+		for part, massless in saved do
+			part.Massless = massless
+		end
+		table.clear(saved)
+	end
+	local function update()
+		restore()
+		local humanoid = seat.Occupant
+		local character = humanoid and humanoid.Parent
+		if not character or not Players:GetPlayerFromCharacter(character) then
+			return
+		end
+		local function makeMassless(part)
+			if part:IsA("BasePart") and saved[part] == nil then
+				saved[part] = part.Massless
+				part.Massless = true
+			end
+		end
+		for _, part in character:GetDescendants() do
+			makeMassless(part)
+		end
+		addedConnection = character.DescendantAdded:Connect(makeMassless)
+	end
+	seat:GetPropertyChangedSignal("Occupant"):Connect(update)
+	seat.Destroying:Connect(restore)
+	update()
 end
 
 local function clearMotion(boat)
@@ -613,13 +703,135 @@ local function setParked(boat, parked: boolean)
 	boat.model:SetAttribute("Parked", parked)
 end
 
+-- Tornadoes throw boats. The hull's movers let go while the vortex spirals it up
+-- the funnel, then hurl it outward; they take over again once it falls back to
+-- the sea. Deterministic tornado tracks keep this where clients draw the funnel.
+local FLING_LIFT_SECONDS = 0.9
+local FLING_MAX_SECONDS = 5
+local FLING_COOLDOWN = 4
+
+-- The waterline target looks this far ahead along the hull's motion, so the soft
+-- suspension starts rising before the bow reaches a crest instead of after.
+local WAVE_LEAD_SECONDS = 0.12
+-- At full speed the hull spans this much more water: planing boats skim chop.
+local PLANING_STRETCH = 0.5
+
+local function setMovers(boat, enabled: boolean)
+	boat.float.Enabled = enabled
+	boat.lift.Enabled = enabled
+	boat.heading.Enabled = enabled
+	boat.velocity.Enabled = enabled
+end
+
+local function catchInTornado(boat, tornadoes): boolean
+	if boat.flight or os.clock() - (boat.flungAt or -math.huge) < FLING_COOLDOWN then
+		return false
+	end
+	local position = boat.root.Position
+	for _, tornado in tornadoes do
+		local dx, dz = position.X - tornado.position.X, position.Z - tornado.position.Z
+		local reach = tornado.radius * Weather.TornadoReach
+		if tornado.strength > 0.25 and dx * dx + dz * dz <= reach * reach then
+			if boat.parked then
+				setParked(boat, false)
+			end
+			boat.speed, boat.turn = 0, 0
+			boat.bank, boat.bankVelocity = 0, 0
+			boat.velocity.PlaneVelocity = Vector2.zero
+			setMovers(boat, false)
+			boat.flight = { id = tornado.id, center = tornado.position, radius = tornado.radius, started = os.clock() }
+			boat.flight.strength = math.max(0.6, tornado.strength)
+			return true
+		end
+	end
+	return false
+end
+
+-- True while the tornado still owns the hull.
+local function updateFlight(boat, tornadoes): boolean
+	local flight = boat.flight
+	local root = boat.root
+	local age = os.clock() - flight.started
+	for _, tornado in tornadoes do
+		if tornado.id == flight.id then
+			flight.center = tornado.position
+		end
+	end
+	local offset = Vector3.new(root.Position.X - flight.center.X, 0, root.Position.Z - flight.center.Z)
+	local distance = offset.Magnitude
+	local outward = if distance > 0.1 then offset / distance else Vector3.xAxis
+	-- Counter-clockwise from above, like the cyclonic cell above it.
+	local around = Vector3.yAxis:Cross(outward)
+	local strength = flight.strength
+	if age < FLING_LIFT_SECONDS then
+		root.AssemblyLinearVelocity = around * 55 * strength
+			+ Vector3.new(0, 40 + 30 * strength, 0)
+			- outward * (distance - flight.radius) * 2
+		root.AssemblyAngularVelocity = Vector3.new(1.4, 3.8, 0.9) * strength
+		return true
+	elseif not flight.thrown then
+		flight.thrown = true
+		root.AssemblyLinearVelocity = around * 70 * strength
+			+ outward * 45 * strength
+			+ Vector3.new(0, 45 * strength, 0)
+		return true
+	end
+	local falling = root.AssemblyLinearVelocity.Y <= 0
+	if (falling and root.Position.Y <= Biomes.WaterLevel + 6) or age > FLING_MAX_SECONDS then
+		boat.flight = nil
+		boat.flungAt = os.clock()
+		local look = root.CFrame.LookVector
+		if Vector2.new(look.X, look.Z).Magnitude > 0.01 then
+			boat.yaw = math.atan2(-look.X, -look.Z)
+		end
+		boat.float.Position = root.Position
+		setMovers(boat, true)
+		return false
+	end
+	return true
+end
+
+-- Holds the launched boat on the drydock lift: parked, upright, deaf to the helm and
+-- `height` studs above where it floated. nil sets it back afloat at that pose.
+function BoatService.hoist(player: Player, height: number?): boolean
+	local boat = active[player]
+	if not boat or not boat.model.Parent or (not height and not boat.hoistBase) then
+		return false
+	end
+	if not boat.hoistBase then
+		setParked(boat, true)
+		local look = boat.root.CFrame.LookVector
+		boat.hoistBase = CFrame.new(boat.root.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
+		boat.model:SetAttribute("Hoisted", true)
+	end
+	local target = boat.hoistBase + Vector3.new(0, height or 0, 0)
+	boat.model:PivotTo(target * boat.root.CFrame:ToObjectSpace(boat.model:GetPivot()))
+	-- Clients bob a parked hull from this pose, and the helm releases from it.
+	boat.model:SetAttribute("ParkedFrame", boat.root.CFrame)
+	boat.model:SetAttribute("ParkedAt", workspace:GetServerTimeNow())
+	if not height then
+		boat.hoistBase = nil
+		boat.model:SetAttribute("Hoisted", nil)
+	end
+	return true
+end
+
 local function launch(player: Player, frame: CFrame, existing: Model?, boatId: string?)
 	local id = boatId or (existing and existing:GetAttribute("BoatId")) or "Rowboat"
-	local spec = BoatCatalog[id]
 	local model = existing or builders[id].build(frame, false)
+	local spec = BoatService.outfit(player, id, model)
 	model.Name = id .. "_" .. player.UserId
 	model:SetAttribute("OwnerUserId", player.UserId)
 	model:SetAttribute("BoatId", id)
+	model:SetAttribute("LightsEnabled", true)
+	local lights, lightParts = {}, {}
+	for _, piece in model:GetDescendants() do
+		if piece:IsA("PointLight") or piece:IsA("SpotLight") or piece:IsA("SurfaceLight") then
+			table.insert(lights, piece)
+		elseif piece:IsA("BasePart") and piece.Material == Enum.Material.Neon then
+			table.insert(lightParts, piece)
+		end
+	end
 	local root = model.PrimaryPart :: BasePart
 	local seat = model:FindFirstChild(spec.DriverSeat, true) :: VehicleSeat
 	model:SetAttribute("DisplayOnly", nil)
@@ -674,9 +886,9 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 	heading.Mode = Enum.OrientationAlignmentMode.OneAttachment
 	heading.Attachment0 = attachment
 	heading.CFrame = root.CFrame.Rotation
-	heading.MaxAngularVelocity = 2
+	heading.MaxAngularVelocity = spec.TurnRate + 2
 	heading.RigidityEnabled = false
-	heading.Responsiveness = 10
+	heading.Responsiveness = 20
 	heading.Parent = root
 
 	-- Drive at the current center of mass; passengers can move it away from
@@ -698,10 +910,17 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 
 	model.Parent = workspace:FindFirstChild("PlayerBoats")
 	root:SetNetworkOwner(nil)
+	for _, piece in model:GetDescendants() do
+		if piece:IsA("Seat") or piece:IsA("VehicleSeat") then
+			protectSeatFromRiderWeight(piece)
+		end
+	end
 	local _, yaw = root.CFrame:ToOrientation()
 	local boat = {
 		spec = spec,
 		model = model,
+		lights = lights,
+		lightParts = lightParts,
 		root = root,
 		seat = seat,
 		heading = heading,
@@ -939,6 +1158,24 @@ function BoatService.start()
 			-- Always keep the newest input. Network jitter bunches packets, and
 			-- dropping the later one left a released key held until the next send.
 			boat.throttle, boat.steer, boat.lastInput = throttle, steer, os.clock()
+		elseif action == "ToggleLights" then
+			local boat = active[player]
+			if not boat or not boat.seat.Occupant or boat.seat.Occupant.Parent ~= player.Character then
+				return
+			end
+			local now = os.clock()
+			if now - (boat.lastLightsToggle or -math.huge) < 0.2 then
+				return
+			end
+			boat.lastLightsToggle = now
+			local enabled = boat.model:GetAttribute("LightsEnabled") == false
+			for _, light in boat.lights do
+				light.Enabled = enabled
+			end
+			for _, part in boat.lightParts do
+				part.Material = if enabled then Enum.Material.Neon else Enum.Material.SmoothPlastic
+			end
+			boat.model:SetAttribute("LightsEnabled", enabled)
 		elseif action == "BrowseRowboat" then
 			openShop(player)
 		elseif action == "BrowseBoat" then
@@ -977,12 +1214,23 @@ function BoatService.start()
 			openDock(player, prompt)
 		end
 	end)
-	RunService.Heartbeat:Connect(function(dt)
+	-- Update mover targets before the solver, so each physics step uses one
+	-- coherent set of steering, banking and buoyancy commands.
+	RunService.PreSimulation:Connect(function(dt)
 		local serverTime = workspace:GetServerTimeNow()
+		local tornadoes = Weather.tornadoes(serverTime)
+		local weather = nil
 		for player, boat in active do
 			if not boat.model.Parent then
 				active[player] = nil
 				player:SetAttribute("ActiveBoatId", nil)
+				continue
+			end
+			if boat.hoistBase then
+				-- Up on the drydock lift; DrydockLaunch moves it.
+				continue
+			end
+			if catchInTornado(boat, tornadoes) or (boat.flight and updateFlight(boat, tornadoes)) then
 				continue
 			end
 			local rowing = boat.seat.Occupant
@@ -1011,6 +1259,8 @@ function BoatService.start()
 				and turn == 0
 				and math.abs(boat.bank) < 0.001
 				and math.abs(boat.bankVelocity) < 0.005
+				-- A thrown hull settles back onto the swell before it may anchor.
+				and os.clock() - (boat.flungAt or -math.huge) > FLING_COOLDOWN
 			then
 				-- Preserve normal coasting and steering decay before holding still.
 				setParked(boat, true)
@@ -1026,17 +1276,38 @@ function BoatService.start()
 			-- Like a real boat (or car), reversing mirrors the steering direction.
 			local yawRateCommand = -turn * (if speed < 0 then -1 else 1)
 			local actualYaw = math.atan2(-actualForward.X, -actualForward.Z)
-			boat.yaw = BoatMotion.heading(boat.yaw + yawRateCommand * math.min(dt, 0.1), actualYaw)
+			if math.abs(steer) < 0.08 then
+				boat.yaw = actualYaw
+			end
+			boat.yaw = BoatMotion.advanceHeading(boat.yaw, actualYaw, yawRateCommand, dt)
 			-- Seat welds change assembly mass when passengers board or leave.
 			updateSuspension(boat)
-			local wave = Weather.sample(boat.root.Position, serverTime)
 			local flatHeading = CFrame.Angles(0, boat.yaw, 0)
+			local motion = root.AssemblyLinearVelocity
+			motion = Vector3.new(motion.X, 0, motion.Z)
+			local planing = math.clamp(math.abs(speed) / boat.spec.ForwardSpeed, 0, 1)
+			weather = weather or Weather.getState(serverTime)
+			local wave = Weather.hullSample(
+				root.Position + motion * WAVE_LEAD_SECONDS,
+				flatHeading.LookVector,
+				boat.spec.Length * 0.4 * (1 + PLANING_STRETCH * planing),
+				boat.spec.Beam * 0.4,
+				serverTime,
+				weather,
+				-- Ride the visible surface: crests are drawn by the client swell mesh,
+				-- troughs are hidden beneath Terrain's flat water.
+				0
+			)
+			-- Riding a swell at speed climbs far faster than bobbing in place: a fixed
+			-- 6 stud/s cap left fast hulls under each oncoming crest, bow first.
+			boat.float.MaxVelocity = 6 + motion.Magnitude * 0.5
 			local yawRate = root.AssemblyAngularVelocity.Y
+			local bankYawRate = -BoatMotion.steering(speed, steer, boat.spec) * (if speed < 0 then -1 else 1)
 			boat.bank, boat.bankVelocity = BoatMotion.bank(
 				boat.bank,
 				boat.bankVelocity,
 				root.AssemblyLinearVelocity:Dot(actualForward),
-				yawRate,
+				bankYawRate,
 				boat.spec,
 				workspace.Gravity,
 				dt
@@ -1092,14 +1363,8 @@ function BoatService.start()
 			local driveYaw = Vector3.new(0, math.clamp(yawRate, -boat.spec.TurnRate, boat.spec.TurnRate), 0)
 			local movement = actualForward * speed + driveYaw:Cross(lever)
 			boat.velocity.PlaneVelocity = Vector2.new(movement.X, movement.Z)
-			-- The heading spring alone starts a turn late and keeps swinging the hull
-			-- after the helm is released. Feed the steering rate in directly while the
-			-- hull keeps up; a blocked hull falls behind and is left to bounded torque.
-			local headingLag = math.atan2(math.sin(boat.yaw - actualYaw), math.cos(boat.yaw - actualYaw))
-			if math.abs(headingLag) < 0.2 then
-				local spin = root.AssemblyAngularVelocity
-				root.AssemblyAngularVelocity = Vector3.new(spin.X, yawRateCommand, spin.Z)
-			end
+			-- AlignOrientation alone owns rotation. Overwriting angular velocity
+			-- every frame fights its roll/pitch corrections and collision response.
 		end
 	end)
 	Players.PlayerRemoving:Connect(function(player)

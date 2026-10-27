@@ -23,6 +23,7 @@ local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
+local ShopUpgrades = require(ReplicatedStorage.Shared.ShopUpgrades)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local CustomerService = {}
@@ -46,6 +47,8 @@ local shops: { [Model]: any } = {}
 local customers: { [ProximityPrompt]: any } = {}
 local stocking: { [Player]: boolean } = {}
 local PORTER_DOCK_DISTANCE = 32
+-- A porter still walking to the boat or the freezer after this long is moved there.
+local PORTER_TELEPORT_SECONDS = 30
 
 local function notify(player: Player?, message: string)
 	if player and player.Parent == Players then
@@ -542,6 +545,18 @@ local function finish(shop, customer)
 	end
 end
 
+local function waitingForRegister(shop, customer): boolean
+	for _, other in shop.customers do
+		if other == customer then
+			break
+		end
+		if other.registerKey == customer.registerKey and other.active and not other.leaving then
+			return true
+		end
+	end
+	return false
+end
+
 local function visit(shop, customer)
 	local base, frame = shop.base, shop.frame
 	local function at(x: number, z: number): Vector3
@@ -594,7 +609,20 @@ local function visit(shop, customer)
 			return false
 		end
 		bubble(customer, (if customer.food then "I'll take the " else "I'd like this ") .. name)
-		if not (going(at(0, 9)) and going(counterSpot)) then
+		if not going(at(0, 9)) then
+			return false
+		end
+		-- Customers sharing a register wait their turn before approaching its counter.
+		local queueDeadline = os.clock() + WAIT_SECONDS
+		while customer.active and not customer.leaving do
+			if not waitingForRegister(shop, customer) then
+				break
+			elseif os.clock() >= queueDeadline then
+				return false
+			end
+			task.wait(0.25)
+		end
+		if not customer.active or customer.leaving or not going(counterSpot) then
 			return false
 		end
 		face(customer, deskFrame.Position)
@@ -753,17 +781,223 @@ local function rackFrames(shop, profile): { CFrame }
 	return fixtureFrames(shop, profile, "StorageRack")
 end
 
--- Through the shop-to-storage doorway to the front of a rack.
+-- Porter route nodes. House nodes sit on the room floor; pier nodes run down
+-- the centerline of the 7-wide decks and ramps. Edges are either a straight,
+-- known-safe corridor (doorways, ramps, pier turns) or a normal navmesh walk.
+local PORTER_NODE_RADIUS = 32
+-- If the porter already stands on a node, continue from there. Comparing the
+-- straight-line gap to every node undercuts corners (crosswalk to mid-pier),
+-- which would send the porter backwards before starting the real route.
+local PORTER_NODE_REACHED = 1.25
+local PORTER_HOUSE_NODES = {
+	freezer = true,
+	leftShop = true,
+	leftWork = true,
+	rightShop = true,
+	rightWork = true,
+	rearIn = true,
+	passageWork = true,
+	passageStore = true,
+	target = true,
+}
 
-local function storageRoute(shop, rack: CFrame, worker): { Vector3 }
-	local function at(x: number, z: number): Vector3
+local function flatDistance(a: Vector3, b: Vector3): number
+	return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude
+end
+
+local function porterGraph(shop, worker, dock: CFrame, rack: CFrame?, overrides, isKitchenStorage: boolean?)
+	local clearance = NpcNavigation.clearance(worker)
+	local nodes = {}
+	local names = {}
+	local function add(name: string, position: Vector3)
+		nodes[name] = position
+		table.insert(names, name)
+	end
+	local function house(x: number, z: number): Vector3
 		return (shop.frame * CFrame.new(x, 0.16, z)).Position
 	end
-	return {
-		at(12, 4),
-		at(12, -2),
-		(rack * CFrame.new(0, 0, StorageRack.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4)).Position,
+	local function deck(x: number, y: number, z: number): Vector3
+		return (dock * CFrame.new(x, y, z)).Position
+	end
+	add("freezer", (FishFreezer.frame(shop.frame) * CFrame.new(0, 0, FishFreezer.DEPTH / 2 + clearance + 0.4)).Position)
+	add("leftShop", house(-10, 3.5))
+	add("leftWork", house(-10, -1.5))
+	add("rightShop", house(12, 3.5))
+	add("rightWork", house(12, -1.5))
+	add("rearIn", house(0, -13.2))
+	add("rearOut", house(0, -16.8))
+	add("passageWork", house(1.2, -7))
+	add("passageStore", house(4.8, -7))
+	add("landingLeft", deck(-17, 5.9, 13))
+	add("landingRight", deck(17, 5.9, 13))
+	add("rampLeft", deck(-17, 4.55, 4))
+	add("rampRight", deck(17, 4.55, 4))
+	add("footLeft", deck(-17, 3.3, -2))
+	add("footRight", deck(17, 3.3, -2))
+	add("midLeft", deck(-17, 3.3, -24))
+	add("midRight", deck(17, 3.3, -24))
+	add("cornerLeft", deck(-17, 3.3, -38))
+	add("cornerRight", deck(17, 3.3, -38))
+	add("pickup", deck(0, 3.3, -38))
+	if rack then
+		local depth = if isKitchenStorage then Kitchen.DEPTH else StorageRack.DEPTH
+		add("target", (rack * CFrame.new(0, 0, depth / 2 + clearance + 0.4)).Position)
+	end
+	if overrides then
+		for name, position in overrides do
+			if nodes[name] then
+				nodes[name] = position
+			end
+		end
+	end
+	local edges = {
+		{ "freezer", "leftShop", false },
+		{ "freezer", "rightShop", false },
+		{ "leftShop", "leftWork", true },
+		{ "rightShop", "rightWork", true },
+		{ "leftWork", "rearIn", false },
+		{ "rightWork", "rearIn", false },
+		{ "passageWork", "rearIn", false },
+		{ "passageWork", "passageStore", true },
+		{ "landingLeft", "rampLeft", true },
+		{ "rampLeft", "footLeft", true },
+		{ "footLeft", "midLeft", true },
+		{ "midLeft", "cornerLeft", true },
+		{ "cornerLeft", "pickup", true },
+		{ "landingRight", "rampRight", true },
+		{ "rampRight", "footRight", true },
+		{ "footRight", "midRight", true },
+		{ "midRight", "cornerRight", true },
+		{ "cornerRight", "pickup", true },
+		{ "landingLeft", "rearOut", true },
+		{ "landingRight", "rearOut", true },
+		{ "rearOut", "rearIn", true },
 	}
+	if rack then
+		if isKitchenStorage then
+			table.insert(edges, { "target", "leftWork", false })
+			table.insert(edges, { "target", "rearIn", false })
+		else
+			table.insert(edges, { "target", "passageStore", false })
+		end
+	end
+	local adjacency = {}
+	for _, name in names do
+		adjacency[name] = {}
+	end
+	for _, edge in edges do
+		local a, b, straight = edge[1], edge[2], edge[3]
+		local cost = (nodes[a] - nodes[b]).Magnitude
+		table.insert(adjacency[a], { to = b, cost = cost, straight = straight })
+		table.insert(adjacency[b], { to = a, cost = cost, straight = straight })
+	end
+	return { nodes = nodes, names = names, adjacency = adjacency }
+end
+
+-- Costs from every node to the goal; edges are undirected.
+local function porterDistances(graph, goal: string): { [string]: number }
+	local distance, open = {}, {}
+	for _, name in graph.names do
+		distance[name], open[name] = math.huge, true
+	end
+	if distance[goal] == nil then
+		return distance
+	end
+	distance[goal] = 0
+	while true do
+		local best, bestDistance = nil, math.huge
+		for _, name in graph.names do
+			if open[name] and distance[name] < bestDistance then
+				best, bestDistance = name, distance[name]
+			end
+		end
+		if not best then
+			break
+		end
+		open[best] = false
+		for _, edge in graph.adjacency[best] do
+			local candidate = bestDistance + edge.cost
+			if candidate < distance[edge.to] then
+				distance[edge.to] = candidate
+			end
+		end
+	end
+	return distance
+end
+
+-- Inside the house, any room node is safe to approach. Outside, only the
+-- rear-door and dock nodes are candidates: pathfinding straight from the quay
+-- to a room node would cut through the house instead of using a doorway.
+local function porterInsideHouse(shop, position: Vector3): boolean
+	local localPosition = shop.frame:PointToObjectSpace(position)
+	return math.abs(localPosition.X) <= 22 and localPosition.Z >= -14.5 and localPosition.Z <= 14.5
+end
+
+-- The full route from wherever the porter stands to `goal`. Returned steps
+-- carry the edge's straight flag so known corridors skip pathfinding.
+local function porterRoute(shop, worker, dock: CFrame, goal: string, rack: CFrame?, overrides, isKitchenStorage: boolean?)
+	local graph = porterGraph(shop, worker, dock, rack, overrides)
+	if not graph.nodes[goal] then
+		return {}
+	end
+	local toGoal = porterDistances(graph, goal)
+	local position = worker.root.Position
+	local inside = porterInsideHouse(shop, position)
+	local startName, startCost, nearestName, nearestDistance, reachedName, reachedDistance
+	for _, name in graph.names do
+		if inside or not PORTER_HOUSE_NODES[name] then
+			local separation = flatDistance(position, graph.nodes[name])
+			if nearestDistance == nil or separation < nearestDistance then
+				nearestName, nearestDistance = name, separation
+			end
+			if separation <= PORTER_NODE_REACHED
+				and (reachedDistance == nil or separation < reachedDistance)
+			then
+				reachedName, reachedDistance = name, separation
+			end
+			if separation <= PORTER_NODE_RADIUS then
+				local cost = separation + toGoal[name]
+				if startCost == nil or cost < startCost then
+					startName, startCost = name, cost
+				end
+			end
+		end
+	end
+	startName = reachedName or startName or nearestName
+	local steps = {}
+	if flatDistance(position, graph.nodes[startName]) > PORTER_NODE_REACHED then
+		table.insert(steps, { position = graph.nodes[startName], straight = false })
+	end
+	local currentName = startName
+	for _ = 1, #graph.names + 1 do
+		if currentName == goal then
+			break
+		end
+		local nextName, nextStep
+		for _, edge in graph.adjacency[currentName] do
+			local cost = edge.cost + toGoal[edge.to]
+			if nextStep == nil or cost < nextStep.cost then
+				nextName, nextStep = edge.to, { cost = cost, straight = edge.straight }
+			end
+		end
+		if nextStep == nil then
+			break
+		end
+		currentName = nextName
+		table.insert(steps, { position = graph.nodes[currentName], straight = nextStep.straight })
+	end
+	return steps
+end
+
+-- Recompute the whole route on every retry: a failed walk leaves the porter
+-- at a different node, and a fresh route follows from there.
+local function walkPorterRoute(shop, worker, dock, goal: string, rack, go, overrides, isKitchenStorage: boolean?): boolean
+	for _, step in porterRoute(shop, worker, dock, goal, rack, overrides, isKitchenStorage) do
+		if not go(step.position, step.straight) then
+			return false
+		end
+	end
+	return true
 end
 
 -- A rig below the deck cannot use the dock's walking-only route back up.
@@ -775,6 +1009,45 @@ local function belowDock(shop, worker): boolean
 	local position = dock:PointToObjectSpace(worker.root.Position)
 	local feet = position.Y - worker.humanoid.HipHeight - worker.root.Size.Y / 2
 	return math.abs(position.X) <= 25 and position.Z >= -48 and position.Z <= 8 and feet < 2.2
+end
+
+-- Sets a porter down on a spot it could not walk to, facing the way it was going.
+local function teleport(worker, position: Vector3)
+	local root, humanoid = worker.root, worker.humanoid
+	local center = position + Vector3.new(0, humanoid.HipHeight + root.Size.Y / 2 + 0.5, 0)
+	local heading = (position - root.Position) * Vector3.new(1, 0, 1)
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.CFrame = if heading.Magnitude > 0.1 then CFrame.lookAt(center, center + heading) else CFrame.new(center)
+	-- Replace the stale walk goal so the rig does not head back to where it was stuck.
+	humanoid:MoveTo(center)
+end
+
+-- Times a porter's legs (to the cargo, then on to its shelf); `moving` guards
+-- every walk on the current leg. `leg` retries `step`, which walks on from
+-- wherever the porter stands, until it arrives. A porter still not there after
+-- PORTER_TELEPORT_SECONDS, or `stranded` where it cannot walk back from, is
+-- set down at `destination` instead.
+local function porterLegs(worker, valid: () -> boolean, stranded: (() -> boolean)?)
+	local deadline = 0
+	local function moving(): boolean
+		return valid() and os.clock() < deadline
+	end
+	local function leg(destination: Vector3, step: () -> boolean): boolean
+		deadline = os.clock() + PORTER_TELEPORT_SECONDS
+		local attempt = 0
+		while not step() do
+			if not valid() then
+				return false
+			elseif not moving() or (stranded ~= nil and stranded()) then
+				teleport(worker, destination)
+				return valid()
+			end
+			attempt += 1
+			task.wait(math.min(0.5 * attempt, 2))
+		end
+		return true
+	end
+	return moving, leg
 end
 
 -- Each fish has a visual copy; saved inventory changes only after delivery.
@@ -805,101 +1078,56 @@ local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Mod
 		if currentBoat ~= boat and companyDock then
 			currentId, currentBoat = companyDock(shop, owner)
 		end
-		return worker.active
+		return ownerOf(shop.base) == owner
+			and worker.active
 			and shop.staff.Porter == worker
 			and worker.humanoid.Health > 0
 			and currentId == boatId
 			and currentBoat == boat
 	end
+	-- A pushed/fallen porter cannot climb back through the pier from below.
+	local moving, leg = porterLegs(worker, valid, function()
+		return belowDock(shop, worker)
+	end)
 	local function go(position: Vector3, straight: boolean?): boolean
-		if not valid() then
-			return false
-		end
-		local reached = walk(worker, position, valid, true, straight)
-		if not reached and valid() and belowDock(shop, worker) then
-			worker.stranded = true
-		end
-		return reached and valid()
+		return moving() and walk(worker, position, moving, true, straight) and valid()
 	end
-	local side = if dock:PointToObjectSpace(worker.root.Position).X < 0 then -1 else 1
-	local pier = (dock * CFrame.new(side * 17, 3.3, -38)).Position
-	local pickup = (dock * CFrame.new(0, 3.3, -38)).Position
-	-- Collect from the pier's center, never the boat-side edge. Company hulls
+	-- Collect at the pier's center, never the boat-side edge. Company hulls
 	-- have no collision, so stepping toward them leaves no ground underfoot.
+	-- Their PorterPier attribute moves the mid-pier route goal onto their dock.
 	local moorPier = boat:GetAttribute("PorterPier")
+	local pickupGoal = "pickup"
+	local pickupPosition = (dock * CFrame.new(0, 3.3, -38)).Position
+	local overrides
 	if typeof(moorPier) == "Vector3" then
-		pier, pickup = moorPier, moorPier
-		side = if dock:PointToObjectSpace(pier).X < 0 then -1 else 1
+		local side = if dock:PointToObjectSpace(moorPier).X < 0 then "Left" else "Right"
+		pickupGoal, pickupPosition = "mid" .. side, moorPier
+		overrides = { [pickupGoal] = moorPier }
 	end
-	local landing = (dock * CFrame.new(side * 17, 5.9, 11)).Position
-	local foot = (dock * CFrame.new(side * 17, 3.3, -2)).Position
+	local clearance = NpcNavigation.clearance(worker)
+	local freezerSpot = (FishFreezer.frame(shop.frame) * CFrame.new(
+		0,
+		0,
+		FishFreezer.DEPTH / 2 + clearance + 0.4
+	)).Position
+	local depth = if isKitchenStorage then Kitchen.DEPTH else StorageRack.DEPTH
+	local rackSpot = if rack
+		then (rack * CFrame.new(0, 0, depth / 2 + clearance + 0.4)).Position
+		else nil
 	bubble(worker, "Porter · Collecting fish")
-	local current = dock:PointToObjectSpace(worker.root.Position)
-	local feet = current.Y - worker.humanoid.HipHeight - worker.root.Size.Y / 2
-	local onPier = math.abs(math.abs(current.X) - 17) <= 3 and current.Z >= -43 and current.Z <= 11 and feet >= 2.2
-	local onLink = math.abs(current.X) <= 17 and math.abs(current.Z + 38) <= 1 and feet >= 2.2
-	if onLink then
-		-- Retry from the crosswalk instead of walking back to the quay first.
-		if not go((dock * CFrame.new(current.X, 3.3, -38)).Position, true) then
-			return
-		end
-		if typeof(moorPier) == "Vector3" then
-			if not go((dock * CFrame.new(side * 17, 3.3, -38)).Position, true) then
-				return
-			end
-			if not go(pier, true) then
-				return
-			end
-		end
-	elseif onPier then
-		local currentSide = if current.X < 0 then -1 else 1
-		local y = math.max(3.3, 3.2 + 2.7 * math.clamp(current.Z / 8, 0, 1))
-		if not go((dock * CFrame.new(currentSide * 17, y, current.Z)).Position, true) then
-			return
-		end
-		if currentSide ~= side then
-			-- Change piers over the crosswalk, never across the boat berth.
-			if
-				not (
-					go((dock * CFrame.new(currentSide * 17, 3.3, -38)).Position, true)
-					and go((dock * CFrame.new(side * 17, 3.3, -38)).Position, true)
-				)
-			then
-				return
-			end
-		end
-		if not go(pier, true) then
-			return
-		end
-	else
-		if not (go(landing) and go(foot, true) and go(pier, true)) then
-			return
-		end
+	-- Every retry recomputes the whole route from wherever the porter stands.
+	local function toPickup(): boolean
+		return walkPorterRoute(shop, worker, dock, pickupGoal, rack, go, overrides)
 	end
-	if not go(pickup, true) then
+	if not leg(pickupPosition, toPickup) or not carryLoad(worker, load) then
 		return
 	end
-	if not carryLoad(worker, load) then
-		return
+	bubble(worker, string.format("Porter · Bringing %d fish to %s", #load, if isKitchenStorage then "kitchen storage" else if rack then "storage" else "freezer"))
+	local function toShelf(): boolean
+		return walkPorterRoute(shop, worker, dock, if rack then "target" else "freezer", rack, go, nil, isKitchenStorage)
 	end
-	bubble(worker, string.format("Porter · Bringing %d fish to %s", #load, if rack then "storage" else "freezer"))
-	local route = if rack
-		then storageRoute(shop, rack, worker)
-		else {
-			(FishFreezer.frame(shop.frame) * CFrame.new(
-				0,
-				0,
-				FishFreezer.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4
-			)).Position,
-		}
-	-- Once off the pier, let pathfinding choose the doorway to the destination.
-	if not (go(pier, true) and go(foot, true) and go(landing, true)) then
+	if not leg(rackSpot or freezerSpot, toShelf) then
 		return
-	end
-	for _, position in route do
-		if not go(position) then
-			return
-		end
 	end
 	-- Revalidate inside every UpdateAsync attempt. The player may have moved the
 	-- fish while the porter walked; the saved fish never leaves its hold early.
@@ -909,8 +1137,47 @@ local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Mod
 		-- Preserve pickup order so freezer packing matches the planned load.
 		-- Earlier removals shift each later cargo slot down by one.
 		for index, entry in load do
-			data = AnglerData.unloadFish(data, boatId, entry.Index - index + 1, entry.Record, rack ~= nil)
+			if isKitchenStorage then
+				data = AnglerData.unloadFishToKitchenStorage(data, boatId, entry.Index - index + 1, entry.Record, Catalog.Fish)
+			else
+				data = AnglerData.unloadFish(data, boatId, entry.Index - index + 1, entry.Record, rack ~= nil)
+			end
 			assert(data, "The fish moved or the shelf is full.")
+		end
+		current.Angler = data
+	end)
+	refreshDisplay(shop)
+end
+
+-- A storage rack to the kitchen storage prep counter.
+local function restockKitchenTrip(shop, worker, owner: Player, load, rack: CFrame, kitchenStorage: CFrame)
+	local dock = shop.base:GetAttribute("BoatDockFrame")
+	if typeof(dock) ~= "CFrame" then return end
+	local function valid(): boolean
+		return worker.active and shop.staff.Porter == worker and worker.humanoid.Health > 0 and ownerOf(shop.base) == owner
+	end
+	local moving, leg = porterLegs(worker, valid)
+	local function go(position: Vector3, straight: boolean?): boolean
+		return moving() and walk(worker, position, moving, true, straight) and valid()
+	end
+	local clearance = NpcNavigation.clearance(worker)
+	local targetSpot = (rack * CFrame.new(0, 0, StorageRack.DEPTH / 2 + clearance + 0.4)).Position
+	local kitchenSpot = (kitchenStorage * CFrame.new(0, 0, Kitchen.DEPTH / 2 + clearance + 0.4)).Position
+	bubble(worker, "Porter · Stocking kitchen prep table")
+	local function toShelf(): boolean
+		return walkPorterRoute(shop, worker, dock, "target", rack, go)
+	end
+	if not leg(targetSpot, toShelf) or not carryLoad(worker, load) then return end
+	local function toKitchen(): boolean
+		return walkPorterRoute(shop, worker, dock, "target", kitchenStorage, go, nil, true)
+	end
+	if not leg(kitchenSpot, toKitchen) then return end
+	BoatService.updateProgress(owner, function(current)
+		assert(valid() and current.Angler.Staff.Porter, "The porter is no longer restocking.")
+		local data = current.Angler
+		for _, entry in load do
+			data = AnglerData.restockFishToKitchenStorage(data, entry.Record, Catalog.Fish)
+			assert(data, "The fish moved or the prep table is full.")
 		end
 		current.Angler = data
 	end)
@@ -919,31 +1186,38 @@ end
 
 -- A storage rack to the freezer, whenever a freezer has room again.
 local function restockTrip(shop, worker, owner: Player, load, rack: CFrame)
+	local dock = shop.base:GetAttribute("BoatDockFrame")
+	if typeof(dock) ~= "CFrame" then
+		return
+	end
 	local function valid(): boolean
 		return worker.active
 			and shop.staff.Porter == worker
 			and worker.humanoid.Health > 0
 			and ownerOf(shop.base) == owner
 	end
-	local function go(position: Vector3): boolean
-		return valid() and walk(worker, position, valid) and valid()
+	local moving, leg = porterLegs(worker, valid)
+	local function go(position: Vector3, straight: boolean?): boolean
+		return moving() and walk(worker, position, moving, true, straight) and valid()
 	end
-	bubble(worker, "Porter · Restocking the freezer")
-	local route = storageRoute(shop, rack, worker)
-	for _, position in route do
-		if not go(position) then
-			return
-		end
-	end
-	if not carryLoad(worker, load) then
-		return
-	end
+	local clearance = NpcNavigation.clearance(worker)
+	local targetSpot = (rack * CFrame.new(0, 0, StorageRack.DEPTH / 2 + clearance + 0.4)).Position
 	local freezerSpot = (FishFreezer.frame(shop.frame) * CFrame.new(
 		0,
 		0,
-		FishFreezer.DEPTH / 2 + NpcNavigation.clearance(worker) + 0.4
+		FishFreezer.DEPTH / 2 + clearance + 0.4
 	)).Position
-	if not (go(route[2]) and go(route[1]) and go(freezerSpot)) then
+	bubble(worker, "Porter · Restocking the freezer")
+	local function toShelf(): boolean
+		return walkPorterRoute(shop, worker, dock, "target", rack, go)
+	end
+	if not leg(targetSpot, toShelf) or not carryLoad(worker, load) then
+		return
+	end
+	local function toFreezer(): boolean
+		return walkPorterRoute(shop, worker, dock, "freezer", rack, go)
+	end
+	if not leg(freezerSpot, toFreezer) then
 		return
 	end
 	BoatService.updateProgress(owner, function(current)
@@ -994,18 +1268,72 @@ local function porterTrip(shop, worker, owner: Player)
 			collectFish()
 		end
 	end
-	collectFromBoats()
-	if #load == 0 and room > 0 then
-		toStorage = true
+	local kitchenStorages = fixtureFrames(shop, profile, "KitchenStorage")
+	local toKitchen = false
+	local function collectKitchenFish()
+		load = {}
+		local preview = table.clone(data)
+		preview.KitchenStorage = {
+			Targets = data.KitchenStorage.Targets or {},
+			Fish = table.clone(data.KitchenStorage.Fish or {}),
+		}
+		for slot, item in if boatId then data.Holds[boatId] or {} else {} do
+			if item.Fish and #load < capacity then
+				if AnglerData.canKitchenStorageAccept(preview, item.Fish, Catalog.Fish) then
+					table.insert(load, { Index = slot, Record = item.Fish })
+					table.insert(preview.KitchenStorage.Fish, item.Fish)
+				end
+			end
+		end
+	end
+	if #kitchenStorages > 0 then
 		boatId, boat = ownBoatId, ownBoat
+		collectKitchenFish()
+		if #load == 0 and companyDock then
+			boatId, boat = companyDock(shop, owner)
+			collectKitchenFish()
+		end
+		if #load > 0 then
+			toKitchen = true
+		end
+	end
+	if not toKitchen then
 		collectFromBoats()
+		if #load == 0 and room > 0 then
+			toStorage = true
+			boatId, boat = ownBoatId, ownBoat
+			collectFromBoats()
+		end
 	end
 	if #load > 0 then
-		local rack = if toStorage then racks[math.floor(#data.Storage / AnglerData.RACK_CAPACITY) + 1] else nil
-		if not toStorage or rack then
-			unloadTrip(shop, worker, owner, boatId :: string, boat :: Model, load, rack)
+		if toKitchen then
+			unloadTrip(shop, worker, owner, boatId :: string, boat :: Model, load, kitchenStorages[1], true)
+		else
+			local rack = if toStorage then racks[math.floor(#data.Storage / AnglerData.RACK_CAPACITY) + 1] else nil
+			if not toStorage or rack then
+				unloadTrip(shop, worker, owner, boatId :: string, boat :: Model, load, rack)
+			end
 		end
 	elseif #data.Storage > 0 and racks[1] then
+		local kitchenStorages = fixtureFrames(shop, profile, "KitchenStorage")
+		if #kitchenStorages > 0 then
+			local preview = table.clone(data)
+			preview.KitchenStorage = {
+				Targets = data.KitchenStorage.Targets or {},
+				Fish = table.clone(data.KitchenStorage.Fish or {}),
+			}
+			for index = 1, math.min(#data.Storage, AnglerData.RACK_CAPACITY) do
+				local record = data.Storage[index]
+				if #load < capacity and AnglerData.canKitchenStorageAccept(preview, record, Catalog.Fish) then
+					table.insert(load, { Record = record })
+					table.insert(preview.KitchenStorage.Fish, record)
+				end
+			end
+			if #load > 0 then
+				restockKitchenTrip(shop, worker, owner, load, racks[1], kitchenStorages[1])
+				return
+			end
+		end
 		local preview = table.clone(data)
 		preview.Freezer = table.clone(data.Freezer)
 		for index = 1, math.min(#data.Storage, AnglerData.RACK_CAPACITY) do
@@ -1026,7 +1354,6 @@ local function runPorter(shop, worker, owner: Player)
 		return
 	end
 	worker.busy = true
-	worker.stranded = false
 	task.spawn(function()
 		local ok, failure = pcall(porterTrip, shop, worker, owner)
 		for _, carried in worker.load or {} do
@@ -1045,14 +1372,6 @@ local function runPorter(shop, worker, owner: Player)
 			worker.fish = nil
 		end
 		worker.busy = false
-		-- A pushed/fallen porter cannot climb back through the pier from below.
-		-- Retire the stranded rig; ensureStaff replaces it at its normal spawn.
-		-- Fish stay in the hold until the complete delivery transaction succeeds.
-		if worker.stranded and worker.active and shop.staff.Porter == worker and ownerOf(shop.base) == owner then
-			worker.active = false
-			worker.model:Destroy()
-			shop.staff.Porter = nil
-		end
 		if worker.active and worker.model.Parent then
 			bubble(worker, "Porter · Waiting for docked cargo / shelf space")
 		end
@@ -1125,39 +1444,51 @@ local function stock(player: Player, shop, prompt: ProximityPrompt)
 	if not profile then
 		notify(player, "Your tackle box is still loading. Try again in a moment.")
 		return
-	elseif not CargoService.isCarrying(player, profile.Angler.Hand) then
+	end
+	local carrying = CargoService.isCarrying(player, profile.Angler.Hand)
+	local _, available = AnglerData.stockFreezer(profile.Angler, carrying)
+	if available == 0 then
+		local unlocked = 0
+		for _, item in profile.Angler.Backpack do
+			if not item.Locked then
+				unlocked += 1
+			end
+		end
 		notify(
 			player,
-			"Equip a fish from your hotbar and carry it to the freezer. Pick up boat cargo one fish at a time."
-		)
-		return
-	elseif not AnglerData.canFreeze(profile.Angler, profile.Angler.Hand) then
-		notify(
-			player,
-			if frozenCount(shop, player) < #profile.Angler.Freezer
-				then "A customer is still holding a fish from your freezer. Sell it to free the spot."
-				else "That fish does not fit in the remaining cooler space. Sell some fish or use a storage rack."
+			if carrying or unlocked > 0
+				then "No fish fit in the remaining freezer space."
+				elseif
+					#profile.Angler.Backpack > 0
+				then "Your backpack fish are locked. Right-click a fish to unlock it."
+				else "Bring fish in your backpack or equip a fish to stock the freezer."
 		)
 		return
 	end
 	stocking[player] = true
-	local moved = 0
+	local moved, remaining = 0, 0
 	local ok, message = BoatService.updateProgress(player, function(current)
-		assert(
-			ownerOf(shop.base) == player
-				and near(player, position, reach)
-				and CargoService.isCarrying(player, current.Angler.Hand),
-			"Carry a fish to your freezer first."
-		)
-		current.Angler, moved = AnglerData.stockFreezer(current.Angler)
+		assert(ownerOf(shop.base) == player and near(player, position, reach), "Move closer to your freezer.")
+		local hasHand = CargoService.isCarrying(player, current.Angler.Hand)
+		current.Angler, moved = AnglerData.stockFreezer(current.Angler, hasHand)
+		remaining = if hasHand and current.Angler.Hand then 1 else 0
+		for _, item in current.Angler.Backpack do
+			if not item.Locked then
+				remaining += 1
+			end
+		end
 	end)
 	stocking[player] = nil
 	if ok then
 		notify(
 			player,
-			if moved == 1
-				then "Placed one fish in the freezer."
-				else "That fish does not fit in the remaining cooler space. Sell some fish first."
+			if moved > 0
+				then string.format(
+					"Placed %d fish in the freezer.%s",
+					moved,
+					if remaining > 0 then " Some fish did not fit." else ""
+				)
+				else "No fish fit in the remaining freezer space."
 		)
 		update:FireClient(player, "Stocked")
 		refreshDisplay(shop)
@@ -1234,19 +1565,22 @@ local function arrive(shop)
 	if not profile or (#profile.Angler.Freezer == 0 and #profile.Angler.Pantry == 0) then
 		return
 	end
-	-- One customer per register, each at a counter nobody else is using.
+	-- The advertisement allows one waiting customer behind each active register.
+	local advertised = ShopUpgrades.hasAdvertisement(profile.Angler)
 	local registers = fixtureFrames(shop, profile, "Register", ShopDesk.frame(shop.frame))
-	local busyRegisters, claimed = {}, {}
+	local registerLoads, claimed = {}, {}
 	for _, other in shop.customers do
-		busyRegisters[other.registerKey] = true
+		if not advertised or (other.active and not other.leaving) then
+			registerLoads[other.registerKey] = (registerLoads[other.registerKey] or 0) + 1
+		end
 		local key = if other.food then "food " .. dishKey(other.record) else recordKey(other.record)
 		claimed[key] = (claimed[key] or 0) + 1
 	end
-	local register
+	local register, lowestLoad = nil, if advertised then 2 else 1
 	for _, frame in registers do
-		if not busyRegisters[tostring(frame.Position)] then
-			register = frame
-			break
+		local load = registerLoads[tostring(frame.Position)] or 0
+		if load < lowestLoad then
+			register, lowestLoad = frame, load
 		end
 	end
 	if not register then
@@ -1278,8 +1612,13 @@ local function arrive(shop)
 		active = true,
 	}
 	table.insert(shop.customers, customer)
-	-- Keep the same arrival interval even when several registers are available.
-	shop.nextArrival = os.clock() + ARRIVAL_SECONDS
+	-- Alternate 17 and 18 seconds: two evenly spaced arrivals per 35 seconds.
+	local interval = ARRIVAL_SECONDS
+	if advertised then
+		interval = if shop.shortArrival then 17 else 18
+		shop.shortArrival = not shop.shortArrival
+	end
+	shop.nextArrival = os.clock() + interval
 	task.spawn(function()
 		local ok, failure = pcall(visit, shop, customer)
 		if not ok then
@@ -1334,6 +1673,7 @@ local function registerShop(base: Model)
 			leave(customer)
 		end
 		shop.nextArrival = os.clock() + ARRIVAL_SECONDS
+		shop.shortArrival = false
 	end
 	base:GetAttributeChangedSignal("OwnerUserId"):Connect(owned)
 	shop.freezerPrompt:SetAttribute("OwnerUserId", base:GetAttribute("OwnerUserId"))
@@ -1416,8 +1756,10 @@ function CustomerService.start()
 						if profile.Angler.Staff[role] then
 							local worker = ensureStaff(shop, owner, role)
 							if worker and role == "Porter" then
-								local speed = StaffCatalog.porterStats(profile.Angler)
-								worker.humanoid.WalkSpeed = speed
+								if not worker.busy then
+									local speed = StaffCatalog.porterStats(profile.Angler)
+									worker.humanoid.WalkSpeed = speed
+								end
 								runPorter(shop, worker, owner)
 							elseif worker then
 								for _, customer in shop.customers do

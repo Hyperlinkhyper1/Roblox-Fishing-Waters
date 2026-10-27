@@ -355,6 +355,51 @@ function Speedboat.build(frame: CFrame, anchored: boolean?): Model
 	for _, x in { -1.7, 1.7 } do
 		part("SternCleat", Vector3.new(0.65, 0.12, 0.18), CFrame.new(x, 2.44, 10.3), METAL)
 	end
+	local lampColor = Color3.fromRGB(239, 247, 255)
+	for _, side in { -1, 1 } do
+		-- Low cockpit lamps light the deck without obstructing the helm or seats.
+		local deckLamp = part(
+			"DeckLightLens",
+			Vector3.new(0.08, 0.2, 0.55),
+			CFrame.new(side * 4.48, 1.7, 4.8),
+			lampColor,
+			Enum.Material.Neon
+		)
+		local deckLight = Instance.new("PointLight")
+		deckLight.Name = "DeckLight"
+		deckLight.Color, deckLight.Range, deckLight.Brightness = lampColor, 16, 0.5
+		deckLight.Shadows = false
+		deckLight.Parent = deckLamp
+
+		part(
+			"HeadlightStand",
+			Vector3.new(0.18, 0.7, 0.18),
+			CFrame.new(side * 2.4, 2.8, -8),
+			METAL,
+			Enum.Material.Metal
+		)
+		part(
+			"HeadlightHousing",
+			Vector3.new(0.8, 0.46, 0.6),
+			CFrame.new(side * 2.4, 3.35, -8),
+			DARK,
+			Enum.Material.Metal
+		)
+		local lens = part(
+			"HeadlightLens",
+			Vector3.new(0.62, 0.3, 0.06),
+			CFrame.new(side * 2.4, 3.35, -8.34),
+			lampColor,
+			Enum.Material.Neon
+		)
+		lens.CastShadow = false
+		local headlight = Instance.new("SpotLight")
+		headlight.Name = "Headlight"
+		headlight.Face = Enum.NormalId.Front
+		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 45, 1.2, 65
+		headlight.Shadows = false
+		headlight.Parent = lens
+	end
 	return model
 end
 

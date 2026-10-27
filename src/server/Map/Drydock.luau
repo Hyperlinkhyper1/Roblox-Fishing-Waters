@@ -8,7 +8,7 @@ local DrydockInterior = require(script.Parent.DrydockInterior)
 local Rowboat = require(script.Parent.Parent.Rowboat)
 
 local Drydock = {}
-local LAYOUT_VERSION = 14
+local LAYOUT_VERSION = 15
 local rgb = Color3.fromRGB
 local M = Enum.Material
 local STEEL = rgb(47, 58, 64)
@@ -194,23 +194,24 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 		end
 		-- Outboard columns leave the working path beside the basin unobstructed.
 		part("OutdoorGantryFoot", Vector3.new(1.4, 0.25, 2.5), side * 18.1, 4.625, 54, STEEL, M.DiamondPlate)
-		part("OutdoorGantryColumn", Vector3.new(0.9, 10.8, 1), side * 18.25, 10, 54, STEEL)
+		-- Tall enough for a lifted hull's mast, and clear of the height boats probe for water.
+		part("OutdoorGantryColumn", Vector3.new(0.9, 18.8, 1), side * 18.25, 14, 54, STEEL)
 		beam(
 			"OutdoorGantryBrace",
-			Vector3.new(side * 18.25, 12.5, 54),
-			Vector3.new(side * 14.5, 15.5, 54),
+			Vector3.new(side * 18.25, 20.5, 54),
+			Vector3.new(side * 14.5, 23.5, 54),
 			0.45,
 			0.45,
 			YELLOW
 		)
 	end
-	part("OutdoorGantryBeam", Vector3.new(39, 1.25, 1.25), 0, 16, 54, YELLOW)
-	part("OutdoorHoistTrolley", Vector3.new(2.5, 0.8, 2), 0, 15, 54, STEEL)
-	beam("OutdoorHoistCable", Vector3.new(0, 14.6, 54), Vector3.new(0, 8.8, 54), 0.1, 0.1, BLACK)
-	part("OutdoorHookBlock", Vector3.new(0.8, 0.9, 0.7), 0, 8.4, 54, YELLOW)
-	beam("OutdoorCraneHook", Vector3.new(0, 8, 54), Vector3.new(-0.45, 7.5, 54), 0.18, 0.18, STEEL)
-	beam("OutdoorCraneHook", Vector3.new(-0.45, 7.5, 54), Vector3.new(0.3, 7.5, 54), 0.18, 0.18, STEEL)
-	beam("OutdoorCraneHook", Vector3.new(0.3, 7.5, 54), Vector3.new(0.45, 7.85, 54), 0.18, 0.18, STEEL)
+	part("OutdoorGantryBeam", Vector3.new(39, 1.25, 1.25), 0, 24, 54, YELLOW)
+	part("OutdoorHoistTrolley", Vector3.new(2.5, 0.8, 2), 0, 23, 54, STEEL)
+	beam("OutdoorHoistCable", Vector3.new(0, 22.6, 54), Vector3.new(0, 20.8, 54), 0.1, 0.1, BLACK)
+	part("OutdoorHookBlock", Vector3.new(0.8, 0.9, 0.7), 0, 20.4, 54, YELLOW)
+	beam("OutdoorCraneHook", Vector3.new(0, 20, 54), Vector3.new(-0.45, 19.5, 54), 0.18, 0.18, STEEL)
+	beam("OutdoorCraneHook", Vector3.new(-0.45, 19.5, 54), Vector3.new(0.3, 19.5, 54), 0.18, 0.18, STEEL)
+	beam("OutdoorCraneHook", Vector3.new(0.3, 19.5, 54), Vector3.new(0.45, 19.85, 54), 0.18, 0.18, STEEL)
 
 	-- Empty keel and bilge blocks make the basin read as a place to work on a hull.
 	for z = 39, 71, 8 do
@@ -237,14 +238,14 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 		part("HaulWinch", Vector3.new(1.8, 1.4, 1.8), side * 13.7, 5.5, 72, TEAL)
 		part("HaulWinchDrum", Vector3.new(2.4, 0.65, 0.7), side * 13.7, 5.7, 71.4, RUST)
 		local glow =
-			part("RearWorkLight", Vector3.new(0.7, 0.35, 0.7), side * 18.25, 14.5, 53.2, rgb(255, 232, 178), M.Neon)
+			part("RearWorkLight", Vector3.new(0.7, 0.35, 0.7), side * 18.25, 22.5, 53.2, rgb(255, 232, 178), M.Neon)
 		glow.CanCollide = false
 		local light = Instance.new("PointLight")
 		light.Color, light.Brightness, light.Range, light.Shadows = rgb(255, 232, 178), 1.1, 28, false
 		light.Parent = glow
 	end
 	local sign = part("RearDrydockSign", Vector3.new(15, 1.5, 0.18), 0, 3.2, 32.9, STEEL)
-	boardText(sign, "DRYDOCK  /  REPAIR SLIP", CREAM)
+	boardText(sign, "DRYDOCK  /  REFIT LIFT", CREAM)
 	-- These frames share the rowboat's waterline origin and point out to the bay.
 	for name, position in
 		{
@@ -253,6 +254,7 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 			SpeedboatPreview = Vector3.new(0, 2.1, 54),
 			PatrolBoatPreview = Vector3.new(0, 2.1, 54),
 			RacingSpeedboatPreview = Vector3.new(0, 2.1, 54),
+			TrawlerPreview = Vector3.new(0, 2.1, 54),
 			SlipwayTop = Vector3.new(0, 2.1, 54),
 			LaunchWater = Vector3.new(0, -frame.Position.Y, 54),
 		}
@@ -263,6 +265,7 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 				elseif name == "SpeedboatPreview" then "SpeedboatDisplayOrigin"
 				elseif name == "PatrolBoatPreview" then "PatrolBoatDisplayOrigin"
 				elseif name == "RacingSpeedboatPreview" then "RacingSpeedboatDisplayOrigin"
+				elseif name == "TrawlerPreview" then "TrawlerDisplayOrigin"
 				else name,
 			Vector3.new(1, 1, 1),
 			position.X,
@@ -308,17 +311,28 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 			end
 		end
 	end
-	local preview = Rowboat.build(frame * CFrame.new(0, 2.1, 54) * CFrame.Angles(0, math.pi, 0), true)
-	preview.Name = "LaunchPreview"
-	preview:SetAttribute("BoatId", "Rowboat")
-	preview:SetAttribute("DisplayOnly", true)
-	for _, piece in preview:GetDescendants() do
-		if piece:IsA("BasePart") then
-			piece:SetAttribute("PreviewCanCollide", piece.CanCollide)
-			piece.CanCollide = false
-		end
-	end
-	preview.Parent = rear
+	-- The cradle rests underwater as the refit lift: owners sail over it and it lifts
+	-- their hull into the dry basin (DrydockLaunch.lift). Purchases ride it down too.
+	-- Lowered, its keel blocks sit four studs under the surface, below every hull.
+	local drop = frame.Position.Y + 6.1
+	cradle:PivotTo(cradle:GetPivot() - Vector3.new(0, drop, 0))
+	shop:SetAttribute("LiftDrop", drop)
+	shop:SetAttribute("LiftKeelHeight", (frame * CFrame.new(0, 1.4, 0)).Position.Y)
+	-- A hull counts as over the lift while its root floats between the basin walls.
+	shop:SetAttribute("SlipFrame", CFrame.new((frame * CFrame.new(0, 0, 62)).Position * Vector3.new(1, 0, 1)))
+	shop:SetAttribute("SlipSize", Vector3.new(20, 30, 56))
+	-- With the floor down, the pit wall closes the gap under the headwall.
+	part("LiftPitWall", Vector3.new(23, 12, 1), 0, -5.5, 33.5, CONCRETE, M.Concrete)
+	-- Reopens the refit menu; each client enables it only while its own boat is over the lift.
+	local anchor = part("RefitPromptAnchor", Vector3.new(1, 1, 1), 0, 10, 60, STEEL)
+	anchor.Transparency, anchor.CanCollide, anchor.CanQuery, anchor.CastShadow = 1, false, false, false
+	local refit = Instance.new("ProximityPrompt")
+	refit.Name = "RefitDockPrompt"
+	refit.ActionText, refit.ObjectText = "Lift & refit", "Drydock"
+	refit.MaxActivationDistance = 40
+	refit.RequiresLineOfSight = false
+	refit.Enabled = false
+	refit.Parent = anchor
 	-- Atomic streaming prevents partial hulls while the shop camera watches it.
 	rear.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 end
@@ -328,6 +342,10 @@ end
 function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	local existing = plaza:FindFirstChild("Drydock")
 	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == LAYOUT_VERSION then
+		-- Saved version-15 shops share this waterline origin; add the new hull without rebuilding the lift.
+		if existing:GetAttribute("TrawlerPreviewFrame") == nil then
+			existing:SetAttribute("TrawlerPreviewFrame", existing:GetAttribute("FishingBoatPreviewFrame"))
+		end
 		for _, item in existing:GetDescendants() do
 			if item:IsA("Model") and item:FindFirstChild("CoolerLid") then
 				Rowboat.ensureCoolerInteraction(item)
@@ -340,6 +358,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 		end
 		DrydockInterior.ensure(existing, plazaFrame * CFrame.new(0, 0, 82))
 		CollectionService:AddTag(existing, "BoatShop")
+		CollectionService:AddTag(existing, "RefitDock")
 		clearApron(plaza, existing)
 		clearApron(plaza, existing, "RearDrydockFootprint")
 		return existing
@@ -572,6 +591,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	DrydockInterior.ensure(shop, frame)
 	buildRearDrydock(shop, frame)
 	CollectionService:AddTag(shop, "BoatShop")
+	CollectionService:AddTag(shop, "RefitDock")
 	clearApron(plaza, shop)
 	clearApron(plaza, shop, "RearDrydockFootprint")
 	return shop

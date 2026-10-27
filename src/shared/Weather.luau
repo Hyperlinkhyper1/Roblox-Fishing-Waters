@@ -13,14 +13,23 @@ export type State = {
 	stormPotential: number,
 	cloudPotential: number,
 	windPotential: number,
+	uniform: boolean,
 	systems: { any },
+	supercell: Supercell?,
 }
+
+-- One rotating storm cell. Positions are on the water plane (Y = 0).
+export type Supercell = { position: Vector3, motion: Vector3, strength: number, forced: boolean }
+export type Tornado = { id: number, position: Vector3, radius: number, strength: number, age: number, duration: number }
 
 Weather.Presets = {
 	Clear = { rain = 0, storm = 0, cloudCover = 0, windSpeed = 6 },
 	LightRain = { rain = 0.24, storm = 0, cloudCover = 0.5, windSpeed = 18 },
 	Rain = { rain = 0.62, storm = 0, cloudCover = 0.8, windSpeed = 32 },
 	Storm = { rain = 1, storm = 1, cloudCover = 1, windSpeed = 52 },
+	-- The gloomy weather around a forced supercell; the cell itself (Weather.supercell)
+	-- brings the extreme wind and tornadoes. Natural supercells are rare forecast events.
+	Supercell = { rain = 0.5, storm = 0.35, cloudCover = 0.95, windSpeed = 34 },
 	-- Admin-only event: deliberately absent from the automatic forecast.
 	BlackHole = { rain = 0.28, storm = 0, cloudCover = 1, windSpeed = 26 },
 }
@@ -47,10 +56,49 @@ for _, stage in Weather.Schedule do
 	Weather.CycleSeconds += stage.duration
 end
 
+-- About one forecast cycle in six grows a supercell, alive from the stage before
+-- the storm to the stage after it. Within SupercellThreshold of its local cover
+-- you are "under" it: windy catches and the Supercell weather kind.
+Weather.SupercellChance = 1 / 6
+Weather.SupercellRadius = 950
+Weather.SupercellCoreRadius = 420
+Weather.SupercellThreshold = 0.38
+Weather.SupercellSpeed = 9
+Weather.ForcedSupercellOrbit = 380
+Weather.ForcedSupercellPeriod = 900
+-- Each interval may drop one tornado from the cell's rear flank. Boats inside
+-- TornadoReach funnel radii are thrown.
+Weather.TornadoInterval = 45
+Weather.TornadoChance = 0.55
+Weather.ForcedTornadoChance = 0.85
+Weather.TornadoReach = 2.4
+local cycleTime = 0
+for index, stage in Weather.Schedule do
+	if stage.kind == "Storm" then
+		Weather.SupercellWindow = {
+			cycleTime - Weather.Schedule[index - 1].duration,
+			cycleTime + stage.duration + Weather.Schedule[index + 1].duration,
+		}
+		break
+	end
+	cycleTime += stage.duration
+end
+
 local TAU = math.pi * 2
 local function smoothstep(t: number): number
 	t = math.clamp(t, 0, 1)
 	return t * t * (3 - 2 * t)
+end
+
+-- Integer-only mixing: the server and every client must agree exactly on whether
+-- a supercell or tornado exists, which math.sin-based hashes can't promise.
+local function hash(a: number, b: number, c: number): number
+	local h = 2166136
+	for _, value in { a, b, c } do
+		h = (h * 31 + math.floor(value) % 1000003) % 2147483647
+		h = (h * 48271) % 2147483647
+	end
+	return h / 2147483647
 end
 
 -- Harbour.BAY, SCALE and SKETCH_CENTER define the real lake/bay, rather than a
@@ -173,6 +221,121 @@ function Weather.getSystems(time: number)
 	return systems
 end
 
+local function validPoint(position: any): boolean
+	return typeof(position) == "Vector3"
+		and position.X == position.X
+		and position.Y == position.Y
+		and position.Z == position.Z
+		and math.abs(position.X) <= Weather.RadarHalfSize
+		and math.abs(position.Z) <= Weather.RadarHalfSize
+		and math.abs(position.Y) <= 10000
+end
+
+-- Supercells move slightly right of the steering wind, like real right-movers.
+-- A forced (admin) cell instead circles the spot it was summoned at, so it stays
+-- in view. Any other override clears the sky of natural cells.
+function Weather.supercell(serverTime: number?): Supercell?
+	local time = serverTime or workspace:GetServerTimeNow()
+	local override = workspace:GetAttribute("WeatherOverride")
+	if override == "Supercell" then
+		local anchor = workspace:GetAttribute("SupercellPosition")
+		if not validPoint(anchor) then
+			anchor = Vector3.new(0, 0, 0)
+		end
+		local since = workspace:GetAttribute("SupercellSince")
+		if type(since) ~= "number" or since ~= since then
+			since = workspace:GetAttribute("WeatherEpoch") or time
+		end
+		local age = math.max(0, time - since)
+		local turn = age * TAU / Weather.ForcedSupercellPeriod
+		local orbit = Weather.ForcedSupercellOrbit
+		local speed = orbit * TAU / Weather.ForcedSupercellPeriod
+		return {
+			position = Vector3.new(anchor.X + math.cos(turn) * orbit, 0, anchor.Z + math.sin(turn) * orbit),
+			motion = Vector3.new(-math.sin(turn) * speed, 0, math.cos(turn) * speed),
+			strength = smoothstep(age / 20),
+			forced = true,
+		}
+	elseif type(override) == "string" and Weather.Presets[override] then
+		return nil
+	end
+	local seed = workspace:GetAttribute("WeatherSeed") or 1847
+	local epoch = workspace:GetAttribute("WeatherEpoch") or time
+	local elapsed = math.max(0, time - epoch)
+	local cycle = math.floor(elapsed / Weather.CycleSeconds)
+	local t = elapsed - cycle * Weather.CycleSeconds
+	local window = Weather.SupercellWindow
+	if t <= window[1] or t >= window[2] or hash(seed, cycle, 1) >= Weather.SupercellChance then
+		return nil
+	end
+	-- Each cell's track crosses a random point within reach of the islands.
+	local target = Vector3.new((hash(seed, cycle, 2) * 2 - 1) * 1800, 0, (hash(seed, cycle, 3) * 2 - 1) * 1800)
+	local angle = (seed % 360) * math.pi / 180 + 0.35
+	local motion = Vector3.new(math.cos(angle), 0, math.sin(angle)) * Weather.SupercellSpeed
+	local ramp = 60
+	return {
+		position = target + motion * (t - (window[1] + window[2]) / 2),
+		motion = motion,
+		strength = smoothstep((t - window[1]) / ramp) * smoothstep((window[2] - t) / ramp),
+		forced = false,
+	}
+end
+
+-- How strongly the cell covers a point, from 0 to its strength.
+function Weather.supercellCover(position: Vector3, cell: Supercell?): number
+	if not cell then
+		return 0
+	end
+	local dx, dz = position.X - cell.position.X, position.Z - cell.position.Z
+	return math.exp(-(dx * dx + dz * dz) / Weather.SupercellRadius ^ 2 * 2.2) * cell.strength
+end
+
+-- Tornadoes touch down behind and right of the cell's motion (its rear-flank
+-- downdraft) and travel with it, wandering a little. Fully deterministic, so the
+-- server flings boats exactly where every client draws a funnel.
+function Weather.tornadoes(serverTime: number?): { Tornado }
+	local time = serverTime or workspace:GetServerTimeNow()
+	local list = {}
+	local cell = Weather.supercell(time)
+	if not cell then
+		return list
+	end
+	local seed = workspace:GetAttribute("WeatherSeed") or 1847
+	local bucket = math.floor(time / Weather.TornadoInterval)
+	-- A tornado starts within ten seconds of its interval and lasts under 40, so
+	-- only this interval's and the previous one's can be on the ground.
+	for id = bucket - 1, bucket do
+		local start = id * Weather.TornadoInterval + hash(seed, id, 8) * 10
+		local duration = 24 + hash(seed, id, 9) * 14
+		local age = time - start
+		if age < 0 or age > duration then
+			continue
+		end
+		local birth = Weather.supercell(start)
+		local chance = if birth and birth.forced then Weather.ForcedTornadoChance else Weather.TornadoChance
+		if not birth or birth.strength < 0.7 or cell.strength < 0.3 or hash(seed, id, 7) >= chance then
+			continue
+		end
+		local speed = math.sqrt(cell.motion.X ^ 2 + cell.motion.Z ^ 2)
+		local fx, fz = if speed > 0 then cell.motion.X / speed else 1, if speed > 0 then cell.motion.Z / speed else 0
+		local wander = hash(seed, id, 10) * TAU + age * 0.22
+		local core = Weather.SupercellCoreRadius
+		table.insert(list, {
+			id = id,
+			position = Vector3.new(
+				cell.position.X + (-fx * 0.35 - fz * 0.3) * core + math.cos(wander) * 60,
+				0,
+				cell.position.Z + (-fz * 0.35 + fx * 0.3) * core + math.sin(wander) * 60
+			),
+			radius = 22 + hash(seed, id, 11) * 20,
+			strength = smoothstep(age / 6) * smoothstep((duration - age) / 6) * math.min(1, cell.strength / 0.7),
+			age = age,
+			duration = duration,
+		})
+	end
+	return list
+end
+
 local function localConditions(position: Vector3, state: State): (number, number, number, number)
 	local coverage, core = 0, 0
 	for _, system in state.systems do
@@ -187,8 +350,23 @@ local function localConditions(position: Vector3, state: State): (number, number
 	local storm = math.max(state.stormPotential, state.rainPotential * 0.75) * smoothstep(core / 0.85)
 	local cloud = math.clamp(state.cloudPotential * (0.2 + coverage * 0.8), 0, 1)
 	local wind = 6 + (state.windPotential - 6) * (0.16 + coverage * 0.5 + core * 0.34)
+	-- An explicit preset must reach the player, wave samples and radar alike.
+	-- Only the automatic forecast is weakened by gaps between regional fronts.
+	if state.uniform then
+		rain, storm, cloud, wind = state.rainPotential, state.stormPotential, state.cloudPotential, state.windPotential
+	end
+	local cell = Weather.supercellCover(position, state.supercell)
+	if cell > 0 then
+		rain = math.max(rain, cell * 0.95)
+		storm = math.max(storm, math.min(1, cell * 1.3))
+		cloud = math.max(cloud, math.min(1, cell * 1.6))
+		wind = math.max(wind, 6 + 58 * cell)
+	end
+	-- Falling rain needs a continuous cloud deck, including light rain at night.
+	cloud = math.max(cloud, smoothstep(rain / 0.08))
 	return rain, storm, cloud, wind
 end
+Weather.localConditions = localConditions
 
 local function waveAmplitude(wind: number): number
 	return 0.3 + (Weather.MaxWaveAmplitude - 0.3) * math.clamp(wind / 52, 0, 1) ^ 1.65
@@ -201,15 +379,7 @@ function Weather.blackHolePosition(): Vector3?
 		return nil
 	end
 	local position = workspace:GetAttribute("BlackHolePosition")
-	if
-		typeof(position) ~= "Vector3"
-		or position.X ~= position.X
-		or position.Y ~= position.Y
-		or position.Z ~= position.Z
-		or math.abs(position.X) > Weather.RadarHalfSize
-		or math.abs(position.Z) > Weather.RadarHalfSize
-		or math.abs(position.Y) > 10000
-	then
+	if not validPoint(position) then
 		return nil
 	end
 	return position
@@ -217,9 +387,13 @@ end
 
 -- Catches use their server-validated fishing position, never the player's
 -- camera or a client-reported mutation flag. Distance is across the surface.
-function Weather.mutationContext(position: Vector3)
+-- Under a supercell, FishMutations.roll decides whether the catch turns windy.
+function Weather.mutationContext(position: Vector3, serverTime: number?)
 	local center = Weather.blackHolePosition()
 	if not center then
+		if Weather.supercellCover(position, Weather.supercell(serverTime)) >= Weather.SupercellThreshold then
+			return { windy = true }
+		end
 		return nil
 	end
 	local dx, dz = position.X - center.X, position.Z - center.Z
@@ -254,6 +428,7 @@ function Weather.getState(serverTime: number?, position: Vector3?): State
 	local gust = 0.94 + 0.06 * math.sin(time * 0.47 + seed)
 	local wind = mix("windSpeed") * gust
 	local angle = (seed % 360) * math.pi / 180
+	local supercell = Weather.supercell(time)
 	local state = {
 		kind = if type(override) == "string" and Weather.Presets[override] then override else stage.kind,
 		rain = mix("rain"),
@@ -267,13 +442,16 @@ function Weather.getState(serverTime: number?, position: Vector3?): State
 		stormPotential = mix("storm"),
 		cloudPotential = mix("cloudCover"),
 		windPotential = wind,
+		uniform = type(override) == "string" and Weather.Presets[override] ~= nil,
 		systems = Weather.getSystems(time),
+		supercell = supercell,
 	}
 	if position then
 		state.rain, state.storm, state.cloudCover, state.windSpeed = localConditions(position, state)
 		state.waveAmplitude = waveAmplitude(state.windSpeed) * Weather.lakeExposure(position) ^ 2
-		state.kind = if override == "BlackHole"
-			then "BlackHole"
+		state.kind = if state.uniform
+			then override
+			elseif Weather.supercellCover(position, supercell) >= Weather.SupercellThreshold then "Supercell"
 			elseif state.storm > 0.38 then "Storm"
 			elseif state.rain > 0.4 then "Rain"
 			elseif state.rain > 0.06 then "LightRain"
@@ -290,40 +468,104 @@ Weather.components = {
 	{ weight = 0.12, wavelength = 34, speed = 5, angle = -0.7, phase = 4.1 },
 }
 
+-- The unit swell (weights sum to one) and its exact slope along X and Z.
+local function swell(x: number, z: number, time: number, direction: Vector3): (number, number, number)
+	local height, dx, dz = 0, 0, 0
+	for _, wave in Weather.components do
+		local cosine, sine = math.cos(wave.angle), math.sin(wave.angle)
+		local wx = direction.X * cosine - direction.Z * sine
+		local wz = direction.X * sine + direction.Z * cosine
+		local k = TAU / wave.wavelength
+		local phase = k * (x * wx + z * wz - time * wave.speed) + wave.phase
+		height += math.sin(phase) * wave.weight
+		local slope = math.cos(phase) * wave.weight * k
+		dx += slope * wx
+		dz += slope * wz
+	end
+	return height, dx, dz
+end
+-- The client swell mesh caches each vertex's amplitude and evaluates only this.
+Weather.swell = swell
+
+-- Swell height where the regional wind already gave `base` (the open-sea amplitude).
+-- The wind field changes over kilometres, so nearby points of one hull or crest share it.
+local function shelteredHeight(position: Vector3, time: number, state: State, base: number): number
+	return swell(position.X, position.Z, time, state.windDirection) * base * Weather.lakeExposure(position) ^ 2
+end
+
 local function heightAt(position: Vector3, time: number, state: State): (number, number)
 	local _, _, _, wind = localConditions(position, state)
 	local amplitude = waveAmplitude(wind) * Weather.lakeExposure(position) ^ 2
-	local height = 0
-	for _, wave in Weather.components do
-		local cosine, sine = math.cos(wave.angle), math.sin(wave.angle)
-		local direction = state.windDirection
-		local x = direction.X * cosine - direction.Z * sine
-		local z = direction.X * sine + direction.Z * cosine
-		local phase = TAU / wave.wavelength * (position.X * x + position.Z * z - time * wave.speed) + wave.phase
-		height += math.sin(phase) * wave.weight * amplitude
-	end
-	return height, amplitude
+	return swell(position.X, position.Z, time, state.windDirection) * amplitude, amplitude
 end
 
--- Height is an offset from Biomes.WaterLevel. The finite-difference normal also
--- includes the smooth shelter gradient at the mouth of the lake.
+-- Height is an offset from Biomes.WaterLevel. The normal combines the exact swell
+-- slope with the smooth shelter gradient at the mouth of the lake. One weather
+-- lookup per sample: a finite difference cost five, and every boat and crest
+-- samples each frame.
 function Weather.sample(position: Vector3, time: number, state: State?)
 	local current = state or Weather.getState(time)
-	local height, amplitude = heightAt(position, time, current)
-	local dx = (
-		heightAt(position + Vector3.new(1, 0, 0), time, current)
-		- heightAt(position - Vector3.new(1, 0, 0), time, current)
+	local _, _, _, wind = localConditions(position, current)
+	local base = waveAmplitude(wind)
+	local exposure = Weather.lakeExposure(position) ^ 2
+	local amplitude = base * exposure
+	local unit, sx, sz = swell(position.X, position.Z, time, current.windDirection)
+	local ex = (
+		Weather.lakeExposure(position + Vector3.new(1, 0, 0)) ^ 2
+		- Weather.lakeExposure(position - Vector3.new(1, 0, 0)) ^ 2
 	) / 2
-	local dz = (
-		heightAt(position + Vector3.new(0, 0, 1), time, current)
-		- heightAt(position - Vector3.new(0, 0, 1), time, current)
+	local ez = (
+		Weather.lakeExposure(position + Vector3.new(0, 0, 1)) ^ 2
+		- Weather.lakeExposure(position - Vector3.new(0, 0, 1)) ^ 2
 	) / 2
+	local dx = amplitude * sx + unit * base * ex
+	local dz = amplitude * sz + unit * base * ez
 	return {
-		height = height,
+		height = unit * amplitude,
 		amplitude = amplitude,
 		normal = Vector3.new(-dx, 1, -dz).Unit,
 		pitch = math.atan(dz),
 		roll = -math.atan(dx),
+	}
+end
+
+-- The surface a hull of the given half extents rests on: the plane through its
+-- bow, stern and both beams, at their mean height with the center. A point
+-- sample made long hulls pitch through every short crest and bury their bows;
+-- averaging across the hull lets it ride the swells longer than itself and skim
+-- the shorter chop. `forward` is the horizontal heading. A `floor` offset holds
+-- each point at or above it: Terrain's flat water covers the swell's troughs,
+-- so a hull resting on the visible surface sits level there instead of pitching.
+function Weather.hullSample(
+	position: Vector3,
+	forward: Vector3,
+	halfLength: number,
+	halfBeam: number,
+	time: number,
+	state: State?,
+	floor: number?
+)
+	local current = state or Weather.getState(time)
+	local _, _, _, wind = localConditions(position, current)
+	local base = waveAmplitude(wind)
+	local lowest = floor or -math.huge
+	local function pointHeight(point: Vector3): number
+		return math.max(lowest, shelteredHeight(point, time, current, base))
+	end
+	forward = Vector3.new(forward.X, 0, forward.Z)
+	forward = if forward.Magnitude > 1e-6 then forward.Unit else Vector3.new(0, 0, 1)
+	local right = Vector3.new(-forward.Z, 0, forward.X)
+	local center = pointHeight(position)
+	local bow = pointHeight(position + forward * halfLength)
+	local stern = pointHeight(position - forward * halfLength)
+	local starboard = pointHeight(position + right * halfBeam)
+	local port = pointHeight(position - right * halfBeam)
+	local alongSlope = (bow - stern) / (2 * halfLength)
+	local acrossSlope = (starboard - port) / (2 * halfBeam)
+	return {
+		height = (center * 2 + bow + stern + starboard + port) / 6,
+		amplitude = base * Weather.lakeExposure(position) ^ 2,
+		normal = (Vector3.new(0, 1, 0) - forward * alongSlope - right * acrossSlope).Unit,
 	}
 end
 

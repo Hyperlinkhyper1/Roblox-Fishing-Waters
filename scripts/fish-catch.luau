@@ -27,9 +27,16 @@ end
 local pool = Catalog.Pools[Catalog.DefaultPool]
 check(#pool.Fish == 10, "Main lake lists all ten species")
 for _, catchPool in Catalog.Pools do
-	check(#catchPool.Junk == 2, "Both junk catches are available in " .. catchPool.Name)
+	check(#catchPool.Junk == 3, "All three junk catches are available in " .. catchPool.Name)
 	for _, sample in
-		{ { 0, "WoodenBranch" }, { 0.019999, "WoodenBranch" }, { 0.02, "LeatherBoot" }, { 0.039999, "LeatherBoot" } }
+		{
+			{ 0, "WoodenBranch" },
+			{ 0.019999, "WoodenBranch" },
+			{ 0.02, "LeatherBoot" },
+			{ 0.039999, "LeatherBoot" },
+			{ 0.04, "Seaweed" },
+			{ 0.059999, "Seaweed" },
+		}
 	do
 		local roll = FishCatch.roll(catchPool, Catalog.Fish, Catalog.Rarities, function()
 			return sample[1]

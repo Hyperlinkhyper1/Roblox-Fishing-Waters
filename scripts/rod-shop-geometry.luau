@@ -247,11 +247,7 @@ for _, piece in plazaSolids do
 end
 local showroomSolids = solids(showroom)
 for _, id in dependencies.FurnitureCatalog.Order do
-	-- Path equipment is sold from the counter catalogue, without a showroom display.
-	if dependencies.FurnitureCatalog.Items[id].Requires then
-		check(showroom:FindFirstChild(id .. "Display") == nil, "Path equipment has no showroom display: " .. id)
-		continue
-	end
+	-- Every catalogue item has a full-size display facing its own customer spot.
 	local display = showroom:FindFirstChild(id .. "Display")
 	local sample = display and display:FindFirstChild("Sample" .. id)
 	check(sample and sample:IsA("Model") and #sample:GetDescendants() > 5, "Missing full-size furniture sample: " .. id)
@@ -259,10 +255,21 @@ for _, id in dependencies.FurnitureCatalog.Order do
 	check(prompt and prompt:GetAttribute("ItemId") == id, "Display must offer its own item: " .. id)
 	local label = prompt.Parent:FindFirstChildWhichIsA("SurfaceGui"):FindFirstChildWhichIsA("TextLabel")
 	check(string.find(label.Text, "$" .. dependencies.FurnitureCatalog.Items[id].Price, 1, true) ~= nil, "Display price disagrees with catalogue: " .. id)
-	local p = showroomFrame:PointToObjectSpace(prompt.Parent.Position)
-	local customer = Vector3.new(p.X, 3.2, 1.5)
-	walk({ showroomFrame:PointToObjectSpace(showroomArrival.Position), Vector3.new(0, 3.2, 1.5), customer }, showroomFrame, showroomSolids, "Route to " .. id .. " display")
-	check(((showroomFrame * customer) - prompt.Parent.Position).Magnitude < prompt.MaxActivationDistance, "Display prompt out of reach: " .. id)
+	local customer = display and display:GetAttribute("CustomerSpot")
+	local spot = if customer ~= nil and type(customer.X) == "number" then customer else nil
+	check(spot ~= nil, "Display lacks its customer spot: " .. id)
+	if spot then
+		walk({
+			showroomFrame:PointToObjectSpace(showroomArrival.Position),
+			Vector3.new(0, 3.2, -8),
+			Vector3.new(spot.X, 3.2, -8),
+			spot,
+		}, showroomFrame, showroomSolids, "Route to " .. id .. " display")
+		check(
+			((showroomFrame * spot) - prompt.Parent.Position).Magnitude < prompt.MaxActivationDistance,
+			"Display prompt out of reach: " .. id
+		)
+	end
 end
 local counterTop = showroom:FindFirstChild("CounterTop")
 check(counterTop and CollectionService:HasTag(counterTop, "FurnitureShop"), "Furniture counter is untagged")

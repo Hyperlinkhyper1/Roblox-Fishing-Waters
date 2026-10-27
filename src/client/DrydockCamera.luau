@@ -5,8 +5,17 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 
 local DrydockCamera = {}
 local saved, connection = nil, nil
+local display = nil
+
+local function clearDisplay()
+	if display then
+		display:Destroy()
+		display = nil
+	end
+end
 
 function DrydockCamera.stop()
+	clearDisplay()
 	if connection then
 		connection:Disconnect()
 		connection = nil
@@ -27,6 +36,7 @@ function DrydockCamera.stop()
 end
 
 function DrydockCamera.show(shop: Model, launching: boolean, boatId: string?)
+	clearDisplay()
 	local previewAttribute = if not launching
 			and boatId
 			and boatId ~= "Rowboat"
@@ -67,6 +77,26 @@ function DrydockCamera.show(shop: Model, launching: boolean, boatId: string?)
 		if not shop.Parent then
 			DrydockCamera.stop()
 			return
+		end
+		-- The purchase hull is created only after the lift rises. Browsing uses a
+		-- client-local copy so each player can inspect a different boat.
+		if not launching and boatId then
+			if shop:GetAttribute("LaunchingUserId") then
+				clearDisplay()
+			elseif not display then
+				local boating = ReplicatedStorage:FindFirstChild("Boating")
+				local templates = boating and boating:FindFirstChild("Previews")
+				local template = templates and templates:FindFirstChild(boatId)
+				if template and template:IsA("Model") then
+					display = template:Clone()
+					local offset = if boatId == "PatrolBoat" or boatId == "Trawler"
+						then CFrame.new(0, 0, -10.5)
+						else CFrame.identity
+					-- Templates are built at identity; retain their root's offset.
+					display:PivotTo(start * offset * template:GetPivot())
+					display.Parent = workspace
+				end
+			end
 		end
 		local frame = start
 		if launching then

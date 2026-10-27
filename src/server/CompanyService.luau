@@ -14,6 +14,7 @@ local BoatService = require(script.Parent.BoatService)
 local CustomerService = require(script.Parent.CustomerService)
 local Rowboat = require(script.Parent.Rowboat)
 local FishingBoat = require(script.Parent.FishingBoat)
+local Trawler = require(script.Parent.Trawler)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
@@ -25,7 +26,7 @@ local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local CompanyService = {}
 local BASE_TAG = "PlayerBase"
-local builders = { Rowboat = Rowboat, FishingBoat = FishingBoat }
+local builders = { Rowboat = Rowboat, FishingBoat = FishingBoat, Trawler = Trawler }
 -- Dock-local studs (BoatDockFrame: -Z is the water, +X the right-hand pier at x=17).
 local MOORINGS = {
 	{ boat = CFrame.new(28, 0, -24), pier = Vector3.new(17, 3.2, -24), pickup = Vector3.new(17, 3.2, -24) },
@@ -145,7 +146,8 @@ local function build(base: Model, owner: Player, boatId: string)
 		base = base,
 		ownerId = owner.UserId,
 		boatId = boatId,
-		spec = BoatCatalog[boatId],
+		-- Wears the owner's refit dock paint and keeps the speed of its motors.
+		spec = BoatService.outfit(owner, boatId, model),
 		model = model,
 		active = true,
 		mode = "Moored",

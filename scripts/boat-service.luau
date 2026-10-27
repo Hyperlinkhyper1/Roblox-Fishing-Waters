@@ -360,7 +360,7 @@ local RunService = {
 	IsStudio = function()
 		return true
 	end,
-	Heartbeat = signal(),
+	PreSimulation = signal(),
 }
 local ProximityPromptService = { PromptTriggered = signal() }
 local services = {
@@ -432,6 +432,12 @@ local Rowboat = {
 		local seat = Instance.new("VehicleSeat")
 		seat.Name, seat.Parent = "RowerSeat", model
 		seat.CFrame = CFrame.new(frame.Position + Vector3.new(0, 0.92, 0.6))
+		local lamp = Instance.new("Part")
+		lamp.Name, lamp.Material, lamp.Parent = "LampLens", Enum.Material.Neon, model
+		for _, class in { "PointLight", "SpotLight", "SurfaceLight" } do
+			local light = Instance.new(class)
+			light.Enabled, light.Parent = true, lamp
+		end
 		if not anchored then
 			table.insert(builtBoats, model)
 		end
@@ -476,12 +482,20 @@ local RacingSpeedboat = {
 		return model
 	end,
 }
+local Trawler = {
+	build = function(frame, anchored)
+		local model = FishingBoat.build(frame, anchored)
+		model:SetAttribute("BoatId", "Trawler")
+		return model
+	end,
+}
 local waveHeight, waveNormal = 0, Vector3.new(0, 1, 0)
-local waveSampleTime, waveSamplePosition
+local waveSampleTime, waveSamplePosition, waveHull
 local parkedRelease
 local launchReservations, launchRuns, launchReleases = {}, 0, 0
 local launchBlocked, launchFails, duringLaunch = false, false, nil
 local DrydockLaunch = {
+	RAISE_SECONDS = 3,
 	reserve = function(shop, player, boatId)
 		if launchBlocked or launchReservations[shop] then
 			return nil, "Launch busy"
@@ -547,14 +561,27 @@ local dependencies = {
 	Speedboat = Speedboat,
 	RacingSpeedboat = RacingSpeedboat,
 	PatrolBoat = PatrolBoat,
+	Trawler = Trawler,
 	DrydockLaunch = DrydockLaunch,
 	BoatLaunchCollision = BoatLaunchCollision,
 	BoatCatalog = BoatCatalog,
 	Biomes = { WaterLevel = 0 },
 	Weather = {
 		Presets = { Clear = {}, LightRain = {}, Rain = {}, Storm = {}, BlackHole = {} },
+		TornadoReach = 2.4,
+		tornadoes = function()
+			return {}
+		end,
 		sample = function(position, time)
 			waveSamplePosition, waveSampleTime = position, time
+			return { height = waveHeight, normal = waveNormal }
+		end,
+		getState = function()
+			return {}
+		end,
+		hullSample = function(position, forward, halfLength, halfBeam, time)
+			waveSamplePosition, waveSampleTime = position, time
+			waveHull = { forward = forward, halfLength = halfLength, halfBeam = halfBeam }
 			return { height = waveHeight, normal = waveNormal }
 		end,
 		parkedOffset = function(rest, parkedAt, time)
@@ -843,6 +870,30 @@ check(
 )
 check(builtBoats[1].PrimaryPart.serverOwned, "Spawned boat physics must remain server-owned")
 local floatingBoat = Service.active[rich]
+local lamp = floatingBoat.model:FindFirstChild("LampLens")
+check(floatingBoat.model:GetAttribute("LightsEnabled") == true, "A newly launched boat starts with lights on")
+request.OnServerEvent:Fire(rich, "ToggleLights")
+check(floatingBoat.model:GetAttribute("LightsEnabled") == true, "An unseated owner cannot toggle the boat lights")
+floatingBoat.seat.Occupant = { Parent = fresh.Character }
+request.OnServerEvent:Fire(rich, "ToggleLights")
+check(floatingBoat.model:GetAttribute("LightsEnabled") == true, "Another helm occupant blocks the owner's light request")
+floatingBoat.seat.Occupant = { Parent = rich.Character }
+request.OnServerEvent:Fire(fresh, "ToggleLights")
+check(floatingBoat.model:GetAttribute("LightsEnabled") == true, "Other players cannot switch this boat's lights")
+request.OnServerEvent:Fire(rich, "ToggleLights")
+check(floatingBoat.model:GetAttribute("LightsEnabled") == false and lamp.Material == Enum.Material.SmoothPlastic, "The driver can turn off illumination and glowing lenses")
+for _, light in lamp:GetDescendants() do
+	check(light.Enabled == false, "Every type of boat light must turn off")
+end
+request.OnServerEvent:Fire(rich, "ToggleLights")
+check(floatingBoat.model:GetAttribute("LightsEnabled") == false, "Repeated light requests are rate limited")
+now += 0.21
+request.OnServerEvent:Fire(rich, "ToggleLights")
+check(floatingBoat.model:GetAttribute("LightsEnabled") == true and lamp.Material == Enum.Material.Neon, "The next toggle restores the lights and lenses")
+for _, light in lamp:GetDescendants() do
+	check(light.Enabled == true, "Every type of boat light must turn back on")
+end
+floatingBoat.seat.Occupant = nil
 local function checkSuspension(boat, label)
 	check(
 		boat.velocity.ForceLimitsEnabled
@@ -875,9 +926,11 @@ local function checkSuspension(boat, label)
 	)
 	check(
 		boat.float.MaxVelocity > 0
-			and boat.float.MaxVelocity <= 6
+			-- Climbing an oncoming swell scales with how fast the hull crosses it.
+			and boat.float.MaxVelocity
+				<= 6 + Vector3.new(boat.root.AssemblyLinearVelocity.X, 0, boat.root.AssemblyLinearVelocity.Z).Magnitude * 0.5 + 0.00001
 			and boat.heading.MaxAngularVelocity > 0
-			and boat.heading.MaxAngularVelocity <= 2
+			and boat.heading.MaxAngularVelocity == boat.spec.TurnRate + 2
 			and boat.float.MaxAxesForce.Y > boat.lift.Force.Y
 			and boat.float.MaxAxesForce.Y < math.huge
 			and boat.heading.MaxTorque > 0
@@ -908,7 +961,7 @@ local heldFrame, heldSupport = floatingBoat.root.CFrame, floatingBoat.lift.Force
 floatingBoat.root.AssemblyMass = math.huge
 waveHeight = 1.5
 for _ = 1, 300 do
-	RunService.Heartbeat:Fire(1 / 60)
+	RunService.PreSimulation:Fire(1 / 60)
 end
 checkParked(floatingBoat, "Boat while standing on deck")
 check(
@@ -918,15 +971,15 @@ check(
 floatingBoat.root.AssemblyMass = 100
 floatingBoat.seat.Occupant = { Parent = rich.Character }
 floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = 0, 0.04, now
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 checkParked(floatingBoat, "Neutral helm and analog drift")
 floatingBoat.seat.Occupant = { Parent = fresh.Character }
 floatingBoat.throttle = 1
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 checkParked(floatingBoat, "Unauthorized helm input")
 floatingBoat.seat.Occupant = { Parent = rich.Character }
 sightResult = { Material = Enum.Material.Water }
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 checkSuspension(floatingBoat, "Released rowboat")
 check(
 	not floatingBoat.root.Anchored and not floatingBoat.parked and floatingBoat.velocity.Enabled,
@@ -945,8 +998,24 @@ check(
 	"A moving boat must follow waves while preserving its root offset"
 )
 check(
-	waveSampleTime == workspace.serverTime and waveSamplePosition == floatingBoat.root.Position,
+	waveSampleTime == workspace.serverTime
+		and (function()
+			-- The waterline leads the hull's horizontal motion by 0.12 s.
+			local motion = floatingBoat.root.AssemblyLinearVelocity
+			local expected = floatingBoat.root.Position + Vector3.new(motion.X, 0, motion.Z) * 0.12
+			return (waveSamplePosition - expected).Magnitude < 0.00001
+		end)(),
 	"Boat buoyancy must sample the same synchronized wave clock and world position as visible water"
+)
+check(
+	waveHull
+		and waveHull.halfLength >= floatingBoat.spec.Length * 0.4 - 0.00001
+		and math.abs(waveHull.halfBeam - floatingBoat.spec.Beam * 0.4) < 0.00001,
+	"Buoyancy must rest on the hull's footprint, not a single point under its root"
+)
+check(
+	floatingBoat.float.MaxVelocity >= 6,
+	"The waterline must keep its resting climb rate before the hull gathers speed"
 )
 waveHeight, waveNormal = -1, Vector3.new(0.25, 1, 0.2).Unit
 floatingBoat.yaw = math.pi / 2
@@ -957,7 +1026,7 @@ floatingBoat.seat.Occupant = { Parent = rich.Character }
 floatingBoat.throttle, floatingBoat.lastInput = 1, now
 floatingBoat.root.AssemblyMass = 200
 sightResult = { Material = Enum.Material.Water }
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 checkSuspension(floatingBoat, "Occupied rowboat")
 check(
 	floatingBoat.float.Position.Y
@@ -979,15 +1048,15 @@ check(
 )
 floatingBoat.seat.Occupant = nil
 floatingBoat.root.AssemblyMass = 100
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 checkSuspension(floatingBoat, "Rowboat after dismount")
 local originalGravity = workspace.Gravity
 workspace.Gravity = 100
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 checkSuspension(floatingBoat, "Rowboat with changed gravity")
 workspace.Gravity = originalGravity
 for _ = 1, 300 do
-	RunService.Heartbeat:Fire(1 / 60)
+	RunService.PreSimulation:Fire(1 / 60)
 end
 checkParked(floatingBoat, "Boat after dismounting and coasting to rest")
 check(
@@ -996,11 +1065,11 @@ check(
 )
 floatingBoat.seat.Occupant = { Parent = rich.Character }
 floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = 0, 0.5, now
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 check(not floatingBoat.parked and floatingBoat.turn > 0, "Steering in place must also release the hull")
 check(
-	floatingBoat.root.AssemblyAngularVelocity.Y == -floatingBoat.turn,
-	"A hull that keeps up with its heading must turn at the steering rate, not lag behind a spring"
+	floatingBoat.yaw < math.pi / 2 and floatingBoat.root.AssemblyAngularVelocity == Vector3.zero,
+	"Steering must advance the heading target without overwriting solver angular velocity"
 )
 request.OnServerEvent:Fire(rich, "Row", 1, 1)
 request.OnServerEvent:Fire(rich, "Row", 0, 0)
@@ -1010,12 +1079,12 @@ check(
 )
 floatingBoat.steer = 0
 for _ = 1, 300 do
-	RunService.Heartbeat:Fire(1 / 60)
+	RunService.PreSimulation:Fire(1 / 60)
 end
 checkParked(floatingBoat, "Neutral helm after turning")
 
--- Feed measured motion into the real controller: banking must follow actual
--- turns, and the stern must have no lateral velocity at any hull heading.
+-- Feed measured motion into the real controller: banking follows helm intent,
+-- and the stern must have no lateral velocity at any hull heading.
 waveHeight, waveNormal = 0, Vector3.new(0, 1, 0)
 local rowSpec = floatingBoat.spec
 for id, spec in BoatCatalog do
@@ -1031,12 +1100,12 @@ for id, spec in BoatCatalog do
 			floatingBoat.turn, floatingBoat.bank, floatingBoat.bankVelocity = 0, 0, 0
 			floatingBoat.throttle, floatingBoat.steer, floatingBoat.lastInput = direction, 1, now
 			-- Release first: parking deliberately clears all measured velocities.
-			RunService.Heartbeat:Fire(1 / 60)
+			RunService.PreSimulation:Fire(1 / 60)
 			root.AssemblyLinearVelocity = forward * floatingBoat.speed
 			for _ = 1, 120 do
 				-- The mock has no solver; physics would report this measured spin.
 				root.AssemblyAngularVelocity = Vector3.new(0.12, -spec.TurnRate * direction, 0.2)
-				RunService.Heartbeat:Fire(1 / 60)
+				RunService.PreSimulation:Fire(1 / 60)
 			end
 			check(
 				root.AssemblyAngularVelocity.Y == -spec.TurnRate * direction,
@@ -1068,7 +1137,7 @@ for id, spec in BoatCatalog do
 			local bowVelocity = commanded + yawVelocity:Cross(bow - root.AssemblyCenterOfMass)
 			check(bowVelocity:Dot(right) * direction > 1, id .. " bow must swing around the stern")
 			root.AssemblyAngularVelocity = Vector3.new(30, -spec.TurnRate * direction * 50, -40)
-			RunService.Heartbeat:Fire(1 / 60)
+			RunService.PreSimulation:Fire(1 / 60)
 			local impactCommand =
 				Vector3.new(floatingBoat.velocity.PlaneVelocity.X, 0, floatingBoat.velocity.PlaneVelocity.Y)
 			check(
@@ -1082,11 +1151,22 @@ for id, spec in BoatCatalog do
 				).Magnitude < 1e-6,
 				id .. " drive force must follow passenger changes to the center of mass"
 			)
+			-- A key reversal must start moving the lean toward the other side on
+			-- the first tick, even while measured yaw still points into the old turn.
+			floatingBoat.steer = -1
+			local previousBank = floatingBoat.bank
+			local measuredSpin = root.AssemblyAngularVelocity
+			RunService.PreSimulation:Fire(1 / 60)
+			check(floatingBoat.bank > previousBank, id .. " countersteering must immediately reverse the lean")
+			local counterHeading = math.atan2(math.sin(floatingBoat.yaw - yaw), math.cos(floatingBoat.yaw - yaw))
+			check(counterHeading * direction > 0, id .. " countersteering must discard the old heading lead immediately")
+			check(root.AssemblyAngularVelocity == measuredSpin, id .. " countersteering must leave rotation to the solver")
+			floatingBoat.steer = 0
 			root.AssemblyAngularVelocity = Vector3.zero
 			for _ = 1, 120 do
-				RunService.Heartbeat:Fire(1 / 60)
+				RunService.PreSimulation:Fire(1 / 60)
 			end
-			check(math.abs(floatingBoat.bank) < 0.001, id .. " must settle when actual rotation stops")
+			check(math.abs(floatingBoat.bank) < 0.001, id .. " must settle when steering stops")
 			local straight =
 				Vector3.new(floatingBoat.velocity.PlaneVelocity.X, 0, floatingBoat.velocity.PlaneVelocity.Y)
 			check(math.abs(straight:Dot(right)) < 1e-6, id .. " blocked yaw must not create sideways propulsion")
@@ -1097,7 +1177,7 @@ floatingBoat.spec = rowSpec
 floatingBoat.throttle, floatingBoat.steer = 0, 0
 floatingBoat.root.AssemblyLinearVelocity = Vector3.zero
 for _ = 1, 1200 do
-	RunService.Heartbeat:Fire(1 / 60)
+	RunService.PreSimulation:Fire(1 / 60)
 end
 checkParked(floatingBoat, "All hulls after banking and coasting")
 floatingBoat.seat.Occupant = nil
@@ -1332,14 +1412,14 @@ do
 	check(latePart.CollisionGroup == "DrydockLaunch", "Parts added during grace must inherit launch filtering")
 	boat.throttle, boat.lastInput = 1, now
 	sightResult = { Material = Enum.Material.Wood }
-	RunService.Heartbeat:Fire(1 / 60)
+	RunService.PreSimulation:Fire(1 / 60)
 	check(
 		boat.clearWater and math.abs(boat.velocity.PlaneVelocity.Y + BoatCatalog.Rowboat.Acceleration / 60) < 0.00001,
 		"A dock or nearby prop must not block driving during collision grace"
 	)
 	now += 9.99
 	boat.lastInput = now
-	RunService.Heartbeat:Fire(1 / 60)
+	RunService.PreSimulation:Fire(1 / 60)
 	check(boat.root.CollisionGroup == "DrydockLaunch" and boat.clearWater, "Grace must last the full ten seconds")
 	now += 0.02
 	for _, timer in delayed do
@@ -1348,7 +1428,7 @@ do
 		end
 	end
 	boat.lastInput = now
-	RunService.Heartbeat:Fire(1 / 60)
+	RunService.PreSimulation:Fire(1 / 60)
 	check(
 		boat.root.CollisionGroup == initialGroup
 			and latePart.CollisionGroup == "OtherGameplay"
@@ -1538,15 +1618,15 @@ for _, piece in fisherDisplay:GetDescendants() do
 end
 workingFisher.root.AssemblyMass = 230
 workingFisher.throttle, workingFisher.lastInput = 1, now
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 checkSuspension(workingFisher, "Fishing boat with passengers")
 workingFisher.root.AssemblyMass = 100
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 checkSuspension(workingFisher, "Fishing boat after passengers leave")
 workingFisher.yaw = 0
 workingFisher.speed, workingFisher.turn = 0, 0
 workingFisher.throttle, workingFisher.steer, workingFisher.lastInput = 1, 0, now
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 check(
 	math.abs(workingFisher.velocity.PlaneVelocity.Y + BoatCatalog.FishingBoat.Acceleration / 60) < 0.00001,
 	"Fishing boat starts with bounded acceleration"
@@ -1556,37 +1636,37 @@ for _ = 1, 1200 do
 	local measured = workingFisher.root.AssemblyLinearVelocity
 	local requested = Vector3.new(workingFisher.velocity.PlaneVelocity.X, 0, workingFisher.velocity.PlaneVelocity.Y)
 	workingFisher.root.AssemblyLinearVelocity = measured + (requested - measured) * (1 - math.exp(-4 / 60))
-	RunService.Heartbeat:Fire(1 / 60)
+	RunService.PreSimulation:Fire(1 / 60)
 end
 check(
-	-workingFisher.root.AssemblyLinearVelocity.Z > 39.5,
+	-workingFisher.root.AssemblyLinearVelocity.Z > BoatCatalog.FishingBoat.ForwardSpeed - 0.5,
 	"Real service must build faster cruise speed despite actuator lag"
 )
-workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, -40)
-workingFisher.speed = 40
-RunService.Heartbeat:Fire(1 / 60)
-check(workingFisher.velocity.PlaneVelocity.Y == -40, "Fishing boat reaches its faster top speed")
+workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, -BoatCatalog.FishingBoat.ForwardSpeed)
+workingFisher.speed = BoatCatalog.FishingBoat.ForwardSpeed
+RunService.PreSimulation:Fire(1 / 60)
+check(workingFisher.velocity.PlaneVelocity.Y == -BoatCatalog.FishingBoat.ForwardSpeed, "Fishing boat reaches its faster top speed")
 workingFisher.throttle = -1
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 check(
-	math.abs(workingFisher.velocity.PlaneVelocity.Y + 40 - BoatCatalog.FishingBoat.BrakeDeceleration / 60) < 0.00001,
+	math.abs(workingFisher.velocity.PlaneVelocity.Y + BoatCatalog.FishingBoat.ForwardSpeed - BoatCatalog.FishingBoat.BrakeDeceleration / 60) < 0.00001,
 	"Reversing brakes before changing direction"
 )
 workingFisher.root.AssemblyLinearVelocity = Vector3.zero
 workingFisher.speed = 0
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 check(
 	math.abs(workingFisher.velocity.PlaneVelocity.Y - BoatCatalog.FishingBoat.Acceleration / 60) < 0.00001,
 	"A stopped hull restarts gently in reverse"
 )
 workingFisher.root.AssemblyLinearVelocity = Vector3.new(0, 0, 14)
 workingFisher.speed = -14
-RunService.Heartbeat:Fire(1 / 60)
+RunService.PreSimulation:Fire(1 / 60)
 check(workingFisher.velocity.PlaneVelocity.Y == 14, "Fishing boat reaches its faster reverse top speed")
 workingFisher.throttle, workingFisher.steer = 0, 1
-RunService.Heartbeat:Fire(0.1)
+RunService.PreSimulation:Fire(0.1)
 check(
-	math.abs(workingFisher.yaw - 0.018) < 0.00001,
+	workingFisher.yaw > 0.018 and workingFisher.yaw <= BoatCatalog.FishingBoat.TurnRate * 0.1,
 	"Fishing boat steering responds faster while easing into its reverse turn rate"
 )
 check(
@@ -1857,6 +1937,27 @@ check(
 	Service.active[racingBuyer].model:GetAttribute("BoatId") == "RacingSpeedboat" and racingPreview.destroyed,
 	"Owned racing boat respawns from the player's dock"
 )
+
+-- Trawler purchase, persistence and dock respawn use its own catalog handling.
+local trawlerBuyer = makePlayer(126, 17500)
+local trawlerPreview = Trawler.build(CFrame.new(Vector3.new(0, 0, 100)), true)
+function DrydockLaunch.reserve(shop, player, boatId)
+	check(player == trawlerBuyer and boatId == "Trawler", "Trawler purchase reserves its own display")
+	return { shop = shop, player = player, boatId = boatId }
+end
+function DrydockLaunch.run(reservation, activate)
+	return activate(trawlerBuyer, CFrame.new(Vector3.new(0, 0, 100)), trawlerPreview)
+end
+Service.purchase(trawlerBuyer, "Trawler")
+check(trawlerBuyer:GetAttribute("Cash") == 0 and trawlerBuyer:GetAttribute("OwnsTrawler"), "Trawler charges $17500 and publishes ownership")
+check(store.data.Player_126.OwnedBoats.Trawler, "Trawler ownership persists")
+local trawlerActive = Service.active[trawlerBuyer]
+check(trawlerActive and trawlerActive.model == trawlerPreview and trawlerActive.spec == BoatCatalog.Trawler, "Purchased trawler launches with its own handling")
+base:SetAttribute("OwnerUserId", trawlerBuyer.UserId)
+trawlerBuyer:SetAttribute("BaseId", 1)
+trawlerActive.seat.Occupant = nil
+Service.spawnBoat(trawlerBuyer, spawnPrompt, "Trawler")
+check(Service.active[trawlerBuyer].model:GetAttribute("BoatId") == "Trawler" and trawlerPreview.destroyed, "Owned trawler respawns at the owner's dock")
 
 print(
 	`Boat service recording-mock checks passed: {checks}. No Roblox runtime, DataStore network, or live physics were exercised.`

@@ -20,7 +20,7 @@ local Catalog = (function() ${catalog} end)()
 local Data = (function() ${data} end)()
 local spec = Boats.PatrolBoat
 local _, width, height = Grid.cells(spec.Hold)
-assert(width == 8 and height == 20 and Grid.capacity(spec.Hold) == 128, "Long, narrow 128-cell hold")
+assert(width == 8 and height == 15 and Grid.capacity(spec.Hold) == 90, "Long, narrow 90-cell hold")
 local function valid(items)
   for index, item in items do
     assert(Grid.fits(spec.Hold, Grid.occupied(items, Catalog.Fish, index),
@@ -28,6 +28,21 @@ local function valid(items)
   end
 end
 valid(spec.StarterParts)
+local upgraded = Data.decode(nil)
+upgraded.PatrolHoldVersion = 2
+upgraded.Holds.PatrolBoat = {
+  {PartId = "PatrolEngine", X = 3, Y = 17, R = 0},
+  {PartId = "Lantern", X = 4, Y = 1, R = 0},
+  {PartId = "PatrolEngine", X = 1, Y = 9, R = 0},
+  {PartId = "PatrolEngine", X = 4, Y = 9, R = 0},
+  {PartId = "PatrolEngine", X = 1, Y = 13, R = 0},
+  {PartId = "Rudder", X = 7, Y = 9, R = 0},
+  {PartId = "Rudder", X = 8, Y = 9, R = 0},
+  {PartId = "Rudder", X = 7, Y = 11, R = 0},
+}
+local upgradedAfter = Data.decode(upgraded)
+valid(upgradedAfter.Holds.PatrolBoat)
+assert(#upgradedAfter.Holds.PatrolBoat == 8, "Paid upgrades survive migration")
 assert(#Grid.cells(Grid.shape(spec.StarterParts[1], {})) == 12, "Patrol engine occupies twelve cells")
 assert(#Grid.cells(Grid.Parts.Engine.Shape) == 4, "Other boats retain four-cell engines")
 local oldMask = {}
@@ -53,7 +68,7 @@ end
 assert(count == 123, "Full old hold fixture")
 local migrated = Data.decode(raw)
 valid(migrated.Holds.PatrolBoat)
-assert(#migrated.Storage == 8 and #migrated.Holds.PatrolBoat == 117, "Full hold overflow preserved in storage")
+assert(#migrated.Storage == 46 and #migrated.Holds.PatrolBoat == 79, "Full hold overflow preserved in storage")
 assert(raw.PatrolHoldVersion == nil and #raw.Storage == 0 and oldKit[1].PartId == "Engine", "Migration copies saved input")
 local seen = {}
 for _, item in migrated.Holds.PatrolBoat do
@@ -68,7 +83,7 @@ for _, fish in migrated.Storage do
 end
 for id = 1, count do assert(seen[id], "Migration lost a fish") end
 local again = Data.decode(migrated)
-assert(#again.Storage == 8 and again.PatrolHoldVersion == 2, "Migration runs once")
+assert(#again.Storage == 46 and again.PatrolHoldVersion == 3, "Migration runs once")
 for index, item in migrated.Holds.PatrolBoat do
   local saved = again.Holds.PatrolBoat[index]
   assert(saved.X == item.X and saved.Y == item.Y and saved.R == item.R and saved.PartId == item.PartId, "Reload rearranged cargo")
@@ -99,7 +114,7 @@ local packed = Data.decode(mixed)
 valid(packed.Holds.PatrolBoat)
 assert(#packed.Holds.PatrolBoat - 2 + #packed.Storage == fishCount, "Mixed large fish preserved")
 local recovered = Data.takeStored(migrated)
-assert(recovered and recovered.Hand and #recovered.Storage == 7, "Overflow remains recoverable")
+assert(recovered and recovered.Hand and #recovered.Storage == 45, "Overflow remains recoverable")
 print("Patrol cargo: dimensions, engine, full saved-hold migration, overflow, reload and rotation checks passed.")
 `;
 const temporary = await mkdtemp(join(tmpdir(), 'patrol-cargo-'));

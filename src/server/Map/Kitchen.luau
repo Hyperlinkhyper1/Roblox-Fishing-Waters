@@ -29,6 +29,13 @@ for _, z in { -0.5, 0.55 } do
 		table.insert(Kitchen.CASE_SPOTS, CFrame.new(x, Kitchen.CASE_SHELF + 0.14, z))
 	end
 end
+-- Eight fish spots on the ice bed of a kitchen fish storage counter: four across, two deep.
+Kitchen.STORAGE_SPOTS = {}
+for _, z in { -0.5, 0.45 } do
+	for _, x in { -2.1, -0.7, 0.7, 2.1 } do
+		table.insert(Kitchen.STORAGE_SPOTS, CFrame.new(x, Kitchen.TOP + 0.05, z))
+	end
+end
 
 local function builder(parent: Instance, name: string, frame: CFrame)
 	local model = Instance.new("Model")
@@ -117,9 +124,49 @@ function Kitchen.buildStation(parent: Instance, frame: CFrame, station: string):
 		for _, x in { -2.3, 2.3 } do
 			piece("NorenPost", Vector3.new(0.15, 3.2, 0.15), CFrame.new(x, Kitchen.TOP + 1.6, -1.1), LIGHT_WOOD, M.Wood)
 		end
+	elseif station == "KitchenStorage" then
+		return Kitchen.buildStorage(parent, frame)
 	else
 		error("Unknown kitchen station " .. tostring(station))
 	end
+	return model
+end
+
+-- A chilled prep table holding up to 8 fish for cooking.
+function Kitchen.buildStorage(parent: Instance, frame: CFrame): Model
+	local model, piece = builder(parent, "KitchenStorage", frame)
+	counter(piece, STEEL, M.Metal, rgb(52, 60, 66))
+
+	local ice = piece("IceBed", Vector3.new(5.6, 0.06, 2.1), CFrame.new(0, Kitchen.TOP + 0.02, 0), rgb(218, 238, 245), M.Ice, true)
+	ice.Transparency = 0.15
+
+	piece("IceTrimFront", Vector3.new(5.8, 0.08, 0.1), CFrame.new(0, Kitchen.TOP + 0.04, 1.1), STEEL, M.Metal)
+	piece("IceTrimBack", Vector3.new(5.8, 0.08, 0.1), CFrame.new(0, Kitchen.TOP + 0.04, -1.1), STEEL, M.Metal)
+	piece("IceTrimLeft", Vector3.new(0.1, 0.08, 2.2), CFrame.new(-2.85, Kitchen.TOP + 0.04, 0), STEEL, M.Metal)
+	piece("IceTrimRight", Vector3.new(0.1, 0.08, 2.2), CFrame.new(2.85, Kitchen.TOP + 0.04, 0), STEEL, M.Metal)
+
+	piece("Backsplash", Vector3.new(5.9, 0.8, 0.08), CFrame.new(0, Kitchen.TOP + 0.4, -Kitchen.DEPTH / 2 + 0.05), STEEL, M.Metal, true)
+	piece("TicketRail", Vector3.new(5.4, 0.1, 0.05), CFrame.new(0, Kitchen.TOP + 0.75, -Kitchen.DEPTH / 2 + 0.1), DARK_STEEL, M.Metal)
+	for index = -2, 2 do
+		piece("Ticket" .. (index + 3), Vector3.new(0.45, 0.5, 0.02), CFrame.new(index * 1.1, Kitchen.TOP + 0.55, -Kitchen.DEPTH / 2 + 0.12), rgb(245, 245, 230), M.SmoothPlastic)
+	end
+
+	for _, x in { -1.4, 0, 1.4 } do
+		piece("DividerX" .. x, Vector3.new(0.04, 0.02, 2.0), CFrame.new(x, Kitchen.TOP + 0.05, 0), DARK_STEEL, M.Metal)
+	end
+	piece("DividerZ", Vector3.new(5.4, 0.02, 0.04), CFrame.new(0, Kitchen.TOP + 0.05, -0.025), DARK_STEEL, M.Metal)
+
+	local mist = Instance.new("ParticleEmitter")
+	mist.Name = "ChillMist"
+	mist.Color = ColorSequence.new(rgb(225, 242, 255))
+	mist.Transparency = NumberSequence.new(0.65, 1)
+	mist.Size = NumberSequence.new(0.3, 0.8)
+	mist.Lifetime = NumberRange.new(1.2, 2)
+	mist.Rate = 4
+	mist.Speed = NumberRange.new(0.2, 0.6)
+	mist.SpreadAngle = Vector2.new(180, 0)
+	mist.Parent = ice
+
 	return model
 end
 

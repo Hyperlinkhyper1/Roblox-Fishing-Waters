@@ -68,6 +68,90 @@ attributes.WeatherOverride = nil
 assert(Weather.mutationContext(Vector3.zero) == nil, 'Ending the event immediately disables mutation guarantees')
 attributes.BlackHolePosition = nil
 print('PASS admin-only BlackHole forecast, validated center, global weather and location-aware mutation context')
+
+-- Natural supercells: rare, only around the storm stage, continuous, and the
+-- same answer everywhere (integer hashing, no sin-based randomness).
+for _, stage in Weather.Schedule do
+  assert(stage.kind ~= 'Supercell', 'Supercells are not a fixed forecast stage')
+end
+local cycles, stormy = 600, 0
+local window = Weather.SupercellWindow
+assert(window[1] == 300 and window[2] == 750, 'Supercells live from the rain before the storm to the rain after it')
+local sampleCell, sampleTime
+for cycle = 0, cycles - 1 do
+  local start = attributes.WeatherEpoch + cycle * Weather.CycleSeconds
+  assert(Weather.supercell(start + window[1] - 1) == nil and Weather.supercell(start + window[2] + 1) == nil,
+    'No supercell outside its window')
+  local middle = Weather.supercell(start + (window[1] + window[2]) / 2)
+  if middle then
+    stormy += 1
+    assert(middle.strength > 0.99 and not middle.forced, 'A natural cell peaks mid-window')
+    assert(math.abs(middle.position.X) <= 1800 and math.abs(middle.position.Z) <= 1800, 'Its track crosses near the islands')
+    sampleCell, sampleTime = sampleCell or middle, sampleTime or start + (window[1] + window[2]) / 2
+    local a, b = Weather.supercell(start + window[1] + 30), Weather.supercell(start + window[1] + 30.05)
+    assert((a.position - b.position).Magnitude < 1 and math.abs(a.strength - b.strength) < 0.01, 'Cells move and grow smoothly')
+  else
+    assert(Weather.supercell(start + window[1] + 10) == nil, 'A cycle either grows a cell or stays without one')
+  end
+end
+assert(math.abs(stormy / cycles - Weather.SupercellChance) < 0.04, 'About one cycle in six grows a supercell: ' .. stormy)
+local under = Weather.getState(sampleTime, sampleCell.position)
+assert(under.kind == 'Supercell' and under.windSpeed > 55 and under.storm > 0.99, 'Under the cell it is a violent local storm')
+local farAway = sampleCell.position + Vector3.new(4000, 0, 0)
+assert(Weather.getState(sampleTime, farAway).kind ~= 'Supercell', 'Supercell weather stays local')
+now = sampleTime
+local windy = Weather.mutationContext(sampleCell.position + Vector3.new(0, 30, 0))
+assert(windy and windy.windy and not windy.corrupted, 'Fishing under the cell can turn catches windy')
+assert(Weather.mutationContext(sampleCell.position + Vector3.new(Weather.SupercellRadius, 0, 0)) == nil, 'Beyond its core there is no windy chance')
+attributes.WeatherOverride = 'Storm'
+assert(Weather.supercell(sampleTime) == nil and Weather.mutationContext(sampleCell.position) == nil, 'Any other override clears natural cells')
+attributes.WeatherOverride = nil
+
+-- Tornadoes hang under the rear flank, ramp in and out and move continuously.
+local spotted, peak = 0, 0
+for cycle = 0, cycles - 1 do
+  local start = attributes.WeatherEpoch + cycle * Weather.CycleSeconds
+  if Weather.supercell(start + 525) then
+    for t = start + window[1], start + window[2], 2 do
+      local cell = Weather.supercell(t)
+      for _, tornado in Weather.tornadoes(t) do
+        spotted += 1
+        peak = math.max(peak, tornado.strength)
+        assert(tornado.strength >= 0 and tornado.strength <= 1 and tornado.radius >= 22 and tornado.radius <= 42)
+        assert((tornado.position - cell.position).Magnitude < Weather.SupercellCoreRadius, 'Tornadoes touch down under the cell')
+        local later = Weather.tornadoes(t + 0.05)
+        for _, next in later do
+          if next.id == tornado.id then
+            assert((next.position - tornado.position).Magnitude < 1.5 and math.abs(next.strength - tornado.strength) < 0.05,
+              'A tornado never jumps')
+          end
+        end
+      end
+    end
+    if spotted > 200 then break end
+  end
+end
+assert(spotted > 0 and peak > 0.95, 'Natural supercells drop full-strength tornadoes')
+assert(#Weather.tornadoes(attributes.WeatherEpoch + 10) == 0 or Weather.supercell(attributes.WeatherEpoch + 10), 'No tornado without a cell')
+
+-- A forced cell circles the summoned spot and keeps producing tornadoes.
+attributes.WeatherOverride = 'Supercell'
+attributes.SupercellPosition = Vector3.new(400, 0, -300)
+attributes.SupercellSince = sampleTime
+local forced = Weather.supercell(sampleTime + 600)
+assert(forced.forced and forced.strength == 1, 'A forced cell is fully grown after its ramp')
+close((forced.position - Vector3.new(400, 0, -300)).Magnitude, Weather.ForcedSupercellOrbit, 1e-6)
+assert(Weather.getState(sampleTime + 600).kind == 'Supercell', 'The override is reported globally')
+local forcedTornadoes = 0
+for t = sampleTime + 30, sampleTime + 1800, 5 do
+  forcedTornadoes += #Weather.tornadoes(t)
+end
+assert(forcedTornadoes > 50, 'A forced supercell keeps dropping tornadoes')
+attributes.SupercellPosition = Vector3.new(0 / 0, 0, 0)
+close((Weather.supercell(sampleTime + 600).position).Magnitude, Weather.ForcedSupercellOrbit, 1e-6)
+attributes.WeatherOverride, attributes.SupercellPosition, attributes.SupercellSince = nil, nil, nil
+now = 100000
+print('PASS rare deterministic supercells, local Supercell weather, windy mutation zone, tornadoes and forced cells')
 local previousWind, previousWave = 0, 0
 for _, kind in { 'Clear', 'LightRain', 'Rain', 'Storm' } do
   attributes.WeatherOverride = kind
@@ -81,6 +165,38 @@ for _, kind in { 'Clear', 'LightRain', 'Rain', 'Storm' } do
   previousWind, previousWave = state.windSpeed, state.waveAmplitude
 end
 print('PASS clear, light rain, rain and storm have increasing wind and waves')
+
+-- Explicit presets must not disappear in a regional front's clear gap.
+for _, seed in { 17, 1847, 999983 } do
+  attributes.WeatherSeed = seed
+  for _, kind in { 'Clear', 'LightRain', 'Rain', 'Storm' } do
+    attributes.WeatherOverride = kind
+    local preset = Weather.getState(now)
+    for _, point in { Vector3.zero, Vector3.new(1800, 0, 1800), Vector3.new(-5000, 0, 5000) } do
+      local localState = Weather.getState(now, point)
+      assert(localState.kind == kind, 'Selected weather must reach every player')
+      close(localState.rain, preset.rain)
+      close(localState.storm, preset.storm)
+      close(localState.windSpeed, preset.windSpeed)
+      close(Weather.sample(point, now).amplitude, localState.waveAmplitude)
+      if kind ~= 'Clear' then
+        assert(localState.cloudCover == 1, 'Every rain preset needs full overcast')
+      end
+      if not Weather.inLake(point) then close(localState.waveAmplitude, preset.waveAmplitude) end
+    end
+  end
+  attributes.WeatherOverride = 'Supercell'
+  attributes.SupercellPosition, attributes.SupercellSince = Vector3.zero, now - 60
+  for _, point in { Vector3.zero, Vector3.new(-5000, 0, 5000) } do
+    local localState = Weather.getState(now, point)
+    assert(localState.kind == 'Supercell' and localState.rain >= 0.5 and localState.windSpeed > 29,
+      'Forced supercells keep a rainy, windy backdrop beyond the rotating core')
+    assert(localState.cloudCover == 1, 'Supercell skies remain overcast')
+  end
+end
+attributes.WeatherSeed = 1847
+attributes.SupercellPosition, attributes.SupercellSince = nil, nil
+print('PASS selected rain, storm and supercell retain precipitation, overcast, wind and synchronized waves across the map')
 
 attributes.WeatherOverride = nil
 local walked, found = 0, {}
@@ -168,6 +284,9 @@ assert(lakeEnergy < seaEnergy * 0.08 and lakeMax < seaMax * 0.3, 'Lake must have
 print('PASS sheltered lake vs exposed sea, continuous mouth, deterministic synchronized height and bounded normals')
 
 -- The same timestamp produces clear gaps, rain bands and harsh storm cores.
+-- Regional variation belongs to the natural forecast, not an explicit preset.
+attributes.WeatherOverride = nil
+now = attributes.WeatherEpoch + 480
 local minimumRain, maximumRain, maximumWave = 1, 0, 0
 local roughPosition
 for x = -5000, 5000, 250 do

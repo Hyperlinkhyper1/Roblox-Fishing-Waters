@@ -252,7 +252,7 @@ check(Data.freezerCount(home) == 2, "A placed freezer adds another ice bed")
 home = assert(Data.placeFurniture(home, "StorageRack", 16, -12, 2))
 check(Data.placeFurniture(home, "StorageRack", 16, -12, 2) == nil, "Furniture cannot overlap")
 home = assert(Data.placeFurniture(home, "StorageRack", 16, -6, 2))
-check(Data.storageCapacity(home) == 16, "Each rack holds eight fish")
+check(Data.storageCapacity(home) == 24, "Each rack holds twelve fish")
 local fp = Furniture.footprint("Register", 0, 0, 1)
 check(fp[3] - fp[1] == 3.05 + 4 and fp[4] - fp[2] == 7.5, "Quarter turns swap the footprint")
 check(Data.placeFurniture(home, 1, -10, 6, 1) == nil, "Doorways stay clear")
@@ -262,7 +262,47 @@ local stash = Data.recordCatch(home, "Trout", "Normal", 3, 48, 900, fish, mutati
 check(Data.takeStored(stash) == nil, "Empty racks give nothing")
 stash = assert(Data.storeFish(stash))
 check(stash.Hand == nil and #stash.Storage == 1, "Carried fish goes onto a rack")
-check(Data.storeFish(stash) == nil, "Nothing to store with empty hands")
+check(Data.storeFish(stash) == nil, "Nothing to store with an empty hand and backpack")
+local inventory = Data.recordCatch(home, "Trout", "Normal", 3, 48, 901, fish, mutations)
+inventory.Hand = table.clone(a.Hand)
+inventory.Backpack = {
+	{ Fish = table.clone(huge.Hand), X = 1, Y = 1, R = 0 },
+	{ Fish = table.clone(c.Findings.Largest), X = 3, Y = 1, R = 0, Locked = true },
+	{ Fish = table.clone(stash.Storage[1]), X = 5, Y = 1, R = 0 },
+}
+local packedStorage, packedMoved = Data.storeFish(inventory)
+check(
+	packedMoved == 3 and packedStorage.Hand == nil and #packedStorage.Storage == 3,
+	"The carried fish and unlocked backpack fish go onto the racks"
+)
+check(
+	#packedStorage.Backpack == 1 and packedStorage.Backpack[1].Locked,
+	"Locked backpack fish stay in the backpack"
+)
+local backpackOnly =
+	Data.decode({
+		Furniture = home.Furniture,
+		Hand = table.clone(huge.Hand),
+		Backpack = { { Fish = table.clone(a.Hand), X = 1, Y = 1, R = 0 } },
+	})
+local storedBackpack, backpackMoved = Data.storeFish(backpackOnly, false)
+check(
+	backpackMoved == 1 and storedBackpack.Hand and #storedBackpack.Storage == 1,
+	"An unequipped hand fish stays while backpack fish go onto the racks"
+)
+local fullStorage =
+	Data.decode({
+		Furniture = home.Furniture,
+		Backpack = { { Fish = table.clone(a.Hand), X = 1, Y = 1, R = 0 } },
+	})
+for _ = 1, Data.storageCapacity(fullStorage) do
+	table.insert(fullStorage.Storage, table.clone(a.Hand))
+end
+check(Data.storeFish(fullStorage) == nil, "Full racks reject backpack fish")
+check(
+	#fullStorage.Storage == Data.storageCapacity(fullStorage) and #fullStorage.Backpack == 1,
+	"A rejected store leaves the backpack untouched"
+)
 check(
 	Data.pickUpFurniture(stash, 2) and Data.pickUpFurniture(Data.pickUpFurniture(stash, 2), 2) == nil,
 	"The last rack holding fish stays"

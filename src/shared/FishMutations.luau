@@ -6,9 +6,9 @@
 local FishMutations = {}
 
 -- Chance that a catch carries any mutation at all, Astral included.
-FishMutations.CHANCE = 0.005
+FishMutations.CHANCE = 0.0075
 -- Astral only surfaces at night (DayNight.isNight), at this share of every night catch.
-FishMutations.ASTRAL_CHANCE = 1 / 1500
+FishMutations.ASTRAL_CHANCE = 1 / 1000
 FishMutations.ASTRAL_RAINBOW_CHANCE = 0.15
 -- Any other mutation can also come out corrupted.
 FishMutations.CORRUPTED_EXTRA_CHANCE = 0.1
@@ -16,9 +16,13 @@ FishMutations.CORRUPTED_EXTRA_CHANCE = 0.1
 FishMutations.EXTRA_CORRUPTION_CHANCE = 0.25
 FishMutations.CORRUPTED_BONUS = 1.5
 FishMutations.VOID_TOUCHED_BONUS = 2
+-- Fishing under a supercell (Weather.mutationContext) turns this share of
+-- catches Windy, on top of whatever else they roll.
+FishMutations.WINDY_CHANCE = 1 / 3
+FishMutations.WINDY_BONUS = 0.5
 
 -- Display and key order.
-FishMutations.Order = { "Corrupted", "VoidTouched", "Astral", "Rainbow", "Neon", "Albino" }
+FishMutations.Order = { "Corrupted", "VoidTouched", "Windy", "Astral", "Rainbow", "Neon", "Albino" }
 
 -- Every colour outcome with its share of the non-Astral mutation chance and the
 -- worth it adds (1 = +100%).
@@ -78,6 +82,7 @@ local function colourBonus(set): number
 	local plain = table.clone(set)
 	plain.Corrupted = nil
 	plain.VoidTouched = nil
+	plain.Windy = nil
 	local key = FishMutations.key(plain)
 	if FishMutations.AstralOutcomes[key] then
 		return FishMutations.AstralOutcomes[key]
@@ -97,6 +102,9 @@ function FishMutations.multiplier(key: string?, corruptions: { string }?): numbe
 	if set.VoidTouched then
 		bonus += FishMutations.VOID_TOUCHED_BONUS
 	end
+	if set.Windy then
+		bonus += FishMutations.WINDY_BONUS
+	end
 	if set.Corrupted then
 		bonus += FishMutations.CORRUPTED_BONUS * math.max(1, if corruptions then #corruptions else 1)
 	end
@@ -110,8 +118,8 @@ end
 -- Chance that one catch comes out with exactly this key (any corruption count).
 function FishMutations.chance(key: string, night: boolean): number
 	local set = FishMutations.parts(key)
-	-- Void Touched is supplied by an admin event, never the natural mutation roll.
-	if set.VoidTouched then
+	-- Void Touched and Windy come from weather events, never the natural roll.
+	if set.VoidTouched or set.Windy then
 		return 0
 	end
 	if not next(set) then
@@ -165,9 +173,10 @@ function FishMutations.roll(fish, night: boolean, rng: () -> number, bonus: any?
 	if fish.Rarity == "Junk" then
 		return { Mutation = "Normal" }
 	end
+	local windy = event ~= nil and event.windy == true and rng() < FishMutations.WINDY_CHANCE
 	local key = "Normal"
 	if pick >= FishMutations.CHANCE + extra + extraAstral then
-		if not event or not (event.corrupted or event.voidTouched) then
+		if not windy and (not event or not (event.corrupted or event.voidTouched)) then
 			return { Mutation = "Normal" }
 		end
 	elseif pick < astral then
@@ -191,6 +200,9 @@ function FishMutations.roll(fish, night: boolean, rng: () -> number, bonus: any?
 	end
 	if event and event.voidTouched then
 		set.VoidTouched = true
+	end
+	if windy then
+		set.Windy = true
 	end
 	local traits: Traits = { Mutation = FishMutations.key(set) }
 	-- Rainbow paints over any neon colour, so it never gets one.
@@ -224,12 +236,16 @@ function FishMutations.keys(): { string }
 end
 
 -- Event keys stay separate so natural encounter odds keep their meaning.
+-- Each event (Void Touched, Windy) adds its trait to every natural key.
 function FishMutations.eventKeys(): { string }
-	local keys = { "VoidTouched" }
-	for _, key in FishMutations.keys() do
-		local set = FishMutations.parts(key)
-		set.VoidTouched = true
-		table.insert(keys, FishMutations.key(set))
+	local keys = {}
+	for _, event in { "VoidTouched", "Windy" } do
+		table.insert(keys, event)
+		for _, key in FishMutations.keys() do
+			local set = FishMutations.parts(key)
+			set[event] = true
+			table.insert(keys, FishMutations.key(set))
+		end
 	end
 	return keys
 end

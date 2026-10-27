@@ -664,6 +664,67 @@ end
 -- FishingService dresses and places him at startup; the frame is at his soles.
 local KEEPER_FRAME = INTERIOR_ORIGIN * CFrame.new(0, 0, D / 2 - 8 - 2.8)
 
+-- Crab cages on a pallet left of the aisle, a spare on the floor in front and a
+-- few loose floats. Built onto saved halls too, so it needs no interior rebuild.
+-- FishingService sells one cage per BuyCrabCagePrompt at the price on the sign.
+local function ensureCrabCageStand(hall: Model)
+	if hall:FindFirstChild("CrabCageStand") then
+		return
+	end
+	local stand = Instance.new("Model")
+	stand.Name = "CrabCageStand"
+	-- Local +Z faces the aisle; the cages' long sides run along the hall.
+	local base = INTERIOR_ORIGIN * CFrame.new(-15, 0, 2) * CFrame.Angles(0, math.pi / 2, 0)
+	local pallet = Props.part(stand, Vector3.new(6.8, 0.5, 3.4), base * CFrame.new(0, 0.25, 0), WOOD, M.WoodPlanks)
+	pallet.Name = "Pallet"
+	for _, x in { -2.9, 0, 2.9 } do
+		Props.part(stand, Vector3.new(0.6, 0.12, 3.4), base * CFrame.new(x, 0.56, 0), DARK_WOOD, M.Wood).CanCollide =
+			false
+	end
+	for _, x in { -1.65, 1.65 } do
+		Props.crabCage(stand, base * CFrame.new(x, 0.62, 0))
+	end
+	Props.crabCage(stand, base * CFrame.new(-1.4, 0, 3.6) * CFrame.Angles(0, 0.45, 0))
+	for index, offset in { CFrame.new(2.2, 0.45, 3), CFrame.new(3, 0.45, 3.6), CFrame.new(2.6, 1.3, 3.3) } do
+		local floatPart = Props.part(
+			stand,
+			Vector3.new(1.1, 0.9, 0.9),
+			base * offset * CFrame.Angles(0, index * 0.7, 0),
+			rgb(240, 112, 38),
+			M.SmoothPlastic
+		)
+		floatPart.Name = "SpareFloat"
+		floatPart.Shape = Enum.PartType.Cylinder
+		floatPart.CanCollide = false
+	end
+	for _, x in { -2.6, 2.6 } do
+		Props.part(stand, Vector3.new(0.3, 5, 0.3), base * CFrame.new(x, 2.5, -1.9), DARK_WOOD, M.Wood)
+	end
+	local sign = Props.part(
+		stand,
+		Vector3.new(5.6, 1.5, 0.15),
+		base * CFrame.new(0, 4.6, -1.85) * CFrame.Angles(0, math.pi, 0),
+		DARK_WOOD,
+		M.WoodPlanks
+	)
+	sign.Name = "CrabCageSign"
+	sign.CanCollide, sign.CanQuery = false, false
+	PlazaHouses.boardText(sign, "CRAB CAGES\n$35 · 3 HAULS", Enum.NormalId.Front)
+	-- The prompt hangs over the pallet, where nothing blocks the shop's sightline check.
+	local anchor = Props.part(stand, Vector3.new(1, 1, 1), base * CFrame.new(0, 3.4, 0.4), WOOD)
+	anchor.Name = "CrabCagePromptAnchor"
+	anchor.Transparency, anchor.CanCollide, anchor.CastShadow = 1, false, false
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "BuyCrabCagePrompt"
+	prompt.ActionText = "Buy · $35"
+	prompt.ObjectText = "Crab Cage"
+	prompt.MaxActivationDistance = 9
+	prompt.RequiresLineOfSight = false
+	prompt.HoldDuration = 0.35
+	prompt.Parent = anchor
+	stand.Parent = hall
+end
+
 local function ensureInterior(): Model
 	local existing = interiorFolder():FindFirstChild("RodStoreInterior")
 	local hall: Model
@@ -688,6 +749,7 @@ local function ensureInterior(): Model
 			end
 		end
 	end
+	ensureCrabCageStand(hall)
 	hall:SetAttribute("KeeperFrame", KEEPER_FRAME)
 	CollectionService:AddTag(hall, "FishingRodShop")
 	return hall

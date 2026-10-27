@@ -3,6 +3,8 @@
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
+local BoatService = require(script.Parent.BoatService)
 
 local BASE_TAG = "PlayerBase"
 
@@ -18,6 +20,14 @@ local function setBoard(base: Model, text: string)
 				label.Text = text
 			end
 		end
+	end
+end
+
+local function setShopSign(base: Model, value: string)
+	local sign = base:FindFirstChild("ShopSign", true)
+	local label = sign and sign:FindFirstChildWhichIsA("TextLabel", true)
+	if label then
+		label.Text = if value ~= "" then value else "FISH & TACKLE  /  " .. string.format("%02d", base:GetAttribute("BaseId") or 1)
 	end
 end
 
@@ -53,6 +63,41 @@ local function claim(player: Player)
 	base:SetAttribute("OwnerUserId", player.UserId)
 	player:SetAttribute("BaseId", base:GetAttribute("BaseId"))
 	setBoard(base, player.DisplayName .. "'s Dock")
+	setShopSign(base, "")
+	local lastName = nil
+	local generation = 0
+	local function updateSign()
+		if owned[player] ~= base then
+			return
+		end
+		local profile = BoatService.getProfile(player)
+		if not profile then
+			return
+		end
+		local name = profile.Angler.ShopSign
+		if name == lastName then
+			return
+		end
+		lastName = name
+		generation += 1
+		local currentGeneration = generation
+		if name == "" then
+			setShopSign(base, "")
+			return
+		end
+		task.spawn(function()
+			local ok, filtered = pcall(function()
+				return TextService:FilterStringAsync(name, player.UserId):GetNonChatStringForBroadcastAsync()
+			end)
+			if ok and owned[player] == base and generation == currentGeneration then
+				setShopSign(base, filtered)
+			elseif not ok and generation == currentGeneration then
+				lastName = nil
+			end
+		end)
+	end
+	player:GetAttributeChangedSignal("AnglerRevision"):Connect(updateSign)
+	updateSign()
 	player.RespawnLocation = spawnPoint(base)
 end
 
@@ -62,6 +107,7 @@ local function release(player: Player)
 		owned[player] = nil
 		base:SetAttribute("OwnerUserId", 0)
 		setBoard(base, "Base " .. tostring(base:GetAttribute("BaseId")))
+		setShopSign(base, "")
 	end
 end
 

@@ -122,6 +122,28 @@ body.Size = body.Size * 3
 step()
 assert(lens.Position.Magnitude > small * 2, 'Distortion scales with trophy fish')
 print('PASS opaque-black combined mutations, eyes/bones/wounds, animated distortion and trophy scaling')
+local windy = Instance.new('Model'); windy.Name = 'WindyTest'; windy.Parent = workspace
+for index, name in {'Body','Eye','Fin'} do
+  local item = Instance.new('Part'); item.Name = name
+  item.Size = Vector3.new(if index == 1 then 4 else 0.4, 1, 0.5)
+  item.Color = Color3.new(0.2, 0.4, 0.3)
+  item.Parent = windy
+end
+windy:SetAttribute('BoundsCenter', Vector3.new(0, 0, 0)); windy:SetAttribute('BoundsSize', Vector3.new(4, 1, 0.5))
+FishModels.mutate(windy, {Mutation = 'Windy'})
+local streaks, gusts = 0, 0
+for _, item in windy:GetDescendants() do
+  if item:IsA('ParticleEmitter') then
+    assert(item.Parent == windy:FindFirstChild('Body'), 'Wind particles ride the body')
+    if item.Name == 'WindyStreaks' then streaks += 1 elseif item.Name == 'WindyGusts' then gusts += 1 end
+  end
+end
+assert(streaks == 1 and gusts == 1, 'Windy fish trail wind streaks and gusts')
+local eye, fin, body = windy:FindFirstChild('Eye'), windy:FindFirstChild('Fin'), windy:FindFirstChild('Body')
+assert(eye.Color.R == 0.2 and eye.Color.G == 0.4, 'Eyes keep their colour')
+assert(body.Color.B > 0.3 and body.Color.B < 0.5 and body.Transparency == 0, 'The body takes only a faint sheen')
+assert(fin.Transparency > 0 and fin.Transparency < 0.2, 'Fins turn slightly see-through')
+print('PASS windy fish: faint sheen, translucent fins, wind particles, untouched eyes')
 `;
 const temporary = mkdtempSync(join(tmpdir(), 'blackhole-visuals-'));
 try {

@@ -1,6 +1,6 @@
 -- Long, low white racing launch with a charcoal cockpit and stern outboard. Waterline origin; local -Z is the bow.
 -- The faceted V hull and cockpit sole form one welded, server-driven assembly.
-local RacingSpeedboat = { VERSION = 2 }
+local RacingSpeedboat = { VERSION = 3 }
 local WHITE = Color3.fromRGB(237, 241, 246)
 local UNDERBODY = Color3.fromRGB(205, 213, 220)
 local DECK = Color3.fromRGB(55, 59, 65)
@@ -10,24 +10,37 @@ local STITCH = Color3.fromRGB(97, 104, 111)
 local GLASS = Color3.fromRGB(62, 83, 99)
 local METAL = Color3.fromRGB(122, 139, 151)
 local THICKNESS = 0.18
+-- Scale the whole ship around the waterline so previews and launched boats
+-- keep the same draft and line up with the drydock cradle.
+local SCALE = 1.2
 
 function RacingSpeedboat.build(frame: CFrame, anchored: boolean?): Model
 	local isAnchored = anchored == true
 	local model = Instance.new("Model")
 	model.Name = "RacingSpeedboat"
 	model:SetAttribute("ModelVersion", RacingSpeedboat.VERSION)
-	model:SetAttribute("HullLength", 30)
-	model:SetAttribute("HullBeam", 8)
+	model:SetAttribute("HullLength", 30 * SCALE)
+	model:SetAttribute("HullBeam", 8 * SCALE)
 	model:SetAttribute("PassengerSeats", 3)
 	model:SetAttribute("DriverSeat", "HelmSeat")
-	model:SetAttribute("DryFloorHeight", 1.1)
-	model:SetAttribute("DryFloorHalfBeam", 3.5)
-	model:SetAttribute("DryFloorHalfLength", 12.4)
+	model:SetAttribute("DryFloorHeight", 1.1 * SCALE)
+	model:SetAttribute("DryFloorHalfBeam", 3.5 * SCALE)
+	model:SetAttribute("DryFloorHalfLength", 12.4 * SCALE)
+
+	local function scaledFrame(localFrame: CFrame): CFrame
+		return frame
+			* CFrame.fromMatrix(
+				localFrame.Position * SCALE,
+				localFrame.RightVector,
+				localFrame.UpVector,
+				localFrame.ZVector
+			)
+	end
 
 	local root = Instance.new("Part")
 	root.Name = "HullRoot"
-	root.Size = Vector3.new(5.6, 0.5, 18)
-	root.CFrame = frame * CFrame.new(0, -0.4, 0)
+	root.Size = Vector3.new(5.6, 0.5, 18) * SCALE
+	root.CFrame = scaledFrame(CFrame.new(0, -0.4, 0))
 	root.Transparency = 1
 	root.Anchored = isAnchored
 	root.CanCollide = false
@@ -38,6 +51,8 @@ function RacingSpeedboat.build(frame: CFrame, anchored: boolean?): Model
 	model.PrimaryPart = root
 
 	local function finish(p: BasePart, name: string, color: Color3, material: Enum.Material?, collide: boolean?)
+		p.Size *= SCALE
+		p.CFrame = scaledFrame(frame:ToObjectSpace(p.CFrame))
 		p.Name = name
 		p.Anchored = isAnchored
 		p.CanCollide = collide == true
@@ -530,6 +545,50 @@ function RacingSpeedboat.build(frame: CFrame, anchored: boolean?): Model
 			color,
 			Enum.Material.Neon
 		)
+	end
+	local lampColor = Color3.fromRGB(239, 247, 255)
+	for _, side in { -1, 1 } do
+		local deckLamp = part(
+			"DeckLightLens",
+			Vector3.new(0.08, 0.18, 0.5),
+			CFrame.new(side * 3.74, 1.35, 4.2),
+			lampColor,
+			Enum.Material.Neon
+		)
+		local deckLight = Instance.new("PointLight")
+		deckLight.Name = "DeckLight"
+		deckLight.Color, deckLight.Range, deckLight.Brightness = lampColor, 16, 0.5
+		deckLight.Shadows = false
+		deckLight.Parent = deckLamp
+
+		part(
+			"HeadlightStand",
+			Vector3.new(0.14, 0.7, 0.14),
+			CFrame.new(side * 1.05, 2.4, -12),
+			METAL,
+			Enum.Material.Metal
+		)
+		part(
+			"HeadlightHousing",
+			Vector3.new(0.65, 0.4, 0.5),
+			CFrame.new(side * 1.05, 2.95, -12),
+			DARK,
+			Enum.Material.Metal
+		)
+		local lens = part(
+			"HeadlightLens",
+			Vector3.new(0.5, 0.26, 0.06),
+			CFrame.new(side * 1.05, 2.95, -12.29),
+			lampColor,
+			Enum.Material.Neon
+		)
+		lens.CastShadow = false
+		local headlight = Instance.new("SpotLight")
+		headlight.Name = "Headlight"
+		headlight.Face = Enum.NormalId.Front
+		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 45, 1.3, 65
+		headlight.Shadows = false
+		headlight.Parent = lens
 	end
 	return model
 end

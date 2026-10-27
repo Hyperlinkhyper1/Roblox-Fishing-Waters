@@ -28,15 +28,28 @@ local function signal()
   }
 end
 local queue = {}
+-- Spawned loops park on their first wait and never run again
 local task = {defer=function(callback)
   scheduled += 1
   table.insert(queue, callback)
-end, spawn=function() end}
+end, wait=coroutine.yield, spawn=function(callback)
+  local ok, err = coroutine.resume(coroutine.create(callback))
+  assert(ok, err)
+end}
 local clock = 0
 local os = {clock=function() return clock end}
 local RunService = {Heartbeat=signal()}
+local pinRequests = {}
+local pinRemote = {FireServer=function(_, ids) table.insert(pinRequests, ids) end}
+local ReplicatedStorage = {WaitForChild=function(_, name) assert(name == "LodPin"); return pinRemote end}
+local CollectionService = {added=signal(), removed=signal()}
+function CollectionService:GetInstanceAddedSignal(tag) assert(tag == "LodPiece"); return self.added end
+function CollectionService:GetInstanceRemovedSignal(tag) assert(tag == "LodPiece"); return self.removed end
+function CollectionService:GetTagged() return {} end
 local game = {GetService=function(_, name)
   if name == "RunService" then return RunService end
+  if name == "ReplicatedStorage" then return ReplicatedStorage end
+  if name == "CollectionService" then return CollectionService end
   return {LocalPlayer={}}
 end}
 local function flush()
@@ -305,6 +318,34 @@ beforeWrites = writes
 homeGround.DescendantRemoving:Fire(homeGround.children[1])
 flush()
 check(writes == beforeWrites, "A replaced shell must stop following the island")
+-- Island pieces are reported as they stream in, so the server pins them for this player
+local chunk = object("Model", "GroundChunk")
+chunk.attributes.PieceId = 7
+local pine = object("Model", "Pine")
+pine.attributes.PieceId = 8
+CollectionService.added:Fire(chunk)
+CollectionService.added:Fire(pine)
+CollectionService.added:Fire(chunk)
+check(#pinRequests == 0, "Pieces must wait for the end of the frame")
+flush()
+check(#pinRequests == 1 and #pinRequests[1] == 2 and pinRequests[1][1] == 7 and pinRequests[1][2] == 8,
+  "Pieces arriving together must be pinned in one request, once each")
+CollectionService.added:Fire(object("Model", "Untagged"))
+flush()
+check(#pinRequests == 1, "A piece without an id must not be reported")
+CollectionService.removed:Fire(chunk)
+CollectionService.added:Fire(chunk)
+flush()
+check(#pinRequests == 2 and #pinRequests[2] == 1 and pinRequests[2][1] == 7,
+  "A piece that streamed out before its pin landed must be reported again")
+for i = 1, 1200 do
+  local piece = object("Model", "Piece")
+  piece.attributes.PieceId = 100 + i
+  CollectionService.added:Fire(piece)
+end
+flush()
+check(#pinRequests == 5 and #pinRequests[3] == 500 and #pinRequests[4] == 500 and #pinRequests[5] == 200,
+  "A big burst of pieces must be split into batches the server accepts")
 print("LOD: " .. checks .. " checks passed; 3000 arrivals without refresh/render churn")
 `;
 

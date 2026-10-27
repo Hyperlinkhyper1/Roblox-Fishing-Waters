@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Lod = require(script.Lod)
 local Med = require(script.Mediterranean)
+local Props = require(script.Props)
 local Regions = require(script.Regions)
 local Seabed = require(script.Seabed)
 local SeabedDetails = require(script.SeabedDetails)
@@ -169,9 +170,14 @@ function Map.build(onHarbourReady: ((Folder) -> ())?, onStage: ((string, number)
 end
 
 -- Update collision and streaming even when existing scenery was baked in Studio.
+-- Runs before anyone has a character, so islands are split into pieces before players are out among them.
 function Map.prepareStreaming(root: Instance)
 	Med.ensureStoneWalls(root)
+	Med.ensurePergolas(root)
+	Med.ensureBalconies(root)
+	Props.ensureHouseCollision(root)
 	Lod.prepareStreaming(root)
+	Lod.serve()
 end
 
 -- Also dress maps baked in Studio before underwater gardens were introduced.

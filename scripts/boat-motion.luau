@@ -29,6 +29,40 @@ for id, spec in Catalog do
 		math.rad(spec.MaxBankAngle)
 	)
 	for _, fps in { 30, 60, 144 } do
+		for _, direction in { -1, 1 } do
+			-- Reverse before the bank finishes building: retained spring momentum
+			-- used to deepen the old lean for several more frames.
+			local bank, velocity = 0, 0
+			for _ = 1, math.ceil(fps * 0.08) do
+				bank, velocity =
+					Motion.bank(bank, velocity, spec.ForwardSpeed, direction * spec.TurnRate, spec, 196.2, 1 / fps)
+			end
+			local previous = bank
+			bank, velocity =
+				Motion.bank(bank, velocity, spec.ForwardSpeed, -direction * spec.TurnRate, spec, 196.2, 1 / fps)
+			check((bank - previous) * direction < 0, id .. " reversal must immediately stop deepening the old lean")
+			for _ = 1, math.ceil(fps * 0.25) do
+				previous = bank
+				bank, velocity =
+					Motion.bank(bank, velocity, spec.ForwardSpeed, -direction * spec.TurnRate, spec, 196.2, 1 / fps)
+				check(
+					(bank - previous) * direction <= 0,
+					id .. " reversed lean must move monotonically toward the new side"
+				)
+			end
+			check(bank * direction < 0, id .. " lean must reach the opposite side within a quarter second")
+			local _, reversedTurn =
+				Motion.step(spec.ForwardSpeed, direction * spec.TurnRate, 1, -direction, spec, 1 / fps)
+			check(reversedTurn * direction < 0, id .. " turn command must countersteer on the first frame")
+			local actual = math.pi - 0.01
+			local heading =
+				Motion.advanceHeading(actual + direction * 0.35, actual, -direction * spec.TurnRate, 1 / fps)
+			check((heading - actual) * direction < 0, id .. " old heading lead must not delay countersteering")
+			check(
+				Motion.advanceHeading(actual + direction * 0.35, actual, 0, 1 / fps) == actual,
+				id .. " neutral steering must discard residual heading lead"
+			)
+		end
 		local bank, bankVelocity = 0, 0
 		for _ = 1, fps * 2 do
 			local previous = bank

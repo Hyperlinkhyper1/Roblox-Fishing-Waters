@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = name => readFile(join(root, name), 'utf8');
 const source = await read('src/client/BuildMode.luau');
+const furniture = await read('src/shared/FurnitureCatalog.luau');
 function section(start, end) {
   const first = source.indexOf(start);
   const last = source.indexOf(end, first);
@@ -37,7 +38,9 @@ local UserInputService = {
 local houseFrame = CFrame.identity
 local FLOOR_Y = 0.16
 local ROOF_HEIGHT = 8.4
-local Furniture = {GRID = 0.5}
+local Furniture = (function()
+${furniture}
+end)()
 ${section('local CAMERA_PITCH', '\nlocal started')}
 local pan, zoom, cameraDistance = Vector2.zero, 1, 60
 local panKeys = {}
@@ -47,8 +50,9 @@ local dragging, dragPosition, touch = false, nil, nil
 local touchStart, touchDragged = Vector2.zero, false
 local held = nil
 local aimCount = 0
-local function aim() aimCount += 1 end
-${section('\tlocal function pointerFloor(', '\n\tlocal function aim(')}
+local aimPosition = nil
+local function aim(position) aimCount += 1; aimPosition = position end
+${section('\tlocal function mousePosition(', '\n\tlocal function aim(')}
 ${section('\tlocal function panBy(', '\n\tlocal function freezeCharacter(')}
 ${section('\tlocal function updateCamera(', '\n\tlocal exit')}
 local checks = 0
@@ -75,31 +79,67 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
       local function project(point)
         local p = camera.CFrame:PointToObjectSpace(point)
         return Vector2.new(size[1] / 2 + focal * p.X / -p.Z,
-          inset + size[2] / 2 - focal * p.Y / -p.Z)
+          size[2] / 2 - focal * p.Y / -p.Z)
       end
       for _, x in {-23, 23} do
         for _, z in {-15, 15} do
           for _, y in {0, ROOF_HEIGHT} do
             local screen = project(houseFrame * Vector3.new(x, FLOOR_Y + y, z))
             assert(screen.X >= 12 and screen.X <= size[1] - 12, "House cropped horizontally")
-            assert(screen.Y >= 2 * inset + 78 and screen.Y <= panel.AbsolutePosition.Y + 2 * inset - 12,
+            assert(screen.Y >= inset + 78 and screen.Y <= panel.AbsolutePosition.Y + inset - 12,
               "House hidden by toolbar")
             checks += 1
           end
         end
       end
       function camera:ScreenPointToRay(x, y)
-        local direction = self.CFrame:VectorToWorldSpace(Vector3.new((x - size[1] / 2) / focal, -(y - inset - size[2] / 2) / focal, -1))
+        local direction = self.CFrame:VectorToWorldSpace(Vector3.new((x - size[1] / 2) / focal, -(y + inset - size[2] / 2) / focal, -1))
         return {Origin = self.CFrame.Position, Direction = direction.Unit}
       end
       local function checkPointer()
         for _, point in {Vector3.new(8.5, FLOOR_Y, 6), Vector3.new(-12.5, FLOOR_Y, -8), Vector3.new(0, FLOOR_Y, 0)} do
-          local x, z = pointerSpot(project(houseFrame * point))
+          mouse = project(houseFrame * point)
+          local x, z = pointerSpot(mousePosition())
           assert(x == point.X and z == point.Z, "Placement ray misses pointed floor tile")
           checks += 1
         end
       end
       checkPointer()
+      -- Run real preview validation and placement at the back/side walls. A green
+      -- mouse preview must submit the same tile as an inset-adjusted touch/click.
+      do
+        local held, spot, pending, sent = nil, nil, false, nil
+        local state = {Placed = {}}
+        local function updatePreview() end
+        local function render() end
+        local function notice(message) error(message) end
+        local function drop() held = nil end
+        local function choose() end
+        local function clickFurniture() error("Expected held rack") end
+        local function send(action, itemId, x, z, r)
+          assert(action == "Place" and itemId == "StorageRack")
+          assert(Furniture.check(state.Placed, itemId, x, z, r) == nil, "Server rejected previewed rack")
+          sent = {X = x, Z = z, R = r}
+          return true
+        end
+${section('\tlocal function aim(', '\n\tlocal function hold(')}
+${section('\tlocal function placeHeld(', '\n\tlocal function clickFurniture(')}
+${section('\tlocal function clickWorld(', '\n\tUserInputService.InputBegan:Connect(')}
+        for r, tile in {{16, -13.5}, {19.5, -8}, {8, -12}, {13, -8}} do
+          held, sent = {ItemId = "StorageRack", From = "StorageRack", R = r - 1}, nil
+          mouse = project(houseFrame * Vector3.new(tile[1], FLOOR_Y, tile[2]))
+          aim(mousePosition())
+          assert(spot.X == tile[1] and spot.Z == tile[2] and spot.Reason == nil,
+            "Rack preview must fit the pointed storage tile")
+          local previewX, previewZ = spot.X, spot.Z
+          clickWorld(mouse - GuiService:GetGuiInset())
+          assert(sent and sent.X == previewX and sent.Z == previewZ and sent.R == r - 1,
+            "Green rack preview must place on the same tile")
+          checks += 2
+        end
+        assert(Furniture.check({}, "StorageRack", -10, 9, 0) ~= nil, "Shop must still reject racks")
+        assert(Furniture.check({}, "StorageRack", 12, -1, 0) ~= nil, "Storage doorway must stay clear")
+      end
       local before = camera.Focus.Position
       assert(cameraInput("pan", "Begin", {KeyCode = "W"}) == "Sink", "Movement must be consumed")
       updateCamera(0.1)
@@ -116,7 +156,7 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
       updateCamera()
       assert(zoom < 1, "Zoom in must get closer")
       checkPointer()
-      local from = project(houseFrame * Vector3.new(pan.X, FLOOR_Y, pan.Y))
+      local from = project(houseFrame * Vector3.new(pan.X, FLOOR_Y, pan.Y)) - GuiService:GetGuiInset()
       local pixel = math.min(2, focal / cameraDistance)
       local to = from + Vector2.new(pixel, pixel / 2)
       local anchor = pointerFloor(from)
@@ -211,7 +251,8 @@ for _, name in {"InputBegan", "InputChanged", "InputEnded"} do
 end
 local active = true
 local clicks, drops = 0, 0
-local function clickWorld() clicks += 1 end
+local clickPosition = nil
+local function clickWorld(position) clicks += 1; clickPosition = position end
 local function drop() drops += 1 end
 local function choose() end
 local function enter() active = true end
@@ -255,6 +296,16 @@ callbacks.InputBegan(input("MouseButton1"), true)
 assert(clicks == 1, "Clicking UI must not place furniture")
 callbacks.InputBegan(input("MouseButton1"), false)
 assert(clicks == 2, "A world click must place or select")
+for _, topInset in {0, 36, 58} do
+  inset, mouse, held = topInset, Vector2.new(800, 400), {R = 0}
+  updateCamera()
+  callbacks.InputBegan(input("MouseButton1", Vector3.zero), false)
+  assert((clickPosition - aimPosition).Magnitude < 1e-7,
+    "Mouse click and rendered preview must use the same coordinates, even with stale button Position")
+  assert(clickPosition.Y == mouse.Y - inset, "Mouse must be adjusted for the GUI inset exactly once")
+  checks += 2
+end
+clicks, held, inset = 2, nil, 0
 local cancelled = input("Touch", Vector3.new(100, 100, 0))
 callbacks.InputBegan(cancelled, false)
 cancelled.UserInputState = "Cancel"

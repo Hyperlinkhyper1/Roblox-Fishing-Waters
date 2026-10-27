@@ -13,6 +13,9 @@ local CargoService = require(script.Parent.CargoService)
 local FishFreezer = require(script.Parent.Map.FishFreezer)
 local ShopDesk = require(script.Parent.Map.ShopDesk)
 local StorageRack = require(script.Parent.Map.StorageRack)
+local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
+local FishModels = require(ReplicatedStorage.Shared.FishModels)
+local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Kitchen = require(script.Parent.Map.Kitchen)
 local DiningRoom = require(script.Parent.Map.DiningRoom)
 local KitchenService = require(script.Parent.KitchenService)
@@ -111,7 +114,11 @@ end
 
 local function atHome(player: Player): boolean
 	local base = baseOf(player)
-	local _, frame = if base then houseOf(base) else nil
+	if not base then
+		return false
+	end
+	-- An if-expression keeps only the first return (the model), losing the frame.
+	local _, frame = houseOf(base)
 	return frame ~= nil and near(player, frame.Position, HOME_DISTANCE)
 end
 
@@ -183,13 +190,36 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 	elseif entry.ItemId == "StorageRack" then
 		model = StorageRack.build(parent, frame)
 		local anchor = promptAnchor(model, frame * CFrame.new(0, 3, StorageRack.DEPTH / 2 + 0.3))
-		ownerPrompt(anchor, "StoreFishPrompt", "Store fish", "Storage rack"):SetAttribute("OwnerUserId", userId)
+		ownerPrompt(anchor, "StoreFishPrompt", "Store all fish", "Storage rack"):SetAttribute("OwnerUserId", userId)
 		local take = ownerPrompt(anchor, "TakeStoredFishPrompt", "Take fish", "Storage rack")
 		take.KeyboardKeyCode, take.GamepadKeyCode = Enum.KeyCode.F, Enum.KeyCode.ButtonY
 		take:SetAttribute("OwnerUserId", userId)
 		model.Parent = parent
 	elseif entry.ItemId == "FoodCase" then
 		model = Kitchen.buildCase(parent, frame)
+	elseif entry.ItemId == "KitchenStorage" then
+		model = Kitchen.buildStorage(parent, frame)
+		local anchor = promptAnchor(model, frame * CFrame.new(0, Kitchen.TOP + 0.8, Kitchen.DEPTH / 2 + 0.3))
+		local config = ownerPrompt(anchor, "KitchenStorageGuiPrompt", "Configure", "Kitchen storage")
+		config.KeyboardKeyCode, config.GamepadKeyCode = Enum.KeyCode.E, Enum.KeyCode.ButtonX
+		config:SetAttribute("OwnerUserId", userId)
+		local take = ownerPrompt(anchor, "TakeKitchenFishPrompt", "Take fish", "Kitchen storage")
+		take.KeyboardKeyCode, take.GamepadKeyCode = Enum.KeyCode.F, Enum.KeyCode.ButtonY
+		take:SetAttribute("OwnerUserId", userId)
+		take:SetAttribute("Available", false)
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = "KitchenStorageStatus"
+		billboard.Size = UDim2.fromOffset(240, 32)
+		billboard.StudsOffset = Vector3.new(0, 2.2, -0.6)
+		billboard.MaxDistance = 45
+		billboard.Parent = anchor
+		local label = Instance.new("TextLabel")
+		label.Name = "Status"
+		label.Size, label.BackgroundTransparency = UDim2.fromScale(1, 1), 1
+		label.Font, label.TextSize, label.Text = Enum.Font.GothamBold, 15, "Fish Prep: 0/8"
+		Theme.text(label)
+		label.Parent = billboard
+		model.Parent = parent
 	elseif entry.ItemId == "DiningTable" then
 		model = DiningRoom.buildTable(parent, frame)
 		model.Parent = parent
@@ -265,6 +295,9 @@ local function sync(base: Model)
 				end
 			end
 		end
+		if entry.ItemId == "KitchenStorage" and model then
+			FurnitureService.refreshKitchenStorage(model, Furniture.frame(houseFrame, entry), if profile and profile.Angler.KitchenStorage then profile.Angler.KitchenStorage.Fish else {})
+			end
 	end
 end
 
@@ -376,27 +409,173 @@ local function rackPrompt(player: Player, prompt: ProximityPrompt)
 	local profile = BoatService.getProfile(player)
 	if not profile then
 		return
-	elseif store and not CargoService.isCarrying(player, profile.Angler.Hand) then
-		notify(player, "Equip a fish from your hotbar and carry it to the rack.")
-		return
-	end
-	local ok, message = run(player, function(current)
-		if store and not CargoService.isCarrying(player, current.Angler.Hand) then
-			return nil, "Carry a fish to the rack first."
+	elseif store then
+		local carrying = CargoService.isCarrying(player, profile.Angler.Hand)
+		local unlocked = 0
+		for _, item in profile.Angler.Backpack do
+			if not item.Locked then
+				unlocked += 1
+			end
 		end
-		local data, reason = (if store then AnglerData.storeFish else AnglerData.takeStored)(current.Angler)
+		if not carrying and unlocked == 0 then
+			notify(
+				player,
+				if #profile.Angler.Backpack > 0
+					then "Your backpack fish are locked. Right-click a fish to unlock it."
+					else "Bring fish in your backpack or carry one to the rack."
+			)
+			return
+		end
+	end
+	local moved = 0
+	local ok, message = run(player, function(current)
+		if store then
+			local carrying = CargoService.isCarrying(player, current.Angler.Hand)
+			local data, count = AnglerData.storeFish(current.Angler, carrying)
+			if data then
+				current.Angler = data
+				moved = count
+			end
+			return data
+		end
+		local data, reason = AnglerData.takeStored(current.Angler)
 		if data then
 			current.Angler = data
 		end
 		return data, reason
 	end)
+	if not ok then
+		notify(player, message)
+		return
+	end
+	if not store then
+		notify(player, "Took a fish off the rack. Carry it to a freezer to sell it.")
+		return
+	end
+	-- Report fish left waiting in the backpack or still carried.
+	local remaining = 0
+	local current = BoatService.getProfile(player)
+	if current then
+		if current.Angler.Hand and CargoService.isCarrying(player, current.Angler.Hand) then
+			remaining += 1
+		end
+		for _, item in current.Angler.Backpack do
+			if not item.Locked then
+				remaining += 1
+			end
+		end
+	end
 	notify(
 		player,
-		if not ok
-			then message
-			elseif store then "Stored one fish on your rack."
-			else "Took a fish off the rack. Carry it to a freezer to sell it."
+		string.format(
+			"Stored %s on your rack.%s",
+			if moved == 1 then "one fish" else string.format("%d fish", moved),
+			if remaining > 0 then " Some fish did not fit." else ""
+		)
 	)
+end
+
+function FurnitureService.refreshKitchenStorage(model: Model, frame: CFrame, fishList)
+	fishList = fishList or {}
+	local count = #fishList
+	local anchor = model:FindFirstChild("PromptAnchor")
+	if anchor then
+		local take = anchor:FindFirstChild("TakeKitchenFishPrompt") :: ProximityPrompt?
+		if take then
+			take:SetAttribute("Available", count > 0)
+			take.ObjectText = string.format("Kitchen storage (%d/8)", count)
+		end
+		local billboard = anchor:FindFirstChild("KitchenStorageStatus")
+		local label = billboard and billboard:FindFirstChild("Status") :: TextLabel?
+		if label then
+			label.Text = string.format("Fish Prep: %d/%d", count, Furniture.KITCHEN_STORAGE_CAPACITY)
+		end
+	end
+	local sig = {}
+	for _, f in fishList do
+		table.insert(sig, f.FishId .. ":" .. tostring(f.MadeAt or f.CaughtAt or f.Kg or 0))
+	end
+	local signature = table.concat(sig, "|")
+	if model:GetAttribute("FishSignature") == signature then
+		return
+	end
+	model:SetAttribute("FishSignature", signature)
+	local existing = model:FindFirstChild("StorageFishDisplay")
+	if existing then
+		existing:Destroy()
+	end
+	if count == 0 then
+		return
+	end
+	local display = Instance.new("Model")
+	display.Name = "StorageFishDisplay"
+	for index, record in fishList do
+		if index > #Kitchen.STORAGE_SPOTS then
+			break
+		end
+		local spot = frame * Kitchen.STORAGE_SPOTS[index]
+		local fish = FishModels.create(record.FishId, record)
+		if fish then
+			FishModels.scaleCatch(fish, record.Kg)
+			local _, size = fish:GetBoundingBox()
+			local longest = math.max(size.X, size.Y, size.Z)
+			if longest > 1.25 then
+				fish:ScaleTo(fish:GetScale() * 1.25 / longest)
+			end
+			for _, part in fish:GetDescendants() do
+				if part:IsA("BasePart") then
+					part.Anchored = true
+					part.CanCollide = false
+					part.CanTouch = false
+					part.CanQuery = false
+				end
+			end
+			fish:PivotTo(spot * CFrame.Angles(0, math.pi / 2, 0))
+			local _, lifted = fish:GetBoundingBox()
+			fish:PivotTo(fish:GetPivot() + frame.UpVector * (lifted.Y / 2))
+			fish.Parent = display
+		end
+	end
+	display.Parent = model
+end
+
+local function takeKitchenStorageFish(player: Player, prompt: ProximityPrompt)
+	local position = (prompt.Parent :: BasePart).Position
+	local reach = prompt.MaxActivationDistance + 2
+	if not near(player, position, reach) then
+		return
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return
+	elseif profile.Angler.Hand then
+		notify(player, "Your hands are already full.")
+		return
+	elseif not profile.Angler.KitchenStorage or #profile.Angler.KitchenStorage.Fish == 0 then
+		notify(player, "Kitchen storage is empty.")
+		return
+	end
+	local taken = nil
+	local ok, message = run(player, function(current)
+		local data, fish = AnglerData.takeKitchenStorageFish(current.Angler)
+		if data then
+			current.Angler = data
+			taken = fish
+		end
+		return data, fish
+	end)
+	if ok and taken then
+		local species = Catalog.Fish[taken.FishId]
+		local name = if species then species.Name else taken.FishId
+		notify(player, string.format("Took a %s (%s) from kitchen storage. Ready to cook!", name, species and species.Rarity or "fish"))
+		CargoService.push(player)
+		local base = baseOf(player)
+		if base then
+			sync(base)
+		end
+	elseif message then
+		notify(player, message)
+	end
 end
 
 -- A plain shopkeeper stands behind each sales counter.
@@ -438,6 +617,7 @@ local function buildPreviews(parent: Instance)
 		Register = ShopDesk.build,
 		StorageRack = StorageRack.build,
 		FoodCase = Kitchen.buildCase,
+		KitchenStorage = Kitchen.buildStorage or function(p, f) return Kitchen.buildStation(p, f, "KitchenStorage") end,
 		DiningTable = DiningRoom.buildTable,
 	}
 	for _, id in Furniture.Order do
@@ -475,6 +655,50 @@ function FurnitureService.start()
 	update.Name, update.Parent = "Update", remotes
 	buildPreviews(remotes)
 	remotes.Parent = ReplicatedStorage
+	local ksRemotes = Instance.new("Folder")
+	ksRemotes.Name = "KitchenStorage"
+	local ksRequest = Instance.new("RemoteFunction")
+	ksRequest.Name, ksRequest.Parent = "Request", ksRemotes
+	ksRemotes.Parent = ReplicatedStorage
+	ksRequest.OnServerInvoke = function(player, action, payload)
+		local profile = BoatService.getProfile(player)
+		if not profile then
+			return { Ok = false, Message = "Profile still loading." }
+		end
+		if action == "Get" then
+			local available = { Common = 0, Uncommon = 0, Rare = 0, Epic = 0, Legendary = 0 }
+			for _, list in { profile.Angler.Freezer, profile.Angler.Storage } do
+				for _, fish in list do
+					local species = Catalog.Fish[fish.FishId]
+					local r = species and species.Rarity or "Common"
+					available[r] = (available[r] or 0) + 1
+				end
+			end
+			return {
+				Ok = true,
+				Targets = profile.Angler.KitchenStorage.Targets or {},
+				Fish = profile.Angler.KitchenStorage.Fish or {},
+				Available = available,
+			}
+		elseif action == "SetTargets" then
+			local movedCount = 0
+			local ok, message = run(player, function(current)
+				local data, err = AnglerData.setKitchenStorageTargets(current.Angler, payload)
+				if not data then return nil, err end
+				data, movedCount = AnglerData.stockKitchenStorageFromStock(data, Catalog.Fish)
+				current.Angler = data
+				return data
+			end)
+			if ok then
+				local base = baseOf(player)
+				if base then sync(base) end
+				local msg = if movedCount > 0 then string.format("Moved %d fish from stock onto the prep table! Porter will also bring eligible fish.", movedCount) else "Targets updated! Porter will bring eligible catches here."
+				return { Ok = true, Message = msg }
+			end
+			return { Ok = false, Message = message }
+		end
+		return { Ok = false, Message = "Unknown action." }
+	end
 	request.OnServerInvoke = function(player, action, a, b, c, d)
 		if action == "Get" then
 			return { Ok = true, Message = "", State = state(player) }
@@ -498,6 +722,8 @@ function FurnitureService.start()
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
 		if prompt.Name == "StoreFishPrompt" or prompt.Name == "TakeStoredFishPrompt" then
 			task.spawn(rackPrompt, player, prompt)
+		elseif prompt.Name == "TakeKitchenFishPrompt" then
+			task.spawn(takeKitchenStorageFish, player, prompt)
 		end
 	end)
 	local function bind(player: Player)

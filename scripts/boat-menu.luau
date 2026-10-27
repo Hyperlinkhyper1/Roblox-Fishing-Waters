@@ -115,6 +115,7 @@ local fisher = dock:FindFirstChild("LaunchFishingBoat", true)
 local speedboat = dock:FindFirstChild("LaunchSpeedboat", true)
 local patrol = dock:FindFirstChild("LaunchPatrolBoat", true)
 local racing = dock:FindFirstChild("LaunchRacingSpeedboat", true)
+local trawler = dock:FindFirstChild("LaunchTrawler", true)
 check(not overlay.Visible and #world:GetChildren() == 0, "Closed menu starts without rendering a boat")
 feedback.OnClientEvent:Fire("OpenDock", base)
 check(overlay.Visible and dock.Visible and launch.Active, "Own dock opens the fleet and enables launch")
@@ -134,6 +135,7 @@ local fishTemplate = addBoat("FishingBoat")
 addBoat("RacingSpeedboat")
 local patrolTemplate = addBoat("PatrolBoat")
 local speedTemplate = addBoat("Speedboat")
+addBoat("Trawler")
 check(#world:GetChildren() == 1 and world:FindFirstChild("Rowboat"), "Late replication fills the selected preview")
 check(world:FindFirstChild("Rowboat") ~= rowTemplate, "Preview clones the template without moving it")
 local firstModel = world:GetChildren()[1]
@@ -230,11 +232,11 @@ check(world:FindFirstChild("PatrolBoat") and patrol.Active and launch.Active, "P
 local patrolSpeed, patrolCargo = false, false
 for _, item in dock:FindFirstChild("SelectedBoatStats"):GetDescendants() do
 	if item:IsA("TextLabel") then
-		patrolSpeed = patrolSpeed or item.Text == "75"
-		patrolCargo = patrolCargo or item.Text == "128"
+		patrolSpeed = patrolSpeed or item.Text == tostring(BoatCatalog.PatrolBoat.ForwardSpeed)
+		patrolCargo = patrolCargo or item.Text == "90"
 	end
 end
-check(patrolSpeed and patrolCargo, "Patrol menu displays faster speed and exactly twice the cargo tiles")
+check(patrolSpeed and patrolCargo, "Patrol menu displays its current speed and 90 cargo tiles")
 launch.Activated:Fire()
 check(requests[#requests][2] == "PatrolBoat", "Patrol launch sends its own ID")
 feedback.OnClientEvent:Fire("OpenDock", base)
@@ -253,6 +255,20 @@ launch.Activated:Fire()
 check(requests[#requests][2] == "RacingSpeedboat", "Racing launch sends its own ID")
 feedback.OnClientEvent:Fire("OpenDock", base)
 player:SetAttribute("OwnsRacingSpeedboat", false)
+player:SetAttribute("OwnsTrawler", true)
+check(world:FindFirstChild("Trawler") and trawler.Active and launch.Active, "Trawler-only ownership enables preview and launch")
+local trawlerSpeed, trawlerCargo = false, false
+for _, item in dock:FindFirstChild("SelectedBoatStats"):GetDescendants() do
+	if item:IsA("TextLabel") then
+		trawlerSpeed = trawlerSpeed or item.Text == "70"
+		trawlerCargo = trawlerCargo or item.Text == "104"
+	end
+end
+check(trawlerSpeed and trawlerCargo, "Trawler menu displays 70 speed and 104 cargo tiles")
+launch.Activated:Fire()
+check(requests[#requests][1] == "SpawnBoat" and requests[#requests][2] == "Trawler", "Trawler launch sends its own ID")
+feedback.OnClientEvent:Fire("OpenDock", base)
+player:SetAttribute("OwnsTrawler", false)
 player:SetAttribute("OwnsFishingBoat", true)
 check(world:FindFirstChild("FishingBoat") and launch.Active, "First owned boat becomes the preview immediately")
 UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.Escape })
@@ -272,4 +288,72 @@ check(view.CurrentCamera.CFrame == pausedCamera, "Hidden previews stop updating"
 feedback.OnClientEvent:Fire("OpenDialogue")
 check(card.Size.X.Offset == 380 and card.Size.Y.Offset == 500, "Shipwright dialogue restores its original card size")
 check(cameraStops > 0, "Dismissal retains existing world-camera restoration")
+
+-- The helm control follows server light state and shares mouse/touch and keyboard input.
+overlay.Visible = false
+local lightsToggle = gui:FindFirstChild("ToggleBoatLights")
+local cameraToggle = gui:FindFirstChild("CycleBoatCamera")
+check(cameraToggle ~= nil, "The helm has a camera control")
+local focusedBox = nil
+function UserInputService:GetFocusedTextBox()
+	return focusedBox
+end
+local humanoid = Instance.new("Humanoid")
+humanoid.Parent = character
+local drivenBoat = Instance.new("Model")
+drivenBoat:SetAttribute("OwnerUserId", player.UserId)
+drivenBoat:SetAttribute("LightsEnabled", true)
+drivenBoat.Parent = workspace
+local helm = Instance.new("VehicleSeat")
+helm.ThrottleFloat, helm.SteerFloat, helm.Parent = 0, 0, drivenBoat
+humanoid.SeatPart = helm
+for id, spec in BoatCatalog do
+	drivenBoat:SetAttribute("BoatId", id)
+	helm.Name = spec.DriverSeat
+	heartbeat:Fire(0.1)
+	check(lightsToggle.Visible and lightsToggle.Text == "Lights ON [L]", "Every boat shows the lights control at its owner's helm: " .. id)
+	check(cameraToggle.Visible, "Every boat shows the camera control at its owner's helm: " .. id)
+end
+check(lightsToggle.Position.X.Scale == 1 and lightsToggle.Position.Y.Scale == 1, "The light toggle belongs to the bottom-right HUD stack")
+check(cameraToggle.Position.X.Scale == 1 and cameraToggle.Position.Y.Scale == 1, "The camera control belongs to the bottom-right HUD stack")
+check(
+	cameraToggle.Position.Y.Offset < lightsToggle.Position.Y.Offset,
+	"The camera control sits directly above the lights"
+)
+check(cameraToggle.Text == "Camera [V]\nTrailing", "The camera control starts in the trailing view")
+cameraToggle.Activated:Fire()
+check(cameraToggle.Text == "Camera [V]\nFront", "Clicking the camera button selects the front view")
+UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.V }, false)
+check(cameraToggle.Text == "Camera [V]\nCockpit", "Pressing V selects the cockpit view")
+UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.V }, false)
+check(cameraToggle.Text == "Camera [V]\nSide", "V continues to the side view")
+UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.V }, false)
+check(cameraToggle.Text == "Camera [V]\nTrailing", "V wraps back to the trailing view")
+local beforeToggle = #requests
+lightsToggle.Activated:Fire()
+check(#requests == beforeToggle + 1 and requests[#requests][1] == "ToggleLights", "Clicking the light button sends the server toggle")
+beforeToggle = #requests
+UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.L }, false)
+check(#requests == beforeToggle + 1 and requests[#requests][1] == "ToggleLights", "Pressing L sends the same light toggle")
+local beforeBlockedInput = #requests
+UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.L }, true)
+focusedBox = {}
+UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.L }, false)
+focusedBox = nil
+check(#requests == beforeBlockedInput, "Handled keys and typing in chat never switch the lights")
+drivenBoat:SetAttribute("LightsEnabled", false)
+heartbeat:Fire(0.1)
+check(lightsToggle.Text == "Lights OFF [L]", "The button follows the replicated off state")
+drivenBoat:SetAttribute("OwnerUserId", player.UserId + 1)
+heartbeat:Fire(0.1)
+check(not lightsToggle.Visible and not cameraToggle.Visible, "The controls are hidden in another player's boat")
+humanoid.SeatPart = nil
+heartbeat:Fire(0.1)
+beforeBlockedInput = #requests
+lightsToggle.Activated:Fire()
+UserInputService.InputBegan:Fire({ KeyCode = Enum.KeyCode.L }, false)
+check(
+	not lightsToggle.Visible and not cameraToggle.Visible and #requests == beforeBlockedInput,
+	"Leaving the helm hides and disables both toggle inputs"
+)
 print(string.format("Boat menu and preview: %d checks passed (recording mocks; Studio visuals still required)", checks))

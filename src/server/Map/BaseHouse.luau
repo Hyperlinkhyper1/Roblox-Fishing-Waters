@@ -124,7 +124,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 		gui.Face = if back then Enum.NormalId.Front else Enum.NormalId.Back
 		-- Match the canvas to the physical board so glyphs retain their proportions.
 		gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-		gui.CanvasSize = Vector2.new(math.round(width * 60), math.round(height * 60))
+		gui.CanvasSize = Vector2.new(math.round(width * 20), math.round(height * 20))
 		gui.Parent = board
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.new(1, -24, 1, -12)
@@ -375,6 +375,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 	FishFreezer.ensure(shop, frame)
 	ShopDesk.ensure(shop, frame)
 	ensureLights(house, frame)
+	Props.simplifyHouseCollision(house)
 	return house
 end
 
@@ -405,6 +406,19 @@ function BaseHouse.ensure(base: Model)
 	end
 	local existing = base:FindFirstChild("BaseHouse")
 	if existing and existing:GetAttribute("LayoutVersion") == VERSION then
+		local sign = existing:FindFirstChild("ShopSign", true)
+		local gui = sign and sign:FindFirstChildWhichIsA("SurfaceGui")
+		if gui then
+			gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+			gui.CanvasSize = Vector2.new(400, 36)
+			local label = gui:FindFirstChildWhichIsA("TextLabel", true)
+			if label then
+				label.TextScaled = true
+				label.TextWrapped = false
+				label.Size = UDim2.new(1, -24, 1, -12)
+				label.Position = UDim2.fromOffset(12, 6)
+			end
+		end
 		local shop = existing:FindFirstChild("Shop")
 		local houseFrame = existing:GetAttribute("HouseFrame")
 		if shop and shop:IsA("Model") and typeof(houseFrame) == "CFrame" then
@@ -412,6 +426,7 @@ function BaseHouse.ensure(base: Model)
 			ShopDesk.ensure(shop, houseFrame)
 			ensureLights(existing, houseFrame)
 		end
+		Props.simplifyHouseCollision(existing)
 		return
 	end
 	local dockFrame = base:GetAttribute("BoatDockFrame")

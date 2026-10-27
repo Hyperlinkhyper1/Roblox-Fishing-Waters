@@ -9,6 +9,7 @@ local BoatService = require(script.Parent.BoatService)
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
+local Cargo = require(ReplicatedStorage.Shared.Cargo)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
@@ -18,6 +19,21 @@ local CargoService = {}
 local started = false
 local requests = {}
 local update: RemoteEvent
+
+-- The refit dock reserves a motor or rudder in RefitPending while the player
+-- picks its hold spot. Attributes cannot hold tables, so the reservation is a
+-- server-owned "BoatId|Kind|PartId" string.
+local function pendingRefit(player: Player)
+	local value = player:GetAttribute("RefitPending")
+	if type(value) ~= "string" then
+		return nil
+	end
+	local boatId, kind, partId = string.match(value, "^([^|]+)|([^|]+)|([^|]+)$")
+	if not boatId or (kind ~= "Motor" and kind ~= "Rudder") then
+		return nil
+	end
+	return { BoatId = boatId, Kind = kind, PartId = partId }
+end
 
 local function boatInReach(player: Player): (string?, any?, boolean)
 	local boatId, model = BoatService.activeBoat(player)
@@ -33,13 +49,18 @@ local function state(player: Player)
 	if not profile then
 		return nil
 	end
-	local boatId, layout = boatInReach(player)
+	local boatId, layout, near = boatInReach(player)
+	local pending = pendingRefit(player)
+	if not pending or pending.BoatId ~= boatId or not near then
+		pending = nil
+	end
 	return {
 		Hand = profile.Angler.Hand,
 		BackpackId = profile.Angler.BackpackId,
 		Backpack = profile.Angler.Backpack,
 		BoatId = boatId,
 		Items = if layout then AnglerData.hold(profile.Angler, boatId, layout) else {},
+		Pending = if pending then { BoatId = pending.BoatId, Kind = pending.Kind, PartId = pending.PartId } else nil,
 		Freezer = #profile.Angler.Freezer,
 		FreezerUsage = AnglerData.freezerUsage(profile.Angler),
 	}
@@ -192,6 +213,109 @@ local function move(player: Player, from: any, to: any, container: any): (boolea
 	end)
 end
 
+local function moveAll(player: Player): (boolean, string)
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your cargo is still loading. Try again in a moment."
+	end
+	local boatId, layout, near = boatInReach(player)
+	if not layout then
+		return false, "Launch your boat to use its hold."
+	end
+	if not near then
+		return false, "Climb aboard your boat to use its hold."
+	end
+	local backpackLayout = Backpacks.Items[profile.Angler.BackpackId] or Backpacks.Items.Starter
+	local data, count = AnglerData.moveAllToBackpack(profile.Angler, boatId, layout, backpackLayout, Catalog.Fish)
+	if not data then
+		-- On failure the second value is the player-facing reason instead of a count.
+		return false, count
+	end
+	local ok, message = BoatService.updateProgress(player, function(current)
+		local updated, failure =
+			AnglerData.moveAllToBackpack(current.Angler, boatId, layout, backpackLayout, Catalog.Fish)
+		assert(updated, failure)
+		current.Angler = updated
+	end)
+	if not ok then
+		return false, message
+	end
+	return true, string.format("Moved %d fish into your backpack.", count)
+end
+
+-- The refit dock reserves a motor or rudder in RefitPending; the player picks
+-- where it sits in the hold, and this saves that exact placement.
+local function placeRefit(player: Player, x: any, y: any, r: any): (boolean, string)
+	local pending = pendingRefit(player)
+	if not pending then
+		return false, "Choose a motor or rudder at the dock first."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your cargo is still loading. Try again in a moment."
+	end
+	local boatId, layout, near = boatInReach(player)
+	if not layout then
+		return false, "Launch your boat to use its hold."
+	elseif not near then
+		return false, "Climb aboard your boat to use its hold."
+	elseif pending.BoatId ~= boatId then
+		return false, "That refit belongs to another boat."
+	elseif not Cargo.Parts[pending.PartId] then
+		return false, "That boat part is not available."
+	end
+	local data, reason = AnglerData.placePart(profile.Angler, boatId, layout, pending.PartId, x, y, r, Catalog.Fish)
+	if not data then
+		return false, reason
+	end
+	-- Clear before saving so the revision pushes during the save cannot re-arm
+	-- placement; put it back if the save fails.
+	local encoded = player:GetAttribute("RefitPending")
+	player:SetAttribute("RefitPending", nil)
+	local ok, message = BoatService.updateProgress(player, function(current)
+		local updated, failure =
+			AnglerData.placePart(current.Angler, boatId, layout, pending.PartId, x, y, r, Catalog.Fish)
+		assert(updated, failure)
+		current.Angler = updated
+	end)
+	if not ok then
+		player:SetAttribute("RefitPending", encoded)
+		return false, message
+	end
+	BoatService.refit(player)
+	return true,
+		if pending.Kind == "Motor"
+			then "Extra motor fitted! Your " .. layout.Name .. " is faster now."
+			else "Rudder fitted! Your " .. layout.Name .. " turns sharper now."
+end
+
+local function cancelRefit(player: Player): (boolean, string)
+	if player:GetAttribute("RefitPending") == nil then
+		return true, ""
+	end
+	player:SetAttribute("RefitPending", nil)
+	return true, "Refit cancelled. Nothing was changed."
+end
+
+local function lockBackpack(player: Player, index: any, locked: any, expected: any): (boolean, string)
+	if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > 256 or type(locked) ~= "boolean" then
+		return false, "Choose a fish in your backpack."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your cargo is still loading. Try again in a moment."
+	end
+	local data, reason = AnglerData.setBackpackLock(profile.Angler, index, locked, expected)
+	if not data then
+		return false, reason
+	end
+	return BoatService.updateProgress(player, function(current)
+		local updated, failure = AnglerData.setBackpackLock(current.Angler, index, locked, expected)
+		assert(updated, failure)
+		current.Angler = updated
+	end)
+end
+
 function CargoService.start()
 	if started then
 		return
@@ -204,17 +328,34 @@ function CargoService.start()
 	update = Instance.new("RemoteEvent")
 	update.Name, update.Parent = "Update", remotes
 	remotes.Parent = ReplicatedStorage
-	request.OnServerInvoke = function(player, action, from, to, container)
+	request.OnServerInvoke = function(player, action, a, b, c)
 		if action == "Get" then
 			return { Ok = true, Message = "", State = state(player) }
-		elseif action ~= "Move" then
+		elseif
+			action ~= "Move"
+			and action ~= "Lock"
+			and action ~= "MoveAll"
+			and action ~= "Place"
+			and action ~= "CancelPlace"
+		then
 			return { Ok = false, Message = "That cargo action is unavailable.", State = state(player) }
 		end
 		if os.clock() - (requests[player] or -math.huge) < 0.2 then
 			return { Ok = false, Message = "Please wait a moment and try again.", State = state(player) }
 		end
 		requests[player] = os.clock()
-		local ok, message = move(player, from, to, container)
+		local ok, message
+		if action == "Lock" then
+			ok, message = lockBackpack(player, a, b, c)
+		elseif action == "MoveAll" then
+			ok, message = moveAll(player)
+		elseif action == "Place" then
+			ok, message = placeRefit(player, a, b, c)
+		elseif action == "CancelPlace" then
+			ok, message = cancelRefit(player)
+		else
+			ok, message = move(player, a, b, c)
+		end
 		return { Ok = ok, Message = message, State = state(player) }
 	end
 	-- Every saved change and every launch or docking refreshes the client's view.
@@ -223,6 +364,10 @@ function CargoService.start()
 			CargoService.push(player)
 		end)
 		player:GetAttributeChangedSignal("ActiveBoatId"):Connect(function()
+			CargoService.push(player)
+		end)
+		-- Fitting a motor or rudder at the dock opens the hold placement view.
+		player:GetAttributeChangedSignal("RefitPending"):Connect(function()
 			CargoService.push(player)
 		end)
 		-- Respawning empties the Backpack, so hand the fish back.

@@ -15,22 +15,24 @@ hall.Name, hall.Parent = "FurnitureStoreInterior", workspace
 hall:SetAttribute("InteriorFrame", CFrame.new(6700, 309, 160))
 hall:SetAttribute("InteriorSize", Vector3.new(48, 18, 40))
 local tagged = { hall }
+local bases = {}
+local BASE_TAG, HOME_DISTANCE = "PlayerBase", 90
 function CollectionService:GetTagged(tag)
+	if tag == BASE_TAG then
+		return bases
+	end
 	assert(tag == "FurnitureShowroom")
 	return tagged
 end
 local anchors = {}
--- Like the real showroom, only base furniture has a display; path equipment is
--- bought from the counter catalogue.
-local displayed = {}
-for _, id in Furniture.Order do
-	if not Furniture.Items[id].Requires then
-		table.insert(displayed, id)
-	end
-end
+-- Like the real showroom, every catalogue item has its own display prompt, on a
+-- grid wide enough that only the matching display authorizes its item.
+local displayed = Furniture.Order
 for index, id in displayed do
+	local row, column = math.ceil(index / 5), (index - 1) % 5 + 1
 	local anchor = Instance.new("Part")
-	anchor.CFrame, anchor.Parent = CFrame.new(6700 + (index - 2) * 15, 301.7, 164.5), hall
+	anchor.CFrame, anchor.Parent =
+		CFrame.new(6700 + (column - 3) * 10, 301.7, 160 + (if row == 1 then 12 else -17)), hall
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name, prompt.Enabled, prompt.MaxActivationDistance = "BrowseFurniturePrompt", true, 7
 	prompt:SetAttribute("ItemId", id)
@@ -42,6 +44,7 @@ counter.CFrame, counter.Parent = CFrame.new(6683, 303.1, 153), hall
 local browse = Instance.new("ProximityPrompt")
 browse.Name, browse.Enabled, browse.MaxActivationDistance, browse.Parent = "BrowseFurniturePrompt", true, 7, counter
 local player = Instance.new("Player")
+player.UserId = 42
 local character = Instance.new("Model")
 player.Character = character
 local humanoid = Instance.new("Humanoid")
@@ -49,7 +52,9 @@ humanoid.Health, humanoid.Parent = 100, character
 local root = Instance.new("Part")
 root.Name, root.CFrame, root.Parent = "HumanoidRootPart", CFrame.new(), character
 -- ROOT_SOURCE --
+-- HOUSE_SOURCE --
 -- AUTH_SOURCE --
+-- HOME_SOURCE --
 local function stand(anchor)
 	root.CFrame = anchor.CFrame + Vector3.new(0, 1.5, -1)
 end
@@ -57,11 +62,15 @@ for _, id in displayed do
 	stand(anchors[id])
 	check(atShop(player, id), "Matching display must authorize " .. id)
 	for _, other in Furniture.Order do
-		if other ~= id then check(not atShop(player, other), "Distant display must not authorize " .. other) end
+		if other ~= id then
+			check(not atShop(player, other), "Distant display must not authorize " .. other)
+		end
 	end
 end
 stand(counter)
-for _, id in Furniture.Order do check(atShop(player, id), "Service counter must offer " .. id) end
+for _, id in Furniture.Order do
+	check(atShop(player, id), "Service counter must offer " .. id)
+end
 root.CFrame = CFrame.new()
 check(not atShop(player, "Freezer"), "Plaza/outside requests must be rejected")
 stand(anchors.Freezer)
@@ -84,17 +93,25 @@ local profile = { Cash = 2000, Angler = { FurnitureStock = {}, Stats = { CoinsSp
 local busy, saves, synced = {}, 0, 0
 local failSave = false
 local function copy(value)
-	if type(value) ~= "table" then return value end
+	if type(value) ~= "table" then
+		return value
+	end
 	local result = {}
-	for key, item in value do result[key] = copy(item) end
+	for key, item in value do
+		result[key] = copy(item)
+	end
 	return result
 end
 local BoatService = {
 	-- BoatService.getProfile decodes a copy of the stored profile.
-	getProfile = function() return if profile then copy(profile) else nil end,
+	getProfile = function()
+		return if profile then copy(profile) else nil
+	end,
 	updateProgress = function(_, transform)
 		saves += 1
-		if failSave then return false, "Save failed" end
+		if failSave then
+			return false, "Save failed"
+		end
 		local current = copy(profile)
 		transform(current)
 		profile = current
@@ -108,7 +125,9 @@ local AnglerData = {
 		return result
 	end,
 }
-local function syncPlayer() synced += 1 end
+local function syncPlayer()
+	synced += 1
+end
 -- PURCHASE_SOURCE --
 root.CFrame = CFrame.new()
 check(not buy(player, "Freezer") and saves == 0, "Remote purchase outside showroom must not save")
@@ -117,7 +136,10 @@ check(not buy(player, "Register") and saves == 0, "Wrong display purchase must n
 check(not buy(player, "Unknown") and saves == 0, "Invalid furniture must not save")
 check(not buy(player, {}) and saves == 0, "Malformed furniture must not save")
 check(buy(player, "Freezer"), "Freezer purchase at display must succeed")
-check(profile.Cash == 1250 and profile.Angler.FurnitureStock.Freezer == 1, "Purchase must deduct the catalogue price and grant stock")
+check(
+	profile.Cash == 1250 and profile.Angler.FurnitureStock.Freezer == 1,
+	"Purchase must deduct the catalogue price and grant stock"
+)
 check(profile.Angler.Stats.CoinsSpent == 750 and synced == 1, "Purchase must update spending and synchronize")
 stand(counter)
 check(buy(player, "Register"), "Indoor counter purchase must succeed")
@@ -125,7 +147,10 @@ check(profile.Cash == 750 and profile.Angler.FurnitureStock.Register == 1, "Coun
 stand(anchors.StorageRack)
 failSave = true
 check(not buy(player, "StorageRack"), "Failed saves must report failure")
-check(profile.Cash == 750 and profile.Angler.FurnitureStock.StorageRack == nil, "Failed save must not change cash or stock")
+check(
+	profile.Cash == 750 and profile.Angler.FurnitureStock.StorageRack == nil,
+	"Failed save must not change cash or stock"
+)
 failSave = false
 check(buy(player, "StorageRack"), "Rack display purchase must succeed")
 check(profile.Cash == 450 and profile.Angler.FurnitureStock.StorageRack == 1, "Rack must charge the catalogue price")
@@ -140,4 +165,70 @@ local loaded = profile
 profile = nil
 check(not buy(player, "StorageRack") and saves == savesBefore, "Unloaded profiles must not buy")
 profile = loaded
-print(string.format("Furniture showroom: %d authorization and purchase checks passed (recording mocks; no Roblox runtime).", checks))
+
+-- Exercise the actual server home gate and place/move/pick-up handlers with real
+-- saved-data operations. Preview-only checks cannot catch a server rejection.
+AnglerData = require("-- ANGLER_DATA_MODULE --")
+-- PLACEMENT_SOURCE --
+local base = Instance.new("Model")
+base:SetAttribute("OwnerUserId", player.UserId)
+local house = Instance.new("Model")
+house.Name, house.Parent = "BaseHouse", base
+local homeFrame = CFrame.new(150, 6, -90) * CFrame.Angles(0, math.pi / 2, 0)
+house:SetAttribute("HouseFrame", homeFrame)
+bases = { base }
+root.CFrame = homeFrame * CFrame.new(16, 3, -12)
+check(atHome(player), "A living owner inside the house must pass the server home gate")
+profile = { Cash = 0, Angler = AnglerData.decode(nil) }
+for _, id in { "StorageRack", "Freezer", "Register" } do
+	profile.Angler = AnglerData.buyFurniture(profile.Angler, id)
+end
+check(place(player, "StorageRack", 16, -12, 0), "Server must place an owned rack inside storage")
+check(
+	#profile.Angler.Furniture == 1 and profile.Angler.FurnitureStock.StorageRack == nil,
+	"Successful server placement must save furniture and consume stock"
+)
+check(place(player, 1, 16, -6, 0), "Server must move an existing rack")
+check(
+	#profile.Angler.Furniture == 1 and profile.Angler.Furniture[1].Z == -6,
+	"Server move must save the new position without duplicating furniture"
+)
+check(pickUp(player, 1), "Server must allow picking up furniture at home")
+check(
+	#profile.Angler.Furniture == 0 and profile.Angler.FurnitureStock.StorageRack == 1,
+	"Server pickup must return the item to stock"
+)
+check(place(player, "Freezer", 7, 9, 1), "Server must also place a freezer in the shop")
+check(place(player, "Register", -10, 9, 0), "Server must also place a register in the shop")
+local savedBefore = saves
+check(
+	not place(player, "StorageRack", -10, 9, 0) and saves == savedBefore,
+	"The home fix must preserve room restrictions without saving rejected placements"
+)
+root.CFrame = homeFrame * CFrame.new(HOME_DISTANCE + 1, 0, 0)
+check(not atHome(player), "Distant owners must not pass the home gate")
+check(
+	not place(player, "StorageRack", 16, -12, 0) and saves == savedBefore,
+	"Remote placement away from home must not save"
+)
+check(not pickUp(player, 1) and saves == savedBefore, "Remote pickup away from home must not save")
+root.CFrame = homeFrame * CFrame.new(0, 3, 0)
+base:SetAttribute("OwnerUserId", 99)
+check(not atHome(player), "Someone else's house must not authorize building")
+base:SetAttribute("OwnerUserId", player.UserId)
+humanoid.Health = 0
+check(not atHome(player), "Dead players must not authorize building")
+humanoid.Health = 100
+house:SetAttribute("HouseFrame", nil)
+check(not atHome(player), "Missing house frame must fail safely")
+house:SetAttribute("HouseFrame", homeFrame)
+house.Parent = nil
+check(not atHome(player), "Missing house must fail safely")
+bases = {}
+check(not atHome(player), "Unclaimed players must fail safely")
+print(
+	string.format(
+		"Furniture: %d showroom, home authorization, purchase and placement checks passed (recording mocks; no Roblox runtime).",
+		checks
+	)
+)

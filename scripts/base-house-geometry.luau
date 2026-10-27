@@ -242,6 +242,19 @@ for index, houseFrame in
 do
 	local parent = Instance.new("Model")
 	local house = BaseHouse.build(parent, houseFrame, Color3.fromRGB(63, 123, 139), index)
+	for _, piece in house.Shell:GetChildren() do
+		if
+			table.find(
+				{ "SidePlinth", "EavesBeam", "TimberPost", "DoorJamb", "DoorHeader", "RidgeCap", "CeilingTie" },
+				piece.Name
+			)
+		then
+			check(
+				not piece.CanCollide and not piece.CanQuery and not piece.CanTouch,
+				"House trim still participates in physics"
+			)
+		end
+	end
 	check(
 		house and house:IsA("Model") and house.Parent == parent,
 		"House model must be returned under its requested parent"
@@ -694,6 +707,14 @@ for _, recoverFrame in { false, true } do
 		"Repeated house upgrade moves existing plot controls"
 	)
 	-- A map baked with the current shell receives lights and fixtures in place.
+	house:SetAttribute("HouseCollisionVersion", nil)
+	local savedTrim = house.Shell:FindFirstChild("TimberPost")
+	savedTrim.CanCollide, savedTrim.CanQuery, savedTrim.CanTouch = true, true, true
+	BaseHouse.ensure(base)
+	check(
+		base.BaseHouse == house and not savedTrim.CanCollide and not savedTrim.CanQuery and not savedTrim.CanTouch,
+		"Saved house trim was not simplified in place"
+	)
 	local shop = house:FindFirstChild("Shop")
 	for _, roomName in { "Shop", "Processing", "Storage" } do
 		local lighting = house:FindFirstChild(roomName):FindFirstChild("CeilingLights")

@@ -15,7 +15,8 @@ local STROBE = Color3.fromRGB(46, 112, 235)
 local THICKNESS = 0.18
 -- Match the reference cruiser's scale beside a standard player avatar.
 -- Scale around the waterline so previews and launched boats sit at the same height.
-local SCALE = 1.5
+-- 1.2 is 80% of the original 1.5 display scale.
+local SCALE = 1.2
 -- The wheelhouse spans these stations; the foredeck runs up to its front wall.
 local CABIN_FRONT = 4
 local CABIN_REAR = 12.6
@@ -464,6 +465,12 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 		Enum.Material.Neon
 	)
 	lens.CastShadow = false
+	local searchlight = Instance.new("SpotLight")
+	searchlight.Name = "SearchlightBeam"
+	searchlight.Face = Enum.NormalId.Front
+	searchlight.Color, searchlight.Range, searchlight.Brightness, searchlight.Angle = LAMP, 45, 1.4, 65
+	searchlight.Shadows = false
+	searchlight.Parent = lens
 	-- Radar mast near the back of the roof, with whip antennas at the corners.
 	local radarZ = CABIN_REAR - 1
 	part("RadarMast", Vector3.new(0.3, 1.4, 0.3), CFrame.new(0, 7.4, radarZ), DARK)
@@ -568,6 +575,46 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 	for _, z in { stern.z - 2.6, stern.z - 1.5 } do
 		part("CargoHatchRim", Vector3.new(3, 0.12, 0.9), CFrame.new(0, 1.16, z), METAL)
 		part("CargoHatch", Vector3.new(2.8, 0.1, 0.7), CFrame.new(0, 1.27, z), HULL_GRAY)
+	end
+	for _, z in { 7, CABIN_REAR + 0.2 } do
+		local deckLamp =
+			part("DeckLightLens", Vector3.new(0.9, 0.14, 0.6), CFrame.new(0, 6.3, z), LAMP, Enum.Material.Neon)
+		local deckLight = Instance.new("PointLight")
+		deckLight.Name = "DeckLight"
+		deckLight.Color, deckLight.Range, deckLight.Brightness = LAMP, 20, 0.55
+		deckLight.Shadows = false
+		deckLight.Parent = deckLamp
+	end
+	-- Bow lamps extend visibility beyond the long foredeck; the roof searchlight fills it in.
+	for _, side in { -1, 1 } do
+		part(
+			"HeadlightStand",
+			Vector3.new(0.18, 0.3, 0.18),
+			CFrame.new(side * 1.4, 3.2, -18),
+			METAL,
+			Enum.Material.Metal
+		)
+		part(
+			"HeadlightHousing",
+			Vector3.new(0.75, 0.5, 0.65),
+			CFrame.new(side * 1.4, 3.6, -18),
+			DARK,
+			Enum.Material.Metal
+		)
+		local bowLens = part(
+			"HeadlightLens",
+			Vector3.new(0.58, 0.34, 0.06),
+			CFrame.new(side * 1.4, 3.6, -18.36),
+			LAMP,
+			Enum.Material.Neon
+		)
+		bowLens.CastShadow = false
+		local headlight = Instance.new("SpotLight")
+		headlight.Name = "Headlight"
+		headlight.Face = Enum.NormalId.Front
+		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = LAMP, 45, 1.2, 65
+		headlight.Shadows = false
+		headlight.Parent = bowLens
 	end
 	return model
 end

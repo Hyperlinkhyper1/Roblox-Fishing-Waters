@@ -15,6 +15,7 @@ const client = read('src/client/Weather.luau')
   .replace(/local (\w+) = require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'local $1 = dependencies.$2');
 const program = read('scripts/weather-visuals.luau')
   .replace('-- MOCKS --', () => mocks)
+  .replace('-- WEATHER --', () => read('src/shared/Weather.luau'))
   .replace('-- CLIENT --', () => client);
 const temporary = mkdtempSync(join(tmpdir(), 'weather-visuals-'));
 const target = join(temporary, 'check.luau');

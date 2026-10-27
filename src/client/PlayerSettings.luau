@@ -11,6 +11,9 @@ local performance, device, preset
 local function applyPerformance()
 	Lighting.GlobalShadows = performance.Shadows
 	Players.LocalPlayer:SetAttribute("WeatherEffectsEnabled", performance.WeatherEffects)
+	-- Computers add the distant cloud field and extra detail. The local rain
+	-- cloud deck remains present on every device, including Performance mode.
+	Players.LocalPlayer:SetAttribute("VolumetricCloudsEnabled", device == "Computer" and performance.WeatherEffects)
 end
 
 local function detectPerformance()
@@ -89,13 +92,37 @@ function Settings.start()
 		instance:GetPropertyChangedSignal("SoundGroup"):Connect(route)
 		route()
 	end
-	-- Only places sounds can play from. Watching the whole game ran this for every
-	-- part streaming into the map, and the first scan walked every instance there is.
-	for _, root in { workspace, SoundService, Players.LocalPlayer } do
+	-- Only places sounds can play from: the mixer, this player's GUI, characters
+	-- (footsteps, splashes) and boats (engines). Watching all of workspace ran a
+	-- script call for every part streaming into the map, thousands per island piece.
+	local function watch(root: Instance)
 		root.DescendantAdded:Connect(bind)
 		for _, instance in root:GetDescendants() do
 			bind(instance)
 		end
+	end
+	watch(SoundService)
+	watch(Players.LocalPlayer)
+	local function watchPlayer(other: Player)
+		other.CharacterAdded:Connect(watch)
+		if other.Character then
+			watch(other.Character)
+		end
+	end
+	Players.PlayerAdded:Connect(watchPlayer)
+	for _, other in Players:GetPlayers() do
+		watchPlayer(other)
+	end
+	-- Sounds parented straight to workspace, and the boats folder.
+	local function topLevel(child: Instance)
+		bind(child)
+		if child.Name == "PlayerBoats" then
+			watch(child)
+		end
+	end
+	workspace.ChildAdded:Connect(topLevel)
+	for _, child in workspace:GetChildren() do
+		topLevel(child)
 	end
 end
 

@@ -8,11 +8,15 @@
 local Cargo = {}
 
 -- Boat kit stowed in a hold. It can be rearranged and rotated, but never
--- released or frozen.
+-- released or frozen. Motors and rudders can be added at the refit dock
+-- (Shared.BoatUpgrades).
 Cargo.Parts = {
-	Engine = { Name = "Inboard engine", Shape = { "##", "##" } },
-	PatrolEngine = { Name = "Inboard engine", Shape = { "###", "###", "###", "###" } },
+	Engine = { Name = "Inboard engine", Shape = { "##", "##" }, Motor = true },
+	PatrolEngine = { Name = "Inboard engine", Shape = { "###", "###", "###", "###" }, Motor = true },
+	-- Broad engine bed across the trawler's transom, with a twin-cell shaft trunk forward.
+	TrawlerEngine = { Name = "Inboard engine", Shape = { ".##.", ".##.", "####" }, Motor = true },
 	Lantern = { Name = "Deck lantern", Shape = { "#" } },
+	Rudder = { Name = "Rudder", Shape = { "#", "#" } },
 }
 
 -- Species without their own Shapes in the catalog still grow with their size class.
