@@ -13,10 +13,11 @@ local PlazaHouses = require(script.Parent.PlazaHouses)
 local Props = require(script.Parent.Props)
 local ShopDesk = require(script.Parent.ShopDesk)
 local StorageRack = require(script.Parent.StorageRack)
+local WeatherRadar = require(script.Parent.WeatherRadar)
 
 local FurnitureShop = {}
 local LAYOUT_VERSION = 2
-local INTERIOR_VERSION = 2
+local INTERIOR_VERSION = 3
 local ORIGIN = CFrame.new(6700, 300, 160)
 local W, D, H = 48, 40, 18
 local rgb = Color3.fromRGB
@@ -78,6 +79,8 @@ local function buildSample(id: string, parent: Instance, frame: CFrame): Model
 		return Kitchen.buildStorage(parent, frame)
 	elseif id == "DiningTable" then
 		return DiningRoom.buildTable(parent, frame)
+	elseif id == "WeatherRadar" then
+		return WeatherRadar.build(parent, frame)
 	end
 	return Kitchen.buildStation(parent, frame, id)
 end
@@ -94,6 +97,8 @@ local DISPLAYS = {
 	{ id = "Freezer", side = "right", x = 18, z = -3, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 9) },
 	{ id = "FoodCase", side = "right", x = 18, z = 4.75, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
 	{ id = "StorageRack", side = "right", x = 18, z = 11.25, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
+	-- By the entrance, between the corner plant and the freezer: the one outdoor piece.
+	{ id = "WeatherRadar", side = "right", x = 17, z = -12, turn = -math.pi / 2, plinth = Vector3.new(5.5, 0.3, 5.5) },
 	-- Back wall: the sales row under the welcome sign.
 	{ id = "KitchenStorage", side = "back", x = -10, z = 15, turn = math.pi, plinth = Vector3.new(7, 0.3, 7) },
 	{ id = "Register", side = "back", x = 0, z = 15, turn = 0, plinth = Vector3.new(8.5, 0.3, 7) },

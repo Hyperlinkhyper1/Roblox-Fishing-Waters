@@ -17,6 +17,7 @@ try {
     ['ROD_CLIENT_SOURCE', 'src/client/RodPhysics.luau'],
   ]) {
     let source = await readFile(join(root, file), 'utf8');
+    if (marker === 'FISHING_ROD_SOURCE') source = source.replace('require(script.Parent.RodSkins)', '{ DefaultWear = 0.2 }');
     if (marker === 'ROD_CLIENT_SOURCE') source = source.replace('require(ReplicatedStorage.Shared.RodDynamics)', 'dynamics');
     if (!program.includes(`-- ${marker} --`)) throw new Error(`Missing ${marker} hook`);
     program = program.replace(`-- ${marker} --`, source);

@@ -35,7 +35,8 @@ export type Profile = {
 	OwnedRods: { [string]: boolean },
 	RodUpgrades: { [string]: number },
 	RodSkins: { [string]: number },
-	RodSkinCopies: { { SkinId: string, Serial: number } },
+	RodSkinCopies: { { SkinId: string, Serial: number, Wear: number } },
+	RodCrates: { [string]: number },
 	NextRodSkinSerial: { [string]: number },
 	RodSerialScope: string?,
 	EquippedRodSkin: string?,
@@ -56,6 +57,7 @@ function BoatData.decode(raw: any): Profile
 			RodUpgrades = {},
 			RodSkins = {},
 			RodSkinCopies = {},
+			RodCrates = {},
 			NextRodSkinSerial = {},
 			RodSerialScope = "GlobalV1",
 			BobberSkins = {},
@@ -144,11 +146,11 @@ function BoatData.decode(raw: any): Profile
 		"Invalid equipped skin serial"
 	)
 	profile.EquippedRodSkin, profile.EquippedRodSkinSerial = nil, nil
-	local function addCopy(id, serial, originalSerial)
+	local function addCopy(id, serial, originalSerial, wear)
 		if not RodSkins.valid(id) then
 			return
 		end
-		table.insert(profile.RodSkinCopies, { SkinId = id, Serial = serial })
+		table.insert(profile.RodSkinCopies, { SkinId = id, Serial = serial, Wear = wear or RodSkins.DefaultWear })
 		profile.RodSkins[id] = (profile.RodSkins[id] or 0) + 1
 		if
 			profile.EquippedRodSkin == nil
@@ -181,6 +183,7 @@ function BoatData.decode(raw: any): Profile
 				"Invalid skin copy index"
 			)
 			assert(type(copy) == "table" and type(copy.SkinId) == "string", "Invalid skin copy")
+			assert(copy.Wear == nil or RodSkins.validWear(copy.Wear), "Invalid skin wear")
 			local serial = copy.Serial
 			local skinSeen = seen[copy.SkinId] or {}
 			assert(
@@ -204,7 +207,18 @@ function BoatData.decode(raw: any): Profile
 			local nextSerial = profile.NextRodSkinSerial[id] or 1
 			local serial = if perSkinSerials then copy.Serial else nextSerial
 			profile.NextRodSkinSerial[id] = math.max(nextSerial, serial + 1)
-			addCopy(id, serial, copy.Serial)
+			addCopy(id, serial, copy.Serial, copy.Wear)
+		end
+	end
+	assert(raw.RodCrates == nil or type(raw.RodCrates) == "table", "Invalid rod crates")
+	profile.RodCrates = {}
+	for id, count in raw.RodCrates or {} do
+		assert(
+			type(id) == "string" and type(count) == "number" and count >= 0 and count < 2 ^ 53 and count % 1 == 0,
+			"Invalid rod crate count"
+		)
+		if count > 0 then
+			profile.RodCrates[id] = count
 		end
 	end
 	-- Old profiles start with the original float. Unknown retired skins are ignored.
@@ -267,6 +281,66 @@ function BoatData.upgradeRod(profile: Profile, stat: string): string
 	profile.Angler.Stats.CoinsSpent += price
 	profile.RodUpgrades[stat] = level + 1
 	return "Upgraded"
+end
+
+-- Separate atomic transactions preserve purchased crates across sessions.
+function BoatData.buyRodCrates(profile: Profile, crateId: string, count: number): string
+	local crate = RodSkins.Crates[crateId]
+	if not crate then
+		return "UnknownCrate"
+	end
+	if count ~= 1 and count ~= 3 and count ~= 10 then
+		return "InvalidCount"
+	end
+	if not profile.OwnedRods.StarterRod then
+		return "NoRod"
+	end
+	local price = crate.Price * count
+	if profile.Cash < price then
+		return "InsufficientFunds"
+	end
+	profile.Cash -= price
+	profile.Angler.Stats.CoinsSpent += price
+	profile.RodCrates[crateId] = (profile.RodCrates[crateId] or 0) + count
+	return "Purchased"
+end
+
+function BoatData.openOwnedRodCrate(
+	profile: Profile,
+	crateId: string,
+	skinId: string,
+	serial: number,
+	wear: number
+): string
+	local crate = RodSkins.Crates[crateId]
+	if not crate or not table.find(crate.Skins, skinId) then
+		return "UnknownCrate"
+	end
+	if (profile.RodCrates[crateId] or 0) < 1 then
+		return "NoCrate"
+	end
+	assert(RodSkins.validWear(wear), "Invalid skin wear")
+	assert(
+		type(serial) == "number" and serial >= 1 and serial < 2 ^ 53 - 1 and serial % 1 == 0,
+		"Missing global skin serial"
+	)
+	for _, copy in profile.RodSkinCopies do
+		assert(copy.SkinId ~= skinId or copy.Serial ~= serial, "Skin serial already owned")
+	end
+	profile.RodCrates[crateId] -= 1
+	profile.RodSkins[skinId] = (profile.RodSkins[skinId] or 0) + 1
+	table.insert(profile.RodSkinCopies, { SkinId = skinId, Serial = serial, Wear = wear })
+	profile.NextRodSkinSerial[skinId] = math.max(profile.NextRodSkinSerial[skinId] or 1, serial + 1)
+	return "Opened"
+end
+
+function BoatData.equippedRodWear(profile: Profile): number
+	for _, copy in profile.RodSkinCopies do
+		if copy.SkinId == profile.EquippedRodSkin and copy.Serial == profile.EquippedRodSkinSerial then
+			return copy.Wear or RodSkins.DefaultWear
+		end
+	end
+	return RodSkins.DefaultWear
 end
 
 function BoatData.canOpenRodCrate(profile: Profile, crateId: string, skinId: string): string

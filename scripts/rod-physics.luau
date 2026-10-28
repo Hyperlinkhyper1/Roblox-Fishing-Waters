@@ -102,11 +102,31 @@ function frameMethods:ToAxisAngle()
 	) / (2 * math.sin(angle)),
 		angle
 end
+local colorMethods = {}
+local function color(r, g, b)
+	return setmetatable({ r * 255, g * 255, b * 255, R = r, G = g, B = b }, { __index = colorMethods })
+end
+function colorMethods:Lerp(other, alpha)
+	return color(
+		self.R + (other.R - self.R) * alpha,
+		self.G + (other.G - self.G) * alpha,
+		self.B + (other.B - self.B) * alpha
+	)
+end
 local Color3 = {
-	fromRGB = function(...)
-		return { ... }
+	fromRGB = function(r, g, b)
+		return color(r / 255, g / 255, b / 255)
 	end,
 }
+local Random = {}
+function Random.new(seed)
+	return {
+		NextNumber = function(_, minimum, maximum)
+			seed = (seed * 48271) % 2147483647
+			return minimum + (maximum - minimum) * seed / 2147483647
+		end,
+	}
+end
 local ColorSequence, NumberSequence =
 	{
 		new = function(value)
@@ -179,6 +199,9 @@ function Instance.new(kind)
 		end
 		add(self)
 		return all
+	end
+	function methods:GetChildren()
+		return table.clone(props.children)
 	end
 	function methods:FindFirstChild(name)
 		for _, child in props.children do
@@ -413,6 +436,32 @@ do
 	skin:Destroy()
 end
 check(rodFactory.build("NoSuchSkin"):GetAttribute("RodSkin") == nil, "unknown skins build the starter rod")
+local pristine = rodFactory.build("BambooRod", nil, 0)
+local worn = rodFactory.build("BambooRod", nil, 1)
+local wornAgain = rodFactory.build("BambooRod", nil, 1)
+local function scratches(rod)
+	local marks = {}
+	for _, item in rod:GetChildren() do
+		if item.Name == "WearScratch" then
+			table.insert(marks, item)
+			local joint = item:FindFirstChildOfClass("WeldConstraint")
+			check(
+				joint and joint.Part1 == item and string.find(joint.Part0.Name, "RodSegment", 1, true),
+				"Wear follows its rod segment"
+			)
+		end
+	end
+	return marks
+end
+local freshMarks, wornMarks, repeatedMarks = scratches(pristine), scratches(worn), scratches(wornAgain)
+check(pristine:GetAttribute("RodSkinWear") == 0 and worn:GetAttribute("RodSkinWear") == 1, "Wear is stored on tool")
+check(#freshMarks == 0 and #wornMarks > #freshMarks and #wornMarks == #repeatedMarks, "Wear reveals scratches")
+for index, mark in wornMarks do
+	check(sameFrame(mark.CFrame, repeatedMarks[index].CFrame), "Wear marks are deterministic in previews and gameplay")
+end
+pristine:Destroy()
+worn:Destroy()
+wornAgain:Destroy()
 local function solve()
 	for _ = 1, 10 do
 		for _, joint in hinges do

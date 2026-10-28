@@ -135,7 +135,7 @@ local function scrolling(parent, name, position, size, horizontal)
 	return body
 end
 
-local function rodPreview(parent, skinId)
+local function rodPreview(parent, skinId, wear)
 	local view = make("ViewportFrame", parent, {
 		Name = "RodPreview",
 		Position = UDim2.fromScale(0.04, 0.02),
@@ -145,7 +145,7 @@ local function rodPreview(parent, skinId)
 		LightDirection = Vector3.new(-1, -1, -2),
 	})
 	local world = make("WorldModel", view, { Name = "PreviewWorld" })
-	local rod = FishingRod.build(skinId)
+	local rod = FishingRod.build(skinId, nil, wear)
 	-- Preview tools must never join the live rod animation/tag listeners.
 	CollectionService:RemoveTag(rod, "FishingRod")
 	rod.Enabled = false
@@ -336,10 +336,11 @@ function Bag.show(parent, profile, player, narrow)
 					Key = "Skin:" .. copy.SkinId .. ":" .. copy.Serial,
 					Id = copy.SkinId,
 					Serial = copy.Serial,
+					Wear = copy.Wear,
 					Info = {
 						Name = skin.Name,
-						Kind = skin.Rarity .. " skin",
-						Description = table.concat(RodSkins.perks(copy.SkinId), " · "),
+						Kind = skin.Rarity .. " skin · " .. RodSkins.wearState(copy.Wear),
+						Description = table.concat(RodSkins.perks(copy.SkinId, copy.Wear), " · "),
 					},
 				})
 			end
@@ -385,9 +386,13 @@ function Bag.show(parent, profile, player, narrow)
 			)
 			if id == "StarterRod" then
 				local skin = player:GetAttribute("RodSkin")
-				rodPreview(tile, if type(skin) == "string" and skin ~= "" then skin else nil)
+				rodPreview(
+					tile,
+					if type(skin) == "string" and skin ~= "" then skin else nil,
+					player:GetAttribute("RodSkinWear")
+				)
 			elseif serial or entry.GroupReward then
-				rodPreview(tile, id)
+				rodPreview(tile, id, entry.Wear)
 			end
 			label(
 				tile,

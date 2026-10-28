@@ -18,6 +18,7 @@ local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Kitchen = require(script.Parent.Map.Kitchen)
 local DiningRoom = require(script.Parent.Map.DiningRoom)
+local WeatherRadar = require(script.Parent.Map.WeatherRadar)
 local KitchenService = require(script.Parent.KitchenService)
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
@@ -223,6 +224,8 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 	elseif entry.ItemId == "DiningTable" then
 		model = DiningRoom.buildTable(parent, frame)
 		model.Parent = parent
+	elseif entry.ItemId == "WeatherRadar" then
+		model = WeatherRadar.build(parent, frame)
 	elseif Recipes.Stations[entry.ItemId] then
 		model = Kitchen.buildStation(parent, frame, entry.ItemId)
 		-- KitchenService answers both prompts and keeps them in step with the cooking job.
@@ -619,6 +622,7 @@ local function buildPreviews(parent: Instance)
 		FoodCase = Kitchen.buildCase,
 		KitchenStorage = Kitchen.buildStorage or function(p, f) return Kitchen.buildStation(p, f, "KitchenStorage") end,
 		DiningTable = DiningRoom.buildTable,
+		WeatherRadar = WeatherRadar.build,
 	}
 	for _, id in Furniture.Order do
 		local build = builders[id] or function(parent, frame)

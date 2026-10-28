@@ -3,8 +3,8 @@
 -- mode preview. Pure: no Roblox services, so the saved-data tests run it directly.
 --
 -- Positions are house-local studs (the BaseHouse "HouseFrame": +Z is the street
--- front, the floor is y=0.16). An item at X, Z turns R quarter turns about +Y; its
--- own +Z is the side customers or the porter use.
+-- front, the floor is y=0.16, the quay deck outside is y=0). An item at X, Z turns
+-- R quarter turns about +Y; its own +Z is the side customers or the porter use.
 local Furniture = {}
 
 Furniture.Order = {
@@ -17,6 +17,7 @@ Furniture.Order = {
 	"SushiBar",
 	"KitchenStorage",
 	"DiningTable",
+	"WeatherRadar",
 }
 Furniture.Items = {
 	Freezer = {
@@ -128,6 +129,18 @@ Furniture.Items = {
 		Front = 1.6,
 		Back = 1.6,
 	},
+	WeatherRadar = {
+		Name = "Weather radar",
+		Price = 1500,
+		Room = "Yard",
+		MaxPlaced = 1,
+		Description = "A round radar table for your yard. Shows the rain, storm cells and tornadoes around your base, live.",
+		Width = 4,
+		Depth = 4,
+		-- The reader stands on the side the screen tilts toward.
+		Front = 1.5,
+		Back = 0,
+	},
 }
 Furniture.RACK_CAPACITY = 12
 Furniture.KITCHEN_STORAGE_CAPACITY = 8
@@ -141,6 +154,9 @@ Furniture.Rooms = {
 	Kitchen = { -22.6, -14.6, 2.65, 0.65 },
 	-- The Restaurant's dining room extension behind the processing room.
 	Dining = { -22.4, -29.4, -6.1, -15.35 },
+	-- The open quay deck between the back of the house and the piers, right of
+	-- the dining room extension.
+	Yard = { -4.8, -33, 26.5, -15.8 },
 }
 Furniture.RoomNames = {
 	Shop = "front shop room",
@@ -148,6 +164,11 @@ Furniture.RoomNames = {
 	Processing = "kitchen",
 	Kitchen = "kitchen",
 	Dining = "dining room",
+	Yard = "yard behind your house",
+}
+-- Floor height of a room where it isn't the house floor.
+Furniture.FloorHeights = {
+	Yard = 0,
 }
 -- Walkways, doorways and the built-in fixtures stay clear.
 Furniture.Blocked = {
@@ -162,6 +183,12 @@ Furniture.Blocked = {
 	{ -3.5, -14.6, 2.65, -11 }, -- rear door
 	{ -22.6, -14.6, -18, -1 }, -- built-in prep benches and their cooks
 	{ -16, -29.4, -10, -25.5 }, -- dining room entrance
+	{ -3.5, -33, 6.5, -15.8 }, -- rear steps, spawn point and the walk down to the water
+	{ -4.8, -30.5, -2.5, -27.5 }, -- crab pot on the deck
+	{ 4.5, -33, 8, -29 }, -- rope coil
+	{ 12.5, -33, 21.5, -29 }, -- head of the right-hand gangway
+	{ 16, -31, 26.5, -20 }, -- crates, barrels and crab pot by the quay edge
+	{ 24.5, -33, 26.5, -30.5 }, -- lamp post
 }
 
 -- The rectangle { x1, z1, x2, z2 } the item covers, including its access strips.
@@ -253,9 +280,17 @@ function Furniture.count(placed, itemId: string): number
 	return count
 end
 
--- World frame on the floor of the house for a placed entry.
+-- Floor height (house-local y) an item stands on.
+function Furniture.floor(itemId: string?): number
+	local item = itemId and Furniture.Items[itemId]
+	return item and Furniture.FloorHeights[item.Room] or 0.16
+end
+
+-- World frame on the floor of the house (or the yard deck) for a placed entry.
 function Furniture.frame(houseFrame, entry)
-	return houseFrame * CFrame.new(entry.X, 0.16, entry.Z) * CFrame.Angles(0, entry.R * math.pi / 2, 0)
+	return houseFrame
+		* CFrame.new(entry.X, Furniture.floor(entry.ItemId), entry.Z)
+		* CFrame.Angles(0, entry.R * math.pi / 2, 0)
 end
 
 return Furniture

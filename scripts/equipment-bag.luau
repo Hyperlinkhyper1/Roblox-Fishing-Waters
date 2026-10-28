@@ -17,6 +17,8 @@ local function contains(value)
 	end
 	return false
 end
+-- Isolate the empty collection check from the separate group reward card.
+profile.GroupRodClaimed = true
 gui.LeftNavigation.Equipmentbag.Activated:Fire()
 check(contains("Your equipment bag is empty"), "Only owned rods appear")
 check(find("UnlockedCount").Text == "<i>0% Unlocked</i>", "Unlock count uses real catalog ownership")
@@ -29,7 +31,8 @@ profile.OwnedBoats.Rowboat = true
 gui.LeftNavigation.Equipmentbag.Activated:Fire()
 gui.LeftNavigation.Equipmentbag.Activated:Fire()
 check(find("StarterRod").Parent == find("RodCards"), "Owned rod uses a tall collection card")
-check(find("UnlockedCount").Text == "<i>100% Unlocked</i>", "Owned rod unlock percentage updates")
+local unlocked = tonumber(string.match(find("UnlockedCount").Text, "(%d+)%%"))
+check(unlocked and unlocked > 0 and unlocked < 100, "Owned rod unlock percentage includes collectible skins")
 local view = find("RodPreview")
 check(
 	view.CurrentCamera and view.PreviewWorld.DisplayRod:FindFirstChildOfClass("Tool"),
@@ -76,7 +79,10 @@ click("SortItems")
 check(find("SortItems").Text == "▾  Name: Z–A", "Sort control changes order mode")
 for _, category in { "Bobbers", "Baits", "Lanterns", "Accessories" } do
 	click(category .. "Category")
-	check(contains("No " .. string.lower(category) .. " yet"), "Empty category has an honest collection state")
+	check(
+		contains(if category == "Bobbers" then "No bobber skins yet" else "No " .. string.lower(category) .. " yet"),
+		"Empty category has an honest collection state"
+	)
 end
 card.AbsoluteSize = Vector2.new(362, 680)
 check(
@@ -85,6 +91,17 @@ check(
 )
 check(find("StarterRod").Size.X.Scale == 0.86, "Phone rod cards stay readable and scroll horizontally")
 check(find("CardDensity").Position.Y.Offset >= 47, "Phone card controls leave room for the menu close button")
+profile.RodSkins = { UmbrellaRod = 2 }
+profile.RodSkinCopies = {
+	{ SkinId = "UmbrellaRod", Serial = 11, Wear = 0.01 },
+	{ SkinId = "UmbrellaRod", Serial = 12, Wear = 0.8 },
+}
+find("SearchRods").Text = "umbrella"
+check(contains("Factory New") and contains("Battle-Scarred"), "Each rod copy displays its wear state")
+local pristineCard = find("Skin:UmbrellaRod:11")
+local wornCard = find("Skin:UmbrellaRod:12")
+check(pristineCard ~= wornCard, "Different wear copies remain separately selectable")
+check(contains("+6%") and contains("+4%"), "Wear-adjusted bonuses appear in the collection")
 check(
 	find("EquipmentCategories").IsA and find("EquipmentCategories"):IsA("ScrollingFrame"),
 	"Category buttons can scroll on short screens"

@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local Freecam = require(script.Parent.Freecam)
 
 local DrydockCamera = {}
 local saved, connection = nil, nil
@@ -52,6 +53,7 @@ function DrydockCamera.show(shop: Model, launching: boolean, boatId: string?)
 		return
 	end
 	if not saved then
+		Freecam.stop()
 		saved = {
 			subject = camera.CameraSubject,
 			kind = camera.CameraType,

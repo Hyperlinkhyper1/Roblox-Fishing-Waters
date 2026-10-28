@@ -995,6 +995,9 @@ function Boating.start()
 			-- Presses, releases and direction reversals bypass the analog rate cap.
 			-- Repeat held input so the server's input timeout never releases the helm.
 			local throttle, steer = seat.ThrottleFloat, seat.SteerFloat
+			if player:GetAttribute("FreecamEnabled") then
+				throttle, steer = 0, 0
+			end
 			local hull = boatModel.PrimaryPart
 			if player:GetAttribute("BoatRefitOpen") and hull then
 				-- The refit dock brakes the boat to a stop while its menu is open.

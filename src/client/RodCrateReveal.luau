@@ -6,6 +6,7 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local FishingRod = require(ReplicatedStorage.Shared.FishingRod)
+local Freecam = require(script.Parent.Freecam)
 
 local Reveal = {}
 local ACTION = "RodCrateRevealMovement"
@@ -52,6 +53,7 @@ function Reveal.play(
 	then
 		return nil
 	end
+	Freecam.stop()
 	local closed = lid:GetPivot()
 	local hingeOffset = hinge:ToObjectSpace(closed)
 	local saved = {

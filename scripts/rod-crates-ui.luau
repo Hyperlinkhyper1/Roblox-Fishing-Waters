@@ -24,7 +24,15 @@ vectorMeta.__sub = function(a, b)
 end
 Vector3.zero = Vector3.new(0, 0, 0)
 local heartbeat = signal()
-services.RunService = { Heartbeat = heartbeat }
+services.RunService = { Heartbeat = heartbeat, RenderStepped = signal() }
+UserInputService.InputChanged = signal()
+UserInputService.InputEnded = signal()
+local newInstance = Instance.new
+Instance.new = function(kind)
+	local item = newInstance(kind)
+	item.InputBegan = signal()
+	return item
+end
 services.TweenService = {
 	Create = function(_, item, _, goals)
 		return {
@@ -48,8 +56,10 @@ end)()
 local RodSkins = (function()
 	-- SKINS_SOURCE --
 end)()
+local builds = {}
 local FishingRod = {
-	build = function()
+	build = function(skinId, bobber, wear)
+		table.insert(builds, { skinId, bobber, wear })
 		local tool = Instance.new("Tool")
 		Instance.new("Part").Parent = tool
 		return tool
@@ -96,111 +106,122 @@ root.Name, root.Parent, root.Position = "HumanoidRootPart", character, Vector3.n
 workspace.CurrentCamera = { ViewportSize = Vector2.new(390, 844) }
 player:SetAttribute("OwnsStarterRod", true)
 player:SetAttribute("Cash", 1000)
+local RodCaseOpening = (function()
+	-- CASE_SOURCE --
+end)()
 local Client = (function()
 	-- CLIENT_SOURCE --
 end)()
 Client.start()
 local screen = playerGui:WaitForChild("RodCrates")
 local overlay = screen.CrateOverlay
-local open = overlay.RodCrateWindow.Footer.OpenRodCrate
+local window = overlay.RodCrateWindow
+local buy = window.Footer.OpenRodCrate
+local owned = window.Footer.OpenOwnedCase
+local case = overlay.RodCaseOpening
 local caption = screen.RewardCaption
 feedback.OnClientEvent:Fire("OpenCrates")
-check(overlay.Visible and open.Active, "Stand opens crate menu")
-open.Activated:Fire()
-check(not overlay.Visible and player:GetAttribute("RodCrateOpening"), "Opening exits the GUI immediately")
-check(#requests == 1 and requests[1][1] == "OpenRodCrate" and requests[1][2] == "TideCrate", "One crate requested")
-open.Activated:Fire()
-feedback.OnClientEvent:Fire("OpenCrates")
-check(#requests == 1 and not overlay.Visible, "Pending opening cannot double charge or reopen the menu")
-check(revealCount == 0 and not caption.Visible, "No preview reward before server success")
-feedback.OnClientEvent:Fire("CrateResult", true, "You unboxed Bamboo!", "BambooRod", 42)
+check(overlay.Visible and buy.Active and not owned.Active, "Stand opens shop without owned cases")
+check(string.find(buy.Text, "BUY", 1, true), "Rod action offers a purchase")
+buy.Activated:Fire()
 check(
-	revealCount == 1 and revealCallbacks.skin == "BambooRod" and not overlay.Visible,
-	"Saved rod starts the world reveal"
+	#requests == 1
+		and requests[1][1] == "BuyRodCrate"
+		and requests[1][2].CrateId == "TideCrate"
+		and requests[1][2].Count == 1,
+	"Purchase requests one selected case"
 )
-revealCallbacks.reward()
-check(caption.Visible and caption.Parent == screen, "Reward caption is outside the closed menu")
-local showsSerial = false
-for _, item in caption:GetDescendants() do
-	if item:IsA("TextLabel") and string.find(item.Text, "Serial #000042", 1, true) then
-		showsSerial = true
-	end
-end
-check(showsSerial, "Crate reveal displays the serial committed by the server")
-feedback.OnClientEvent:Fire("OpenCrates")
-check(not overlay.Visible, "Menu stays closed throughout the animation")
-revealCallbacks.finish()
+buy.Activated:Fire()
+check(#requests == 1 and overlay.Visible, "Pending purchase does not double charge or close the shop")
+feedback.OnClientEvent:Fire("RodCratePurchaseResult", false, "Purchase failed")
+check(window.Visible and not case.Visible, "Failed purchase does not present a case or reward")
+advance(1)
+buy.Activated:Fire()
+player:SetAttribute("RodCrateCountTideCrate", 1)
+feedback.OnClientEvent:Fire("RodCratePurchaseResult", true, "Purchased!", "TideCrate", 1)
+check(case.Visible and not window.Visible and case.Reel.Visible, "Purchase opens the case screen")
+check(case.OpenCase.Active and string.find(case.Subtitle.Text, "NO KEY", 1, true), "Owned case opens without a key")
+case.OpenCase.Activated:Fire()
+advance(0.6)
 check(
-	not player:GetAttribute("RodCrateOpening") and not overlay.Visible and not caption.Visible,
-	"Completion returns directly to play"
+	requests[#requests][1] == "OpenOwnedRodCrate" and requests[#requests][2] == "TideCrate",
+	"Open consumes the owned case via server"
 )
-advance(1)
-feedback.OnClientEvent:Fire("OpenCrates")
-open.Activated:Fire()
-feedback.OnClientEvent:Fire("CrateResult", false, "Not enough coins")
-check(
-	overlay.Visible and not player:GetAttribute("RodCrateOpening") and revealCount == 1,
-	"Failed purchase returns to menu without a fake reward"
-)
-advance(1)
-open.Activated:Fire()
-advance(9)
-check(overlay.Visible and not player:GetAttribute("RodCrateOpening"), "Request timeout releases opening state")
-advance(1)
-open.Activated:Fire()
-feedback.OnClientEvent:Fire("CrateResult", true, "Unboxed!", "BoneRod")
-player.CharacterRemoving:Fire()
-check(not player:GetAttribute("RodCrateOpening") and not caption.Visible, "Respawning ends the reveal")
-advance(1)
-feedback.OnClientEvent:Fire("OpenCrates")
-open.Activated:Fire()
-unavailable = true
-feedback.OnClientEvent:Fire("CrateResult", true, "Unboxed!", "MageStaff")
-check(caption.Visible and not overlay.Visible, "Streamed-away stand still reports the saved reward")
-advance(3.1)
-check(not caption.Visible and not player:GetAttribute("RodCrateOpening"), "Fallback caption cleans up")
-heartbeat:Fire(0.3)
-check(caption:FindFirstChildOfClass("UIScale").Scale < 1, "Reward caption fits a phone screen")
-advance(1)
-feedback.OnClientEvent:Fire("OpenCrates")
-local window = overlay.RodCrateWindow
-window.CrateTabs.SelectNoveltyCrate.Activated:Fire()
-check(
-	window.SkinsNoveltyCrate.Visible and not window.SkinsTideCrate.Visible,
-	"Selecting the new crate switches reward grids"
-)
-check(
-	window.SkinsNoveltyCrate:FindFirstChild("LightsaberRod")
-		and window.SkinsNoveltyCrate:FindFirstChild("SelfieStickRod"),
-	"New crate displays its rewards"
-)
-check(string.find(open.Text, "$750", 1, true), "New crate displays its $750 price")
-player:SetAttribute("Cash", 749)
-check(not open.Active, "Cannot open the new crate with $749")
-player:SetAttribute("Cash", 750)
-check(open.Active, "Can open the new crate with exactly $750")
 local requestCount = #requests
-open.Activated:Fire()
-window.CrateTabs.SelectTideCrate.Activated:Fire()
+case.OpenCase.Activated:Fire()
+check(#requests == requestCount, "Pending opening cannot submit twice")
+overlay.Activated:Fire()
+check(overlay.Visible, "Pending opening cannot close before the server result")
+advance(61)
 check(
-	#requests == requestCount + 1 and requests[#requests][2] == "NoveltyCrate",
-	"Purchase sends the selected crate id"
+	case.OpenCase.Active and string.find(case.Subtitle.Text, "too long", 1, true),
+	"Open timeout releases the case for retry"
 )
-feedback.OnClientEvent:Fire("CrateResult", true, "Unboxed!", "BaguetteRod", 3)
-local uncommonCaption = false
-for _, item in caption:GetDescendants() do
-	if item:IsA("TextLabel") and string.find(item.Text, "UNCOMMON", 1, true) then
-		uncommonCaption = true
-	end
-end
-check(uncommonCaption, "Baguette reveal uses the purchased crate rarity even if another tab is clicked while pending")
-advance(3.1)
+advance(1)
+case.OpenCase.Activated:Fire()
+advance(0.6)
+feedback.OnClientEvent:Fire("CrateResult", false, "Save failed")
+check(
+	case.Visible and case.OpenCase.Active and case.Subtitle.Text == "Save failed",
+	"Failed open can be retried without a reward"
+)
+advance(1)
+case.OpenCase.Activated:Fire()
+advance(0.6)
+player:SetAttribute("RodCrateCountTideCrate", 0)
+feedback.OnClientEvent:Fire("CrateResult", true, "Unboxed!", { SkinId = "BambooRod", Serial = 42, Wear = 0.5 })
+check(case.Reel.Visible and not case.InspectRod.Visible, "Awarded result animates before inspection")
+advance(5.4)
+check(not case.Reel.Visible and case.InspectRod.Visible, "Result reveals the 3D inspection view")
+check(
+	case.Title.Text == RodSkins.Skins.BambooRod.Name and string.find(case.Subtitle.Text, "#000042", 1, true),
+	"Inspection displays the awarded rod and serial"
+)
+check(
+	string.find(case.Description.Text, "Battle-Scarred", 1, true)
+		and string.find(case.Description.Text, "0.5000", 1, true),
+	"Inspection displays wear state and float"
+)
+check(
+	builds[#builds][1] == "BambooRod" and builds[#builds][3] == 0.5,
+	"Inspection builds the rod with its awarded wear"
+)
+local display = case.InspectRod.WorldModel.Reward
+local before = display.PivotFrame
+case.InspectRod.InputBegan:Fire({ UserInputType = Enum.UserInputType.MouseButton1, Position = { X = 10 } })
+UserInputService.InputChanged:Fire({ UserInputType = Enum.UserInputType.MouseMovement, Position = { X = 80 } })
+services.RunService.RenderStepped:Fire()
+check(display.PivotFrame ~= before, "Dragging rotates the inspected model")
+UserInputService.InputEnded:Fire({ UserInputType = Enum.UserInputType.MouseButton1 })
+case.OpenCase.Activated:Fire()
+check(window.Visible and not case.Visible and not owned.Active, "Done returns to shop after consuming case")
+player:SetAttribute("RodCrateCountTideCrate", 2)
+check(owned.Active and string.find(owned.Text, "2", 1, true), "Owned cases remain available from shop")
+window.Header.CloseCrates.Activated:Fire()
+advance(1)
 feedback.OnClientEvent:Fire("OpenCrates")
-window.CrateTabs.SelectTideCrate.Activated:Fire()
-check(
-	window.SkinsTideCrate.Visible and not window.SkinsNoveltyCrate.Visible and string.find(open.Text, "$350", 1, true),
-	"Original crate and price remain available"
-)
+check(owned.Active, "Saved case count remains accessible after reopening the shop")
+owned.Activated:Fire()
+local beforeCancelledOpen = #requests
+case.OpenCase.Activated:Fire()
+overlay.Activated:Fire()
+feedback.OnClientEvent:Fire("OpenCrates")
+owned.Activated:Fire()
+advance(0.6)
+check(#requests == beforeCancelledOpen, "Closing a queued case screen cancels its delayed open")
+case.Back.Activated:Fire()
+check(window.Visible and not case.Visible, "Back keeps an unopened case")
+window.CrateTabs.SelectNoveltyCrate.Activated:Fire()
+check(window.SkinsNoveltyCrate.Visible and not window.SkinsTideCrate.Visible, "Selecting another crate switches grids")
+check(string.find(buy.Text, "$750", 1, true), "Selected crate displays its price")
+player:SetAttribute("Cash", 749)
+check(not buy.Active, "Insufficient funds disable purchase")
+player:SetAttribute("Cash", 750)
+check(buy.Active, "Exact funds enable purchase")
+advance(1)
+buy.Activated:Fire()
+check(requests[#requests][2].CrateId == "NoveltyCrate", "Purchase sends the selected crate id")
+feedback.OnClientEvent:Fire("RodCratePurchaseResult", false, "Purchase failed")
 window.Header.CloseCrates.Activated:Fire()
 local bobberStand = Instance.new("Part")
 bobberStand.Parent, bobberStand.Position = interiors, Vector3.zero

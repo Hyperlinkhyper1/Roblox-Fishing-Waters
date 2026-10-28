@@ -159,6 +159,37 @@ RodSkins.Crates = {
 	},
 }
 
+-- Each crate reward keeps its rolled float. Legacy copies keep baseline bonuses.
+RodSkins.DefaultWear = 0.20
+RodSkins.WearStates = {
+	{ Name = "Factory New", Max = 0.07, Multiplier = 1.20 },
+	{ Name = "Minimal Wear", Max = 0.15, Multiplier = 1.10 },
+	{ Name = "Field-Tested", Max = 0.38, Multiplier = 1.00 },
+	{ Name = "Well-Worn", Max = 0.45, Multiplier = 0.90 },
+	{ Name = "Battle-Scarred", Max = 1.01, Multiplier = 0.80 },
+}
+function RodSkins.validWear(wear: any): boolean
+	return type(wear) == "number" and wear >= 0 and wear <= 1
+end
+function RodSkins.wearState(wear: number?): string
+	local value = if RodSkins.validWear(wear) then wear else RodSkins.DefaultWear
+	for _, state in RodSkins.WearStates do
+		if value < state.Max then
+			return state.Name
+		end
+	end
+	return "Battle-Scarred"
+end
+function RodSkins.wearMultiplier(wear: number?): number
+	local name = RodSkins.wearState(wear)
+	for _, state in RodSkins.WearStates do
+		if state.Name == name then
+			return state.Multiplier
+		end
+	end
+	return 1
+end
+
 function RodSkins.rarity(skinId: string, crateId: string?): string
 	local crate = crateId and RodSkins.Crates[crateId]
 	return (crate and crate.Rarities and crate.Rarities[skinId]) or RodSkins.Skins[skinId].Rarity
@@ -211,37 +242,39 @@ function RodSkins.chance(crateId: string, skinId: string): number
 end
 
 -- Adds a skin's stats to RodUpgrades.boosts; nil or unknown skins add nothing.
-function RodSkins.apply(boosts, skinId: string?)
+function RodSkins.apply(boosts, skinId: string?, wear: number?)
 	local skin = skinId and RodSkins.Skins[skinId]
 	local result = table.clone(boosts)
 	result.mutation, result.astral = 0, 0
 	if skin then
-		result.reel += skin.Reel or 0
-		result.size += skin.Size or 0
-		result.mutation = skin.Mutation or 0
-		result.astral = skin.Astral or 0
+		local multiplier = RodSkins.wearMultiplier(wear)
+		result.reel += (skin.Reel or 0) * multiplier
+		result.size += (skin.Size or 0) * multiplier
+		result.mutation = (skin.Mutation or 0) * multiplier
+		result.astral = (skin.Astral or 0) * multiplier
 	end
 	return result
 end
 
 -- Player-facing perk lines, e.g. { "+5% reel per hit", "+4% Astral chance at night" }.
-function RodSkins.perks(skinId: string): { string }
+function RodSkins.perks(skinId: string, wear: number?): { string }
 	local skin = RodSkins.Skins[skinId]
 	local lines = {}
+	local multiplier = RodSkins.wearMultiplier(wear)
 	local function percent(value: number): string
 		return string.format("%g", math.floor(value * 1000 + 0.5) / 10)
 	end
 	if (skin.Reel or 0) > 0 then
-		table.insert(lines, string.format("+%s%% reel per hit", percent(skin.Reel)))
+		table.insert(lines, string.format("+%s%% reel per hit", percent(skin.Reel * multiplier)))
 	end
 	if (skin.Size or 0) > 0 then
-		table.insert(lines, string.format("+%s%% big fish chance", percent(skin.Size)))
+		table.insert(lines, string.format("+%s%% big fish chance", percent(skin.Size * multiplier)))
 	end
 	if (skin.Astral or 0) > 0 then
-		table.insert(lines, string.format("+%s%% Astral chance at night", percent(skin.Astral)))
+		table.insert(lines, string.format("+%s%% Astral chance at night", percent(skin.Astral * multiplier)))
 	end
 	if (skin.Mutation or 0) > 0 then
-		table.insert(lines, string.format("+%s%% mutation chance", percent(skin.Mutation)))
+		table.insert(lines, string.format("+%s%% mutation chance", percent(skin.Mutation * multiplier)))
 	end
 	return lines
 end

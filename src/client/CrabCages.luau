@@ -144,7 +144,13 @@ function CrabCagesClient.start()
 			end
 		end
 		-- The hotbar cage only exists while one is in stock.
-		local problem = CrabCages.placeProblem({ CrabCages = { Stock = 1, Placed = placed } }, x, z)
+		local otherPlaced = {}
+		local otherFolder = base:FindFirstChild("MusselNets")
+		for _, model in if otherFolder then otherFolder:GetChildren() else {} do
+			local cx, cz = model:GetAttribute("X"), model:GetAttribute("Z")
+			if type(cx) == "number" and type(cz) == "number" then table.insert(otherPlaced, { X = cx, Z = cz }) end
+		end
+		local problem = CrabCages.placeProblem({ CrabCages = { Stock = 1, Placed = placed }, MusselNets = { Placed = otherPlaced } }, x, z)
 		local reach = hit.Position - root.Position
 		if not problem and Vector3.new(reach.X, 0, reach.Z).Magnitude > CrabCages.REACH then
 			problem = "That's too far away. Walk to the edge of your pier."

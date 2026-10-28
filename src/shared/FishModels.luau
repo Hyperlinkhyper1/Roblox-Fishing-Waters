@@ -1035,6 +1035,27 @@ function builders.Seaweed(b)
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.25, 0.4, 1))
 end
 
+local function mussel(b, shell, edge)
+	b:body("Shell", Vector3.zero, Vector3.new(0.95, 0.48, 0.32), shell)
+	for _, side in { -1, 1 } do
+		b:ellipsoid("ShellHalf", CFrame.new(0, 0, side * 0.08), Vector3.new(0.91, 0.46, 0.18), shell)
+		for i = 1, 5 do
+			b:ellipsoid("GrowthRidge", CFrame.new(-0.32 + i * 0.12, 0, side * 0.165), Vector3.new(0.015, 0.34 + i * 0.015, 0.012), edge)
+		end
+	end
+	b.model:SetAttribute("ViewDirection", Vector3.new(0.2, 0.4, 1))
+end
+function builders.BlueMussel(b) mussel(b, rgb(34, 52, 76), rgb(95, 122, 151)) end
+function builders.GreenMussel(b) mussel(b, rgb(45, 100, 67), rgb(134, 175, 104)) end
+function builders.GoldenMussel(b) mussel(b, rgb(157, 110, 35), rgb(233, 196, 107)) end
+function builders.Kelp(b) builders.Seaweed(b) end
+function builders.SeaLettuce(b)
+	builders.Seaweed(b)
+	for _, piece in b.model:GetDescendants() do
+		if piece:IsA("BasePart") then piece.Color = piece.Color:Lerp(rgb(108, 181, 67), 0.55) end
+	end
+end
+
 function builders.WoodenBranch(b)
 	local bark = { rgb(83, 55, 33), rgb(112, 77, 45), rgb(94, 62, 36), rgb(68, 46, 30), rgb(101, 68, 40) }
 	local wood, freshWood, split = rgb(180, 138, 82), rgb(207, 166, 105), rgb(48, 33, 23)
@@ -1508,6 +1529,9 @@ local GLOWING = {
 	Spine = true,
 	Barbel = true,
 	Marking = true,
+	GrowthRidge = true,
+	SeaweedFrond = true,
+	Midrib = true,
 }
 local UNPAINTED = { Eye = true, Pupil = true, EyeGlint = true, Bone = true, BoneKnob = true, Wound = true }
 local ASTRAL_GLOW = rgb(170, 70, 255)

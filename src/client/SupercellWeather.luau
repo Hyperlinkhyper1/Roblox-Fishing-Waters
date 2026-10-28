@@ -3,6 +3,11 @@
 -- where the server throws boats. Client-only parts; they never affect physics.
 -- Every device gets the funnels and the storm's dark rotating base; computers
 -- with volumetric clouds also get the full tower, anvil and overshooting top.
+--
+-- Like the cloud field, the storm is soft billows (VolumetricClouds.billows)
+-- around a few opaque cores: nine parts on a computer and five on a phone,
+-- where it used to move close to a hundred translucent spheres every frame.
+-- Billows are locked to their part, so turning the shelf turns its puffs.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -13,40 +18,35 @@ local Clouds = require(script.Parent.VolumetricClouds)
 
 local Controller = {}
 local started = false
-local TAU = math.pi * 2
-local FUNNEL_SEGMENTS = 14
-local SPIRAL_POINTS = 16
+local FUNNEL_SEGMENTS = 7
+local FUNNEL_BILLOWS = 12
+-- Funnel puffs live briefly, so touchdown and roping out show within a second or two.
+local FUNNEL_LIFE = { 1.6, 2.6 }
 local BASE_HEIGHT = 380
 local WALL_HEIGHT = 270
 local ROTATION_SPEED = 0.05
+-- Opacity and funnel widths are rewritten in steps, not on every frame.
+local OPACITY_STEP = 0.05
+local WIDTH_STEP = 0.08
 
 local function rgb(r: number, g: number, b: number): Color3
 	return Color3.fromRGB(r, g, b)
 end
 
-type Piece = { part: BasePart, offset: CFrame, transparency: number, spins: boolean }
-type Storm = { model: Model, pieces: { Piece }, shaft: Beam, detailed: boolean }
+type Billow = { emitter: ParticleEmitter, opacity: number }
+type Piece = { part: BasePart, offset: CFrame, transparency: number?, spins: boolean, billows: { Billow } }
+type Storm = { model: Model, pieces: { Piece }, shaft: Beam, detailed: boolean, opacity: number, primed: boolean }
 type Funnel = {
 	model: Model,
 	segments: { BasePart },
+	billows: { ParticleEmitter },
+	widths: { number },
 	base: BasePart,
 	spray: ParticleEmitter,
 	debris: ParticleEmitter,
-	spirals: { { Attachment } },
-	beams: { Beam },
 	radius: number,
+	opacity: number,
 }
-
-local function invisible(name: string, parent: Instance): Part
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Anchored, part.CanCollide, part.CanTouch, part.CanQuery = true, false, false, false
-	part.CastShadow = false
-	part.Transparency = 1
-	part.Size = Vector3.one
-	part.Parent = parent
-	return part
-end
 
 -- Offsets are relative to the cell center on the water, with -Z pointing along
 -- the storm's motion: rain falls on the forward flank, the wall cloud and its
@@ -55,91 +55,101 @@ local function buildStorm(detailed: boolean): Storm
 	local model = Instance.new("Model")
 	model.Name = "Supercell"
 	local pieces: { Piece } = {}
-	local rng = Random.new(9047)
-	local function add(color: Color3, size: Vector3, offset: Vector3, transparency: number, spins: boolean)
-		local part = Clouds.puff(model, color, size, detailed)
+	local amount = if detailed then 1 else 0.5
+	local function piece(part: BasePart, offset: Vector3, transparency: number?, spins: boolean): Piece
 		part.Transparency = 1
-		table.insert(pieces, { part = part, offset = CFrame.new(offset), transparency = transparency, spins = spins })
-		if detailed then
-			for index = 1, 3 do
-				local angle = index / 3 * TAU + rng:NextNumber(-0.5, 0.5)
-				local lobe = Clouds.puff(
-					model,
-					color:Lerp(rgb(244, 246, 250), rng:NextNumber(0.02, 0.12)),
-					size * rng:NextNumber(0.3, 0.5),
-					false
-				)
-				lobe.Transparency = 1
-				table.insert(pieces, {
-					part = lobe,
-					offset = CFrame.new(offset + Vector3.new(math.cos(angle), 0.35, math.sin(angle)) * size * 0.4),
-					transparency = transparency,
-					spins = spins,
-				})
-			end
-		end
+		local entry =
+			{ part = part, offset = CFrame.new(offset), transparency = transparency, spins = spins, billows = {} }
+		table.insert(pieces, entry)
+		return entry
+	end
+	local function solid(name: string, color: Color3, size: Vector3, offset: Vector3): Piece
+		local part = Clouds.puff(model, color, size, false)
+		part.Name = name
+		return piece(part, offset, 0, false)
+	end
+	local function hollow(name: string, size: Vector3, offset: Vector3, spins: boolean): Piece
+		return piece(Clouds.anchor(model, name, size), offset, nil, spins)
+	end
+	local function billows(target: Piece, low: Color3, high: Color3, size: number, count: number, surface: boolean)
+		local emitter = Clouds.billows(
+			target.part,
+			low,
+			high,
+			size,
+			math.max(4, math.round(count * amount)),
+			{ surface = surface, locked = true }
+		)
+		table.insert(target.billows, { emitter = emitter, opacity = 1 })
 	end
 	local core = Weather.SupercellCoreRadius
-	-- The rotating, flat-bottomed mesocyclone base with a lowered wall cloud.
-	add(rgb(46, 54, 52), Vector3.new(core * 3.2, 90, core * 3.2), Vector3.new(0, BASE_HEIGHT, 0), 0.04, false)
-	for index = 1, if detailed then 12 else 6 do
-		local angle = index / (if detailed then 12 else 6) * TAU
-		local radius = core * (1.05 + (index % 3) * 0.12)
-		add(
-			rgb(52, 62, 60),
-			Vector3.new(core * 0.9, 110, core * 0.6),
-			Vector3.new(math.cos(angle) * radius, BASE_HEIGHT - 20, math.sin(angle) * radius),
-			0.12,
-			true
-		)
-	end
+	-- The flat-bottomed mesocyclone base, wrapped in a turning shell of billows:
+	-- its fluffy shelf edge, and lumpy turbulence when you look up from under it.
+	solid("MesocycloneBase", rgb(46, 54, 52), Vector3.new(core * 3.2, 90, core * 3.2), Vector3.new(0, BASE_HEIGHT, 0))
+	local shelf = hollow("Shelf", Vector3.new(core * 3.5, 150, core * 3.5), Vector3.new(0, BASE_HEIGHT - 15, 0), true)
+	billows(shelf, rgb(48, 58, 56), rgb(78, 88, 88), 100, 80, true)
+	local underside =
+		hollow("Underside", Vector3.new(core * 2.6, 60, core * 2.6), Vector3.new(0, BASE_HEIGHT - 55, 0), true)
+	billows(underside, rgb(38, 46, 45), rgb(62, 72, 70), 100, 50, false)
 	-- Matches Weather.tornadoes' mean touchdown point, so funnels hang from it.
-	add(
+	local wall = solid(
+		"WallCloud",
 		rgb(40, 48, 47),
-		Vector3.new(core * 1.1, 120, core * 1.1),
-		Vector3.new(core * 0.3, WALL_HEIGHT + 60, core * 0.35),
-		0.03,
-		false
+		Vector3.new(core * 0.8, 90, core * 0.8),
+		Vector3.new(core * 0.3, WALL_HEIGHT + 60, core * 0.35)
 	)
+	billows(wall, rgb(36, 44, 43), rgb(60, 68, 66), 90, 36, true)
 	if detailed then
 		-- Tower, sheared anvil and the overshooting top above the updraft.
-		for index = 1, 7 do
-			local fraction = index / 7
-			local width = core * (2.3 - fraction * 0.9)
-			add(
-				rgb(70, 78, 84):Lerp(rgb(236, 238, 242), fraction),
-				Vector3.new(width, 320, width * 0.9),
-				Vector3.new(math.sin(index * 1.7) * 60, BASE_HEIGHT + 80 + fraction * 1300, math.cos(index * 1.3) * 60),
-				0.05,
-				false
-			)
-		end
-		add(rgb(226, 230, 236), Vector3.new(core * 7, 140, core * 5), Vector3.new(0, 1850, -core * 1.6), 0.1, false)
-		add(rgb(214, 220, 228), Vector3.new(core * 5, 90, core * 3.6), Vector3.new(0, 1770, -core * 1.2), 0.22, false)
-		add(rgb(242, 244, 248), Vector3.new(core * 1.4, 320, core * 1.4), Vector3.new(0, 1960, 0), 0.08, false)
+		local lower = solid(
+			"TowerLower",
+			rgb(86, 94, 100),
+			Vector3.new(core * 1.9, 760, core * 1.7),
+			Vector3.new(0, BASE_HEIGHT + 460, 0)
+		)
+		billows(lower, rgb(80, 88, 96), rgb(156, 162, 170), 100, 40, true)
+		local upper = solid(
+			"TowerUpper",
+			rgb(200, 204, 212),
+			Vector3.new(core * 1.5, 760, core * 1.35),
+			Vector3.new(30, BASE_HEIGHT + 1080, -40)
+		)
+		billows(upper, rgb(198, 202, 210), rgb(242, 244, 248), 100, 40, true)
+		local anvil =
+			solid("Anvil", rgb(226, 230, 236), Vector3.new(core * 7, 140, core * 5), Vector3.new(0, 1850, -core * 1.6))
+		billows(anvil, rgb(214, 220, 228), rgb(246, 247, 250), 100, 50, true)
+		local top = hollow("OvershootingTop", Vector3.new(core * 1.4, 320, core * 1.4), Vector3.new(0, 1960, 0), false)
+		billows(top, rgb(232, 236, 240), rgb(250, 251, 253), 100, 18, false)
 	end
-	local anchor = invisible("ShaftAnchor", model)
-	table.insert(
-		pieces,
-		{ part = anchor, offset = CFrame.new(0, BASE_HEIGHT, -core * 0.9), transparency = 1, spins = false }
-	)
-	local shaft = Clouds.shaft(anchor, BASE_HEIGHT, core * 1.6, rgb(70, 78, 82))
+	local anchor = hollow("ShaftAnchor", Vector3.one, Vector3.new(0, BASE_HEIGHT, -core * 0.9), false)
+	local shaft = Clouds.shaft(anchor.part, BASE_HEIGHT, core * 1.6, rgb(70, 78, 82))
 	model.Parent = workspace
-	return { model = model, pieces = pieces, shaft = shaft, detailed = detailed }
+	return { model = model, pieces = pieces, shaft = shaft, detailed = detailed, opacity = -1, primed = false }
 end
 
 local function buildFunnel(radius: number): Funnel
 	local model = Instance.new("Model")
 	model.Name = "Tornado"
-	local segments = {}
+	local segments, billows, widths = {}, {}, {}
+	-- A spinning column of puffs: each segment turns, and its locked billows turn
+	-- with it, so the rotation shows without any extra spiral bands.
 	for index = 1, FUNNEL_SEGMENTS do
 		local fraction = (index - 1) / (FUNNEL_SEGMENTS - 1)
-		local part = Clouds.puff(model, rgb(118, 116, 108):Lerp(rgb(84, 92, 94), fraction), Vector3.one, false)
-		part.Name = "FunnelSegment"
+		local part = Clouds.anchor(model, "FunnelSegment", Vector3.one)
+		local color = rgb(118, 116, 108):Lerp(rgb(84, 92, 94), fraction)
+		local emitter = Clouds.billows(
+			part,
+			color,
+			color:Lerp(rgb(150, 150, 142), 0.35),
+			1,
+			FUNNEL_BILLOWS,
+			{ locked = true, life = FUNNEL_LIFE }
+		)
 		table.insert(segments, part)
+		table.insert(billows, emitter)
+		table.insert(widths, 0)
 	end
-	local base = invisible("TornadoBase", model)
-	base.Size = Vector3.new(radius * 3, 1, radius * 3)
+	local base = Clouds.anchor(model, "TornadoBase", Vector3.new(radius * 3, 1, radius * 3))
 	-- Sea spray thrown out in a ring where the vortex meets the water.
 	local spray = Instance.new("ParticleEmitter")
 	spray.Name = "Spray"
@@ -177,41 +187,17 @@ local function buildFunnel(radius: number): Funnel
 	debris.RotSpeed = NumberRange.new(-400, 400)
 	debris.Size = NumberSequence.new(1.6)
 	debris.Parent = base
-	-- Bands of condensation wound around the funnel show its rotation.
-	local spirals, beams = {}, {}
-	for arm = 1, 3 do
-		local points = {}
-		for index = 1, SPIRAL_POINTS do
-			local point = Instance.new("Attachment")
-			point.Name = "SpiralPoint" .. index
-			point.Parent = base
-			table.insert(points, point)
-			if index > 1 then
-				local beam = Instance.new("Beam")
-				beam.Name = "SpiralBand"
-				beam.Attachment0, beam.Attachment1 = points[index - 1], point
-				beam.Color = ColorSequence.new(rgb(150, 150, 142))
-				beam.LightInfluence = 1
-				beam.FaceCamera = true
-				beam.Segments = 1
-				local width = radius * (0.35 + index / SPIRAL_POINTS * 0.9)
-				beam.Width0, beam.Width1 = width, width
-				beam.Parent = base
-				table.insert(beams, beam)
-			end
-		end
-		spirals[arm] = points
-	end
 	model.Parent = workspace
 	return {
 		model = model,
 		segments = segments,
+		billows = billows,
+		widths = widths,
 		base = base,
 		spray = spray,
 		debris = debris,
-		spirals = spirals,
-		beams = beams,
 		radius = radius,
+		opacity = -1,
 	}
 end
 
@@ -223,6 +209,7 @@ function Controller.start()
 	local player = Players.LocalPlayer
 	local storm: Storm? = nil
 	local funnels: { [number]: Funnel } = {}
+	local parts: { BasePart }, frames: { CFrame } = {}, {}
 	local function clearStorm()
 		if storm then
 			storm.model:Destroy()
@@ -259,24 +246,38 @@ function Controller.start()
 			else CFrame.identity
 		local center = CFrame.new(cell.position.X, water, cell.position.Z) * heading
 		local spin = CFrame.Angles(0, now * ROTATION_SPEED, 0)
-		local parts, frames = {}, {}
-		local opacity = math.clamp(cell.strength * 1.4, 0, 1)
+		local opacity = math.round(math.clamp(cell.strength * 1.4, 0, 1) / OPACITY_STEP) * OPACITY_STEP
+		local refade = opacity ~= active.opacity
+		active.opacity = opacity
+		table.clear(parts)
+		table.clear(frames)
 		for _, piece in active.pieces do
 			table.insert(parts, piece.part)
-			local offset = piece.offset
-			if piece.spins then
-				-- Rotate about the updraft rather than each puff's own center.
-				offset = spin * offset
-			end
-			table.insert(frames, center * offset)
-			if piece.transparency < 1 then
-				piece.part.Transparency = 1 - (1 - piece.transparency) * opacity
+			-- The shelf turns about the updraft, carrying its billows round.
+			table.insert(frames, center * (if piece.spins then spin * piece.offset else piece.offset))
+			if refade then
+				if piece.transparency then
+					piece.part.Transparency = 1 - (1 - piece.transparency) * opacity
+				end
+				for _, billow in piece.billows do
+					billow.emitter.Transparency = Clouds.billowTransparency(billow.opacity * opacity)
+				end
 			end
 		end
 		workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
+		if not active.primed then
+			active.primed = true
+			for _, piece in active.pieces do
+				for _, billow in piece.billows do
+					Clouds.prime(billow.emitter)
+				end
+			end
+		end
 		local dx, dz = cell.position.X - camera.CFrame.Position.X, cell.position.Z - camera.CFrame.Position.Z
 		active.shaft.Enabled = dx * dx + dz * dz > (Weather.SupercellCoreRadius * 1.3) ^ 2
-		active.shaft.Transparency = Clouds.shaftTransparency(0.75 * opacity)
+		if refade then
+			active.shaft.Transparency = Clouds.shaftTransparency(0.75 * opacity)
+		end
 
 		local seen = {}
 		for _, tornado in Weather.tornadoes(now) do
@@ -285,7 +286,6 @@ function Controller.start()
 			funnels[tornado.id] = funnel
 			local strength = tornado.strength
 			local ground = Vector3.new(tornado.position.X, water, tornado.position.Z)
-			funnel.base.CFrame = CFrame.new(ground)
 			-- Rope-like sway: the funnel bends between the ground and the wall cloud.
 			local phase = tornado.age * 0.9 + tornado.id
 			local function axis(fraction: number): Vector3
@@ -297,35 +297,42 @@ function Controller.start()
 						math.sin(phase * 0.8 + fraction * 2.4) * bend
 					)
 			end
-			local segmentParts, segmentFrames = {}, {}
+			table.clear(parts)
+			table.clear(frames)
+			table.insert(parts, funnel.base)
+			table.insert(frames, CFrame.new(ground))
 			local reach = strength ^ 0.6
 			for index, part in funnel.segments do
 				local fraction = (index - 1) / (FUNNEL_SEGMENTS - 1)
 				-- A narrow column at the sea that widens into the cloud. Touchdown
 				-- grows from the top down; roping out thins it again.
-				local visible = fraction >= 1 - reach
 				local width = funnel.radius * (0.55 + fraction ^ 2.2 * 2.6) * (0.6 + strength * 0.4)
-				part.Size = Vector3.new(width, WALL_HEIGHT / FUNNEL_SEGMENTS * 1.9, width)
-				part.Transparency = if visible then 0.18 + (1 - strength) * 0.5 + fraction * 0.1 else 1
-				table.insert(segmentParts, part)
-				table.insert(segmentFrames, CFrame.new(axis(fraction)) * CFrame.Angles(0, now * 3 + index, 0))
+				local emitter = funnel.billows[index]
+				if math.abs(width - funnel.widths[index]) > width * WIDTH_STEP then
+					funnel.widths[index] = width
+					part.Size = Vector3.new(width * 0.7, WALL_HEIGHT / FUNNEL_SEGMENTS * 1.4, width * 0.7)
+					local sprite = math.min(width * 0.8, 100)
+					emitter.Size = NumberSequence.new({
+						NumberSequenceKeypoint.new(0, sprite * 0.8),
+						NumberSequenceKeypoint.new(1, sprite),
+					})
+				end
+				emitter.Enabled = fraction >= 1 - reach
+				table.insert(parts, part)
+				table.insert(frames, CFrame.new(axis(fraction)) * CFrame.Angles(0, now * 3 + index, 0))
 			end
-			workspace:BulkMoveTo(segmentParts, segmentFrames, Enum.BulkMoveMode.FireCFrameChanged)
+			workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
+			local level = math.round((0.4 + strength * 0.6) / OPACITY_STEP) * OPACITY_STEP
+			if level ~= funnel.opacity then
+				funnel.opacity = level
+				local transparency = Clouds.billowTransparency(level)
+				for _, emitter in funnel.billows do
+					emitter.Transparency = transparency
+				end
+			end
 			local touching = reach > 0.95
 			funnel.spray.Rate = if touching then 40 * strength else 0
 			funnel.debris.Rate = if touching then 24 * strength else 0
-			for arm, points in funnel.spirals do
-				for index, point in points do
-					local fraction = (index - 1) / (SPIRAL_POINTS - 1)
-					local width = funnel.radius * (0.55 + fraction ^ 2.2 * 2.6) * 0.5 + 2
-					local turn = arm * TAU / 3 + fraction * TAU * 1.5 + now * 2.6
-					point.WorldPosition = axis(fraction)
-						+ Vector3.new(math.cos(turn) * width, 0, math.sin(turn) * width)
-				end
-			end
-			for _, beam in funnel.beams do
-				beam.Transparency = NumberSequence.new(if reach > 0.5 then 0.55 + (1 - strength) * 0.4 else 1)
-			end
 		end
 		clearFunnels(seen)
 	end)

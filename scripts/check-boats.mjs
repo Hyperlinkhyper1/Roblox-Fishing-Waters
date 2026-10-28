@@ -26,6 +26,24 @@ try {
   const rodSerialSource = (await readFile(join(root, 'src/server/RodSerials.luau'), 'utf8'))
     .replace('if script then require(script.Parent.BoatData) else require("./BoatData")', 'dependencies.BoatData');
   let harness = await readFile(join(root, 'scripts/boat-service.luau'), 'utf8');
+  if (process.argv.includes('--mussel-nets-only')) {
+    const setupEnd = harness.indexOf('local function makePrompt');
+    const netService = await readFile(join(root, 'src/server/MusselNetService.luau'), 'utf8');
+    const first = netService.indexOf('local pendingRolls:');
+    const last = netService.indexOf('function MusselNetService.start()', first);
+    if (setupEnd < 0 || first < 0 || last < 0) throw new Error('Missing mussel net test hooks');
+    harness = harness.slice(0, setupEnd).replace('self.updates += 1', `self.updates += 1
+        if self.emptyResult then return nil end`)
+      + (await readFile(join(root, 'scripts/mussel-nets.luau'), 'utf8'))
+        .replace('-- GRID_SOURCE --', await readFile(join(root, 'src/shared/Cargo.luau'), 'utf8'))
+        .replace('-- CATALOG_SOURCE --', await readFile(join(root, 'src/shared/AnglerCatalog.luau'), 'utf8'))
+        .replace('-- BACKPACK_SOURCE --', await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8'))
+        .replace('-- ANGLER_SOURCE --', anglerData.replace(/local Cargo\r?\n/, 'local Cargo = Grid\n'))
+        .replace('-- NET_RULES_SOURCE --', await readFile(join(root, 'src/shared/MusselNets.luau'), 'utf8'))
+        .replace('-- FISH_CATCH_SOURCE --', await readFile(join(root, 'src/shared/FishCatch.luau'), 'utf8'))
+        .replace('-- MUTATION_SOURCE --', await readFile(join(root, 'src/shared/FishMutations.luau'), 'utf8'))
+        .replace('-- COLLECT_SOURCE --', netService.slice(first, last));
+  }
   if (process.argv.includes('--crab-cages-only')) {
     const setupEnd = harness.indexOf('local function makePrompt');
     if (setupEnd < 0) throw new Error('Missing wallet setup hook');
@@ -42,6 +60,7 @@ try {
         .replace('-- BACKPACK_SOURCE --', await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8'))
         .replace('-- ANGLER_SOURCE --', anglerData.replace(/local Cargo\r?\n/, 'local Cargo = Grid\n'))
         .replace('-- CRAB_RULES_SOURCE --', await readFile(join(root, 'src/shared/CrabCages.luau'), 'utf8'))
+        .replace('-- MUTATION_SOURCE --', await readFile(join(root, 'src/shared/FishMutations.luau'), 'utf8'))
         .replace('-- COLLECT_SOURCE --', cageService.slice(first, last));
   }
   if (process.argv.includes('--inventory-only')) {
@@ -93,7 +112,7 @@ try {
     .replace('-- BOAT_SERVICE_SOURCE --', service);
   const target = join(temporary, 'boat-service.luau');
   await writeFile(target, program);
-  const checks = process.argv.includes('--crab-cages-only') ? [['run', target]] : process.argv.includes('--inventory-only')
+  const checks = (process.argv.includes('--crab-cages-only') || process.argv.includes('--mussel-nets-only')) ? [['run', target]] : process.argv.includes('--inventory-only')
     ? [['run', 'scripts/boat-data.luau'], ['run', target]]
     : [['run', 'scripts/boat-data.luau'], ['run', 'scripts/boat-motion.luau'], ['run', target]];
   for (const args of checks) {

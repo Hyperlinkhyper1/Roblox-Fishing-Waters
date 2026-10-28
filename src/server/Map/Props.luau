@@ -1399,6 +1399,53 @@ function Props.crabCage(parent: Instance, frame: CFrame, float: boolean?): Model
 	return m
 end
 
+-- A suspended mesh bag, with a marker buoy at the water surface.
+Props.MUSSEL_NET_SIZE = Vector3.new(3.2, 1.9, 2.4)
+Props.MUSSEL_NET_WATERLINE = 1.45
+function Props.musselNet(parent: Instance, frame: CFrame, float: boolean?): Model
+	local m = newModel("MusselNet", parent)
+	local V = Vector3.new
+	local function piece(container, size, offset, color, material)
+		local p = part(container, size, frame * offset, color, material)
+		p.CanCollide, p.CanQuery, p.CanTouch = false, false, false
+		return p
+	end
+	local function cord(container, a, b, width, color)
+		local p = beam(container, frame * a, frame * b, width, color, nil, M.Fabric)
+		p.CanCollide, p.CanQuery, p.CanTouch = false, false, false
+		return p
+	end
+	local root = piece(m, V(0.2, 0.2, 0.2), CFrame.new(), ROPE, M.Fabric)
+	root.Transparency, root.CastShadow = 1, false
+	m.PrimaryPart = root
+	local netColor = rgb(93, 111, 78)
+	for _, z in { -1, 1 } do
+		for _, x in { -1.4, -0.9, -0.45, 0, 0.45, 0.9, 1.4 } do
+			cord(m, V(x, 0.15, z * 0.75), V(x, 1.5, z), 0.065, netColor)
+		end
+		for _, y in { 0.25, 0.7, 1.1, 1.5 } do
+			cord(m, V(-1.45, y, z * (0.7 + y * 0.2)), V(1.45, y, z * (0.7 + y * 0.2)), 0.065, netColor)
+		end
+	end
+	for _, x in { -1.45, 1.45 } do
+		for _, y in { 0.25, 0.7, 1.1, 1.5 } do
+			cord(m, V(x, y, -0.7 - y * 0.2), V(x, y, 0.7 + y * 0.2), 0.065, netColor)
+		end
+		cord(m, V(x, 1.5, 0), V(0, 2.2, 0), 0.08, ROPE)
+	end
+	if float then
+		local buoy = newModel("Float", m)
+		local at = V(2.25, Props.MUSSEL_NET_WATERLINE, 0.85)
+		buoy.WorldPivot = CFrame.new(frame * at)
+		cord(buoy, V(0, 2.2, 0), at, 0.07, ROPE)
+		local marker = piece(buoy, V(0.9, 0.9, 0.9), CFrame.new(at), rgb(72, 176, 176), M.SmoothPlastic)
+		marker.Shape = Enum.PartType.Ball
+		cord(buoy, at, at + V(0, 2, 0), 0.09, ROPE)
+		piece(buoy, V(0.05, 0.5, 0.75), CFrame.new(at + V(0, 1.8, 0.38)), rgb(250, 214, 64), M.Fabric).Name = "Flag"
+	end
+	return m
+end
+
 function Props.barrel(parent: Instance, ground: Vector3, rng: Random): Model
 	local m = newModel("Barrel", parent)
 	local center = ground + Vector3.new(0, 1.5, 0)

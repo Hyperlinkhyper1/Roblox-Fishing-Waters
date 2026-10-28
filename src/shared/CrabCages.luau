@@ -13,7 +13,7 @@ CrabCages.MAX_STOCK = 25
 CrabCages.MAX_PLACED = 6
 CrabCages.SPACING = 4.5 -- studs between neighbouring cages
 CrabCages.REACH = 16 -- studs from the angler to where the cage lands
--- Added to the normal 0.75% mutation chance: crabs have a 1% base chance.
+-- Added to the normal mutation chance, giving crabs an extra 0.25 percentage points.
 CrabCages.MUTATION_BONUS = 0.0025
 -- Water round the base's piers in dock-local studs (BoatDockFrame: -Z is the
 -- water, the piers run along x = +-17 from z = 5 to -43). It stops short of the
@@ -97,7 +97,11 @@ function CrabCages.placeProblem(angler, x: number, z: number): string?
 		return problem
 	end
 	x, z = CrabCages.round(x), CrabCages.round(z)
-	for _, cage in cages.Placed do
+	local neighbours = table.clone(cages.Placed)
+	for _, other in (angler.MusselNets and angler.MusselNets.Placed or {}) do
+		table.insert(neighbours, other)
+	end
+	for _, cage in neighbours do
 		if (cage.X - x) ^ 2 + (cage.Z - z) ^ 2 < CrabCages.SPACING ^ 2 then
 			return "That's too close to another cage."
 		end

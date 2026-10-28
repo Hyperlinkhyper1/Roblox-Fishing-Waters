@@ -6,7 +6,7 @@
 local FishMutations = {}
 
 -- Chance that a catch carries any mutation at all, Astral included.
-FishMutations.CHANCE = 0.0075
+FishMutations.CHANCE = 1 / 60
 -- Astral only surfaces at night (DayNight.isNight), at this share of every night catch.
 FishMutations.ASTRAL_CHANCE = 1 / 1000
 FishMutations.ASTRAL_RAINBOW_CHANCE = 0.15

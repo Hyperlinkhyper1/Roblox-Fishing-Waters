@@ -358,4 +358,51 @@ for _, crateId in RodSkins.CrateOrder do
 	check(RodSkins.chance(crateId, RodSkins.GroupReward) == 0, "Group exclusive never drops from paid crates")
 end
 
+-- Wear is per copy, survives decoding, and scales every skin perk.
+for _, pair in
+	{
+		{ 0, "Factory New", 1.2 },
+		{ 0.07, "Minimal Wear", 1.1 },
+		{ 0.15, "Field-Tested", 1 },
+		{ 0.38, "Well-Worn", 0.9 },
+		{ 0.45, "Battle-Scarred", 0.8 },
+	}
+do
+	check(RodSkins.wearState(pair[1]) == pair[2] and RodSkins.wearMultiplier(pair[1]) == pair[3], "Wear boundary")
+	local scaled = RodSkins.apply(base, "MageStaff", pair[1])
+	check(
+		math.abs(scaled.reel - base.reel - 0.2 * pair[3]) < 1e-9 and math.abs(scaled.mutation - 0.02 * pair[3]) < 1e-9,
+		"Wear scales perks"
+	)
+end
+local crateProfile = BoatData.decode(nil)
+crateProfile.Cash = 1200
+check(BoatData.buyRodCrates(crateProfile, "TideCrate", 3) == "Purchased", "Buy three crates")
+check(crateProfile.Cash == 150 and crateProfile.RodCrates.TideCrate == 3, "Crate purchase charges once")
+crateProfile = BoatData.decode(crateProfile)
+check(crateProfile.RodCrates.TideCrate == 3, "Unopened crates survive reload")
+check(BoatData.openOwnedRodCrate(crateProfile, "TideCrate", "BambooRod", 42, 0.91) == "Opened", "Open saved crate")
+check(
+	crateProfile.Cash == 150 and crateProfile.RodCrates.TideCrate == 2,
+	"Opening consumes crate without charging again"
+)
+crateProfile = BoatData.decode(crateProfile)
+check(crateProfile.RodSkinCopies[1].Wear == 0.91, "Reward wear survives reload")
+check(
+	BoatData.equipRodSkin(crateProfile, "BambooRod", 42) == "Equipped"
+		and BoatData.equippedRodWear(crateProfile) == 0.91,
+	"Equipped wear follows copy"
+)
+crateProfile.RodCrates.TideCrate = 0
+check(
+	BoatData.openOwnedRodCrate(crateProfile, "TideCrate", "BambooRod", 43, 0.1) == "NoCrate",
+	"Cannot open an unowned crate"
+)
+local legacyWear = BoatData.decode({ Version = 1, Cash = 0, OwnedBoats = {}, RodSkins = { BambooRod = 1 } })
+check(
+	legacyWear.RodSkinCopies[1].Wear == RodSkins.DefaultWear
+		and RodSkins.wearMultiplier(legacyWear.RodSkinCopies[1].Wear) == 1,
+	"Legacy copies keep original buff"
+)
+
 print(`Rod skins: {checks} checks passed (pure rules; no Roblox runtime)`)

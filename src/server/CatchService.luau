@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local AnglerService = require(script.Parent.AnglerService)
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local BoatData = require(script.Parent.BoatData)
 local BackpackCatalog = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
@@ -113,8 +114,11 @@ local function cast(player: Player, target: any)
 		return
 	end
 	-- Upgrades and skins changed mid-cast apply from the next cast, matching the client's fight.
-	local boosts =
-		RodSkins.apply(RodUpgrades.boosts(profile and profile.RodUpgrades), profile and profile.EquippedRodSkin)
+	local boosts = RodSkins.apply(
+		RodUpgrades.boosts(profile and profile.RodUpgrades),
+		profile and profile.EquippedRodSkin,
+		profile and BoatData.equippedRodWear(profile)
+	)
 	boosts = BobberSkins.apply(boosts, profile and profile.EquippedBobberSkin)
 	local state = { tool = tool, target = surface, phase = "Waiting", boosts = boosts }
 	casts[player] = state

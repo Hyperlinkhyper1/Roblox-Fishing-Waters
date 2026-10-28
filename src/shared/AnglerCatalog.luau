@@ -142,6 +142,23 @@ Catalog.Fish = {
 		Huge = { "...#...", "#######", "#######", "#######", ".#####." },
 	}),
 
+	-- These species are exclusive to mussel nets.
+	BlueMussel = species("Blue Mussel", "Common", 4, 0.03, 0.12, 0.6, 9, 0, {
+		Normal = { "#" }, Big = { "##" }, Huge = { "##", "##" },
+	}),
+	GreenMussel = species("Green Mussel", "Uncommon", 6, 0.04, 0.18, 0.9, 15, 0, {
+		Normal = { "#" }, Big = { "##" }, Huge = { "##", "##" },
+	}),
+	GoldenMussel = species("Golden Mussel", "Rare", 12, 0.05, 0.22, 1.1, 28, 0, {
+		Normal = { "#" }, Big = { "##" }, Huge = { "##", "##" },
+	}),
+	Kelp = species("Kelp", "Common", 4, 0.1, 0.35, 1.5, 7, 0, {
+		Normal = { "#" }, Big = { "##" }, Huge = { "##", "##" },
+	}),
+	SeaLettuce = species("Sea Lettuce", "Uncommon", 6, 0.05, 0.2, 0.9, 12, 0, {
+		Normal = { "#" }, Big = { "##" }, Huge = { "##", "##" },
+	}),
+
 	-- Crabs only come from crab cages (Shared.CrabCages.Pool), never from a cast.
 	ShoreCrab = species("Shore Crab", "Common", 4, 0.05, 0.2, 0.9, 12, 0, {
 		Normal = { "##" },
@@ -201,20 +218,20 @@ Catalog.DefaultPool = "MainLake"
 -- them in step with the roll odds.
 Catalog.Mutations = {
 	Normal = { Name = "Normal", RarityMultiplier = 1 },
-	Neon = { Name = "Neon", RarityMultiplier = 322 },
-	Albino = { Name = "Albino", RarityMultiplier = 741 },
-	Rainbow = { Name = "Rainbow", RarityMultiplier = 1481 },
+	Neon = { Name = "Neon", RarityMultiplier = 145 },
+	Albino = { Name = "Albino", RarityMultiplier = 333 },
+	Rainbow = { Name = "Rainbow", RarityMultiplier = 667 },
 	Astral = { Name = "Astral", RarityMultiplier = 1307 },
-	Corrupted = { Name = "Corrupted", RarityMultiplier = 952 },
-	["Neon+Albino"] = { Name = "Neon Albino", RarityMultiplier = 2469 },
-	["Rainbow+Neon"] = { Name = "Rainbow Neon", RarityMultiplier = 3704 },
+	Corrupted = { Name = "Corrupted", RarityMultiplier = 429 },
+	["Neon+Albino"] = { Name = "Neon Albino", RarityMultiplier = 1111 },
+	["Rainbow+Neon"] = { Name = "Rainbow Neon", RarityMultiplier = 1667 },
 	["Astral+Rainbow"] = { Name = "Astral Rainbow", RarityMultiplier = 7407 },
-	["Corrupted+Neon"] = { Name = "Corrupted Neon", RarityMultiplier = 2899 },
-	["Corrupted+Albino"] = { Name = "Corrupted Albino", RarityMultiplier = 6667 },
-	["Corrupted+Rainbow"] = { Name = "Corrupted Rainbow", RarityMultiplier = 13333 },
+	["Corrupted+Neon"] = { Name = "Corrupted Neon", RarityMultiplier = 1304 },
+	["Corrupted+Albino"] = { Name = "Corrupted Albino", RarityMultiplier = 3000 },
+	["Corrupted+Rainbow"] = { Name = "Corrupted Rainbow", RarityMultiplier = 6000 },
 	["Corrupted+Astral"] = { Name = "Corrupted Astral", RarityMultiplier = 11765 },
-	["Corrupted+Neon+Albino"] = { Name = "Corrupted Neon Albino", RarityMultiplier = 22222 },
-	["Corrupted+Rainbow+Neon"] = { Name = "Corrupted Rainbow Neon", RarityMultiplier = 33333 },
+	["Corrupted+Neon+Albino"] = { Name = "Corrupted Neon Albino", RarityMultiplier = 10000 },
+	["Corrupted+Rainbow+Neon"] = { Name = "Corrupted Rainbow Neon", RarityMultiplier = 15000 },
 	["Corrupted+Astral+Rainbow"] = { Name = "Corrupted Astral Rainbow", RarityMultiplier = 66667 },
 	-- Guaranteed event traits have no natural encounter odds or added rarity score.
 	VoidTouched = { Name = "Void Touched", RarityMultiplier = 1, EventOnly = true },

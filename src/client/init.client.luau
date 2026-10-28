@@ -27,6 +27,7 @@ local modules = {
 	"Kitchen",
 	"KitchenStorage",
 	"CrabCages",
+	"MusselNets",
 
 	"PlayerMenu",
 	"WorldMap",
@@ -37,6 +38,7 @@ local modules = {
 	"BlackHoleWeather",
 	"VolumetricClouds",
 	"SupercellWeather",
+	"WeatherRadar",
 	"WaterWaves",
 	"SwellSurface",
 }

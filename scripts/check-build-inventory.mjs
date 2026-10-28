@@ -160,6 +160,7 @@ do
     buildStation = function(parent, frame, id) return builder(id).build(parent, frame) end,
   }
   local DiningRoom = {buildTable = builder("DiningTable").build}
+  local WeatherRadar = {build = builder("WeatherRadar").build}
 ${section(service, 'local function buildPreviews(', '\nfunction FurnitureService.start()')}
   local parent = {}
   buildPreviews(parent)

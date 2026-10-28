@@ -52,7 +52,15 @@ function SwellSurface.start()
 	task.spawn(function()
 		local terrain = workspace.Terrain
 		local size = COUNT + 1
-		local mesh = AssetService:CreateEditableMesh()
+		local meshOk, mesh = pcall(function()
+			return AssetService:CreateEditableMesh()
+		end)
+		if not meshOk or not mesh then
+			warn(
+				"[SwellSurface] Water surface unavailable: EditableMesh is disabled or the device mesh budget is exhausted."
+			)
+			return
+		end
 		local vertices, normals, colors =
 			table.create(size * size), table.create(size * size), table.create(size * size)
 		local color = terrain.WaterColor
@@ -81,10 +89,17 @@ function SwellSurface.start()
 				face(b, c, d)
 			end
 		end
-		local part = AssetService:CreateMeshPartAsync(
-			Content.fromObject(mesh),
-			{ CollisionFidelity = Enum.CollisionFidelity.Box }
-		)
+		local partOk, part = pcall(function()
+			return AssetService:CreateMeshPartAsync(
+				Content.fromObject(mesh),
+				{ CollisionFidelity = Enum.CollisionFidelity.Box }
+			)
+		end)
+		if not partOk or not part then
+			mesh:Destroy()
+			warn("[SwellSurface] Water surface unavailable: could not create its mesh part: " .. tostring(part))
+			return
+		end
 		part.Name = "WeatherSwellSurface"
 		part.Anchored = true
 		part.CanCollide, part.CanTouch, part.CanQuery = false, false, false

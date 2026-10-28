@@ -563,6 +563,8 @@ check(purchases == previousPurchases, "A departed player's remote cannot transac
 local SkinData = (function()
 	-- REAL_BOAT_DATA_SOURCE --
 end)()
+dependencies.BoatData.buyRodCrates = SkinData.buyRodCrates
+dependencies.BoatData.openOwnedRodCrate = SkinData.openOwnedRodCrate
 dependencies.BoatData.openRodCrate = SkinData.openRodCrate
 dependencies.BoatData.canOpenRodCrate = SkinData.canOpenRodCrate
 dependencies.BoatData.equipRodSkin = SkinData.equipRodSkin
@@ -597,28 +599,50 @@ dependencies.BoatService.updateProgress = function(player, transform, rodSkinId)
 end
 local cratePrompt = Instance.new("ProximityPrompt")
 cratePrompt.Name, cratePrompt.MaxActivationDistance, cratePrompt.Parent = "OpenRodCratePrompt", 8, counter
-send(loading, "OpenRodCrate", "TideCrate")
+send(loading, "BuyRodCrate", { CrateId = "TideCrate", Count = 3 })
 local reward = feedback.messages[#feedback.messages].values
 check(
-	reward[1] == "CrateResult" and reward[2] == true and reward[5] == 1,
-	"Crate feedback includes the committed copy serial"
+	reward[1] == "RodCratePurchaseResult" and reward[2] == true and reward[4] == "TideCrate" and reward[5] == 3,
+	"Crate purchase confirms committed inventory"
 )
-check(#storedSkins.RodSkinCopies == 1 and storedSkins.Cash == 1050, "Remote crate retry awards and charges once")
-local skinId = reward[4]
+check(
+	storedSkins.Cash == 350 and storedSkins.RodCrates.TideCrate == 3 and #storedSkins.RodSkinCopies == 0,
+	"Purchase retries charge once and save unopened crates"
+)
+storedSkins = SkinData.decode(storedSkins)
+check(storedSkins.RodCrates.TideCrate == 3, "Unopened crates survive a profile reload")
 failSkinSave = true
-send(loading, "OpenRodCrate", "TideCrate")
+send(loading, "OpenOwnedRodCrate", "TideCrate")
 reward = feedback.messages[#feedback.messages].values
 check(
-	reward[2] == false and reward[4] == nil and reward[5] == nil and #storedSkins.RodSkinCopies == 1,
-	"Failed crate saves never reveal a reward or serial"
+	reward[2] == false and reward[4] == nil and storedSkins.RodCrates.TideCrate == 3 and #storedSkins.RodSkinCopies == 0,
+	"Failed opening retains crate and reveals no reward"
 )
 failSkinSave = false
-storedSkins.RodSkinCopies[2] = { SkinId = skinId, Serial = 2 }
-storedSkins.NextRodSkinSerial[skinId] = 3
-storedSkins = SkinData.decode(storedSkins)
-send(loading, "EquipRodSkin", { SkinId = skinId, Serial = 2 })
+send(loading, "OpenOwnedRodCrate", "TideCrate")
+reward = feedback.messages[#feedback.messages].values
+local awarded = reward[4]
 check(
-	storedSkins.EquippedRodSkinSerial == 2 and feedback.messages[#feedback.messages].values[2] == true,
+	reward[1] == "CrateResult"
+		and reward[2] == true
+		and type(awarded.Serial) == "number"
+		and type(awarded.Wear) == "number",
+	"Crate feedback includes committed wear and serial"
+)
+check(
+	#storedSkins.RodSkinCopies == 1
+		and storedSkins.Cash == 350
+		and storedSkins.RodCrates.TideCrate == 2
+		and storedSkins.RodSkinCopies[1].Wear == awarded.Wear,
+	"Opening retries consume one crate and award the same wear"
+)
+local skinId = awarded.SkinId
+storedSkins.RodSkinCopies[2] = { SkinId = skinId, Serial = 100 }
+storedSkins.NextRodSkinSerial[skinId] = 101
+storedSkins = SkinData.decode(storedSkins)
+send(loading, "EquipRodSkin", { SkinId = skinId, Serial = 100 })
+check(
+	storedSkins.EquippedRodSkinSerial == 100 and feedback.messages[#feedback.messages].values[2] == true,
 	"Bag remote selects the requested duplicate"
 )
 local beforeSkinSaves = skinSaves
@@ -644,14 +668,33 @@ check(
 
 storedSkins.Cash = 750
 local copiesBeforeNovelty = #storedSkins.RodSkinCopies
-send(loading, "OpenRodCrate", "NoveltyCrate")
+send(loading, "BuyRodCrate", { CrateId = "NoveltyCrate", Count = 1 })
 reward = feedback.messages[#feedback.messages].values
-check(reward[1] == "CrateResult" and reward[2] == true, "Novelty Crate succeeds through the shop remote")
 check(
-	storedSkins.Cash == 0 and #storedSkins.RodSkinCopies == copiesBeforeNovelty + 1,
-	"Novelty retry saves one reward and charges $750 once"
+	reward[1] == "RodCratePurchaseResult"
+		and reward[2] == true
+		and storedSkins.Cash == 0
+		and storedSkins.RodCrates.NoveltyCrate == 1,
+	"Novelty purchase saves one crate and charges once"
 )
-local noveltyId, noveltySerial = reward[4], reward[5]
+send(loading, "OpenOwnedRodCrate", "NoveltyCrate")
+reward = feedback.messages[#feedback.messages].values
+check(
+	reward[1] == "CrateResult" and reward[2] == true and #storedSkins.RodSkinCopies == copiesBeforeNovelty + 1,
+	"Novelty crate opens"
+)
+local noveltyId, noveltySerial = reward[4].SkinId, reward[4].Serial
+local savesBeforeEmptyCrate = skinSaves
+send(loading, "OpenOwnedRodCrate", "NoveltyCrate")
+check(
+	feedback.messages[#feedback.messages].values[2] == false and skinSaves == savesBeforeEmptyCrate,
+	"An exhausted crate cannot produce another reward"
+)
+send(loading, "BuyRodCrate", { CrateId = "NoveltyCrate", Count = 1 })
+check(
+	feedback.messages[#feedback.messages].values[2] == false and skinSaves == savesBeforeEmptyCrate,
+	"Insufficient funds cannot create a crate"
+)
 send(loading, "EquipRodSkin", { SkinId = noveltyId, Serial = noveltySerial })
 check(
 	storedSkins.EquippedRodSkin == noveltyId and storedSkins.EquippedRodSkinSerial == noveltySerial,

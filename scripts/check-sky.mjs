@@ -93,6 +93,7 @@ function Color3.fromRGB(r, g, b) return setmetatable({ R = r/255, G = g/255, B =
 function Col.Lerp(a, b, t) return setmetatable({ R = a.R+(b.R-a.R)*t, G = a.G+(b.G-a.G)*t, B = a.B+(b.B-a.B)*t }, Col) end
 local function pass(name) return { new = function(...) return { kind = name, ... } end } end
 NumberSequence, NumberSequenceKeypoint, ColorSequence, NumberRange = pass("NS"), pass("NSK"), pass("CS"), pass("NR")
+ColorSequenceKeypoint = pass("CSK")
 Vector2 = { new = function(x, y) return { X = x, Y = y } end }
 local auto = setmetatable({}, { __index = function(t, k) local v = setmetatable({}, { __index = function(_, k2) return k .. "." .. k2 end }) t[k] = v return v end })
 Enum = auto
@@ -101,6 +102,9 @@ local created, alive = {}, 0
 Instance = { new = function(class)
   local object = { ClassName = class, Transparency = 0, Enabled = true }
   function object:Destroy() self.destroyed = true alive -= 1 end
+  function object:SetAttribute(k, v) self.attributes = self.attributes or {} self.attributes[k] = v end
+  function object:GetAttribute(k) return self.attributes and self.attributes[k] end
+  function object:Emit(n) self.emitted = (self.emitted or 0) + n end
   table.insert(created, object)
   alive += 1
   return object
@@ -176,37 +180,59 @@ frames(1, 1/60)
 assert(count(function(o) return o.ClassName == "Model" and o.Name == "FairCloud" end) <= 2,
   "Initial sky creation is spread across frames")
 frames(150, 1/30)
-local puffs = count(function(o) return o.ClassName == "Part" and o.Name == "CloudPuff" end)
-assert(puffs > 20, "Clear skies still hold fair-weather cumulus: " .. puffs)
+local function billowsOf(model)
+  local list = {}
+  for _, o in created do
+    if o.Name == "Billows" and not gone(o) and o.Parent and o.Parent.Parent == model then table.insert(list, o) end
+  end
+  return list
+end
+local fair, fairParts, fairBillows = 0, 0, 0
 for _, o in created do
-  if o.ClassName == "Part" and o.Name == "CloudPuff" and not o.destroyed then
-    assert(o.CFrame and o.CFrame.p.Y > 300, "Clouds float at altitude")
-    assert(o.Transparency < 1, "Clouds faded in")
+  if o.ClassName == "Model" and o.Name == "FairCloud" and not gone(o) then
+    fair += 1
+    for _, p in created do
+      if p.ClassName == "Part" and p.Parent == o and not gone(p) then
+        fairParts += 1
+        assert(p.CFrame and p.CFrame.p.Y > 300, "Clouds float at altitude")
+        assert(p.Transparency == 1, "Fair clouds are soft billows, never solid spheres")
+        assert(not p.CanCollide and not p.CanTouch and not p.CanQuery and not p.CastShadow, "Billow anchors are inert")
+      end
+    end
+    for _, e in billowsOf(o) do
+      fairBillows += 1
+      assert(e.Enabled and (e.emitted or 0) > 0, "A placed cloud starts its billows and fills half at once")
+      assert(e.Texture == "rbxasset://textures/particles/smoke_main.dds", "Billows use the soft smoke texture")
+    end
   end
 end
+assert(fair > 10, "Clear skies still hold fair-weather cumulus: " .. fair)
+assert(fairParts <= fair * 2 and fairBillows == fairParts,
+  "Each fair cloud is two billow anchors: " .. fairParts .. " parts for " .. fair .. " clouds")
 assert(count(function(o) return o.Name == "Tornado" end) == 0, "No tornado in clear weather")
-print("clear puffs", puffs)
+print("clear clouds", fair, "parts", fairParts)
 
 local sample, sampleCloud
 for _, o in created do
-  if o.Name == "CloudPuff" and o.Parent.Name == "FairCloud" and not gone(o)
+  if o.ClassName == "Part" and o.Parent and o.Parent.Name == "FairCloud" and not gone(o)
     and Vector3.new(o.CFrame.Position.X, 0, o.CFrame.Position.Z).Magnitude < 1500 then
     sample, sampleCloud = o, o.Parent
     break
   end
 end
 assert(sample, "A visible fair cloud is available for motion checks")
-local minSize, maxSize, darkest, brightest, billows = math.huge, 0, 1, 0, 0
-for _, o in created do
-  if o.Name == "CloudPuff" and o.Parent == sampleCloud then
-    minSize, maxSize = math.min(minSize, o.Size.X), math.max(maxSize, o.Size.X)
-    darkest, brightest = math.min(darkest, o.Color.R), math.max(brightest, o.Color.R)
-    billows += 1
-  end
+local layers, darkest, brightest, largest = 0, 1, 0, 0
+for _, e in billowsOf(sampleCloud) do
+  layers += 1
+  local keys = e.Color[1]
+  darkest, brightest = math.min(darkest, keys[1][2].R), math.max(brightest, keys[2][2].R)
+  largest = math.max(largest, e.Size[1][2][2])
 end
-assert(billows >= 18 and maxSize / minSize > 2, "Clouds have several scales of surface detail")
+assert(layers >= 2, "Clouds have a flat base and a billowing body")
 assert(brightest - darkest > 0.12, "Shaded bases and brighter billows remain distinct")
-local steadyOpacity = sample.Transparency
+assert(largest <= 100, "Billow sprites stay within the particle size limit")
+local sampleEmitter = billowsOf(sampleCloud)[1]
+local steadyTransparency = sampleEmitter.Transparency
 -- Clouds hold still: once placed, a settled sky moves no parts at all. Moving
 -- thousands of huge puffs each frame caused Octree and shadow-map spikes.
 local function stillFor(n, dt, renderOnly)
@@ -225,23 +251,22 @@ for _, dt in { 1/60, 1/144, 1/30, 0.011, 0.024 } do
   local still, moved = stillFor(20, dt, false)
   assert(still, "Clouds stay where they were built at every frame rate")
   assert(moved == 0, "A settled clear sky moves no parts between frames: " .. moved)
-  assert(sample.Transparency == steadyOpacity, "Settled cloud opacity does not oscillate")
+  assert(sampleEmitter.Transparency == steadyTransparency, "A settled sky never rewrites billow transparency")
 end
 assert(stillFor(20, 1/144, true), "Render-only frames leave the sky in place")
-assert(sample.Transparency == 0, "Settled near-solid puffs render opaque instead of translucent")
 
--- Moving far away retires the old field; outgoing shapes must keep moving
--- with the incoming ones throughout the crossfade.
+-- Moving far away retires the old field: it stops billowing and its last puffs
+-- dissolve where they are before the model goes.
 workspace.CurrentCamera.CFrame = CFrame.new(10000, 8, 0)
 frames(40, 1/60)
-assert(sample.Transparency > steadyOpacity and not gone(sample), "Outgoing clouds fade instead of disappearing")
-local outgoingOpacity = sample.Transparency
-assert(stillFor(10, 1/60, false), "Retiring clouds fade where they are")
-assert(sample.Transparency > outgoingOpacity, "Retirement fades monotonically")
+assert(not sampleEmitter.Enabled and not gone(sample), "Outgoing clouds dissolve instead of disappearing")
+assert(stillFor(10, 1/60, false), "Retiring clouds dissolve where they are")
 workspace.CurrentCamera.CFrame = CFrame.new(0, 8, 0)
 frames(200, 1/30)
+assert(not gone(sample), "A retired cloud keeps its model while its last billows fade")
+frames(400, 1/30)
 assert(gone(sample), "Retired cloud models are cleaned up")
-print("PASS detailed billows, bounded builds, frame-rate independent drift, stable opacity and moving crossfades")
+print("PASS billowed clouds, bounded builds, frame-rate independent stillness, stable billows and dissolving retirement")
 
 local function assertCovered(position, label)
   for _, o in created do
@@ -283,22 +308,27 @@ attributes.WeatherSeed, attributes.WeatherOverride = 4242, "Rain"
 workspace.CurrentCamera.CFrame = CFrame.new(0, 8, 0)
 frames(180, 1/60)
 local covered = assertCovered(workspace.CurrentCamera.CFrame.Position, "detailed rain")
-local small, large, darkest, brightest, details, scud, wisps = math.huge, 0, 1, 0, 0, nil, nil
+local tileParts, darkest, brightest, billows, scud, wisps = 0, 1, 0, nil, nil, nil
 for _, o in created do
-  if o.Parent == covered.Parent and not gone(o) then
-    if o.ClassName == "Part" and o.Size and o.Name ~= "CloudWispAnchor" then
-      small, large = math.min(small, o.Size.X), math.max(large, o.Size.X)
+  if o.Parent == covered.Parent and not gone(o) and o.ClassName == "Part" then
+    tileParts += 1
+    assert(not o.CanCollide and not o.CanTouch and not o.CanQuery, "Rain clouds cannot block precipitation rays or gameplay")
+    if o.Transparency < 1 then
       darkest, brightest = math.min(darkest, o.Color.R), math.max(brightest, o.Color.R)
-      details += 1
-      assert(not o.CanCollide and not o.CanTouch and not o.CanQuery, "Rain clouds cannot block precipitation rays or gameplay")
-      if o.Name == "RainCloudScud" then scud = o end
-    elseif o.Name == "CloudWispAnchor" then
-      for _, emitter in created do if emitter.Parent == o and emitter.Name == "CloudWisps" then wisps = emitter end end
+    end
+    if o.Name == "RainCloudScud" then scud = o end
+    for _, emitter in created do
+      if emitter.Parent == o and not gone(emitter) then
+        if emitter.Name == "CloudWisps" then wisps = emitter end
+        if emitter.Name == "Billows" and o.Name == "RainCloudBillows" then billows = emitter end
+      end
     end
   end
 end
-assert(details >= 55 and large/small > 8 and brightest-darkest > 0.15,
-  "Local clouds need dense billows, several detail scales and visible depth shading")
+assert(tileParts <= 6, "A rain tile is a handful of parts, not dozens of spheres: " .. tileParts)
+assert(brightest - darkest > 0.15, "The deck keeps visible depth shading")
+assert(billows and billows.Enabled and billows.LockedToPart and (billows.emitted or 0) > 0,
+  "A lumpy billowed underside hangs below the deck and rides along with it")
 assert(scud and wisps and wisps.Enabled and wisps.Texture == "rbxasset://textures/particles/smoke_main.dds",
   "Lower scud and soft textured wisps break up the cloud underside")
 local scudBefore = scud.CFrame.Position
@@ -371,11 +401,19 @@ for _ = 1, 90 do
   if funnels > 0 then seenFunnel = true end
 end
 assert(count(function(o) return o.Name == "Supercell" end) == 1, "One supercell structure")
-local tower
+local tower, stormParts, stormBillows = nil, 0, 0
 for _, o in created do
-  if o.Name == "CloudPuff" and o.Parent.Name == "Supercell" and not gone(o) then tower = o break end
+  if gone(o) or not o.Parent then continue end
+  if o.ClassName == "Part" and o.Parent.Name == "Supercell" then
+    stormParts += 1
+    if o.Name == "TowerLower" then tower = o end
+  elseif o.Name == "Billows" and o.Parent.Parent and o.Parent.Parent.Name == "Supercell" then
+    stormBillows += 1
+    assert(o.LockedToPart and o.Enabled, "Storm billows ride with the moving, turning storm")
+  end
 end
-assert(tower, "Supercell tower is visible")
+assert(tower and tower.Transparency == 0, "Supercell tower is visible and opaque")
+assert(stormParts <= 10 and stormBillows >= 6, "The supercell is a few cores wrapped in billows: " .. stormParts .. " parts")
 before = tower.CFrame.Position
 local moveCount = moves
 frames(1, 1/144)
@@ -383,6 +421,22 @@ assert(moves >= moveCount + 1, "The supercell still moves on a high refresh rate
 assert(seenFunnel, "A forced supercell drops a visible tornado")
 local tornadoes = Weather.tornadoes(now)
 print("funnels max", maxFunnels, "active", #tornadoes)
+do
+  local segments, funnelBillows, bands = 0, 0, 0
+  for _, o in created do
+    if not gone(o) then
+      if o.Name == "FunnelSegment" then segments += 1 end
+      if o.Name == "Billows" and o.Parent and o.Parent.Name == "FunnelSegment" then
+        funnelBillows += 1
+        assert(o.LockedToPart, "Funnel billows turn with their spinning segment")
+        assert(o.Size[1][2][2] <= 100, "Funnel billows stay within the particle size limit")
+      end
+      if o.Name == "SpiralBand" then bands += 1 end
+    end
+  end
+  assert(segments == funnelBillows and segments <= 7 * math.max(1, #tornadoes), "Funnels are a short stack of billowed segments")
+  assert(bands == 0, "Rotation shows through the billows; no beam bands")
+end
 local kinds = {}
 for _, o in created do
   if o.ClassName == "Model" and not o.destroyed and o.Name then kinds[o.Name] = (kinds[o.Name] or 0) + 1 end
@@ -391,15 +445,19 @@ for k, v in kinds do print("model", k, v) end
 do
   -- Storm decks: no moving shadow casters, and only nearby clouds carry lobes.
   local eye = workspace.CurrentCamera.CFrame.Position
-  local stormPuffs = 0
+  local stormParts, budget = 0, 0
   for _, o in created do
-    if o.Name == "CloudPuff" and not gone(o) and (o.Parent.Name == "NimbostratusCloud" or o.Parent.Name == "CumulonimbusCloud") then
-      stormPuffs += 1
-      assert(o.CastShadow == false, "Rain-bearing clouds cast no shadows")
+    if not gone(o) and o.Parent and (o.Parent.Name == "NimbostratusCloud" or o.Parent.Name == "CumulonimbusCloud") then
+      if o.ClassName == "Part" then
+        stormParts += 1
+        assert(o.CastShadow == false, "Rain-bearing clouds cast no shadows")
+      end
     end
+    if not gone(o) and o.Name == "Billows" and o.Enabled then budget += o:GetAttribute("Billows") or 0 end
   end
-  print("storm puffs", stormPuffs)
-  assert(stormPuffs > 0 and stormPuffs < 2600, "A storm sky stays within a few thousand parts: " .. stormPuffs)
+  print("storm parts", stormParts, "live billows", budget)
+  assert(stormParts > 0 and stormParts < 600, "A storm sky stays within a few hundred parts: " .. stormParts)
+  assert(budget < 4000, "The whole sky keeps a bounded number of billows: " .. budget)
 end
 
 -- Mobile: lightweight mandatory rain deck, no distant field, simpler supercell.

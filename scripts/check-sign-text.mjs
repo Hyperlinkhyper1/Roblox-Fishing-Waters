@@ -49,7 +49,7 @@ const modules = {
   STORAGERACK: 'src/server/Map/StorageRack.luau', CARGO: 'src/shared/Cargo.luau',
   BACKPACKCATALOG: 'src/shared/BackpackCatalog.luau', BACKPACKMODELS: 'src/shared/BackpackModels.luau',
   BACKPACKSHOP: 'src/server/Map/BackpackShop.luau', KITCHEN: 'src/server/Map/Kitchen.luau',
-  DININGROOM: 'src/server/Map/DiningRoom.luau', FURNITURESHOP: 'src/server/Map/FurnitureShop.luau', HARBOUR: 'src/server/Map/Harbour.luau',
+  DININGROOM: 'src/server/Map/DiningRoom.luau', WEATHERRADAR: 'src/server/Map/WeatherRadar.luau', FURNITURESHOP: 'src/server/Map/FurnitureShop.luau', HARBOUR: 'src/server/Map/Harbour.luau',
   FURNITURECATALOG: 'src/shared/FurnitureCatalog.luau',
   BIOMES: 'src/shared/Biomes.luau',
 };

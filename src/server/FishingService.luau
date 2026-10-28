@@ -11,6 +11,7 @@ local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local CrabCages = require(ReplicatedStorage.Shared.CrabCages)
+local MusselNets = require(ReplicatedStorage.Shared.MusselNets)
 
 local FishingService = {}
 local states = {}
@@ -337,7 +338,86 @@ local function openRodCrate(player: Player, request: any, bobber: boolean?): (bo
 	return true, string.format("You unboxed %d crates!", count), rewards
 end
 
+local function buyRodCrates(player: Player, request: any): (boolean, string, string?, number?)
+	local crateId = if type(request) == "table" then request.CrateId else request
+	local count = if type(request) == "table" then request.Count else 1
+	if not RodSkins.validCrate(crateId) then
+		return false, CRATE_FAILURES.UnknownCrate
+	end
+	if count ~= 1 and count ~= 3 and count ~= 10 then
+		return false, "Choose 1, 3, or 10 crates."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your wallet is still loading. Try again in a moment."
+	end
+	local preview = BoatData.buyRodCrates(profile, crateId, count)
+	if preview == "InsufficientFunds" then
+		return false, "You don't have enough coins."
+	end
+	if preview ~= "Purchased" then
+		return false, CRATE_FAILURES[preview] or "That crate isn't available."
+	end
+	local ok, message = BoatService.updateProgress(player, function(current)
+		assert(BoatData.buyRodCrates(current, crateId, count) == "Purchased", "Crate purchase failed")
+	end)
+	if not ok then
+		return false, message
+	end
+	return true, "Crate purchased!", crateId, count
+end
+
+-- Roll before saving so UpdateAsync retries use the same reward and wear.
+local function openOwnedRodCrate(player: Player, crateId: any): (boolean, string, any)
+	if not RodSkins.validCrate(crateId) then
+		return false, CRATE_FAILURES.UnknownCrate
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your inventory is still loading. Try again in a moment."
+	end
+	if (profile.RodCrates[crateId] or 0) < 1 then
+		return false, "You don't own that crate."
+	end
+	local skinId = RodSkins.roll(crateId, math.random(), math.random())
+	local wear = math.random()
+	local reward = { SkinId = skinId, Wear = wear }
+	local ok, message = BoatService.updateProgress(player, function(current, serial)
+		assert(BoatData.openOwnedRodCrate(current, crateId, skinId, serial, wear) == "Opened", "Crate opening failed")
+		reward.Serial = serial
+	end, skinId)
+	if not ok then
+		return false, message
+	end
+	return true, "You unboxed the " .. RodSkins.Skins[skinId].Name .. "!", reward
+end
+
 local CAGE_PROMPT = "BuyCrabCagePrompt"
+local NET_PROMPT = "BuyMusselNetPrompt"
+
+local function buyMusselNet(player: Player): (boolean, string)
+	local state = states[player]
+	if not state or state.cageBusy then
+		return false, "Please wait a moment and try again."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your wallet is still loading. Try again in a moment."
+	end
+	local problem = MusselNets.buyProblem(profile)
+	if problem then
+		return false, problem
+	end
+	state.cageBusy = true
+	local ok, message = BoatService.updateProgress(player, function(current)
+		MusselNets.buy(current)
+	end)
+	state.cageBusy = false
+	if not ok then
+		return false, message
+	end
+	return true, "Mussel net bought! Equip it and drop it in the water by your dock. It lasts 5 harvests."
+end
 
 -- One cage per press of the prompt on the crab cage stand; CrabCageService
 -- hands it out as a hotbar Tool once the save lands.
@@ -531,6 +611,7 @@ local function ensureTool(player: Player): Tool?
 		and (
 			(rod:GetAttribute("RodSkin") or "") ~= wantedSkin(player)
 			or (rod:GetAttribute("BobberSkin") or "") ~= wantedBobber(player)
+			or (wantedSkin(player) ~= "" and rod:GetAttribute("RodSkinWear") ~= player:GetAttribute("RodSkinWear"))
 		)
 	then
 		wasEquipped = rod.Parent == character
@@ -540,7 +621,11 @@ local function ensureTool(player: Player): Tool?
 	if not rod then
 		local skin = wantedSkin(player)
 		local bobber = wantedBobber(player)
-		rod = FishingRod.build(if skin ~= "" then skin else nil, if bobber ~= "" then bobber else nil)
+		rod = FishingRod.build(
+			if skin ~= "" then skin else nil,
+			if bobber ~= "" then bobber else nil,
+			player:GetAttribute("RodSkinWear")
+		)
 		rod:SetAttribute("OwnerUserId", player.UserId)
 		rod.Parent = backpack
 		local humanoid = (character :: Model):FindFirstChildOfClass("Humanoid")
@@ -636,7 +721,7 @@ local function bindPlayer(player: Player)
 			scheduleSync()
 		end)
 	end
-	for _, attribute in { "BoatDataStatus", "OwnsStarterRod", "RodSkin", "BobberSkin" } do
+	for _, attribute in { "BoatDataStatus", "OwnsStarterRod", "RodSkin", "RodSkinWear", "BobberSkin" } do
 		table.insert(state.connections, player:GetAttributeChangedSignal(attribute):Connect(scheduleSync))
 	end
 	table.insert(state.connections, player.CharacterAdded:Connect(bindCharacter))
@@ -680,7 +765,8 @@ function FishingService.start()
 			action ~= "EquipRod"
 			and action ~= "UnequipRod"
 			and action ~= "UpgradeRod"
-			and action ~= "OpenRodCrate"
+			and action ~= "BuyRodCrate"
+			and action ~= "OpenOwnedRodCrate"
 			and action ~= "OpenBobberCrate"
 			and action ~= "EquipBobberSkin"
 			and action ~= "EquipRodSkin"
@@ -695,16 +781,38 @@ function FishingService.start()
 		state.lastRequest = os.clock()
 		if action == "ClaimGroupReward" then
 			claimGroupReward(player)
-		elseif action == "OpenRodCrate" or action == "OpenBobberCrate" then
-			local bobber = action == "OpenBobberCrate"
-			local resultKind = if bobber then "BobberCrateResult" else "CrateResult"
-			if not shopPrompt(player, if bobber then BOBBER_PROMPT else CRATE_PROMPT) then
-				feedback:FireClient(player, resultKind, false, "Step up to the matching case stand in the tackle shop.")
+		elseif action == "BuyRodCrate" then
+			if not shopPrompt(player, CRATE_PROMPT) then
+				feedback:FireClient(
+					player,
+					"RodCratePurchaseResult",
+					false,
+					"Step up to the rod crate stand in the tackle shop."
+				)
 				return
 			end
-			local success, message, skinId, serial = openRodCrate(player, value, bobber)
+			local success, message, crateId, count = buyRodCrates(player, value)
 			if player.Parent == Players then
-				feedback:FireClient(player, resultKind, success, message, skinId, serial)
+				feedback:FireClient(player, "RodCratePurchaseResult", success, message, crateId, count)
+			end
+		elseif action == "OpenOwnedRodCrate" then
+			local success, message, reward = openOwnedRodCrate(player, value)
+			if player.Parent == Players then
+				feedback:FireClient(player, "CrateResult", success, message, reward)
+			end
+		elseif action == "OpenBobberCrate" then
+			if not shopPrompt(player, BOBBER_PROMPT) then
+				feedback:FireClient(
+					player,
+					"BobberCrateResult",
+					false,
+					"Step up to the matching case stand in the tackle shop."
+				)
+				return
+			end
+			local success, message, skinId, serial = openRodCrate(player, value, true)
+			if player.Parent == Players then
+				feedback:FireClient(player, "BobberCrateResult", success, message, skinId, serial)
 			end
 		elseif action == "EquipBobberSkin" then
 			local success, message = equipBobberSkin(player, value)
@@ -743,6 +851,11 @@ function FishingService.start()
 			feedback:FireClient(player, "OpenCrates")
 		elseif prompt.Name == BOBBER_PROMPT and shopPrompt(player, BOBBER_PROMPT) == prompt then
 			feedback:FireClient(player, "OpenBobberCrates")
+		elseif prompt.Name == NET_PROMPT and shopPrompt(player, NET_PROMPT) == prompt then
+			task.spawn(function()
+				local _, message = buyMusselNet(player)
+				notify(player, message)
+			end)
 		elseif prompt.Name == CAGE_PROMPT and shopPrompt(player, CAGE_PROMPT) == prompt then
 			task.spawn(function()
 				local _, message = buyCrabCage(player)

@@ -14,6 +14,7 @@ local RodSkins = require(Shared:WaitForChild("RodSkins"))
 local BobberSkins = require(Shared:WaitForChild("BobberSkins"))
 local FishingBobber = require(Shared:WaitForChild("FishingBobber"))
 local CrateReveal = require(script.Parent:WaitForChild("RodCrateReveal"))
+local RodCaseOpening = require(script.Parent:WaitForChild("RodCaseOpening"))
 
 local RodCrates = {}
 local started = false
@@ -107,6 +108,8 @@ end
 local function startShop(RodSkins, bobber: boolean)
 	local kind = if bobber then "Bobber" else "Rod"
 	local openAction = "Open" .. kind .. "Crate"
+	local buyAction = "BuyRodCrate"
+	local ownedAction = "OpenOwnedRodCrate"
 	local equipAction = "Equip" .. kind .. "Skin"
 	local openEvent = if bobber then "OpenBobberCrates" else "OpenCrates"
 	local resultEvent = if bobber then "BobberCrateResult" else "CrateResult"
@@ -301,6 +304,9 @@ local function startShop(RodSkins, bobber: boolean)
 		UDim2.fromOffset(0, 40),
 		UDim2.fromOffset(200, 28)
 	)
+	local openOwned = if not bobber
+		then button(footer, "OpenOwnedCase", "", UDim2.fromOffset(204, 40), UDim2.fromOffset(190, 28))
+		else nil
 	local opens = {}
 	for index, count in { 1, 3, 10 } do
 		local open = button(
@@ -363,6 +369,11 @@ local function startShop(RodSkins, bobber: boolean)
 	local revealing = false
 	local stopReveal: (() -> ())? = nil
 	local standPart: BasePart? = nil
+	local caseScreen = nil
+	local function ownedCases(): number
+		local count = player:GetAttribute("RodCrateCount" .. crateId)
+		return if type(count) == "number" then count else 0
+	end
 
 	local function owned(skinId: string): number
 		local value = player:GetAttribute(countAttribute .. skinId)
@@ -418,13 +429,26 @@ local function startShop(RodSkins, bobber: boolean)
 		local plainEnabled = idle and type(equipped) == "string" and equipped ~= ""
 		Theme.button(plain, if plainEnabled then "Selected" else "Disabled")
 		plain.Active, plain.Selectable, plain.AutoButtonColor = plainEnabled, plainEnabled, plainEnabled
+		if openOwned then
+			local cases = ownedCases()
+			local enabled = idle and cases > 0
+			openOwned.Text = string.format("Open owned case (%d)", cases)
+			Theme.button(openOwned, if enabled then "Selected" else "Disabled")
+			openOwned.Active, openOwned.Selectable, openOwned.AutoButtonColor = enabled, enabled, enabled
+		end
 		for count, open in opens do
 			local afford = money >= crate.Price * count
 			local openEnabled = idle and ownsRod and afford
-			open.Text = if pending == openAction or revealing
-				then "Opening…"
+			open.Text = if pending == openAction
+					or pending == buyAction
+					or revealing
+				then if bobber then "Opening…" else "Buying…"
 				else string.format(
-					'OPEN %d×\n<font color="%s">$%s</font>',
+					(
+						if bobber
+							then 'OPEN %d×\n<font color="%s">$%s</font>'
+							else 'BUY %d×\n<font color="%s">$%s</font>'
+					),
 					count,
 					if afford then "#a6f0b2" else "#ff9a9d",
 					commas(crate.Price * count)
@@ -478,9 +502,15 @@ local function startShop(RodSkins, bobber: boolean)
 			:Play()
 	end
 	local function closeWindow()
+		if pending == ownedAction then
+			return
+		end
 		if overlay.Visible then
 			overlay.Visible = false
 			results.Visible = false
+			if caseScreen then
+				caseScreen.hide()
+			end
 			window.Visible = true
 			player:SetAttribute("RodCratesOpen", false)
 		end
@@ -499,15 +529,46 @@ local function startShop(RodSkins, bobber: boolean)
 			player:SetAttribute("RodCrateOpening", true)
 		end
 		request:FireServer(action, value)
-		task.delay(if action == openAction and type(value) == "table" then 60 else 8, function()
-			if pendingId == current and pending then
-				pending = nil
-				if action == openAction then
-					player:SetAttribute("RodCrateOpening", false)
-					openWindow()
+		task.delay(
+			if action == ownedAction or (action == openAction and type(value) == "table") then 60 else 8,
+			function()
+				if pendingId == current and pending then
+					pending = nil
+					if action == openAction then
+						player:SetAttribute("RodCrateOpening", false)
+						openWindow()
+					end
+					if action == ownedAction and caseScreen then
+						caseScreen.failed("That took too long. Check your inventory before trying again.", ownedCases())
+					end
+					setStatus("That took too long. Please try again.", SHORT)
+					refresh()
 				end
-				setStatus("That took too long. Please try again.", SHORT)
-				refresh()
+			end
+		)
+	end
+
+	if not bobber then
+		caseScreen = RodCaseOpening.create(overlay, function(id)
+			if pending or revealing then
+				return
+			end
+			local token = caseScreen.setPending()
+			-- The shop shares a server request throttle; queue a quick open after purchase.
+			task.delay(math.max(0, 0.55 - (os.clock() - lastRequest)), function()
+				if caseScreen.isPending(token) then
+					send(ownedAction, id)
+				end
+			end)
+		end, function()
+			caseScreen.hide()
+			window.Visible = true
+			refresh()
+		end)
+		openOwned.Activated:Connect(function()
+			if openOwned.Active then
+				window.Visible = false
+				caseScreen.show(crateId, ownedCases())
 			end
 		end)
 	end
@@ -600,8 +661,12 @@ local function startShop(RodSkins, bobber: boolean)
 	for count, open in opens do
 		open.Activated:Connect(function()
 			if open.Active then
-				setStatus("Finn is prying the lid off…", muted)
-				send(openAction, if count == 1 then crateId else { CrateId = crateId, Count = count })
+				setStatus(if bobber then "Finn is prying the lid off…" else "Purchasing your case…", muted)
+				if bobber then
+					send(openAction, if count == 1 then crateId else { CrateId = crateId, Count = count })
+				else
+					send(buyAction, { CrateId = crateId, Count = count })
+				end
 			end
 		end)
 	end
@@ -650,6 +715,33 @@ local function startShop(RodSkins, bobber: boolean)
 			local stand = hall and hall:FindFirstChild(openAction .. "Prompt", true)
 			standPart = if stand and stand.Parent and stand.Parent:IsA("BasePart") then stand.Parent else nil
 			openWindow()
+		elseif not bobber and kind == "RodCratePurchaseResult" and type(b) == "string" then
+			pending = nil
+			if a == true and type(c) == "string" and RodSkins.validCrate(c) then
+				crateId, crate = c, RodSkins.Crates[c]
+				if overlay.Visible then
+					window.Visible = false
+					caseScreen.show(c, math.max(ownedCases(), if type(d) == "number" then d else 1))
+				end
+				setStatus(b, AFFORD)
+			else
+				setStatus(b, SHORT)
+			end
+			task.delay(0.15, refresh)
+		elseif not bobber and kind == resultEvent and type(b) == "string" then
+			pending = nil
+			if a == true and type(c) == "table" and RodSkins.valid(c.SkinId) then
+				if overlay.Visible then
+					caseScreen.reveal(c)
+				end
+				setStatus(b, AFFORD)
+			else
+				if caseScreen then
+					caseScreen.failed(b, ownedCases())
+				end
+				setStatus(b, SHORT)
+			end
+			task.delay(0.15, refresh)
 		elseif kind == resultEvent and type(b) == "string" then
 			pending = nil
 			if a == true and type(c) == "table" and #c > 0 and RodSkins.valid(c[1].SkinId) then
@@ -672,6 +764,11 @@ local function startShop(RodSkins, bobber: boolean)
 	for skinId in RodSkins.Skins do
 		table.insert(watched, countAttribute .. skinId)
 	end
+	if not bobber then
+		for _, id in RodSkins.CrateOrder do
+			table.insert(watched, "RodCrateCount" .. id)
+		end
+	end
 	for _, attribute in watched do
 		player:GetAttributeChangedSignal(attribute):Connect(function()
 			if overlay.Visible then
@@ -688,8 +785,8 @@ local function startShop(RodSkins, bobber: boolean)
 		end
 	end)
 	player.CharacterRemoving:Connect(function()
-		closeWindow()
 		pending = nil
+		closeWindow()
 		player:SetAttribute("RodCrateOpening", false)
 		if stopReveal then
 			stopReveal()

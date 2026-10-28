@@ -420,6 +420,10 @@ local function loadBackpackShop()
 	-- BACKPACKSHOP_SOURCE --
 end
 dependencies.BackpackShop = loadBackpackShop()
+local function loadWeatherRadar()
+	-- WEATHERRADAR_SOURCE --
+end
+dependencies.WeatherRadar = loadWeatherRadar()
 local function loadFurnitureShop()
 	-- FURNITURESHOP_SOURCE --
 end

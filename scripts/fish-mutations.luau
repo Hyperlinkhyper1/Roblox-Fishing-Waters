@@ -90,7 +90,7 @@ for _, night in { false, true } do
 	for _, key in keys do
 		total += FishMutations.chance(key, night)
 	end
-	check(math.abs(total - FishMutations.CHANCE) < 1e-12, "Mutation chances add up to 0.75%")
+	check(math.abs(total - FishMutations.CHANCE) < 1e-12, "Mutation chances add up to the base chance")
 end
 
 -- Rolled odds.
@@ -126,7 +126,7 @@ for _, night in { false, true } do
 		end
 	end
 	local rate = mutated / ROLLS
-	check(math.abs(rate - 0.0075) < 0.0004, string.format("About 0.75%% mutate (%.4f%%)", rate * 100))
+	check(math.abs(rate - 1 / 60) < 0.0004, string.format("About 1 in 60 mutate (%.4f%%)", rate * 100))
 	if night then
 		check(math.abs(astral / ROLLS - 1 / 1000) < 0.00012, "Astral is about 1 in 1000 at night")
 	else

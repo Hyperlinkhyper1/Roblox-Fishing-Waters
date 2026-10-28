@@ -36,6 +36,7 @@ try {
     ['local RodSkins = require(ReplicatedStorage.Shared.RodSkins)', `local RodSkins = (function()\n${await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8')}\nend)()`],
     ['local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)', `local BobberSkins = (function()\n${skinSources.BobberSkins}\nend)()`],
     ['local CrabCages = require(ReplicatedStorage.Shared.CrabCages)', `local CrabCages = (function()\n${await readFile(join(root, 'src/shared/CrabCages.luau'), 'utf8')}\nend)()`],
+    ['local MusselNets = require(ReplicatedStorage.Shared.MusselNets)', `local MusselNets = (function()\n${await readFile(join(root, 'src/shared/MusselNets.luau'), 'utf8')}\nend)()`],
   ]) {
     if (!source.includes(hook)) throw new Error(`FishingService dependency hook changed: ${hook}`);
     source = source.replace(hook, replacement);

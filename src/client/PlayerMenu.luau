@@ -13,6 +13,7 @@ local Paths = require(ReplicatedStorage.Shared.Paths)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Settings = require(script.Parent.PlayerSettings)
+local Freecam = require(script.Parent.Freecam)
 local StaffPreview = require(script.Parent.StaffPreview)
 local EquipmentBag = require(script.Parent:WaitForChild("EquipmentBag"))
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
@@ -745,6 +746,7 @@ function Menu.start()
 	end
 	started = true
 	Settings.start()
+	Freecam.start()
 	local player = Players.LocalPlayer
 	local remote = ReplicatedStorage:WaitForChild("AnglerMenu") :: RemoteFunction
 	local profile = nil
@@ -2697,7 +2699,7 @@ function Menu.start()
 		list(body, 12)
 		iconTitle(body, settingTab, settingTab, 24, cream, { Size = UDim2.new(1, -8, 0, 42), LayoutOrder = 0 })
 		local function settingRow(key, name, description, iconName)
-			local value = profile.Angler.Settings[key]
+			local value = if key == "Freecam" then player:GetAttribute("FreecamEnabled") == true else profile.Angler.Settings[key]
 			local row = make("Frame", body, {
 				Name = key .. "Row",
 				BackgroundColor3 = Theme.Colors.Panel,
@@ -2726,7 +2728,11 @@ function Menu.start()
 			if type(value) == "boolean" then
 				-- A sliding switch: blue with the knob right when on, flat with the knob left when off.
 				local switch = settingsButton(row, if value then "On" else "Off", function()
-					request("Setting", key, not value)
+					if key == "Freecam" then
+						Freecam.setEnabled(not value)
+					else
+						request("Setting", key, not value)
+					end
 				end, {
 					Name = key,
 					Position = UDim2.new(1, -108, 1, -46),
@@ -2795,6 +2801,7 @@ function Menu.start()
 		end
 		if settingTab == "Performance" then
 			text(body, Settings.description(), 13, muted, { Size = UDim2.new(1, -8, 0, 48), LayoutOrder = 0 })
+			settingRow("Freecam", "Free camera", "Shift+P: toggle. WASD: move, Q/E: down/up, right-drag: look. Touch: use buttons and drag.", "Settings")
 			settingRow("Shadows", "Shadows", "Disable global shadows to reduce graphics work.", "Shadows")
 			settingRow(
 				"WeatherEffects",
@@ -3015,6 +3022,11 @@ function Menu.start()
 			settings()
 		end
 	end
+	player:GetAttributeChangedSignal("FreecamEnabled"):Connect(function()
+		if active == "Settings" then
+			render()
+		end
+	end)
 	player:GetAttributeChangedSignal("OwnsAutoStore"):Connect(function()
 		if active == "Shop" then
 			render()

@@ -725,6 +725,27 @@ local function ensureCrabCageStand(hall: Model)
 	stand.Parent = hall
 end
 
+local function ensureMusselNetStand(hall: Model)
+	if hall:FindFirstChild("MusselNetStand") then
+		return
+	end
+	local stand = Instance.new("Model")
+	stand.Name = "MusselNetStand"
+	local base = INTERIOR_ORIGIN * CFrame.new(-15, 0, -7) * CFrame.Angles(0, math.pi / 2, 0)
+	Props.part(stand, Vector3.new(4.5, 0.4, 3), base * CFrame.new(0, 0.2, 0), WOOD, M.WoodPlanks)
+	Props.musselNet(stand, base * CFrame.new(0, 0.4, 0), false)
+	local sign = Props.part(stand, Vector3.new(4.5, 1.4, 0.15), base * CFrame.new(0, 4, -1.6) * CFrame.Angles(0, math.pi, 0), DARK_WOOD, M.WoodPlanks)
+	sign.CanCollide, sign.CanQuery = false, false
+	PlazaHouses.boardText(sign, "MUSSEL NET · $125\n5 HAULS · 3–5 MIN\n2–5 CATCHES", Enum.NormalId.Front)
+	local anchor = Props.part(stand, Vector3.one, base * CFrame.new(0, 3, 0.4), WOOD)
+	anchor.Transparency, anchor.CanCollide, anchor.CastShadow = 1, false, false
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name, prompt.ActionText, prompt.ObjectText = "BuyMusselNetPrompt", "Buy · $125", "Mussel Net"
+	prompt.MaxActivationDistance, prompt.HoldDuration, prompt.RequiresLineOfSight = 9, 0.35, false
+	prompt.Parent = anchor
+	stand.Parent = hall
+end
+
 local function ensureInterior(): Model
 	local existing = interiorFolder():FindFirstChild("RodStoreInterior")
 	local hall: Model
@@ -750,6 +771,7 @@ local function ensureInterior(): Model
 		end
 	end
 	ensureCrabCageStand(hall)
+	ensureMusselNetStand(hall)
 	hall:SetAttribute("KeeperFrame", KEEPER_FRAME)
 	CollectionService:AddTag(hall, "FishingRodShop")
 	return hall

@@ -16,6 +16,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local FurniturePreview = require(script.Parent.FurniturePreview)
+local Freecam = require(script.Parent.Freecam)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local BuildMode = {}
@@ -37,6 +38,7 @@ local HEIGHTS = {
 	SushiBar = 6.3,
 	KitchenStorage = 4.2,
 	DiningTable = 4.3,
+	WeatherRadar = 4.4,
 }
 -- The Restaurant's dining room extends the floor behind the house to this z.
 local DINING_BACK = -30
@@ -430,12 +432,14 @@ function BuildMode.start()
 		end
 		local model = make("Model", nil, { Name = "FurniturePreview" })
 		local item = Furniture.Items[held.ItemId]
-		plate(model, Furniture.Rooms[item.Room], FLOOR_Y + 0.05, ROOM, 0.75).Name = "AllowedRoom"
+		-- Yard items sit on the quay deck, a step below the house floor.
+		local floor = Furniture.floor(held.ItemId)
+		plate(model, Furniture.Rooms[item.Room], floor + 0.05, ROOM, 0.75).Name = "AllowedRoom"
 		for _, area in Furniture.Blocked do
 			local room = Furniture.Rooms[item.Room]
 			-- Only show the keep-clear zones inside the room being furnished.
 			if area[1] < room[3] and area[3] > room[1] and area[2] < room[4] and area[4] > room[2] then
-				plate(model, area, FLOOR_Y + 0.07, BLOCKED, 0.8).Name = "KeepClear"
+				plate(model, area, floor + 0.07, BLOCKED, 0.8).Name = "KeepClear"
 			end
 		end
 		local height = HEIGHTS[held.ItemId] or 3
@@ -478,7 +482,7 @@ function BuildMode.start()
 			return
 		end
 		local item = Furniture.Items[held.ItemId]
-		local frame = Furniture.frame(houseFrame, { X = spot.X, Z = spot.Z, R = held.R })
+		local frame = Furniture.frame(houseFrame, { ItemId = held.ItemId, X = spot.X, Z = spot.Z, R = held.R })
 		local color = if spot.Reason then BLOCKED else FITS
 		local height = HEIGHTS[held.ItemId] or 3
 		local body = preview:FindFirstChild("Body") :: BasePart
@@ -870,6 +874,7 @@ function BuildMode.start()
 		if not freezeCharacter() then
 			return
 		end
+		Freecam.stop()
 		active, house, houseFrame = true, model, frame
 		clearNavigation()
 		pan, zoom, yaw = Vector2.zero, 1, 0

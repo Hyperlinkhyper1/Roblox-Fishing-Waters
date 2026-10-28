@@ -15,18 +15,25 @@ try {
   const menu = await read('scripts/player-menu.luau');
   const bobberSkins = await read('src/shared/BobberSkins.luau');
   const sources = {
-    FISHING_ROD: await read('src/shared/FishingRod.luau'),
+    FISHING_ROD: (await read('src/shared/FishingRod.luau'))
+      .replace('require(script.Parent.RodSkins)', '{ DefaultWear = 0.2 }'),
     REVEAL: (await read('src/client/RodCrateReveal.luau'))
-      .replace('require(ReplicatedStorage.Shared.FishingRod)', 'rodFactory'),
+      .replace('require(ReplicatedStorage.Shared.FishingRod)', 'rodFactory')
+      .replace('require(script.Parent.Freecam)', '{ stop = function() end }'),
     THEME: await read('src/first/UITheme.luau'),
     SKINS: await read('src/shared/RodSkins.luau'),
+    CASE: (await read('src/client/RodCaseOpening.luau'))
+      .replace('require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))', 'Theme')
+      .replace('require(Shared:WaitForChild("FishingRod"))', 'FishingRod')
+      .replace('require(Shared:WaitForChild("RodSkins"))', 'RodSkins'),
     CLIENT: (await read('src/client/RodCrates.luau'))
       .replace('require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))', 'Theme')
       .replace('require(Shared:WaitForChild("FishingRod"))', 'FishingRod')
       .replace('require(Shared:WaitForChild("RodSkins"))', 'RodSkins')
       .replace('require(Shared:WaitForChild("BobberSkins"))', () => `(function()\n${bobberSkins}\nend)()`)
       .replace('require(Shared:WaitForChild("FishingBobber"))', 'FishingRod')
-      .replace('require(script.Parent:WaitForChild("RodCrateReveal"))', 'CrateReveal'),
+      .replace('require(script.Parent:WaitForChild("RodCrateReveal"))', 'CrateReveal')
+      .replace('require(script.Parent:WaitForChild("RodCaseOpening"))', 'RodCaseOpening'),
   };
   for (const [name, prefix] of [
     ['reveal', physics.slice(0, physics.indexOf('local function loadDynamics()'))],

@@ -3,6 +3,7 @@
 -- Crate skins (RodSkins) restyle the same jointed blank and only weld extra
 -- pieces onto it, so every skin bends, casts and swings its bobber alike.
 local CollectionService = game:GetService("CollectionService")
+local RodSkins = require(script.Parent.RodSkins)
 
 local FishingRod = {}
 local LENGTHS = { 0.72, 0.69, 0.66, 0.62, 0.58, 0.54, 0.49, 0.44 }
@@ -852,8 +853,10 @@ for _, style in STYLES do
 end
 
 -- `skinId` is a RodSkins id; nil or unknown builds the plain starter rod.
-function FishingRod.build(skinId: string?, bobberSkinId: string?): Tool
+-- Wear is the saved float for this particular copy, shared by the tool and previews.
+function FishingRod.build(skinId: string?, bobberSkinId: string?, wear: number?): Tool
 	local style: Style = (skinId and STYLES[skinId] or DEFAULT) :: any
+	local skinWear = if type(wear) == "number" and wear == wear then math.clamp(wear, 0, 1) else RodSkins.DefaultWear
 	local tool = Instance.new("Tool")
 	tool.Name = style.Name
 	tool.ToolTip = style.ToolTip
@@ -865,6 +868,7 @@ function FishingRod.build(skinId: string?, bobberSkinId: string?): Tool
 	tool:SetAttribute("RodId", "StarterRod")
 	if skinId and STYLES[skinId] then
 		tool:SetAttribute("RodSkin", skinId)
+		tool:SetAttribute("RodSkinWear", skinWear)
 	end
 	tool:SetAttribute("RodSegmentCount", #LENGTHS)
 	tool:SetAttribute("RodLineLength", 1.25)
@@ -1041,6 +1045,52 @@ function FishingRod.build(skinId: string?, bobberSkinId: string?): Tool
 				light.Parent = parent
 			end,
 		})
+	end
+	if skinId and STYLES[skinId] then
+		-- Expose more of the underlying finish as wear increases. The marks are
+		-- deterministic for a skin and welded to each bending section, so the
+		-- same copy has the same appearance in hand and in the inspect view.
+		for _, item in tool:GetChildren() do
+			if
+				item:IsA("BasePart")
+				and item ~= handle
+				and item ~= bobber
+				and item ~= band
+				and item.Name ~= "BobberStem"
+				and item.Material ~= Enum.Material.Neon
+			then
+				item.Color = item.Color:Lerp(Color3.fromRGB(110, 105, 96), skinWear * 0.3)
+			end
+		end
+		local seed = 0
+		for index = 1, #skinId do
+			seed = (seed * 31 + string.byte(skinId, index)) % 2147483647
+		end
+		local random = Random.new(seed)
+		local brightness = (style.Blank.R + style.Blank.G + style.Blank.B) / 3
+		local exposed = if brightness > 0.5 then Color3.fromRGB(83, 77, 69) else Color3.fromRGB(183, 179, 164)
+		for index, segment in segments do
+			for _ = 1, math.ceil(skinWear * 5) do
+				local angle = random:NextNumber(0, math.pi * 2)
+				local y = starts[index] + random:NextNumber(0.16, 0.84) * LENGTHS[index]
+				local frame = CFrame.new(0, y, 0)
+					* CFrame.Angles(0, angle, 0)
+					* CFrame.new(0, 0, diameters[index] / 2 + 0.002)
+					* CFrame.Angles(0, 0, random:NextNumber(-0.35, 0.35))
+				local scratch = part(
+					"WearScratch",
+					Vector3.new(
+						math.min(0.025, diameters[index] * 0.35),
+						LENGTHS[index] * random:NextNumber(0.08, 0.25),
+						0.004
+					),
+					frame,
+					exposed,
+					Enum.Material.SmoothPlastic
+				)
+				weld(segment, scratch)
+			end
+		end
 	end
 	if bobberSkinId then
 		-- Load only for a selected bobber; plain rods retain their original float.

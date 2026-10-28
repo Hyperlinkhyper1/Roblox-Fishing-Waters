@@ -17,6 +17,11 @@ end)()
 local CrabCages = (function()
 	-- CRAB_RULES_SOURCE --
 end)()
+local FishMutations = (function()
+	-- MUTATION_SOURCE --
+end)()
+local DayNight = { clockTime = function() return 12 end, isNight = function() return false end }
+local Weather = { mutationContext = function() return nil end }
 local Catalog = {
 	Fish = {
 		ShoreCrab = { AverageKg = 1, RarityDenominator = 2, CatchXP = 100 },

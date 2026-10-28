@@ -18,6 +18,7 @@ try {
   ]) {
     let source = await read(path);
     source = source.replace('require(script.Parent.BobberSkins)', 'BobberSkins')
+      .replace('require(script.Parent.RodSkins)', '{ DefaultWear = 0.2 }')
       .replace('require(script.Parent.FishingBobber)', 'FishingBobber')
       .replace('require(ReplicatedStorage.Shared.FishingBobber)', 'FishingBobber')
       .replace(/require\(script.Parent.(?:CastAnimation|FishingAudio|ReelMinigame)\)/g, '{}');

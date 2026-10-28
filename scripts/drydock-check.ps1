@@ -31,6 +31,7 @@ $modules = [ordered]@{
     'BACKPACKSHOP' = 'src/server/Map/BackpackShop.luau'
     'KITCHEN' = 'src/server/Map/Kitchen.luau'
     'DININGROOM' = 'src/server/Map/DiningRoom.luau'
+    'WEATHERRADAR' = 'src/server/Map/WeatherRadar.luau'
     'FURNITURESHOP' = 'src/server/Map/FurnitureShop.luau'
     'FURNITURECATALOG' = 'src/shared/FurnitureCatalog.luau'
     'SEABED' = 'src/server/Map/Seabed.luau'

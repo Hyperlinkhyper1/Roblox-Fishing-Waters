@@ -96,6 +96,10 @@ local function publish(player: Player, state)
 	for id in RodSkins.Skins do
 		player:SetAttribute("RodSkinCount" .. id, state.profile.RodSkins[id] or 0)
 	end
+	for id in RodSkins.Crates do
+		player:SetAttribute("RodCrateCount" .. id, state.profile.RodCrates[id] or 0)
+	end
+	player:SetAttribute("RodSkinWear", BoatData.equippedRodWear(state.profile))
 	player:SetAttribute("RodSkin", state.profile.EquippedRodSkin or "")
 	player:SetAttribute("RodSkinSerial", state.profile.EquippedRodSkinSerial or 0)
 	for id in BobberSkins.Skins do

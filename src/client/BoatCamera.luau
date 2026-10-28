@@ -62,6 +62,9 @@ local function levelBasis(frame: CFrame): (Vector3, Vector3)
 end
 
 local function updateCamera()
+	if player:GetAttribute("FreecamEnabled") then
+		return
+	end
 	local camera = workspace.CurrentCamera
 	local boat, seat = activeBoat, activeSeat
 	if not camera or not boat or not boat.Parent or not seat or not seat.Parent then
@@ -119,6 +122,9 @@ local function updateCamera()
 end
 
 local function applyMode()
+	if player:GetAttribute("FreecamEnabled") then
+		return
+	end
 	local camera = workspace.CurrentCamera
 	if not activeBoat or not activeSeat or not camera then
 		return
@@ -138,6 +144,16 @@ local function applyMode()
 	if not bound then
 		bound = true
 		RunService:BindToRenderStep("BoatCamera", Enum.RenderPriority.Camera.Value + 1, updateCamera)
+	end
+end
+
+function BoatCamera.isActive(): boolean
+	return activeBoat ~= nil
+end
+
+function BoatCamera.refresh()
+	if activeBoat then
+		applyMode()
 	end
 end
 
@@ -176,6 +192,17 @@ end
 
 function BoatCamera.stop()
 	activeBoat, activeSeat = nil, nil
+	if player:GetAttribute("FreecamEnabled") then
+		if bound then
+			bound = false
+			RunService:UnbindFromRenderStep("BoatCamera")
+		end
+		if saved then
+			player.CameraMode = saved.CameraMode
+			saved = nil
+		end
+		return
+	end
 	restoreCustomCamera()
 	if saved then
 		player.CameraMode = saved.CameraMode

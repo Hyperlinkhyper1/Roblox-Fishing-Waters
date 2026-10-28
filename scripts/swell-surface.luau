@@ -23,6 +23,7 @@ function renderStep:Fire(dt)
 end
 -- Recording EditableMesh: ids index plain arrays.
 local meshes = {}
+local meshFailure, partFailure = nil, false
 local function newMesh()
 	local mesh =
 		{ positions = {}, normals = {}, colors = {}, alphas = {}, faces = {}, faceNormals = {}, faceColors = {} }
@@ -64,6 +65,9 @@ local function newMesh()
 		assert(alpha >= 0 and alpha <= 1, "Alpha must be a fraction")
 		self.alphas[id] = alpha
 	end
+	function mesh:Destroy()
+		self.destroyed = true
+	end
 	table.insert(meshes, mesh)
 	return mesh
 end
@@ -79,9 +83,17 @@ game.GetService = function(_, name)
 		elseif name == "RunService" then { RenderStepped = renderStep }
 		elseif name == "AssetService" then {
 			CreateEditableMesh = function()
+				if meshFailure == "error" then
+					error("EditableMesh is not accessible")
+				elseif meshFailure == "budget" then
+					return nil
+				end
 				return newMesh()
 			end,
 			CreateMeshPartAsync = function(_, content)
+				if partFailure then
+					error("Mesh part creation failed")
+				end
 				local part = Instance.new("Part")
 				part.mesh = content.object
 				part.LocalTransparencyModifier = 0
@@ -235,4 +247,18 @@ for id, local_ in mesh.positions do
 	assert(mesh.alphas[id] == 0, "Streamed land must hide the sheet after its rechecks")
 end
 print("PASS swell sheet matches boat heights, hides troughs and land, caps under hulls, bounded probes")
+local callbacksBefore, partsBefore = #renderStep.callbacks, #meshParts
+for _, failure in { "error", "budget" } do
+	meshFailure = failure
+	loadClient().start()
+	assert(
+		#renderStep.callbacks == callbacksBefore and #meshParts == partsBefore,
+		"Unavailable mesh must skip the surface"
+	)
+end
+meshFailure, partFailure = nil, true
+loadClient().start()
+assert(meshes[#meshes].destroyed, "Failed mesh part creation must release the editable mesh")
+assert(#renderStep.callbacks == callbacksBefore and #meshParts == partsBefore, "Failed mesh part must skip the surface")
+print("PASS unavailable mesh and mesh part failures leave the renderer inactive")
 print("Recording mocks only; Studio rendering and EditableMesh limits remain unverified.")

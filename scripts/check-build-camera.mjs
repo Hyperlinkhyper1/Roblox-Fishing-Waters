@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = name => readFile(join(root, name), 'utf8');
-const source = await read('src/client/BuildMode.luau');
+const source = (await read('src/client/BuildMode.luau')).replace(/\r\n/g, '\n');
 const furniture = await read('src/shared/FurnitureCatalog.luau');
 function section(start, end) {
   const first = source.indexOf(start);
@@ -369,6 +369,7 @@ local grid = nil
 local function hideRoof() roofHidden = true end
 local function showRoof() roofHidden = false end
 local function showGrid() grid = {Destroy = function() gridDestroyed = true end} end
+local Freecam = {stop = function() end}
 local function atHome() return true end
 local function ownHouse() return {}, CFrame.identity end
 local noticeMessage = nil

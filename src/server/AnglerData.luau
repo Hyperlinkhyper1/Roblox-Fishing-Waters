@@ -105,6 +105,7 @@ local defaults = {
 	TreasureChestsOpened = 0,
 	SunkenChestsOpened = 0,
 	CrabCagesOpened = 0,
+	MusselNetsOpened = 0,
 	-- Business paths (Shared.Paths) count these per stage.
 	FishSold = 0,
 	FoodCooked = 0,
@@ -364,6 +365,16 @@ function Data.decode(raw)
 				and number(cage.ReadyAt, true),
 			"Invalid crab cage"
 		)
+	end
+	if data.MusselNets == nil then
+		data.MusselNets = { Stock = 0, Placed = {} }
+	end
+	local nets = data.MusselNets
+	assert(type(nets) == "table" and number(nets.Stock, true) and type(nets.Placed) == "table", "Invalid mussel nets")
+	for index, net in nets.Placed do
+		assert(type(index) == "number" and type(net) == "table" and type(net.X) == "number" and net.X == net.X
+			and type(net.Z) == "number" and net.Z == net.Z and number(net.Uses, true) and net.Uses >= 1
+			and number(net.ReadyAt, true), "Invalid mussel net")
 	end
 	data.BackpackId = data.BackpackId or "Starter"
 	assert(type(data.BackpackId) == "string", "Invalid backpack")
