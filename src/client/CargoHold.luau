@@ -98,6 +98,58 @@ local function button(parent: Instance, caption: string, props: { [string]: any 
 	return item
 end
 
+-- A small jewel for each mutation keeps combinations readable on one-cell fish.
+local MUTATION_ICONS = {
+	Corrupted = { "☠", rgb(221, 111, 129) },
+	VoidTouched = { "◉", rgb(182, 139, 255) },
+	Windy = { "≋", rgb(155, 229, 229) },
+	Astral = { "✦", rgb(255, 219, 116) },
+	Rainbow = { "✿", rgb(255, 255, 255) },
+	Neon = { "◆", rgb(120, 242, 255) },
+	Albino = { "❄", rgb(239, 246, 255) },
+}
+
+local function mutationBadge(parent: Instance, record)
+	if not record or not record.Mutation or record.Mutation == "Normal" then
+		return
+	end
+	local index = 0
+	for name in string.gmatch(record.Mutation, "[^+]+") do
+		local style = MUTATION_ICONS[name] or { "✧", WHITE }
+		local color = style[2]
+		local neon = name == "Neon" and FishMutations.NeonColors[record.NeonColor or ""]
+		if neon then
+			color = rgb(neon[1], neon[2], neon[3])
+		end
+		local badge = text(parent, style[1], {
+			Name = "MutationIcon",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -2 - (index % 2) * 17, 0, 2 + math.floor(index / 2) * 17),
+			Size = UDim2.fromOffset(16, 16),
+			BackgroundColor3 = rgb(24, 24, 32),
+			BackgroundTransparency = 0.08,
+			Font = Enum.Font.GothamBold,
+			TextColor3 = color,
+			TextSize = 13,
+			TextStrokeTransparency = 0.5,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			ZIndex = 4,
+		})
+		round(badge, 5)
+		stroke(badge, color, 1)
+		if name == "Rainbow" then
+			make("UIGradient", badge, {
+				Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, rgb(255, 100, 126)),
+					ColorSequenceKeypoint.new(0.5, rgb(255, 232, 112)),
+					ColorSequenceKeypoint.new(1, rgb(111, 205, 255)),
+				}),
+			})
+		end
+		index += 1
+	end
+end
+
 local function fishKey(record): string
 	return string.format("%s|%s|%s", tostring(record.FishId), tostring(record.Kg), tostring(record.CaughtAt))
 end
@@ -146,6 +198,7 @@ local function drawItem(parent: Instance, item, rotation: number): (Frame, { Fra
 			-- Rolling the camera turns the fish clockwise with its footprint.
 			camera.CFrame *= CFrame.Angles(0, 0, rotation * math.pi / 2)
 		end
+		mutationBadge(box, item.Fish)
 		if item.Locked then
 			text(box, "🔒", {
 				Name = "LockIcon",
@@ -495,11 +548,17 @@ function CargoHold.start()
 		local handHeld = holding ~= nil and holding.from == "Hand"
 		local fittingDraft = draft ~= nil and holding ~= nil and holding.from == "Draft"
 		local handDrawing = if open
-			then (if hand then fishKey(hand) else "") .. (if fittingDraft then "|" .. draft.PartId else "")
+			then (if hand then fishKey(hand) .. "|" .. tostring(hand.Mutation) .. "|" .. tostring(hand.NeonColor) else "") .. (if fittingDraft then "|" .. draft.PartId else "")
 			else nil
 		local redrawHand = handDrawing ~= nil and handDrawing ~= drawnHand
 		if redrawHand then
 			drawnHand = handDrawing
+			for _, child in handSlot:GetChildren() do
+				if child.Name == "MutationIcon" then
+					child:Destroy()
+				end
+			end
+			mutationBadge(handSlot, hand)
 			for _, child in handView:GetChildren() do
 				child:Destroy()
 			end
@@ -594,12 +653,14 @@ function CargoHold.start()
 				table.insert(
 					drawing,
 					string.format(
-						"%s:%s,%s,%s,%s",
+						"%s:%s,%s,%s,%s,%s,%s",
 						itemKey(item),
 						tostring(item.X),
 						tostring(item.Y),
 						tostring(item.R),
-						tostring(item.Locked)
+						tostring(item.Locked),
+						tostring(item.Fish and item.Fish.Mutation),
+						tostring(item.Fish and item.Fish.NeonColor)
 					)
 				)
 			end
