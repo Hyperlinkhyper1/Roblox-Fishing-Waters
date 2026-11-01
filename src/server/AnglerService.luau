@@ -32,8 +32,10 @@ function Service.recordCatch(
 )
 	local caughtAt = os.time()
 	local ownsAutoStore = GamepassService.ownsAutoStore(player)
+	local doubleXP = GamepassService.ownsDoubleXP(player)
 	local autoStored = false
 	local destination
+	local count
 	local ok, message = BoatService.updateProgress(player, function(profile)
 		local emptyHand = profile.Angler.Hand == nil
 		local backpackLayout = BackpackCatalog.Items[profile.Angler.BackpackId] or BackpackCatalog.Items.Starter
@@ -48,8 +50,10 @@ function Service.recordCatch(
 			Catalog.Mutations,
 			size,
 			traits,
-			backpackLayout
+			backpackLayout,
+			doubleXP
 		)
+		count = profile.Angler.Catches[fishId].Count
 		autoStored = false
 		if ownsAutoStore and emptyHand then
 			local boatId, model = BoatService.activeBoat(player)
@@ -62,7 +66,7 @@ function Service.recordCatch(
 			destination = "Boat"
 		end
 	end)
-	return ok, message, ok and autoStored, if ok then destination else nil
+	return ok, message, ok and autoStored, if ok then destination else nil, if ok then count else nil
 end
 
 function Service.start()
@@ -172,6 +176,7 @@ function Service.start()
 			end
 			ok, message = BoatService.updateProgress(player, function(current)
 				assert(not current.Angler.Staff[key], "Staff already hired")
+				assert(not role.Requires or Paths.unlocked(current, role.Requires), "Path is no longer unlocked")
 				assert(current.Cash >= role.Price, "Not enough cash to hire staff")
 				current.Cash -= role.Price
 				current.Angler.Stats.CoinsSpent += role.Price
@@ -181,7 +186,23 @@ function Service.start()
 				message = role.Name .. " hired! They will work at your home base."
 				if key == "Fisherman" then
 					message ..= " Assign him a boat below."
+				elseif key == "RestaurantChef" or key == "CompanyChef" then
+					message ..= " Choose a recipe below."
 				end
+			end
+		elseif action == "SetChefRecipe" then
+			local recipeId = if value == "" then nil else value
+			local _, reason = Data.setChefRecipe(profile.Angler, key, recipeId)
+			if reason then
+				return { Ok = false, Message = reason }
+			end
+			ok, message = BoatService.updateProgress(player, function(current)
+				local updated, failure = Data.setChefRecipe(current.Angler, key, recipeId)
+				assert(updated, failure)
+				current.Angler = updated
+			end)
+			if ok then
+				message = if recipeId then "Chef recipe updated." else "Chef paused."
 			end
 		elseif action == "BuyShopUpgrade" then
 			if key ~= "SocialMediaAdvertisement" then

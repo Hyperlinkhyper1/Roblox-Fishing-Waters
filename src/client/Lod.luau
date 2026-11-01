@@ -528,8 +528,9 @@ function Lod.start()
 		watchGround(island, id, model:FindFirstChild("Ground"))
 	end
 
-	-- Islands are the models directly inside each biome folder (see server/Map/Lod). Listening
-	-- there costs one call per island instead of one per part streaming into the map.
+	-- Islands are the models directly inside each biome folder, plus mainlands marked LodRoot
+	-- in the map itself (see server/Map/Lod). Listening there costs one call per island instead
+	-- of one per part streaming into the map.
 	local function onIsland(child: Instance)
 		if not child:IsA("Model") then
 			return
@@ -552,6 +553,9 @@ function Lod.start()
 			for _, child in folder:GetChildren() do
 				onIsland(child)
 			end
+		elseif folder:IsA("Model") and folder:GetAttribute("LodRoot") then
+			-- A mainland (the city) sits directly in the map rather than in a biome folder
+			onIsland(folder)
 		end
 	end
 	map.ChildAdded:Connect(onFolder)

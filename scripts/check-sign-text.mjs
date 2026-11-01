@@ -68,7 +68,7 @@ program += '\ndependencies.Theme = (function()\n' + await read('src/first/UIThem
 program += '\nlocal function loadMap()\n' + map + '\nend\nlocal Map = loadMap()\n';
 program += await read('scripts/sign-text.luau');
 const startup = await read('src/server/init.server.luau');
-if (!(startup.indexOf('Map.ensureSignText()') > startup.indexOf('.ensureBases(workspace.Map)')))
+if (!(startup.indexOf('Map.ensureSignText)') > startup.indexOf('.ensureBases(root)') && startup.indexOf('.ensureBases(root)') >= 0))
   throw new Error('Saved-map sign repair must run after map upgrades');
 const temporary = await mkdtemp(join(tmpdir(), 'fishing-signs-'));
 try {

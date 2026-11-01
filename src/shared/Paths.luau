@@ -62,7 +62,7 @@ Paths.Stages = {
 			.. "dish and pay more than shop prices when you serve it.",
 		Price = 15000,
 		Requires = { "Supermarket" },
-		Features = { "A dining room extension behind your house", "Diners pay 1.5x for the dish they order" },
+		Features = { "A dining room extension behind your house", "Diners pay 1.5x for the dish they order", "Hire a chef" },
 		Grants = { DiningTable = 2 },
 		Goals = {
 			{ Kind = "Stat", Stat = "DinersServed", Target = 25, Text = "Serve %d diners" },
@@ -78,7 +78,12 @@ Paths.Stages = {
 			.. "He brings the catch home for your porter to unload.",
 		Price = 20000,
 		Requires = { "Supermarket" },
-		Features = { "Hire a fisherman", "Assign him one of your boats" },
+		Features = {
+			"Hire a fisherman",
+			"Assign him one of your boats",
+			"Hire a chef",
+			"Buy the harbour tugboat at the shipyard",
+		},
 		Goals = {
 			{ Kind = "Staff", Role = "Fisherman", Text = "Hire a Fisherman" },
 			{ Kind = "Stat", Stat = "FishermanCatches", Target = 50, Text = "Your fisherman lands %d fish" },

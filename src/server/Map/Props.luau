@@ -1399,9 +1399,9 @@ function Props.crabCage(parent: Instance, frame: CFrame, float: boolean?): Model
 	return m
 end
 
--- A suspended mesh bag, with a marker buoy at the water surface.
-Props.MUSSEL_NET_SIZE = Vector3.new(3.2, 1.9, 2.4)
-Props.MUSSEL_NET_WATERLINE = 1.45
+-- A weighted vertical mesh panel suspended below a surface marker.
+Props.MUSSEL_NET_SIZE = Vector3.new(2.8, 4.4, 0.3)
+Props.MUSSEL_NET_WATERLINE = 5.1
 function Props.musselNet(parent: Instance, frame: CFrame, float: boolean?): Model
 	local m = newModel("MusselNet", parent)
 	local V = Vector3.new
@@ -1419,25 +1419,26 @@ function Props.musselNet(parent: Instance, frame: CFrame, float: boolean?): Mode
 	root.Transparency, root.CastShadow = 1, false
 	m.PrimaryPart = root
 	local netColor = rgb(93, 111, 78)
-	for _, z in { -1, 1 } do
-		for _, x in { -1.4, -0.9, -0.45, 0, 0.45, 0.9, 1.4 } do
-			cord(m, V(x, 0.15, z * 0.75), V(x, 1.5, z), 0.065, netColor)
-		end
-		for _, y in { 0.25, 0.7, 1.1, 1.5 } do
-			cord(m, V(-1.45, y, z * (0.7 + y * 0.2)), V(1.45, y, z * (0.7 + y * 0.2)), 0.065, netColor)
-		end
+	-- A single flat curtain of mesh, held open by ropes along its top and bottom.
+	for _, x in { -1.2, -0.8, -0.4, 0, 0.4, 0.8, 1.2 } do
+		cord(m, V(x, 0.25, 0), V(x, 4.25, 0), 0.055, netColor)
 	end
-	for _, x in { -1.45, 1.45 } do
-		for _, y in { 0.25, 0.7, 1.1, 1.5 } do
-			cord(m, V(x, y, -0.7 - y * 0.2), V(x, y, 0.7 + y * 0.2), 0.065, netColor)
-		end
-		cord(m, V(x, 1.5, 0), V(0, 2.2, 0), 0.08, ROPE)
+	for y = 0.25, 4.25, 0.4 do
+		cord(m, V(-1.2, y, 0), V(1.2, y, 0), 0.055, netColor)
+	end
+	cord(m, V(-1.3, 0.25, 0), V(1.3, 0.25, 0), 0.12, ROPE)
+	cord(m, V(-1.3, 4.25, 0), V(1.3, 4.25, 0), 0.12, ROPE)
+	for _, x in { -1.2, 1.2 } do
+		cord(m, V(x, 0.25, 0), V(x, 4.25, 0), 0.09, ROPE)
+		cord(m, V(x, 4.25, 0), V(0, 4.85, 0), 0.08, ROPE)
+		local weight = piece(m, V(0.25, 0.25, 0.25), CFrame.new(x, 0.25, 0), IRON, M.Metal)
+		weight.Shape = Enum.PartType.Ball
 	end
 	if float then
 		local buoy = newModel("Float", m)
-		local at = V(2.25, Props.MUSSEL_NET_WATERLINE, 0.85)
+		local at = V(1.7, Props.MUSSEL_NET_WATERLINE, 0.3)
 		buoy.WorldPivot = CFrame.new(frame * at)
-		cord(buoy, V(0, 2.2, 0), at, 0.07, ROPE)
+		cord(buoy, V(0, 4.85, 0), at, 0.07, ROPE)
 		local marker = piece(buoy, V(0.9, 0.9, 0.9), CFrame.new(at), rgb(72, 176, 176), M.SmoothPlastic)
 		marker.Shape = Enum.PartType.Ball
 		cord(buoy, at, at + V(0, 2, 0), 0.09, ROPE)

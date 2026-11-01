@@ -85,7 +85,7 @@ local game = {GetService=function(_, name)
 end}
 local warn = function() record("warning") end
 local look = {}
-local Biomes = {MapHalfSize=8, WaterLevel=0, SeaFloor=-64, Seed=1847}
+local Biomes = {MapHalfSize=8, WaterLevel=0, SeaFloor=-64, Seed=1847, OceanMax=8, CityOceanStart=8, DryPockets={}}
 for _, name in {"Normal", "Swamp", "Tropical", "Volcanic", "Ice", "OpenSea"} do
   Biomes[name] = {name=name, center={}, look=look}
 end
@@ -107,6 +107,7 @@ dependencies.Mediterranean = {
 }
 dependencies.Seabed = {shelf=function() record("shelf") end}
 dependencies.SeabedDetails = {ensure=function() record("seabed") end}
+dependencies.ModernCity = {VERSION=4, build=function() record("city") end}
 dependencies.Lod = {build=function() record("lod") end, prepareStreaming=function() record("streaming") end, serve=function() end}
 dependencies.Regions = {normal=function(ctx, ready)
   check(ctx.rng.seed == Biomes.Seed + 1, "Harbour must retain its seeded RNG")
@@ -149,8 +150,18 @@ local NORMAL = {land={}, rock={}}
 local function archipelago() record("archipelago"); return {} end
 local function forest() end
 local function scatterOn() end
+local function clumpedSpot() return nil end
+local TAU = math.pi * 2
+local Vector2 = {}
+local vector2Meta = {}
+function Vector2.new(x, y) return setmetatable({X=x, Y=y}, vector2Meta) end
+vector2Meta.__add = function(a, b) return Vector2.new(a.X + b.X, a.Y + b.Y) end
+vector2Meta.__mul = function(a, s) return Vector2.new(a.X * s, a.Y * s) end
 ${normal}
-local ctx = {rng={}, folder={}, biome=Biomes.Normal, placed={}}
+local rng = {}
+function rng:NextNumber(a, b) return (a or 0) + ((b or 1) - (a or 0)) * 0.5 end
+function rng:NextInteger(a, b) return a end
+local ctx = {rng=rng, folder={}, biome={center=Vector2.new(0, 0)}, placed={}}
 local spawn = Regions.normal(ctx, function(point)
   check(point == "spawn", "Readiness must use the harbour's real spawn")
   check(#ctx.placed == 1 and ctx.placed[1].radius == 820, "Reserve harbour footprint before continuation")
@@ -308,6 +319,16 @@ local modules = {Biomes=Biomes}
 local script = {ServerUpdates="ServerUpdates", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
   BoatService="BoatService", FishingService="FishingService", WeatherService="WeatherService",
   AnglerService="AnglerService", LeaderboardService="LeaderboardService"}
+for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "RestaurantService", "CompanyService", "TutorialService", "OxygenService", "DashboardService"} do
+  script[name] = name
+  modules[name] = {start=function() record(name) end}
+end
+script.Map.ChartCatalog = "ChartCatalog"
+modules.ChartCatalog = {start=function() record("ChartCatalog") end}
+script.ScaleModels = "ScaleModels"
+modules.ScaleModels = {ensure=function() record("ScaleModels") end}
+local deferred = {}
+task.defer = function(callback) table.insert(deferred, callback) end
 local function ready() return ReplicatedStorage:GetAttribute("FishingWatersWorldReady") == true end
 for _, name in {"ServerUpdates", "BaseService", "BoatService", "FishingService", "WeatherService", "AnglerService", "LeaderboardService", "AnglerService", "LeaderboardService"} do
   modules[name] = {start=function()
@@ -336,6 +357,7 @@ modules.Harbour.ensureSurf = function() cosmetic("surf") end
 modules.Mediterranean = {ensureBoats=function() cosmetic("decorative-boats") end}
 modules.Map = {
   prepareStreaming=function() check(not ready(), "Fix harbour streaming before readiness"); record("streaming") end,
+  ensureCity=function() cosmetic("city") end,
   ensureSeabedDetails=function() cosmetic("seabed") end,
   ensureLod=function() cosmetic("lod") end,
   ensureSignText=function() cosmetic("signs") end,
@@ -357,6 +379,10 @@ local require = function(module)
   return modules[if type(module) == "table" then module.moduleName else module]
 end
 ${server}
+for _, callback in deferred do callback() end
+if mode ~= "require-error" then
+  check(index("ScaleModels") < math.huge, "Build the admin scale models even when startup fails part-way")
+end
 if mode == "critical-error" or mode == "require-error" then
   check(not ready() and not Players.CharacterAutoLoads, "Critical failure must keep unsafe characters blocked")
   check(ReplicatedStorage:GetAttribute("FishingWatersStartupError"), "Critical failure must reach the loading screen")
@@ -381,7 +407,7 @@ print("Server startup ${mode}: " .. checks .. " checks passed")
 `);
   }
 
-  const baseService = await readFile(join(root, 'src/server/BaseService.luau'), 'utf8');
+  const baseService = (await readFile(join(root, 'src/server/BaseService.luau'), 'utf8')).replace('require(script.Parent.BoatService)', '{getProfile=function() return nil end}');
   for (const withBase of [true, false]) {
     await run('spawn-' + (withBase ? 'base' : 'plaza'), prelude + `
 local threads = {}
@@ -420,6 +446,7 @@ point.CFrame = setmetatable({Position=point.Position}, {__add=function(frame) re
 local player = object("Player", "Player")
 player.UserId, player.DisplayName = 42, "Tester"
 player.CharacterAdded = signal()
+function player:GetAttributeChangedSignal() return signal() end
 local function character()
   local item = object("Model", "Character", workspace)
   local root = object("BasePart", "HumanoidRootPart", item)

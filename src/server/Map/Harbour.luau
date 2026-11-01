@@ -569,6 +569,43 @@ local function pathSegment(
 	joint.CastShadow = false
 end
 
+-- Keep the base approach on the same axis as the shop door and zebra crossing.
+-- Older maps have an anonymous track aimed at a sampled road point; replace
+-- only the matching track pieces, leaving the surrounding village untouched.
+local function ensureBaseTrack(village: Instance, base: Model)
+	local house = base:FindFirstChild("BaseHouse")
+	local frame = house and house:GetAttribute("HouseFrame")
+	if typeof(frame) ~= "CFrame" then
+		return
+	end
+	local name = "BaseTrack" .. tostring(base:GetAttribute("BaseId"))
+	if village:FindFirstChild(name) then
+		return
+	end
+	local start = (frame :: CFrame) * Vector3.new(0, 0, 19)
+	local finish = (frame :: CFrame) * Vector3.new(0, 0, 52)
+	for _, item in village:GetChildren() do
+		if item:IsA("Part") and item.Material == M.Pebble and item.Color == DIRT then
+			local isJoint = item.Shape == Enum.PartType.Cylinder
+				and math.abs(item.Size.X - 0.6) < 0.01 and math.abs(item.Size.Y - 9) < 0.01
+				and (Vector2.new(item.Position.X, item.Position.Z) - Vector2.new(start.X, start.Z)).Magnitude < 0.1
+			local endA = item.CFrame * Vector3.new(0, 0, item.Size.Z / 2)
+			local endB = item.CFrame * Vector3.new(0, 0, -item.Size.Z / 2)
+			local isTrack = item.Shape == Enum.PartType.Block and math.abs(item.Size.X - 9) < 0.01
+				and math.abs(item.Size.Y - 0.6) < 0.01
+				and math.min((Vector2.new(endA.X, endA.Z) - Vector2.new(start.X, start.Z)).Magnitude,
+					(Vector2.new(endB.X, endB.Z) - Vector2.new(start.X, start.Z)).Magnitude) < 0.1
+			if isJoint or isTrack then
+				item:Destroy()
+			end
+		end
+	end
+	local track = Instance.new("Model")
+	track.Name = name
+	track.Parent = village
+	pathSegment(track, Vector2.new(start.X, start.Z), Vector2.new(finish.X, finish.Z), 9, DIRT, M.Pebble, 0.4)
+end
+
 -- True when the whole stretch from `a` to `b` stays on the island, back from the coast and out of
 -- the keep-out spots, so a street can run along it.
 local function roadClear(shape: Shape, keepOut: { Spot }, a: Vector2, b: Vector2): boolean
@@ -1078,6 +1115,40 @@ local function ensureDockAccess(base: Model, frame: CFrame)
 	access.Parent = base
 end
 
+-- A short stone staircase connects the quay to the shore between its two piers.
+-- This is independent of the dock version so already-saved bases receive it too.
+local function ensureBeachStairs(base: Model, frame: CFrame)
+	if base:FindFirstChild("BeachStairs") then
+		return
+	end
+	-- The original centre bollard sits directly in the path onto the deck.
+	for _, item in base:GetChildren() do
+		if item:IsA("BasePart") then
+			local p = frame:PointToObjectSpace(item.Position)
+			if (item.Size - Vector3.new(1.6, 1.4, 1.4)).Magnitude < 0.01
+				and (p - Vector3.new(0, 6.7, 9)).Magnitude < 0.01
+			then
+				item:Destroy()
+			end
+		end
+	end
+	local stairs = Instance.new("Model")
+	stairs.Name = "BeachStairs"
+	for i = 1, 7 do
+		local top = 5.9 * i / 7
+		local height = top + 0.2
+		local step = Props.part(
+			stairs,
+			Vector3.new(7, height, 1.2),
+			frame * CFrame.new(0, (top - 0.2) / 2, 0.4 + (i - 0.5) * 1.2),
+			QUAY,
+			M.Cobblestone
+		)
+		step.Name = "Step"
+	end
+	stairs.Parent = base
+end
+
 -- The legacy post extended through the lower half of the board and obscured both faces.
 local function ensureDockSign(base: Model)
 	local board = base:FindFirstChild("NameBoard")
@@ -1110,6 +1181,7 @@ local function buildBaseDocks(base: Model, frame: CFrame, index: number)
 	end
 	Props.dockLink(base, frame * CFrame.new(0, 3, -38), rng)
 	ensureDockAccess(base, frame)
+	ensureBeachStairs(base, frame)
 	base:SetAttribute("DockDetailVersion", DOCK_DETAIL_VERSION)
 end
 
@@ -1230,6 +1302,75 @@ local function buildBase(
 	local center = at(-34, 0, 0)
 	local back = at(-62, 0, 0)
 	return Vector2.new(center.X, center.Z), Vector2.new(back.X, back.Z)
+end
+
+-- Each base's shop stands across the ring road from its house (BaseHouse builds it). Village
+-- houses, lamps and cross streets generated over that plot are cleared afterwards, on baked maps
+-- too, so the seeded stream that laid out the rest of the village is left untouched.
+local SHOP_PLOT_VERSION = 1
+local SHOP_PLOT = { -26.5, 60, 26.5, 84.8 } -- house-local x1, z1, x2, z2: forecourt to back eaves
+
+-- Separating-axis test between a (possibly turned) box and the plot, in the house's floor plane.
+local function overlapsShopPlot(frame: CFrame, box: CFrame, size: Vector3): boolean
+	local center = frame:PointToObjectSpace(box.Position)
+	local offset = Vector2.new(center.X - (SHOP_PLOT[1] + SHOP_PLOT[3]) / 2, center.Z - (SHOP_PLOT[2] + SHOP_PLOT[4]) / 2)
+	local plotHalf = Vector2.new((SHOP_PLOT[3] - SHOP_PLOT[1]) / 2, (SHOP_PLOT[4] - SHOP_PLOT[2]) / 2)
+	local reaches = {}
+	for _, vector in { box.RightVector * size.X / 2, box.UpVector * size.Y / 2, box.LookVector * size.Z / 2 } do
+		local flat = frame:VectorToObjectSpace(vector)
+		table.insert(reaches, Vector2.new(flat.X, flat.Z))
+	end
+	local axes = { Vector2.new(1, 0), Vector2.new(0, 1) }
+	for _, reach in reaches do
+		if reach.Magnitude > 1e-3 then
+			table.insert(axes, reach.Unit)
+		end
+	end
+	for _, axis in axes do
+		local boxReach = 0
+		for _, reach in reaches do
+			boxReach += math.abs(reach:Dot(axis))
+		end
+		if math.abs(offset:Dot(axis)) >= boxReach + math.abs(axis.X) * plotHalf.X + math.abs(axis.Y) * plotHalf.Y then
+			return false
+		end
+	end
+	return true
+end
+
+local function clearShopPlots(island: Instance)
+	local bases = island:FindFirstChild("Bases")
+	local village = island:FindFirstChild("Village")
+	if island:GetAttribute("ShopPlotVersion") == SHOP_PLOT_VERSION or not bases or not village then
+		return
+	end
+	local frames = {}
+	for _, base in bases:GetChildren() do
+		local house = base:FindFirstChild("BaseHouse")
+		local frame = house and house:GetAttribute("HouseFrame")
+		if typeof(frame) == "CFrame" then
+			table.insert(frames, frame)
+		end
+	end
+	for _, group in { village:FindFirstChild("Houses"), village:FindFirstChild("CrossStreets") } do
+		for _, item in if group then group:GetChildren() else {} do
+			local box, size
+			if item:IsA("Model") then
+				box, size = item:GetBoundingBox()
+			elseif item:IsA("BasePart") then
+				box, size = item.CFrame, item.Size
+			else
+				continue
+			end
+			for _, frame in frames do
+				if overlapsShopPlot(frame, box, size) then
+					item:Destroy()
+					break
+				end
+			end
+		end
+	end
+	island:SetAttribute("ShopPlotVersion", SHOP_PLOT_VERSION)
 end
 ----------------------------------------------------------------------------------------------------
 -- Village
@@ -1655,21 +1796,6 @@ local function buildForest(shape: Shape, island: Model, spots: { Spot }, rng: Ra
 			task.wait()
 		end
 	end
-	-- Pale limestone rocks on the rocky coast; keep the bathing beach and its
-	-- waterline clear, including a margin for the largest boulder's footprint.
-	for _ = 1, 100 do
-		local p = coast[rng:NextInteger(1, #coast)]
-		local q = p:Lerp(coast[rng:NextInteger(1, #coast)], rng:NextNumber(0, 0.03))
-		local spot = Islands.surface(island, q.X + rng:NextNumber(-14, 14), q.Y + rng:NextNumber(-14, 14))
-		if
-			spot
-			and spot.Y > -3
-			and nearestOnLine(shape.beach, Vector2.new(spot.X, spot.Z)) > BEACH_WIDTH + 24
-			and isFree(spots, Vector2.new(spot.X, spot.Z), 4)
-		then
-			Props.boulder(model, spot, rng, rng:NextNumber(3, 8), ROCK, M.Limestone)
-		end
-	end
 end
 
 -- Painted fishing boats riding at anchor around the bay, clear of the base piers.
@@ -1789,8 +1915,16 @@ function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	-- Dirt tracks from each base and the lighthouse up to the road, with signposts at the junctions
 	for i, back in baseBacks do
 		local joint = nearestRoad(road, back)
-		pathSegment(village, back, joint.position, 9, DIRT, M.Pebble, 0.4)
-		reservePath(spots, back, joint.position, 11)
+		local base = bases:FindFirstChild("Base" .. i)
+		if base and base:IsA("Model") then
+			ensureBaseTrack(village, base)
+			local house = base:FindFirstChild("BaseHouse")
+			local frame = house and house:GetAttribute("HouseFrame")
+			if typeof(frame) == "CFrame" then
+				local endPoint = frame * Vector3.new(0, 0, 52)
+				reservePath(spots, back, Vector2.new(endPoint.X, endPoint.Z), 11)
+			end
+		end
 		local signAt = joint.position - joint.inland * (ROAD_WIDTH / 2 + 2)
 		local side = Vector2.new(-joint.inland.Y, joint.inland.X)
 		Props.signpost(
@@ -1827,6 +1961,7 @@ function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	buildForest(shape, island, spots, rng)
 	-- The piazza's own terraces go in last, clearing any generated house or tree off their plots
 	PlazaHouses.build(village:FindFirstChild("Plaza") :: Model, CFrame.new(ground(plaza, 0.8)))
+	clearShopPlots(island)
 	buildBoats(shape, island, rng, baseShores)
 	Harbour.ensureBaseOneBoatClearance(island)
 	Harbour.ensureLaunchClearance(island)
@@ -1861,6 +1996,7 @@ function Harbour.ensureDocks(root: Instance)
 			base:SetAttribute("BoatDockFrame", frame)
 		end
 		ensureDockAccess(base, frame)
+		ensureBeachStairs(base, frame)
 		if base:GetAttribute("DockDetailVersion") == DOCK_DETAIL_VERSION then
 			continue
 		end
@@ -1988,6 +2124,15 @@ end
 function Harbour.ensureBoating(root: Instance)
 	for _, island in root:GetDescendants() do
 		if island:IsA("Model") and island.Name == "Harbour Isle" then
+			-- Saved maps may still contain the old coastal boulders.
+			local forest = island:FindFirstChild("Forest")
+			if forest then
+				for _, prop in forest:GetChildren() do
+					if prop:IsA("Model") and prop.Name == "Boulder" then
+						prop:Destroy()
+					end
+				end
+			end
 			local groundMesh = island:FindFirstChild("Ground")
 			local shop = island:FindFirstChild("Drydock", true)
 			local footprint = shop and shop:FindFirstChild("ShopFootprint")
@@ -2014,18 +2159,39 @@ function Harbour.ensureFishing(root: Instance)
 	PlazaHouses.ensure(root)
 end
 
--- Saved maps keep their terrain and docks while receiving the current base house.
+-- Saved maps keep their terrain and docks while receiving the current base house
+-- and the shop across the road from it.
 function Harbour.ensureBases(root: Instance)
+	local islands = { root }
 	for _, item in root:GetDescendants() do
 		if item:IsA("Model") and CollectionService:HasTag(item, Harbour.BASE_TAG) then
 			BaseHouse.ensure(item)
+		elseif item.Name == "Harbour Isle" then
+			table.insert(islands, item)
+		end
+	end
+	for _, island in islands do
+		clearShopPlots(island)
+		local village, bases = island:FindFirstChild("Village"), island:FindFirstChild("Bases")
+		if village and bases then
+			for _, base in bases:GetChildren() do
+				if base:IsA("Model") then
+					ensureBaseTrack(village, base)
+				end
+			end
 		end
 	end
 end
 
 -- Saved beaches receive moving surf without rebuilding their terrain or decorations.
 function Harbour.ensureSurf(root: Instance, center: Vector2)
+	-- Runs after players are in, over the whole map: yield now and then to stay inside the script timeout
+	local resumed = os.clock()
 	for _, island in root:GetDescendants() do
+		if os.clock() - resumed > 0.05 then
+			task.wait()
+			resumed = os.clock()
+		end
 		if not island:IsA("Model") or island.Name ~= "Harbour Isle" then
 			continue
 		end

@@ -8,10 +8,14 @@ local TweenService = game:GetService("TweenService")
 
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local GamepassService = require(script.Parent.GamepassService)
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
 local AnglerCatalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local BoatUpgrades = require(ReplicatedStorage.Shared.BoatUpgrades)
+local CatchConditions = require(ReplicatedStorage.Shared.CatchConditions)
+local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
+local Seasons = require(ReplicatedStorage.Shared.Seasons)
 local TrawlerNet = require(ReplicatedStorage.Shared.TrawlerNet)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
@@ -248,13 +252,19 @@ local function catchFish(player: Player, boatId: string, model: Model)
 	if not profile or not layout or not root then
 		return
 	end
-	local pool = AnglerCatalog.Pools[if Weather.inLake(root.Position) then AnglerCatalog.DefaultPool else "OpenSea"]
+	local pool = FishCatch.inSeason(
+		AnglerCatalog.Pools[if Weather.inLake(root.Position) then AnglerCatalog.DefaultPool else "OpenSea"],
+		AnglerCatalog.Fish,
+		(Seasons.current()),
+		CatchConditions.at(root.Position)
+	)
 	local roll = TrawlerNet.roll(pool, AnglerCatalog.Fish, AnglerCatalog.Rarities, function()
 		return random:NextNumber()
 	end)
 	if not roll then
 		return
 	end
+	local doubleXP = GamepassService.ownsDoubleXP(player)
 	local caught = false
 	local ok = BoatService.updateProgress(player, function(current)
 		local data = AnglerData.netCatch(
@@ -264,7 +274,8 @@ local function catchFish(player: Player, boatId: string, model: Model)
 			roll,
 			os.time(),
 			AnglerCatalog.Fish,
-			AnglerCatalog.Mutations
+			AnglerCatalog.Mutations,
+			doubleXP
 		)
 		if data then
 			current.Angler = data

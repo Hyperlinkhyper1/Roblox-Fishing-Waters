@@ -77,6 +77,8 @@ remotes.Name, remotes.Parent = "Boating", ReplicatedStorage
 local request, feedback = Instance.new("RemoteEvent"), Instance.new("RemoteEvent")
 request.Name, request.Parent = "Request", remotes
 feedback.Name, feedback.Parent, feedback.OnClientEvent = "Feedback", remotes, signal()
+local trawlerNet = Instance.new("RemoteEvent")
+trawlerNet.Name, trawlerNet.Parent, trawlerNet.OnClientEvent = "TrawlerNet", ReplicatedStorage, signal()
 local requests = {}
 function request:FireServer(action, id)
 	table.insert(requests, { action, id })
@@ -288,6 +290,18 @@ check(view.CurrentCamera.CFrame == pausedCamera, "Hidden previews stop updating"
 feedback.OnClientEvent:Fire("OpenDialogue")
 check(card.Size.X.Offset == 380 and card.Size.Y.Offset == 500, "Shipwright dialogue restores its original card size")
 check(cameraStops > 0, "Dismissal retains existing world-camera restoration")
+
+-- The tugboat shows its Company path lock until the server lifts it.
+player:SetAttribute("BoatDataStatus", "Ready")
+player:SetAttribute("Cash", 20000)
+player:SetAttribute("BoatLockedTugboat", true)
+feedback.OnClientEvent:Fire("OpenShop", nil, "Tugboat")
+local buy = card:FindFirstChild("BuyBoat", true)
+check(card:FindFirstChild("SelectTugboat", true) ~= nil, "The shipyard lists the tugboat")
+check(buy and not buy.Active and buy.Text == "Unlocks with The Company", "A locked tugboat cannot be bought")
+player:SetAttribute("BoatLockedTugboat", false)
+check(buy.Active and string.find(buy.Text, "Buy & launch", 1, true) ~= nil, "Unlocking the Company path enables the tugboat purchase")
+card:FindFirstChild("CloseShop").Activated:Fire()
 
 -- The helm control follows server light state and shares mouse/touch and keyboard input.
 overlay.Visible = false

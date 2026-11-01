@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 local CastAnimation = require(script.Parent.CastAnimation)
 local FishingAudio = require(script.Parent.FishingAudio)
 local Reel = require(script.Parent.ReelMinigame)
+local CatchPopup = require(script.Parent.CatchPopup)
 local FishingBobber = require(ReplicatedStorage.Shared.FishingBobber)
 
 local Casting = {}
@@ -201,6 +202,7 @@ function Casting.start()
 	gui.IgnoreGuiInset = false
 	gui.Parent = player:WaitForChild("PlayerGui")
 	local reel = Reel.new(gui)
+	local popup = CatchPopup.new(gui)
 
 	-- Small prompt shown while a rod is in hand.
 	local hud = Instance.new("Frame")
@@ -455,7 +457,8 @@ function Casting.start()
 			reel:showMessage("IT GOT AWAY", "The fish slipped the hook. Cast again!")
 		elseif kind == "Caught" and type(payload) == "table" then
 			FishingAudio.catch()
-			reel:showCatch(payload)
+			reel:dismiss()
+			popup:showCatch(payload)
 		end
 		refreshHud()
 	end)

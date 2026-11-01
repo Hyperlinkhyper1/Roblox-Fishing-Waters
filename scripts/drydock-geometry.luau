@@ -3,6 +3,7 @@
 -- recording mocks; it does not run Roblox physics or replace Studio play.
 -- SHARED_PRIMITIVES --
 
+Vector3.one = Vector3.new(1, 1, 1)
 Vector3.xAxis = Vector3.new(1, 0, 0)
 Vector3.yAxis = Vector3.new(0, 1, 0)
 Vector3.zAxis = Vector3.new(0, 0, 1)
@@ -372,6 +373,14 @@ local function loadTrawler()
 	-- TRAWLER_SOURCE --
 end
 dependencies.Trawler = loadTrawler()
+local function loadTugboat()
+	-- TUGBOAT_SOURCE --
+end
+dependencies.Tugboat = loadTugboat()
+local function loadHovercraft()
+	-- HOVERCRAFT_SOURCE --
+end
+dependencies.Hovercraft = loadHovercraft()
 local function loadShipwright()
 	-- SHIPWRIGHT_SOURCE --
 end
@@ -669,10 +678,10 @@ Harbour.ensureBoating(root)
 local plaza = root:FindFirstChild("Plaza", true)
 local shop = plaza:FindFirstChild("Drydock")
 check(shop ~= nil and CollectionService:HasTag(shop, "BoatShop"), "Actual shop must exist and be tagged")
-check(shop:GetAttribute("LayoutVersion") == 14, "Industrial shop must declare its migration version")
+check(shop:GetAttribute("LayoutVersion") == 16, "Industrial shop must declare its migration version")
 check(
-	shop:GetAttribute("BoatId") == "Rowboat" and shop:GetAttribute("Price") == 500,
-	"The default shop boat must preserve the $500 rowboat"
+	shop:GetAttribute("BoatId") == "Rowboat" and shop:GetAttribute("Price") == 0,
+	"The default shop boat must be the free rowboat"
 )
 local paving
 for _, child in plaza:GetChildren() do
@@ -1328,7 +1337,7 @@ end
 Harbour.ensureBoating(baked)
 local replacement = oldPlaza:FindFirstChild("Drydock")
 check(legacy.Parent == nil and replacement ~= legacy, "Version-one counter shop was not replaced")
-check(replacement:GetAttribute("LayoutVersion") == 14, "Saved map did not receive the industrial layout")
+check(replacement:GetAttribute("LayoutVersion") == 16, "Saved map did not receive the industrial layout")
 check(
 	replacement:FindFirstChild("TalkToShipwrightPrompt", true) ~= nil
 		and replacement:FindFirstChild("BuyRowboatPrompt", true) == nil,
@@ -1421,7 +1430,7 @@ Harbour.ensureBoating(bakedV2)
 local replacementV2 = plazaV2:FindFirstChild("Drydock")
 check(legacyV2.Parent == nil and replacementV2 ~= legacyV2, "Saved version-two workshop was not upgraded")
 check(
-	replacementV2:GetAttribute("LayoutVersion") == 14,
+	replacementV2:GetAttribute("LayoutVersion") == 16,
 	"Saved version-two workshop did not receive the rear drydock layout"
 )
 local savedRearV2 = replacementV2:FindFirstChild("RearDrydock")
@@ -1529,7 +1538,7 @@ local function checkLaunchFlow()
 	Harbour.ensureBoating(bakedV2)
 	local upgradedV3 = plazaV2:FindFirstChild("Drydock")
 	check(
-		upgradedV3 ~= replacementV2 and upgradedV3:GetAttribute("LayoutVersion") == 14,
+		upgradedV3 ~= replacementV2 and upgradedV3:GetAttribute("LayoutVersion") == 16,
 		"Saved version-three rear yard must upgrade to the working drydock"
 	)
 	check(
@@ -1542,7 +1551,7 @@ local function checkLaunchFlow()
 	Harbour.ensureBoating(bakedV2)
 	local upgradedV4 = plazaV2:FindFirstChild("Drydock")
 	check(
-		upgradedV4 ~= upgradedV3 and upgradedV4:GetAttribute("LayoutVersion") == 14
+		upgradedV4 ~= upgradedV3 and upgradedV4:GetAttribute("LayoutVersion") == 16
 			and not upgradedV4:FindFirstChild("FishingBerthFloor", true)
 			and typeof(upgradedV4:GetAttribute("FishingBoatPreviewFrame")) == "CFrame",
 		"Saved yards must retain boat launch frames without side berths"
@@ -1553,7 +1562,7 @@ local function checkLaunchFlow()
 	extraDeck.Name, extraDeck.Parent = "LaunchPlatformDeck", upgradedV4
 	Harbour.ensureBoating(bakedV2)
 	local upgradedV6 = plazaV2:FindFirstChild("Drydock")
-	check(upgradedV6 ~= upgradedV4 and upgradedV6:GetAttribute("LayoutVersion") == 14
+	check(upgradedV6 ~= upgradedV4 and upgradedV6:GetAttribute("LayoutVersion") == 16
 		and not upgradedV6:FindFirstChild("LaunchPlatformDeck", true)
 		and not upgradedV6:FindFirstChild("LiftAccessWalkway", true),
 		"Saved extra-platform layouts must be replaced with the original lift bay")
@@ -1563,7 +1572,7 @@ local function checkLaunchFlow()
 	oldSide.Name, oldSide.Parent = "PatrolBerthFloor", upgradedV6
 	Harbour.ensureBoating(bakedV2)
 	local singleDock = plazaV2:FindFirstChild("Drydock")
-	check(singleDock ~= upgradedV6 and singleDock:GetAttribute("LayoutVersion") == 14
+	check(singleDock ~= upgradedV6 and singleDock:GetAttribute("LayoutVersion") == 16
 		and not singleDock:FindFirstChild("PatrolBerthFloor", true)
 		and singleDock:FindFirstChild("LaunchPreview", true),
 		"Saved five-dock yards must keep only the center drydock and rowboat")
@@ -1749,7 +1758,7 @@ local function checkLaunchFlow()
 	check(nextPreview ~= preview and nextPreview.Parent, "Completed launch must replenish the shop preview")
 	check(preview.Parent == root, "Replenishing the preview must preserve the purchased boat")
 	local patrolScale = dependencies.BoatCatalog.PatrolBoat.Length / 42
-	for _, boatId in { "FishingBoat", "Speedboat", "RacingSpeedboat", "PatrolBoat", "Trawler" } do
+	for _, boatId in { "FishingBoat", "Speedboat", "RacingSpeedboat", "PatrolBoat", "Trawler", "Tugboat", "Hovercraft" } do
 		local previewName = boatId .. "Preview"
 		local rowPivot = nextPreview:GetPivot()
 		check(not shop:FindFirstChild(previewName, true), "Larger boats must not occupy side docks")

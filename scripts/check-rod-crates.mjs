@@ -14,6 +14,7 @@ try {
   const physics = await read('scripts/rod-physics.luau');
   const menu = await read('scripts/player-menu.luau');
   const bobberSkins = await read('src/shared/BobberSkins.luau');
+  const spearSkins = await read('src/shared/SpearSkins.luau');
   const sources = {
     FISHING_ROD: (await read('src/shared/FishingRod.luau'))
       .replace('require(script.Parent.RodSkins)', '{ DefaultWear = 0.2 }'),
@@ -31,6 +32,8 @@ try {
       .replace('require(Shared:WaitForChild("FishingRod"))', 'FishingRod')
       .replace('require(Shared:WaitForChild("RodSkins"))', 'RodSkins')
       .replace('require(Shared:WaitForChild("BobberSkins"))', () => `(function()\n${bobberSkins}\nend)()`)
+      .replace('require(Shared:WaitForChild("SpearSkins"))', () => `(function()\n${spearSkins}\nend)()`)
+      .replace('require(Shared:WaitForChild("Spears"))', 'FishingRod')
       .replace('require(Shared:WaitForChild("FishingBobber"))', 'FishingRod')
       .replace('require(script.Parent:WaitForChild("RodCrateReveal"))', 'CrateReveal')
       .replace('require(script.Parent:WaitForChild("RodCaseOpening"))', 'RodCaseOpening'),

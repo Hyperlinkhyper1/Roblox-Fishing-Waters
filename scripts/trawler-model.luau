@@ -74,6 +74,24 @@ for _, frame in { CFrame.new(), CFrame.new(83, 5, -61) * CFrame.Angles(0, 1.17, 
 			end
 		end
 		partCount = #parts
+		local front = frame * CFrame.new(0, 6.28, -12.43) * CFrame.Angles(math.rad(-10), 0, 0)
+		local panes, seals = 0, 0
+		for _, p in parts do
+			if p.Name == "Windscreen" then
+				panes += 1
+				check(p.Transparency > 0, "Windscreen panes must be transparent")
+			elseif p.Name == "WindscreenSeal" then
+				seals += 1
+				local pos = front:ToObjectSpace(p.CFrame).Position
+				local paneX = math.floor((pos.X + 1.1) / 2.2) * 2.2
+				check(
+					math.abs(pos.X - paneX) - p.Size.X / 2 >= 0.94
+						or math.abs(pos.Y) - p.Size.Y / 2 >= 1.45,
+					"Windscreen seals must leave the pane clear"
+				)
+			end
+		end
+		check(panes == 3 and seals == 12, "All three windscreens have open seal frames")
 		check(#parts < 1600, "Detailed trawler stays within its assembly budget")
 		check(
 			#seats == 3 and model:FindFirstChild("HelmSeat"):IsA("VehicleSeat"),

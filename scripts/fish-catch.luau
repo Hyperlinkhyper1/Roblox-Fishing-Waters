@@ -25,7 +25,9 @@ local function rng()
 end
 
 local pool = Catalog.Pools[Catalog.DefaultPool]
-check(#pool.Fish == 10, "Main lake lists all ten species")
+for _, id in { "Trout", "Stingray", "Pike", "Sunfish", "MidnightCarp", "Crimsonfish", "Glacierfish" } do
+	check(table.find(pool.Fish, id), "Main lake lists " .. id)
+end
 for _, catchPool in Catalog.Pools do
 	check(#catchPool.Junk == 3, "All three junk catches are available in " .. catchPool.Name)
 	for _, sample in
@@ -94,7 +96,11 @@ check(FishCatch.minimumFightSeconds(1) > FishCatch.minimumFightSeconds(0), "Hard
 
 -- Open sea: its own species, still clustered around a normal weight, worth more.
 local sea = Catalog.Pools.OpenSea
-check(sea and #sea.Fish == 9, "Open sea lists all nine species")
+for _, id in { "Clownfish", "Yellowshark", "GreenSturgeon", "Albacore", "Crimsonfish", "Glacierfish" } do
+	check(table.find(sea.Fish, id), "Open sea lists " .. id)
+end
+-- Only these species live in both the lake and the open sea.
+local shared = { Crimsonfish = true, TigerTrout = true, Glacierfish = true }
 local function averageValue(fishPool)
 	local total, seen = 0, {}
 	for _ = 1, 50000 do
@@ -111,12 +117,92 @@ for _, id in sea.Fish do
 	check(fish ~= nil and fish.Shapes ~= nil, "Sea species is fully defined: " .. id)
 	check(fish.MinKg < fish.AverageKg and fish.AverageKg < fish.MaxKg, "Normal weight sits inside the range: " .. id)
 	check(seaSeen[id], "Every sea species can be caught: " .. id)
-	check(table.find(pool.Fish, id) == nil, "Sea species stay out of the lake: " .. id)
+	check(shared[id] or table.find(pool.Fish, id) == nil, "Sea species stay out of the lake: " .. id)
+end
+for id in shared do
+	check(table.find(pool.Fish, id) and table.find(sea.Fish, id), "Shared species are in both pools: " .. id)
 end
 for _, id in sea.Junk do
 	check(seaSeen[id], "Every junk item can be caught at sea: " .. id)
 end
 check(seaAverage > lakeAverage * 1.5, "Sea catches are worth clearly more on average")
+
+-- Seasons: every pool fish lists its seasons in calendar order; junk bites all year.
+local ORDER = { "Spring", "Summer", "Autumn", "Winter" }
+local all = { Rain = true, Night = true, Beach = true }
+for _, catchPool in Catalog.Pools do
+	for _, id in catchPool.Fish do
+		local list = Catalog.Fish[id].Seasons
+		check(list and #list >= 1 and #list <= 4, id .. " lists its seasons")
+		for index = 2, #list do
+			check(table.find(ORDER, list[index - 1]) < table.find(ORDER, list[index]), id .. " seasons are in order")
+		end
+	end
+	for _, id in catchPool.Junk do
+		check(Catalog.Fish[id].Seasons == nil, id .. " turns up all year")
+	end
+	check(#catchPool.Fish > 0, catchPool.Name .. " pool itself is untouched")
+	for _, season in ORDER do
+		local open = FishCatch.inSeason(catchPool, Catalog.Fish, season, all)
+		check(#open.Fish > 0 and #open.Junk == #catchPool.Junk, catchPool.Name .. " has fish in " .. season)
+		for _, id in open.Fish do
+			check(table.find(Catalog.Fish[id].Seasons, season), id .. " only bites in its seasons")
+		end
+	end
+end
+local summerOnly = { Fish = { "Trout" }, Junk = { "WoodenBranch" } }
+local winter = FishCatch.inSeason(summerOnly, Catalog.Fish, "Winter")
+check(#winter.Fish == 0, "Summer fish are gone in winter")
+for _ = 1, 200 do
+	local roll = FishCatch.roll(winter, Catalog.Fish, Catalog.Rarities, rng)
+	check(Catalog.Fish[roll.FishId].Rarity == "Junk", "Out-of-season casts only land junk")
+end
+local mixed = { Fish = { "Trout", "ShoreCrab" } }
+local offSeason = FishCatch.inSeason(mixed, Catalog.Fish, "Autumn")
+check(#offSeason.Fish == 1 and offSeason.Fish[1] == "ShoreCrab", "Species without a season stay in every season")
+local winterLake = FishCatch.inSeason(pool, Catalog.Fish, "Winter", all)
+for _, id in { "Glacierfish", "Lingcod", "Walleye", "MidnightCarp", "TigerTrout" } do
+	check(table.find(winterLake.Fish, id), id .. " bites in the winter lake")
+end
+check(table.find(winterLake.Fish, "Trout") == nil, "Summer-only lake fish are gone in winter")
+
+-- Conditions: rain, night and beach species only bite when that holds.
+local conditional = { Fish = { "Tilapia", "RainbowTrout", "MidnightCarp", "Crimsonfish", "Pike" } }
+local function bites(season, conditions)
+	local open = {}
+	for _, id in FishCatch.inSeason(conditional, Catalog.Fish, season, conditions).Fish do
+		open[id] = true
+	end
+	return open
+end
+local dry = bites("Summer", { Rain = false, Night = false, Beach = false })
+check(
+	dry.Pike and not dry.Tilapia and not dry.RainbowTrout and not dry.Crimsonfish,
+	"Conditional fish need their condition"
+)
+check(next(bites("Summer", nil)) == "Pike", "Without conditions only unconditional fish bite")
+local wet = bites("Summer", { Rain = true })
+check(wet.Tilapia and wet.RainbowTrout and not wet.Crimsonfish, "Rain brings tilapia and rainbow trout")
+check(bites("Summer", { Beach = true }).Crimsonfish, "Crimsonfish bite at beaches")
+check(bites("Autumn", { Night = true }).MidnightCarp, "Midnight carp bite at night")
+check(not bites("Summer", { Night = true }).MidnightCarp, "Midnight carp still keep their seasons")
+
+-- Bestiary labels read each season list as one range.
+for id, label in
+	{
+		Trout = "Summer",
+		Pike = "Summer–Autumn",
+		Herring = "Winter–Spring",
+		MidnightCarp = "Autumn–Spring (night)",
+		RedSnapper = "Summer–Winter",
+		Flounder = "All year",
+		Tilapia = "Summer–Autumn (rain)",
+		Crimsonfish = "Summer (beach)",
+		ShoreCrab = "All year",
+	}
+do
+	check(FishCatch.seasonLabel(Catalog.Fish[id]) == label, id .. " season label is " .. label)
+end
 
 local function percent(value)
 	return string.format("%.2f%%", value / rolls * 100)

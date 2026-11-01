@@ -95,51 +95,204 @@ Catalog.Fish = {
 		Huge = { "####.", "#####", "####." },
 	}),
 
-	-- Open sea species are worth roughly double their lake tier.
-	Clownfish = species("Clownfish", "Common", 4, 0.03, 0.09, 0.45, 16, 0.03, {
+	-- Open sea species are worth roughly double their lake tier, plus 20%.
+	Clownfish = species("Clownfish", "Common", 4, 0.03, 0.09, 0.45, 19, 0.03, {
 		Normal = { "#" },
 		Big = { "##" },
 		Huge = { "##", "##" },
 	}),
-	Sardine = species("Sardine", "Common", 4, 0.04, 0.12, 0.5, 15, 0.04, {
+	Sardine = species("Sardine", "Common", 4, 0.04, 0.12, 0.5, 18, 0.04, {
 		Normal = { "#" },
 		Big = { "##" },
 		Huge = { "###" },
 	}),
-	Anchovy = species("Anchovy", "Common", 4, 0.01, 0.04, 0.18, 14, 0.05, {
+	Anchovy = species("Anchovy", "Common", 4, 0.01, 0.04, 0.18, 17, 0.05, {
 		Normal = { "#" },
 		Big = { "#" },
 		Huge = { "##" },
 	}),
-	Catfish = species("Catfish", "Uncommon", 9, 0.6, 3, 28, 40, 0.04, {
+	Catfish = species("Catfish", "Uncommon", 9, 0.6, 3, 28, 48, 0.04, {
 		Normal = { "###" },
 		Big = { "###", "###" },
 		Huge = { "####", "####" },
 	}),
-	Pufferfish = species("Pufferfish", "Uncommon", 9, 0.2, 0.9, 6, 44, 0.02, {
+	Pufferfish = species("Pufferfish", "Uncommon", 9, 0.2, 0.9, 6, 53, 0.02, {
 		Normal = { "#" },
 		Big = { "##", "##" },
 		Huge = { ".#.", "###", ".#." },
 	}),
-	YellowfinTuna = species("Yellowfin Tuna", "Rare", 20, 6, 35, 200, 125, 0.08, {
+	YellowfinTuna = species("Yellowfin Tuna", "Rare", 12, 6, 35, 200, 150, 0.08, {
 		Normal = { "###", "###" },
 		Big = { "####", "####" },
 		Huge = { ".####.", "######", ".####." },
 	}),
-	Sailfish = species("Sailfish", "Epic", 50, 12, 40, 150, 310, 0.07, {
+	Sailfish = species("Sailfish", "Epic", 30, 12, 40, 150, 372, 0.07, {
 		Normal = { ".##.", "####" },
 		Big = { ".###.", "#####" },
 		Huge = { ".####.", "######" },
 	}),
-	Swordfish = species("Swordfish", "Epic", 50, 20, 90, 600, 340, 0.06, {
+	Swordfish = species("Swordfish", "Epic", 30, 20, 90, 600, 408, 0.06, {
 		Normal = { "####" },
 		Big = { "#####", ".###." },
 		Huge = { "#######", ".#####." },
 	}),
-	Yellowshark = species("Yellowshark", "Legendary", 150, 40, 180, 1100, 1050, 0.08, {
+	Yellowshark = species("Yellowshark", "Legendary", 90, 40, 180, 1100, 1260, 0.08, {
 		Normal = { "..#..", "#####", "#####" },
 		Big = { "...#..", "######", "######", ".####." },
 		Huge = { "...#...", "#######", "#######", "#######", ".#####." },
+	}),
+
+	-- Main lake additions.
+	Pike = species("Pike", "Uncommon", 9, 0.5, 2.5, 25, 26, 0.07, {
+		Normal = { "###" },
+		Big = { "####" },
+		Huge = { "#####", ".###." },
+	}),
+	ShovelnoseSturgeon = species("Shovelnose Sturgeon", "Epic", 50, 0.8, 2.5, 8, 165, 0.05, {
+		Normal = { "####" },
+		Big = { "#####" },
+		Huge = { "#####", ".###." },
+	}),
+	Tilapia = species("Tilapia", "Common", 4, 0.2, 0.8, 4, 10, 0.02, {
+		Normal = { "##" },
+		Big = { "##", "##" },
+		Huge = { "###", "###" },
+	}),
+	RainbowTrout = species("Rainbow Trout", "Rare", 20, 0.3, 1.5, 12, 62, 0.05, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "###", "###" },
+	}),
+	Dorado = species("Dorado", "Uncommon", 9, 1, 4, 30, 27, 0.06, {
+		Normal = { "###" },
+		Big = { "###", "###" },
+		Huge = { "####", "####" },
+	}),
+	Sunfish = species("Sunfish", "Legendary", 150, 20, 90, 600, 520, 0.04, {
+		Normal = { ".##.", "####", ".##." },
+		Big = { ".###.", "#####", ".###." },
+		Huge = { ".####.", "######", "######", ".####." },
+	}),
+	Lingcod = species("Lingcod", "Uncommon", 9, 1, 5, 35, 25, 0.05, {
+		Normal = { "###" },
+		Big = { "###", "###" },
+		Huge = { "####", "####" },
+	}),
+	Walleye = species("Walleye", "Rare", 20, 0.5, 2, 11, 63, 0.04, {
+		Normal = { "###" },
+		Big = { "####" },
+		Huge = { "####", "####" },
+	}),
+	MidnightCarp = species("Midnight Carp", "Epic", 50, 1, 5, 35, 170, 0.05, {
+		Normal = { "##", "##" },
+		Big = { "###", "###" },
+		Huge = { "####", "####" },
+	}),
+
+	-- Open sea additions.
+	RedMullet = species("Red Mullet", "Uncommon", 9, 0.1, 0.4, 2, 50, 0.03, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "###", "###" },
+	}),
+	GreenSturgeon = species("Green Sturgeon", "Epic", 30, 10, 45, 160, 395, 0.07, {
+		Normal = { "#####" },
+		Big = { "######", ".####." },
+		Huge = { "#######", "#######" },
+	}),
+	RedSnapper = species("Red Snapper", "Common", 4, 0.5, 2.5, 20, 19, 0.04, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "###", "###" },
+	}),
+	Flounder = species("Flounder", "Rare", 12, 0.4, 1.5, 9, 145, 0.03, {
+		Normal = { "##", "##" },
+		Big = { "###", "##." },
+		Huge = { "###", "###" },
+	}),
+	Halibut = species("Halibut", "Common", 4, 1, 6, 180, 18, 0.04, {
+		Normal = { "##", "##" },
+		Big = { "###", "###" },
+		Huge = { "#####", "#####", "#####" },
+	}),
+	Herring = species("Herring", "Uncommon", 9, 0.1, 0.25, 0.9, 48, 0.04, {
+		Normal = { "#" },
+		Big = { "##" },
+		Huge = { "###" },
+	}),
+	YellowSeaCucumber = species("Yellow Sea Cucumber", "Uncommon", 9, 0.1, 0.4, 1.5, 50, 0, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "####" },
+	}),
+	Albacore = species("Albacore", "Epic", 30, 4, 15, 45, 380, 0.07, {
+		Normal = { "###", "###" },
+		Big = { "####", "####" },
+		Huge = { ".####.", "######", ".####." },
+	}),
+
+	-- Seasonal additions.
+	SmallmouthBass = species("Smallmouth Bass", "Uncommon", 9, 0.3, 1.2, 6, 25, 0.06, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "###", "###" },
+	}),
+	Shad = species("Shad", "Common", 4, 0.3, 1, 3.5, 10, 0.04, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "####" },
+	}),
+	DeepwaterEel = species("Deepwater Eel", "Rare", 12, 0.8, 3, 18, 150, 0.07, {
+		Normal = { "####" },
+		Big = { "#####", "#...." },
+		Huge = { "######", "#....#" },
+	}),
+	OrangeSeaCucumber = species("Orange Sea Cucumber", "Rare", 12, 0.1, 0.5, 2, 140, 0, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "####" },
+	}),
+	YellowAngler = species("Yellow Angler", "Legendary", 90, 2, 8, 50, 1200, 0.07, {
+		Normal = { "###", "###" },
+		Big = { "####", "####" },
+		Huge = { "#####", "#####", ".###." },
+	}),
+	SockeyeSalmon = species("Sockeye Salmon", "Rare", 12, 1, 2.7, 7, 148, 0.07, {
+		Normal = { "###" },
+		Big = { "####" },
+		Huge = { "####", "####" },
+	}),
+	Mackerel = species("Mackerel", "Common", 4, 0.2, 0.5, 2, 18, 0.05, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "####" },
+	}),
+	Shrimp = species("Shrimp", "Uncommon", 9, 0.01, 0.03, 0.12, 46, 0.02, {
+		Normal = { "#" },
+		Big = { "#" },
+		Huge = { "##" },
+	}),
+	Seabass = species("Seabass", "Common", 4, 0.5, 2, 12, 19, 0.04, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "###", "###" },
+	}),
+
+	-- Found in both the lake and the open sea, so worth somewhere between the two tiers.
+	Crimsonfish = species("Crimsonfish", "Rare", 15, 0.3, 1.2, 8, 100, 0.05, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "###", "###" },
+	}),
+	TigerTrout = species("Tiger Trout", "Common", 4, 0.3, 1.5, 10, 14, 0.05, {
+		Normal = { "##" },
+		Big = { "###" },
+		Huge = { "###", "###" },
+	}),
+	Glacierfish = species("Glacierfish", "Legendary", 120, 5, 22, 140, 900, 0.08, {
+		Normal = { "###", "###" },
+		Big = { "####", "####" },
+		Huge = { "#####", "#####", "#####" },
 	}),
 
 	-- These species are exclusive to mussel nets.
@@ -177,6 +330,17 @@ Catalog.Fish = {
 	}),
 }
 
+-- Shark rewards use the same carrying, storage and selling systems as catches.
+Catalog.Fish.SharkMeat = species("Shark Meat", "Common", 1 / 0.60, 1, 1, 1, 35, 0, { Normal = { "#" } })
+Catalog.Fish.SharkFin = species("Shark Fin", "Uncommon", 5, 1, 1, 1, 90, 0, { Normal = { "#" } })
+Catalog.Fish.SharkTail = species("Shark Tail", "Rare", 1 / 0.12, 1, 1, 1, 180, 0, { Normal = { "#" } })
+Catalog.Fish.SharkHead = species("Shark Head", "Epic", 20, 1, 1, 1, 400, 0, { Normal = { "#" } })
+Catalog.Fish.GreatWhiteTooth = species("Great White Tooth", "Legendary", 1 / 0.03, 1, 1, 1, 800, 0, { Normal = { "#" } })
+
+for _, id in { "SharkMeat", "SharkFin", "SharkTail", "SharkHead", "GreatWhiteTooth" } do
+	Catalog.Fish[id].DropOnly = true
+end
+
 -- CatchService picks MainLake inside the sheltered bay and OpenSea everywhere else.
 Catalog.Pools = {
 	MainLake = {
@@ -193,6 +357,20 @@ Catalog.Pools = {
 			"GreyEel",
 			"GulfFlounder",
 			"Stingray",
+			"Pike",
+			"ShovelnoseSturgeon",
+			"Tilapia",
+			"RainbowTrout",
+			"Dorado",
+			"Sunfish",
+			"Lingcod",
+			"Walleye",
+			"MidnightCarp",
+			"SmallmouthBass",
+			"Shad",
+			"Crimsonfish",
+			"TigerTrout",
+			"Glacierfish",
 		},
 	},
 	OpenSea = {
@@ -208,10 +386,97 @@ Catalog.Pools = {
 			"Sailfish",
 			"Swordfish",
 			"Yellowshark",
+			"RedMullet",
+			"GreenSturgeon",
+			"RedSnapper",
+			"Flounder",
+			"Halibut",
+			"Herring",
+			"YellowSeaCucumber",
+			"Albacore",
+			"DeepwaterEel",
+			"OrangeSeaCucumber",
+			"YellowAngler",
+			"SockeyeSalmon",
+			"Mackerel",
+			"Shrimp",
+			"Seabass",
+			"Crimsonfish",
+			"TigerTrout",
+			"Glacierfish",
 		},
 	},
 }
 Catalog.DefaultPool = "MainLake"
+
+-- The seasons each species bites in (Shared.Seasons names), in calendar order.
+-- Species left out here (junk, crabs, mussels, shark drops) turn up all year.
+local SUMMER = { "Summer" }
+local seasons = {
+	Trout = SUMMER,
+	Carp = SUMMER,
+	BlueMackerel = SUMMER,
+	Cod = SUMMER,
+	Bluegill = SUMMER,
+	Angelfish = SUMMER,
+	ArrowSquid = SUMMER,
+	GreyEel = SUMMER,
+	GulfFlounder = SUMMER,
+	Stingray = SUMMER,
+	Clownfish = SUMMER,
+	Sardine = SUMMER,
+	Anchovy = SUMMER,
+	Catfish = SUMMER,
+	Pufferfish = SUMMER,
+	YellowfinTuna = SUMMER,
+	Sailfish = SUMMER,
+	Swordfish = SUMMER,
+	Yellowshark = SUMMER,
+	Pike = { "Summer", "Autumn" },
+	RedMullet = { "Summer", "Autumn" },
+	GreenSturgeon = { "Spring", "Summer" },
+	ShovelnoseSturgeon = { "Spring", "Summer" },
+	Tilapia = { "Summer", "Autumn" },
+	RedSnapper = { "Summer", "Autumn", "Winter" },
+	RainbowTrout = SUMMER,
+	Dorado = SUMMER,
+	Crimsonfish = SUMMER,
+	Flounder = { "Spring", "Summer", "Autumn", "Winter" },
+	Halibut = { "Spring", "Summer", "Autumn" },
+	Sunfish = { "Spring", "Summer" },
+	Herring = { "Spring", "Winter" },
+	YellowSeaCucumber = { "Autumn", "Winter" },
+	TigerTrout = { "Autumn", "Winter" },
+	Albacore = { "Autumn", "Winter" },
+	Lingcod = { "Winter" },
+	Walleye = { "Spring", "Winter" },
+	MidnightCarp = { "Spring", "Autumn", "Winter" },
+	Glacierfish = { "Winter" },
+	SmallmouthBass = { "Spring", "Autumn" },
+	Shad = { "Spring" },
+	DeepwaterEel = { "Spring", "Autumn" },
+	OrangeSeaCucumber = SUMMER,
+	YellowAngler = { "Autumn" },
+	SockeyeSalmon = { "Autumn" },
+	Mackerel = { "Spring", "Summer", "Autumn", "Winter" },
+	Shrimp = { "Summer", "Autumn", "Winter" },
+	Seabass = { "Spring", "Winter" },
+}
+for id, list in seasons do
+	Catalog.Fish[id].Seasons = list
+end
+
+-- Species that only bite while a condition holds at the fishing spot
+-- (Shared.CatchConditions keys): rain overhead, night, or a sandy beach shallow.
+local requires = {
+	Tilapia = "Rain",
+	RainbowTrout = "Rain",
+	MidnightCarp = "Night",
+	Crimsonfish = "Beach",
+}
+for id, condition in requires do
+	Catalog.Fish[id].Requires = condition
+end
 
 -- Every key FishMutations can roll. RarityMultiplier is one over the key's
 -- chance per catch (at night for Astral); scripts/fish-mutations.luau keeps

@@ -7,8 +7,16 @@ import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFileSync(join(root, file), 'utf8');
+const customerSource = read('src/server/CustomerService.luau');
+const walkStart = customerSource.indexOf('local function walk(customer,');
+const walkEnd = customerSource.indexOf('\nlocal function face(', walkStart);
+if (!customerSource.includes('require(script.Parent.NpcNavigation)') || walkStart < 0 || walkEnd < 0) {
+  throw new Error('CustomerService must use the shared NPC navigator');
+}
 const program = read('scripts/npc-navigation.luau')
-  .replace('-- NAVIGATION_SOURCE --', () => read('src/server/NpcNavigation.luau'));
+  .replace('-- BASE_GRID_SOURCE --', () => read('src/shared/BaseGrid.luau'))
+  .replace('-- NAVIGATION_SOURCE --', () => read('src/server/NpcNavigation.luau'))
+  .replace('-- CUSTOMER_WALK_SOURCE --', () => customerSource.slice(walkStart, walkEnd));
 const temporary = mkdtempSync(join(tmpdir(), 'npc-navigation-'));
 try {
   const target = join(temporary, 'check.luau');

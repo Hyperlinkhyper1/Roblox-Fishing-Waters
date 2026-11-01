@@ -26,7 +26,8 @@ local ARRIVAL_SECONDS = 25
 -- stations can make, so a full menu pays off.
 local AVAILABLE_ORDER_CHANCE = 0.7
 -- Diners walk in from the street along the west side of the house (house-local).
-local STREET = Vector3.new(-26.5, 0.16, 12)
+-- Stay in the clear strip along the west side of the house and dining room.
+local STREET = Vector3.new(-27.1, 0.16, 12)
 
 local npc = CustomerService.npc
 local random = Random.new()

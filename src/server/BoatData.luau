@@ -10,6 +10,9 @@ local RodUpgrades = if script
 local RodSkins = if script
 	then require(game:GetService("ReplicatedStorage").Shared.RodSkins)
 	else require("../shared/RodSkins")
+local SpearSkins = if script
+	then require(game:GetService("ReplicatedStorage").Shared.SpearSkins)
+	else require("../shared/SpearSkins")
 local BoatCatalog = if script
 	then require(game:GetService("ReplicatedStorage").Shared.BoatCatalog)
 	else require("../shared/BoatCatalog")
@@ -33,6 +36,10 @@ export type Profile = {
 	Cash: number,
 	OwnedBoats: { [string]: boolean },
 	OwnedRods: { [string]: boolean },
+	OwnedSpears: { [string]: boolean },
+	SpearSkinCopies: { { SkinId: string, Serial: number, Wear: number } },
+	EquippedSpearSkin: string?,
+	EquippedSpearSkinSerial: number?,
 	RodUpgrades: { [string]: number },
 	RodSkins: { [string]: number },
 	RodSkinCopies: { { SkinId: string, Serial: number, Wear: number } },
@@ -52,8 +59,10 @@ function BoatData.decode(raw: any): Profile
 		return {
 			Version = 1,
 			Cash = 0,
-			OwnedBoats = {},
+			OwnedBoats = { Rowboat = true },
 			OwnedRods = { StarterRod = true },
+			OwnedSpears = {},
+			SpearSkinCopies = {},
 			RodUpgrades = {},
 			RodSkins = {},
 			RodSkinCopies = {},
@@ -79,6 +88,10 @@ function BoatData.decode(raw: any): Profile
 	for id, owned in raw.OwnedRods or {} do
 		assert(type(id) == "string" and type(owned) == "boolean", "Invalid rod ownership")
 	end
+	assert(raw.OwnedSpears == nil or type(raw.OwnedSpears) == "table", "Invalid spear inventory")
+	for id, owned in raw.OwnedSpears or {} do
+		assert(type(id) == "string" and type(owned) == "boolean", "Invalid spear ownership")
+	end
 	assert(raw.RodUpgrades == nil or type(raw.RodUpgrades) == "table", "Invalid rod upgrades")
 	for stat, level in raw.RodUpgrades or {} do
 		assert(
@@ -98,6 +111,43 @@ function BoatData.decode(raw: any): Profile
 	assert(raw.GroupRodClaimed == nil or type(raw.GroupRodClaimed) == "boolean", "Invalid group reward claim")
 	profile.OwnedBoats = table.clone(raw.OwnedBoats)
 	profile.OwnedRods = table.clone(raw.OwnedRods or {})
+	profile.OwnedSpears = table.clone(raw.OwnedSpears or {})
+	assert(raw.SpearSkinCopies == nil or type(raw.SpearSkinCopies) == "table", "Invalid spear skin copies")
+	assert(raw.EquippedSpearSkin == nil or type(raw.EquippedSpearSkin) == "string", "Invalid equipped spear skin")
+	assert(
+		raw.EquippedSpearSkinSerial == nil
+			or (
+				type(raw.EquippedSpearSkinSerial) == "number"
+				and raw.EquippedSpearSkinSerial >= 1
+				and raw.EquippedSpearSkinSerial < 2 ^ 53 - 1
+				and raw.EquippedSpearSkinSerial % 1 == 0
+			),
+		"Invalid equipped spear serial"
+	)
+	profile.SpearSkinCopies = {}
+	profile.EquippedSpearSkin, profile.EquippedSpearSkinSerial = nil, nil
+	local spearSerials = {}
+	for index, copy in raw.SpearSkinCopies or {} do
+		assert(
+			type(index) == "number" and index >= 1 and index % 1 == 0 and index <= #raw.SpearSkinCopies,
+			"Invalid spear skin index"
+		)
+		assert(type(copy) == "table" and type(copy.SkinId) == "string", "Invalid spear skin copy")
+		assert(
+			type(copy.Serial) == "number" and copy.Serial >= 1 and copy.Serial < 2 ^ 53 - 1 and copy.Serial % 1 == 0,
+			"Invalid spear skin serial"
+		)
+		assert(SpearSkins.validWear(copy.Wear), "Invalid spear skin wear")
+		local serials = spearSerials[copy.SkinId] or {}
+		assert(not serials[copy.Serial], "Duplicate spear skin serial")
+		serials[copy.Serial], spearSerials[copy.SkinId] = true, serials
+		if SpearSkins.valid(copy.SkinId) then
+			table.insert(profile.SpearSkinCopies, { SkinId = copy.SkinId, Serial = copy.Serial, Wear = copy.Wear })
+			if copy.SkinId == raw.EquippedSpearSkin and copy.Serial == raw.EquippedSpearSkinSerial then
+				profile.EquippedSpearSkin, profile.EquippedSpearSkinSerial = copy.SkinId, copy.Serial
+			end
+		end
+	end
 	-- Every angler starts with a rod, including profiles saved before this default.
 	profile.OwnedRods.StarterRod = true
 	profile.RodUpgrades = {}
@@ -242,6 +292,17 @@ function BoatData.decode(raw: any): Profile
 	return profile
 end
 
+-- Boats with a RequiresPath stay off sale until that business path is unlocked.
+-- Reads the saved path table directly (see Shared.Paths.state for its shape).
+function BoatData.pathLocked(profile: Profile, boatId: string): boolean
+	local spec = BoatCatalog[boatId]
+	if not spec or not spec.RequiresPath then
+		return false
+	end
+	local paths = profile.Angler and profile.Angler.Paths
+	return not (paths and paths.Unlocked and paths.Unlocked[spec.RequiresPath] == true)
+end
+
 function BoatData.purchase(raw: any, boatId: string?): (Profile, string)
 	local profile = BoatData.decode(raw)
 	local id = boatId or "Rowboat"
@@ -251,6 +312,9 @@ function BoatData.purchase(raw: any, boatId: string?): (Profile, string)
 	end
 	if profile.OwnedBoats[id] then
 		return profile, "AlreadyOwned"
+	end
+	if BoatData.pathLocked(profile, id) then
+		return profile, "Locked"
 	end
 	if profile.Cash < spec.Price then
 		return profile, "InsufficientFunds"
@@ -423,6 +487,61 @@ function BoatData.equipRodSkin(profile: Profile, skinId: string?, serial: number
 		end
 	end
 	return "NotOwned"
+end
+
+-- Rolls and serials are chosen before the transaction so retries award the same copy.
+function BoatData.openSpearCrate(
+	profile: Profile,
+	crateId: string,
+	skinId: string,
+	serial: number,
+	wear: number
+): string
+	local crate = SpearSkins.Crates[crateId]
+	if not crate or not table.find(crate.Skins, skinId) then
+		return "UnknownCrate"
+	end
+	if profile.Cash < crate.Price then
+		return "InsufficientFunds"
+	end
+	assert(
+		type(serial) == "number" and serial >= 1 and serial < 2 ^ 53 - 1 and serial % 1 == 0,
+		"Invalid spear skin serial"
+	)
+	assert(SpearSkins.validWear(wear), "Invalid spear wear")
+	for _, copy in profile.SpearSkinCopies do
+		assert(copy.SkinId ~= skinId or copy.Serial ~= serial, "Spear skin serial already owned")
+	end
+	profile.Cash -= crate.Price
+	profile.Angler.Stats.CoinsSpent += crate.Price
+	table.insert(profile.SpearSkinCopies, { SkinId = skinId, Serial = serial, Wear = wear })
+	return "Opened"
+end
+
+function BoatData.equipSpearSkin(profile: Profile, skinId: string?, serial: number?): string
+	if skinId == nil then
+		profile.EquippedSpearSkin, profile.EquippedSpearSkinSerial = nil, nil
+		return "Equipped"
+	end
+	if not SpearSkins.valid(skinId) then
+		return "UnknownSkin"
+	end
+	for _, copy in profile.SpearSkinCopies do
+		if copy.SkinId == skinId and (serial == nil or copy.Serial == serial) then
+			profile.EquippedSpearSkin, profile.EquippedSpearSkinSerial = skinId, copy.Serial
+			return "Equipped"
+		end
+	end
+	return "NotOwned"
+end
+
+function BoatData.equippedSpearWear(profile: Profile): number
+	for _, copy in profile.SpearSkinCopies do
+		if copy.SkinId == profile.EquippedSpearSkin and copy.Serial == profile.EquippedSpearSkinSerial then
+			return copy.Wear
+		end
+	end
+	return SpearSkins.DefaultWear
 end
 
 function BoatData.openBobberCrate(profile: Profile, crateId: string, skinId: string): string

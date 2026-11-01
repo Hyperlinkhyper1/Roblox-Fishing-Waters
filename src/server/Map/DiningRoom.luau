@@ -1,6 +1,6 @@
 -- The Restaurant path's dining room: an extension built onto the back of a base
 -- house, behind the processing room, plus the dining tables placed inside it.
--- Positions are house-local studs (BaseHouse "HouseFrame"; floor y=0.16, rear wall z=-15).
+-- Positions are house-local studs (BaseHouse "HouseFrame"; floor y=0.16).
 local Props = require(script.Parent.Props)
 
 local DiningRoom = {}
@@ -15,15 +15,17 @@ local CREAM = rgb(247, 235, 204)
 local TERRACOTTA = rgb(164, 75, 46)
 local LINEN = rgb(244, 240, 228)
 
-local LEFT, RIGHT = -23, -5.5
-local BACK, FRONT = -30, -15.33
+-- The walls follow the same 4.5-stud grid borders as the main house.
+local LEFT, RIGHT = -24.75, -6.75
+local BACK, FRONT = -33.75, -15.75
 local HEIGHT = 9
-DiningRoom.VERSION = 1
--- Diners arrive along the quay and walk in through this doorway (house-local).
-DiningRoom.DOOR = Vector3.new(-13, 0.16, -30)
-DiningRoom.ARRIVAL = Vector3.new(-13, 0.16, -32.4)
-DiningRoom.INSIDE = Vector3.new(-13, 0.16, -27.4)
-local DOOR_WIDTH = 5
+DiningRoom.VERSION = 2
+-- The west entrance opens onto the quay; the enlarged rear edge is close to
+-- the water and would not provide a supported approach for diners.
+DiningRoom.DOOR = Vector3.new(LEFT, 0.16, -27)
+DiningRoom.ARRIVAL = Vector3.new(-27.1, 0.16, -27)
+DiningRoom.INSIDE = Vector3.new(-22.5, 0.16, -27)
+local DOOR_WIDTH = 6.5
 
 function DiningRoom.build(parent: Instance, frame: CFrame): Model
 	local room = Instance.new("Model")
@@ -43,10 +45,24 @@ function DiningRoom.build(parent: Instance, frame: CFrame): Model
 	block("DiningFloor", Vector3.new(width, 0.16, depth), cx, 0.08, cz, rgb(150, 104, 66), M.WoodPlanks)
 	block("Plinth", Vector3.new(width + 0.4, 0.5, 0.8), cx, 0.25, BACK - 0.2, STONE, M.Slate)
 
-	-- A side wall along z with a window opening between zA and zB.
-	local function sideWall(x: number, name: string)
-		local zA, zB = -25.5, -19
-		block(name, Vector3.new(0.6, HEIGHT, zA - BACK), x, HEIGHT / 2, (BACK + zA) / 2, PLASTER, M.Plaster)
+	-- A side wall along z with a window opening between zA and zB. The west
+	-- wall also has an open entrance reached from the quay.
+	local function sideWall(x: number, name: string, entrance: boolean?)
+		local zA, zB = -23.5, -19
+		if entrance then
+			local doorA, doorB = DiningRoom.DOOR.Z - DOOR_WIDTH / 2, DiningRoom.DOOR.Z + DOOR_WIDTH / 2
+			block(name, Vector3.new(0.6, HEIGHT, doorA - BACK), x, HEIGHT / 2, (BACK + doorA) / 2, PLASTER, M.Plaster)
+			block(name, Vector3.new(0.6, HEIGHT, zA - doorB), x, HEIGHT / 2, (doorB + zA) / 2, PLASTER, M.Plaster)
+			block("DoorLintel", Vector3.new(0.6, HEIGHT - 7.6, DOOR_WIDTH), x, (HEIGHT + 7.6) / 2, DiningRoom.DOOR.Z, PLASTER, M.Plaster)
+			-- The jambs stand just inside the opening and the step stops at the wall line. Faces
+			-- that share a plane (jamb and wall end, step and dining floor) z-fight.
+			for _, side in { -1, 1 } do
+				block("DoorJamb", Vector3.new(0.8, 7.6, 0.28), x, 3.8, DiningRoom.DOOR.Z + side * (DOOR_WIDTH / 2 - 0.14), WOOD, M.Wood)
+			end
+			block("DoorStep", Vector3.new(1.4, 0.2, DOOR_WIDTH + 1), LEFT - 0.7, 0.06, DiningRoom.DOOR.Z, STONE, M.Slate)
+		else
+			block(name, Vector3.new(0.6, HEIGHT, zA - BACK), x, HEIGHT / 2, (BACK + zA) / 2, PLASTER, M.Plaster)
+		end
 		block(name, Vector3.new(0.6, HEIGHT, FRONT - zB), x, HEIGHT / 2, (zB + FRONT) / 2, PLASTER, M.Plaster)
 		block(name .. "Sill", Vector3.new(0.6, 3, zB - zA), x, 1.5, (zA + zB) / 2, PLASTER, M.Plaster)
 		block(name .. "Lintel", Vector3.new(0.6, 2, zB - zA), x, HEIGHT - 1, (zA + zB) / 2, PLASTER, M.Plaster)
@@ -57,17 +73,9 @@ function DiningRoom.build(parent: Instance, frame: CFrame): Model
 		end
 		block(name .. "Mullion", Vector3.new(0.3, 4, 0.16), x, 5, (zA + zB) / 2, CREAM, M.Wood, true)
 	end
-	sideWall(LEFT, "DiningWestWall")
+	sideWall(LEFT, "DiningWestWall", true)
 	sideWall(RIGHT, "DiningEastWall")
-	-- Water-side wall with the guests' doorway.
-	local doorLeft, doorRight = DiningRoom.DOOR.X - DOOR_WIDTH / 2, DiningRoom.DOOR.X + DOOR_WIDTH / 2
-	block("DiningBackWall", Vector3.new(doorLeft - LEFT + 0.3, HEIGHT, 0.6), (LEFT - 0.3 + doorLeft) / 2, HEIGHT / 2, BACK + 0.3, PLASTER, M.Plaster)
-	block("DiningBackWall", Vector3.new(RIGHT + 0.3 - doorRight, HEIGHT, 0.6), (doorRight + RIGHT + 0.3) / 2, HEIGHT / 2, BACK + 0.3, PLASTER, M.Plaster)
-	block("DoorLintel", Vector3.new(DOOR_WIDTH, HEIGHT - 7.6, 0.6), DiningRoom.DOOR.X, (HEIGHT + 7.6) / 2, BACK + 0.3, PLASTER, M.Plaster)
-	for _, side in { -1, 1 } do
-		block("DoorJamb", Vector3.new(0.28, 7.6, 0.8), DiningRoom.DOOR.X + side * (DOOR_WIDTH / 2 + 0.14), 3.8, BACK + 0.3, WOOD, M.Wood)
-	end
-	block("DoorStep", Vector3.new(DOOR_WIDTH + 1, 0.2, 1.6), DiningRoom.DOOR.X, 0.06, BACK - 0.6, STONE, M.Slate)
+	block("DiningBackWall", Vector3.new(width + 0.6, HEIGHT, 0.6), cx, HEIGHT / 2, BACK, PLASTER, M.Plaster)
 
 	-- Flat roof hidden in build mode (above the lintels), with a terracotta edge.
 	block("DiningRoof", Vector3.new(width + 1.2, 0.5, depth + 0.8), cx, HEIGHT + 0.25, cz - 0.2, rgb(118, 106, 92), M.Concrete)
@@ -79,9 +87,9 @@ function DiningRoom.build(parent: Instance, frame: CFrame): Model
 	end
 
 	-- Name board over the door, facing the quay.
-	local board = block("RestaurantSign", Vector3.new(7, 1.1, 0.16), DiningRoom.DOOR.X, 8.2, BACK - 0.1, IRON, M.WoodPlanks, true)
+	local board = block("RestaurantSign", Vector3.new(0.16, 1.1, 7), LEFT - 0.1, 8.2, DiningRoom.DOOR.Z, IRON, M.WoodPlanks, true)
 	local gui = Instance.new("SurfaceGui")
-	gui.Face = Enum.NormalId.Back
+	gui.Face = Enum.NormalId.Left
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
 	gui.CanvasSize = Vector2.new(420, 66)
 	gui.Parent = board

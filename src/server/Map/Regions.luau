@@ -155,6 +155,34 @@ local function findSpot(ctx: Context, radius: number, gap: number, spread: numbe
 	return nil
 end
 
+-- Open spot near one of a few random clump centres, or a lone spot anywhere between `inner` and `outer`.
+-- Keeps islands sporadic instead of packing them evenly into whatever ring of water is left.
+local function clumpedSpot(
+	ctx: Context,
+	clumps: { Vector2 },
+	inner: number,
+	outer: number,
+	radius: number,
+	gap: number
+): Vector2?
+	local rng = ctx.rng
+	for _ = 1, 80 do
+		local p
+		if #clumps > 0 and rng:NextNumber() < 0.75 then
+			local a = rng:NextNumber(0, TAU)
+			local d = (rng:NextNumber() + rng:NextNumber()) * 0.5 * 420
+			p = pick(rng, clumps) + Vector2.new(math.cos(a), math.sin(a)) * d
+		else
+			local a = rng:NextNumber(0, TAU)
+			p = ctx.biome.center + Vector2.new(math.cos(a), math.sin(a)) * rng:NextNumber(inner, outer)
+		end
+		if isFree(ctx.placed, p, radius, gap) then
+			return p
+		end
+	end
+	return nil
+end
+
 local function island(
 	ctx: Context,
 	position: Vector2,
@@ -190,12 +218,14 @@ local function archipelago(
 	heights: { number },
 	shapes: { string },
 	palette: Palette,
-	options: IslandOptions?
+	options: IslandOptions?,
+	locate: ((radius: number, gap: number) -> Vector2?)?
 ): { Built }
 	local built = {}
 	for _ = 1, count do
 		local radius = ctx.rng:NextNumber(radii[1], radii[2])
-		local spot = findSpot(ctx, radius * FOOTPRINT, math.max(25, radius * 0.4))
+		local gap = math.max(25, radius * 0.4)
+		local spot = if locate then locate(radius * FOOTPRINT, gap) else findSpot(ctx, radius * FOOTPRINT, gap)
 		if spot then
 			local height = ctx.rng:NextNumber(heights[1], heights[2])
 			table.insert(built, island(ctx, spot, radius, height, pick(ctx.rng, shapes), palette, options))
@@ -281,20 +311,31 @@ function Regions.normal(ctx: Context, onHarbourReady: ((CFrame) -> ())?): CFrame
 		onHarbourReady(spawn)
 	end
 
+	-- The harbour fills most of the biome, so scenery lives in a few random clumps out past it
+	-- (spilling into the open sea) rather than in an even ring hugging its coast.
+	local clumps = {}
+	for _ = 1, rng:NextInteger(2, 4) do
+		local a = rng:NextNumber(0, TAU)
+		table.insert(clumps, ctx.biome.center + Vector2.new(math.cos(a), math.sin(a)) * rng:NextNumber(1350, 1850))
+	end
+	local function locate(radius: number, gap: number): Vector2?
+		return clumpedSpot(ctx, clumps, 1100, 2050, radius, gap)
+	end
+
 	-- Tall crags crowned with pines, like the cliffs guarding the harbour
-	for _, crag in archipelago(ctx, 3, { 110, 160 }, { 80, 120 }, { "stack" }, NORMAL.land, { roughness = 0.3 }) do
+	for _, crag in archipelago(ctx, 2, { 110, 160 }, { 80, 120 }, { "stack" }, NORMAL.land, { roughness = 0.3 }, locate) do
 		forest(ctx, crag, 3, 40, 0.2)
 	end
-	for _, isle in archipelago(ctx, 7, { 100, 190 }, { 22, 60 }, { "plateau", "peak" }, NORMAL.land) do
+	for _, isle in archipelago(ctx, 4, { 100, 190 }, { 22, 60 }, { "plateau", "peak" }, NORMAL.land, nil, locate) do
 		forest(ctx, isle, 2.5, 60, 0.4)
 		scatterOn(ctx, isle, 4, 2, 20, function(ground)
 			Props.boulder(isle.model, ground, rng, rng:NextNumber(3, 6), NORMAL.rock.cliff)
 		end)
 	end
-	for _, isle in archipelago(ctx, 18, { 28, 75 }, { 10, 34 }, { "plateau", "stack", "peak" }, NORMAL.land) do
+	for _, isle in archipelago(ctx, 8, { 28, 75 }, { 10, 34 }, { "plateau", "stack", "peak" }, NORMAL.land, nil, locate) do
 		forest(ctx, isle, 2, 10, 0.35)
 	end
-	archipelago(ctx, 30, { 6, 22 }, { 5, 28 }, { "stack", "peak" }, NORMAL.rock, { roughness = 0.5 })
+	archipelago(ctx, 14, { 6, 22 }, { 5, 28 }, { "stack", "peak" }, NORMAL.rock, { roughness = 0.5 }, locate)
 
 	return spawn
 end

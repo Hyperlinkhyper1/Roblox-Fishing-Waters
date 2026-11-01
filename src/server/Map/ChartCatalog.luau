@@ -13,7 +13,7 @@ function Catalog.start(root: Instance)
 	folder.Parent = ReplicatedStorage
 	local seen = {}
 	local function add(model)
-		if not model:IsA("Model") or (model.Name ~= "Island" and model.Name ~= "Harbour Isle") or seen[model] then
+		if not model:IsA("Model") or (model.Name ~= "Island" and model.Name ~= "Harbour Isle" and model.Name ~= "Modern City") or seen[model] then
 			return
 		end
 		seen[model] = true

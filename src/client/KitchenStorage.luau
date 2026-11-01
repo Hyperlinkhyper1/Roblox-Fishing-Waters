@@ -168,17 +168,17 @@ function KitchenStorage.start()
 			row.minus.Active = count > 0 and not pending
 			row.minus.AutoButtonColor = row.minus.Active
 			Theme.button(row.minus, if row.minus.Active then "Normal" else "Disabled")
-			row.plus.Active = count < (available[rarity] or 0) and not overCap and not pending
+			row.plus.Active = total < CAPACITY and not pending
 			row.plus.AutoButtonColor = row.plus.Active
 			Theme.button(row.plus, if row.plus.Active then "Normal" else "Disabled")
 		end
 
 		status.Text = string.format(
-			"Pick how many fish of each rarity should wait on the ice. %d/%d placed.",
+			"Pick how many fish of each rarity should wait on the ice. %d/%d targeted.",
 			total,
 			CAPACITY
 		)
-		setTargets.Active = not pending and total > 0 and total <= CAPACITY
+		setTargets.Active = not pending and total <= CAPACITY
 		setTargets.AutoButtonColor = setTargets.Active
 		Theme.button(setTargets, if setTargets.Active then "Selected" else "Disabled")
 	end
@@ -187,8 +187,12 @@ function KitchenStorage.start()
 		if pending then
 			return
 		end
-		local count = (targets[rarity] or 0) + delta
-		count = math.clamp(count, 0, available[rarity] or 0)
+		local total = 0
+		for _, value in pairs(targets) do
+			total += value
+		end
+		local current = targets[rarity] or 0
+		local count = math.clamp(current + delta, 0, math.max(current, CAPACITY - (total - current)))
 		targets[rarity] = count
 		render()
 	end
@@ -276,6 +280,10 @@ function KitchenStorage.start()
 		render()
 	end
 
+	local function hide()
+		overlay.Visible = false
+	end
+
 	local function setTargetsPressed()
 		if pending then
 			return
@@ -283,10 +291,6 @@ function KitchenStorage.start()
 		local total = 0
 		for _, c in pairs(targets) do
 			total += c
-		end
-		if total == 0 then
-			notice("Pick at least one fish.")
-			return
 		end
 		if total > CAPACITY then
 			notice("Kitchen storage can hold at most " .. CAPACITY .. " fish.")
@@ -312,9 +316,6 @@ function KitchenStorage.start()
 
 	setTargets.Activated:Connect(setTargetsPressed)
 
-	local function hide()
-		overlay.Visible = false
-	end
 	close.Activated:Connect(hide)
 	overlay.Activated:Connect(hide)
 	UserInputService.InputBegan:Connect(function(input)

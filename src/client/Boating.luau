@@ -7,12 +7,19 @@ local TextChatService = game:GetService("TextChatService")
 local UserInputService = game:GetService("UserInputService")
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local Paths = require(ReplicatedStorage.Shared.Paths)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local DayNight = require(ReplicatedStorage.Shared.DayNight)
+local Seasons = require(ReplicatedStorage.Shared.Seasons)
 local DrydockCamera = require(script.Parent.DrydockCamera)
 local BoatPreview = require(script.Parent.BoatPreview)
 local BoatCamera = require(script.Parent.BoatCamera)
 
 local Boating = {}
+
+local function formatPrice(price: number): string
+	return if price == 0 then "Free" else "$" .. tostring(price)
+end
 
 function Boating.start()
 	local player = Players.LocalPlayer
@@ -25,7 +32,8 @@ function Boating.start()
 		table.insert(boatIds, id)
 	end
 	table.sort(boatIds, function(a, b)
-		return BoatCatalog[a].Price < BoatCatalog[b].Price
+		local priceA, priceB = BoatCatalog[a].Price, BoatCatalog[b].Price
+		return if priceA == priceB then a < b else priceA < priceB
 	end)
 	local selectedBoatId = "Rowboat"
 	local selectedDockBoatId = "Rowboat"
@@ -73,15 +81,39 @@ function Boating.start()
 	wallet.Size = UDim2.fromOffset(244, 82)
 	wallet.BackgroundTransparency = 1
 	wallet.Parent = gui
-	local weatherIcon = Instance.new("Frame")
-	weatherIcon.Name = "WeatherIcon"
-	weatherIcon.Position = UDim2.fromOffset(0, -44)
-	weatherIcon.Size = UDim2.fromOffset(38, 36)
-	weatherIcon.BackgroundTransparency = 1
-	weatherIcon.Visible = false
-	weatherIcon.ZIndex = 2
-	weatherIcon.Parent = wallet
-	local function weatherPart(name: string, x: number, y: number, width: number, height: number, color: Color3)
+	-- Time of day, season and weather sit in one row above the cash.
+	local statusRow = Instance.new("Frame")
+	statusRow.Name = "StatusIcons"
+	statusRow.Position = UDim2.fromOffset(0, -44)
+	statusRow.Size = UDim2.fromOffset(244, 36)
+	statusRow.BackgroundTransparency = 1
+	statusRow.ZIndex = 2
+	statusRow.Parent = wallet
+	local rowLayout = Instance.new("UIListLayout")
+	rowLayout.FillDirection = Enum.FillDirection.Horizontal
+	rowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	rowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	rowLayout.Padding = UDim.new(0, 6)
+	rowLayout.Parent = statusRow
+	local function iconFrame(name: string, order: number): Frame
+		local frame = Instance.new("Frame")
+		frame.Name = name
+		frame.LayoutOrder = order
+		frame.Size = UDim2.fromOffset(38, 36)
+		frame.BackgroundTransparency = 1
+		frame.ZIndex = 2
+		frame.Parent = statusRow
+		return frame
+	end
+	local function iconPart(
+		icon: Frame,
+		name: string,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		color: Color3
+	): Frame
 		local part = Instance.new("Frame")
 		part.Name = name
 		part.Position = UDim2.fromOffset(x, y)
@@ -89,10 +121,113 @@ function Boating.start()
 		part.BackgroundColor3 = color
 		part.BorderSizePixel = 0
 		part.ZIndex = 2
-		part.Parent = weatherIcon
+		part.Parent = icon
 		Theme.corner(part, 999)
 		return part
 	end
+	-- Rays and snowflake arms are bars centred on (cx, cy), turned by `angle` degrees.
+	local function iconBar(icon: Frame, name: string, cx: number, cy: number, length: number, angle: number, color: Color3)
+		local bar = iconPart(icon, name, cx - length / 2, cy - 1.5, length, 3, color)
+		bar.Rotation = angle
+		return bar
+	end
+	local weatherIcon = iconFrame("WeatherIcon", 3)
+	weatherIcon.Visible = false
+	local function weatherPart(name: string, x: number, y: number, width: number, height: number, color: Color3)
+		return iconPart(weatherIcon, name, x, y, width, height, color)
+	end
+
+	-- Day: a sun with rays. Night: a crescent built from overlapping dots, plus two stars.
+	local dayIcon = iconFrame("DayNightIcon", 1)
+	local sunColor = Color3.fromRGB(255, 214, 102)
+	local moonColor = Color3.fromRGB(236, 232, 214)
+	local sunParts = { iconPart(dayIcon, "Sun", 11, 10, 16, 16, sunColor) }
+	for index = 0, 7 do
+		local angle = index * 45
+		local radians = math.rad(angle)
+		table.insert(
+			sunParts,
+			iconBar(dayIcon, "SunRay", 19 + math.cos(radians) * 13, 18 + math.sin(radians) * 13, 6, angle, sunColor)
+		)
+	end
+	local moonParts = {}
+	for index = -4, 4 do
+		local radians = math.rad(index * 19)
+		local size = 4 + 7 * math.cos(radians)
+		table.insert(
+			moonParts,
+			iconPart(
+				dayIcon,
+				"Moon",
+				17 - math.cos(radians) * 6 - size / 2,
+				18 + math.sin(radians) * 12 - size / 2,
+				size,
+				size,
+				moonColor
+			)
+		)
+	end
+	table.insert(moonParts, iconPart(dayIcon, "Star", 27, 7, 3, 3, moonColor))
+	table.insert(moonParts, iconPart(dayIcon, "Star", 31, 17, 2, 2, moonColor))
+
+	-- Season: a leaf coloured for spring, summer and autumn, a snowflake for winter.
+	local seasonIcon = iconFrame("SeasonIcon", 2)
+	local leaf = iconPart(seasonIcon, "Leaf", 12, 6, 14, 24, Color3.new())
+	leaf.Rotation = 35
+	local stem = iconBar(seasonIcon, "Stem", 12, 29, 9, -55, Color3.fromRGB(110, 78, 46))
+	local vein = iconBar(seasonIcon, "Vein", 19, 18, 18, -55, Color3.new())
+	vein.Size = UDim2.fromOffset(18, 2)
+	vein.ZIndex = 3
+	local snowColor = Color3.fromRGB(226, 240, 255)
+	local flake = {}
+	for index = 0, 2 do
+		table.insert(flake, iconBar(seasonIcon, "Snowflake", 19, 18, 28, index * 60 + 90, snowColor))
+	end
+	table.insert(flake, iconPart(seasonIcon, "SnowflakeCore", 15, 14, 8, 8, snowColor))
+	local leafColors = {
+		Spring = { Color3.fromRGB(150, 218, 96), Color3.fromRGB(96, 160, 62) },
+		Summer = { Color3.fromRGB(62, 148, 70), Color3.fromRGB(34, 96, 44) },
+		Autumn = { Color3.fromRGB(232, 128, 44), Color3.fromRGB(160, 70, 30) },
+	}
+
+	local statusText =
+		label(statusRow, "", UDim2.new(), UDim2.fromOffset(120, 36), 15, Color3.fromRGB(247, 238, 216))
+	statusText.Name = "StatusText"
+	statusText.LayoutOrder = 4
+	statusText.Font = Enum.Font.GothamBold
+	statusText.TextWrapped = false
+	statusText.TextStrokeTransparency = 0.7
+	statusText.ZIndex = 2
+
+	local function refreshClock()
+		local clock = DayNight.clockTime()
+		local night = DayNight.isNight(clock)
+		for _, part in sunParts do
+			part.Visible = not night
+		end
+		for _, part in moonParts do
+			part.Visible = night
+		end
+		local season, day = Seasons.current()
+		local winter = season == "Winter"
+		leaf.Visible, stem.Visible, vein.Visible = not winter, not winter, not winter
+		for _, part in flake do
+			part.Visible = winter
+		end
+		local colors = leafColors[season]
+		if colors then
+			leaf.BackgroundColor3, vein.BackgroundColor3 = colors[1], colors[2]
+		end
+		local hour = math.floor(clock)
+		statusText.Text = string.format(
+			"%s %d · %02d:%02d",
+			season,
+			day,
+			hour,
+			math.floor((clock - hour) * 60)
+		)
+	end
+	refreshClock()
 	-- Native shapes keep the small HUD icon independent of image downloads.
 	local cloudColor = Color3.fromRGB(234, 240, 247)
 	local clouds = {
@@ -300,6 +435,8 @@ function Boating.start()
 			elseif boatId == "Speedboat" then "Speedboat"
 			elseif boatId == "RacingSpeedboat" then "Racing"
 			elseif boatId == "Trawler" then "Fishing trawler"
+			elseif boatId == "Tugboat" then "Tugboat"
+			elseif boatId == "Hovercraft" then "Hovercraft"
 			else "Patrol cruiser"
 		tab.Font, tab.TextSize = Enum.Font.GothamBold, 12
 		tab.Parent = tabs
@@ -320,7 +457,7 @@ function Boating.start()
 		statValues[index] = value
 	end
 	local price =
-		label(product, "$" .. tostring(spec.Price), UDim2.fromOffset(24, 329), UDim2.fromOffset(130, 35), 29, gold)
+		label(product, formatPrice(spec.Price), UDim2.fromOffset(24, 329), UDim2.fromOffset(130, 35), 29, gold)
 	Theme.text(price, Theme.Colors.Green)
 	local balance = label(product, "Your cash: $0", UDim2.fromOffset(154, 329), UDim2.fromOffset(202, 35), 14, cream)
 	balance.TextXAlignment = Enum.TextXAlignment.Right
@@ -533,7 +670,7 @@ function Boating.start()
 			previewStatus.Text = if dataStatus == "Unavailable"
 				then "Fleet unavailable"
 				elseif not ready then "Loading your fleet…"
-				else "Buy your first boat from Mara\nat the shipyard."
+				else "Claim a free rowboat from Mara\nat the shipyard."
 		end
 	end
 	dock:GetPropertyChangedSignal("Visible"):Connect(function()
@@ -606,6 +743,8 @@ function Boating.start()
 		local amount = player:GetAttribute("Cash") or 0
 		local dataStatus = player:GetAttribute("BoatDataStatus")
 		local owned = player:GetAttribute("Owns" .. selectedBoatId) == true
+		local locked = not owned and player:GetAttribute("BoatLocked" .. selectedBoatId) == true
+		local pathName = spec.RequiresPath and Paths.Stages[spec.RequiresPath].Name or ""
 		local ready = dataStatus == "Ready"
 		local ownsAnyBoat = false
 		for _, id in boatIds do
@@ -615,16 +754,22 @@ function Boating.start()
 		end
 		greeting.Text = if ownsAnyBoat
 			then "Welcome back! Browse our boats, or launch a boat you already own from the boat stand on your own dock."
-			else "Looking for your first boat? Start with the wooden rowboat, or step up to a bigger, faster fishing boat. We'll lower your purchase into the water and put you aboard."
+			else "Looking for your first boat? Claim the free wooden rowboat, or choose a bigger, faster fishing boat. We'll lower it into the water and put you aboard."
 		title.Text = spec.Name
 		description.Text = if selectedBoatId == "RacingSpeedboat"
 			then "Our fastest boat with the sharpest turns. Four cockpit seats and 49 cargo tiles: 15 fewer than the fishing boat."
+			elseif
+				selectedBoatId == "Tugboat"
+			then "A black harbour tug with a full rubber fender and the toughest hull in the yard. Twin thrusters pivot it on the spot; cruise at 75 studs/s with the same 64 cargo tiles as the fishing boat."
 			elseif
 				selectedBoatId == "Trawler"
 			then "A traditional teal fishing trawler with a sheltered forward wheelhouse, stern gantry, net drum and two fishing seats. Cruise at 70 studs/s with 104 cargo tiles."
 			elseif
 				selectedBoatId == "PatrolBoat"
 			then "A long gray patrol cruiser with a wheelhouse for two, stern benches for two more, 128 cargo tiles and more speed. Pivots easily in harbour; turns a little wider than the Bluewater speedboat at speed."
+			elseif
+				selectedBoatId == "Hovercraft"
+			then "A navy hovercraft with a big ducted stern fan and three bucket seats. Glides at 65 studs/s with the same hull strength and 64 cargo tiles as the fishing boat."
 			elseif
 				selectedBoatId == "Speedboat"
 			then "A blue-and-white sport cruiser with more speed, sharper turns and the same 64 cargo tiles as the fishing boat."
@@ -640,7 +785,7 @@ function Boating.start()
 			.. tostring(spec.Beam)
 			.. " studs / "
 			.. tostring(spec.Seats)
-		price.Text = "$" .. tostring(spec.Price)
+		price.Text = formatPrice(spec.Price)
 		for boatId, tab in boatTabs do
 			Theme.button(tab, if boatId == selectedBoatId then "Selected" else nil)
 		end
@@ -648,20 +793,23 @@ function Boating.start()
 		cash.Text = if ready then formatted .. " $" else "—"
 		balance.Text = if ready then "Your cash: $" .. tostring(amount) else "Wallet unavailable"
 		local occupied = previewShop and previewShop:GetAttribute("LaunchingUserId") ~= nil
-		buy.Active = ready and not owned and amount >= spec.Price and not occupied and not isLaunching
+		buy.Active = ready and not owned and not locked and amount >= spec.Price and not occupied and not isLaunching
 		buy.Selectable = buy.Active
 		buy.AutoButtonColor = buy.Active
 		Theme.button(buy, if buy.Active then "Selected" else "Disabled")
 		buy.Text = if owned
 			then "Boat owned"
+			elseif locked then "Unlocks with " .. pathName
 			elseif occupied then "Drydock busy"
-			else "Buy & launch · $" .. tostring(spec.Price)
+			else (if spec.Price == 0 then "Claim & launch · Free" else "Buy & launch · " .. formatPrice(spec.Price))
 		if dataStatus == "Unavailable" then
 			status.Text = "Wallet could not load. Rejoin to try again."
 		elseif not ready then
 			status.Text = "Loading your wallet…"
 		elseif owned then
 			status.Text = "Owned! Use the boat stand at your own dock to spawn it."
+		elseif locked then
+			status.Text = "Unlock " .. pathName .. " on the Home ▸ Paths tab to buy this boat."
 		elseif occupied then
 			status.Text = "Another boat is launching. The drydock will be ready shortly."
 		elseif amount < spec.Price then
@@ -688,7 +836,9 @@ function Boating.start()
 					if not ready
 						then "Loading…"
 						elseif boatOwned then "Owned · ready to launch"
-						else "Available at the shipyard · $" .. tostring(boatSpec.Price)
+						elseif player:GetAttribute("BoatLocked" .. boatId) == true then
+							"Unlocks with " .. Paths.Stages[boatSpec.RequiresPath].Name
+						else "Available at the shipyard · " .. formatPrice(boatSpec.Price)
 				)
 			Theme.glassButton(
 				choice,
@@ -721,11 +871,12 @@ function Boating.start()
 		dockStatus.Text = if dataStatus == "Unavailable"
 			then "Your boats could not load. Rejoin to try again."
 			elseif not ready then "Loading your boats…"
-			elseif not ownsAnyBoat then "Visit Mara at the shipyard to buy your first boat."
+			elseif not ownsAnyBoat then "Visit Mara at the shipyard to claim a free rowboat."
 			else "Launching replaces your current boat. Your new boat will be waiting at this dock."
 	end
 	for _, id in boatIds do
 		player:GetAttributeChangedSignal("Owns" .. id):Connect(refresh)
+		player:GetAttributeChangedSignal("BoatLocked" .. id):Connect(refresh)
 	end
 	for _, attribute in { "Cash", "BoatDataStatus" } do
 		player:GetAttributeChangedSignal(attribute):Connect(refresh)
@@ -936,6 +1087,7 @@ function Boating.start()
 		if sinceWeatherCheck >= 0.5 then
 			sinceWeatherCheck = 0
 			refreshWeather()
+			refreshClock()
 		end
 		local camera = workspace.CurrentCamera
 		if overlay.Visible and camera then

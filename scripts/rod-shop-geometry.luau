@@ -161,6 +161,22 @@ local function segmentHit(a, b, obstacle)
 	end
 	return near
 end
+local spearStand = hall:FindFirstChild("SpearStand")
+local spearPrompt = spearStand and spearStand:FindFirstChild("BuySpearPrompt", true)
+check(spearPrompt and spearPrompt.ObjectText == "Shark Spear" and spearPrompt.ActionText == "Buy · $250", "The shark spear has a priced shop prompt")
+local spearAnchor = spearPrompt.Parent
+local spearCustomer = hallFrame * Vector3.new(10.5, 3.3, 3)
+local spearEye = hallFrame * Vector3.new(10.5, 5.2, 3)
+check(insideHall(spearCustomer) and (spearCustomer - spearAnchor.Position).Magnitude < spearPrompt.MaxActivationDistance, "The spear is reachable from inside the hall")
+for _, obstacle in hall:GetDescendants() do
+	if obstacle:IsA("BasePart") and obstacle.CanQuery ~= false and obstacle ~= spearAnchor then
+		check(not segmentHit(spearEye, spearAnchor.Position, obstacle), "Spear prompt ray is blocked by " .. obstacle.Name)
+	end
+end
+for _, obstacle in hallSolids do
+	check(not overlaps(avatarAt(CFrame.new(spearCustomer)), obstacle), "Spear customer stands inside " .. obstacle.Name)
+end
+
 for _, x in { -3, 0, 3 } do
 	local eye = hallFrame * Vector3.new(x, 5.2, customerZ)
 	local keeperHead = rodKeeperFrame * Vector3.new(0, 5.2, 0)
@@ -235,6 +251,14 @@ local showroom = interiors:FindFirstChild("FurnitureStoreInterior")
 check(showroom and CollectionService:HasTag(showroom, "FurnitureShowroom"), "Furniture showroom is missing or untagged")
 check(showroom.ModelStreamingMode == Enum.ModelStreamingMode.Atomic, "Showroom must stream as one model")
 local showroomFrame = showroom:GetAttribute("InteriorFrame") * CFrame.new(0, -9, 0)
+local showroomSize = showroom:GetAttribute("InteriorSize")
+check(showroomSize.X >= 64 and showroomSize.Z >= 60, "Furniture showroom should have room for broad aisles")
+for _, rugName in { "CentreRunner", "EntryMat", "AisleRunner" } do
+	local rug = showroom:FindFirstChild(rugName)
+	local position = rug and showroomFrame:PointToObjectSpace(rug.Position)
+	check(position and math.abs(position.X) < showroomSize.X / 2 and math.abs(position.Z) < showroomSize.Z / 2,
+		"Showroom rug must sit inside the room: " .. rugName)
+end
 local showroomArrival = showroom:GetAttribute("ArrivalFrame")
 check((furnitureEnter:GetAttribute("TeleportTo").Position - showroomArrival.Position).Magnitude < EPS, "Furniture door leads to wrong interior")
 check(showroomArrival.LookVector:Dot(showroomFrame.ZVector) > 0.99, "Furniture arrival must face into showroom")
@@ -246,8 +270,21 @@ for _, piece in plazaSolids do
 	check(not overlaps(avatarAt(furnitureExit), piece), "Furniture exit lands inside " .. piece:GetFullName())
 end
 local showroomSolids = solids(showroom)
-for _, id in dependencies.FurnitureCatalog.Order do
-	-- Every catalogue item has a full-size display facing its own customer spot.
+-- The two furnished room sets should fill the centre without cutting off a
+-- continuous route around them or the entrance-to-back aisle.
+local roomRugs, roomDividers = 0, 0
+for _, piece in showroom:GetChildren() do
+	if piece.Name == "RoomSetRug" then roomRugs += 1 end
+	if piece.Name == "RoomDivider" then roomDividers += 1 end
+end
+check(roomRugs == 2 and roomDividers == 2, "Showroom needs both furnished room sets")
+check(showroom:FindFirstChild("ShowroomSofaBase") and showroom:FindFirstChild("ShowroomTableTop"), "Room sets need lounge and dining furniture")
+for _, x in { -19, 0, 19 } do
+	walk({ Vector3.new(x, 3.2, -8), Vector3.new(x, 3.2, 17.5) }, showroomFrame, showroomSolids, "Showroom aisle at x=" .. x)
+end
+walk({ Vector3.new(-19, 3.2, 17.5), Vector3.new(19, 3.2, 17.5) }, showroomFrame, showroomSolids, "Back cross aisle")
+for _, id in { "Freezer", "Register", "StorageRack", "FoodCase", "GrillStation", "Smoker", "SushiBar", "KitchenStorage", "DiningTable", "WeatherRadar" } do
+	-- The established showroom samples each face their own customer spot.
 	local display = showroom:FindFirstChild(id .. "Display")
 	local sample = display and display:FindFirstChild("Sample" .. id)
 	check(sample and sample:IsA("Model") and #sample:GetDescendants() > 5, "Missing full-size furniture sample: " .. id)
@@ -259,12 +296,15 @@ for _, id in dependencies.FurnitureCatalog.Order do
 	local spot = if customer ~= nil and type(customer.X) == "number" then customer else nil
 	check(spot ~= nil, "Display lacks its customer spot: " .. id)
 	if spot then
-		walk({
-			showroomFrame:PointToObjectSpace(showroomArrival.Position),
-			Vector3.new(0, 3.2, -8),
-			Vector3.new(spot.X, 3.2, -8),
-			spot,
-		}, showroomFrame, showroomSolids, "Route to " .. id .. " display")
+		local route = { showroomFrame:PointToObjectSpace(showroomArrival.Position), Vector3.new(0, 3.2, -8) }
+		if math.abs(spot.X) < 15 then
+			-- Back-row shoppers go around the room sets before crossing the aisle.
+			table.insert(route, Vector3.new(0, 3.2, spot.Z))
+		else
+			table.insert(route, Vector3.new(spot.X, 3.2, -8))
+		end
+		table.insert(route, spot)
+		walk(route, showroomFrame, showroomSolids, "Route to " .. id .. " display")
 		check(
 			((showroomFrame * spot) - prompt.Parent.Position).Magnitude < prompt.MaxActivationDistance,
 			"Display prompt out of reach: " .. id
@@ -275,6 +315,7 @@ local counterTop = showroom:FindFirstChild("CounterTop")
 check(counterTop and CollectionService:HasTag(counterTop, "FurnitureShop"), "Furniture counter is untagged")
 local browse = counterTop and counterTop:FindFirstChild("BrowseFurniturePrompt")
 check(browse and browse:IsA("ProximityPrompt"), "Furniture counter lacks its browse prompt")
+check(browse and browse:GetAttribute("ItemId") == nil, "Furniture counter must offer the full catalogue")
 local shopSolids = solids(furnitureShop)
 for _, piece in plaza:GetDescendants() do
 	-- Paving, kerbs and inlays are flat slabs the shop stands on.
@@ -286,7 +327,7 @@ for _, piece in plaza:GetDescendants() do
 end
 local keeperFrame = showroom:GetAttribute("KeeperFrame")
 local customerSpot = keeperFrame * CFrame.new(0, 2.9, -dependencies.ShopDesk.DEPTH - 2.9)
-walk({ showroomFrame:PointToObjectSpace(showroomArrival.Position), Vector3.new(0, 3.2, -11), showroomFrame:PointToObjectSpace(customerSpot.Position) }, showroomFrame, showroomSolids, "Indoor furniture counter approach")
+walk({ showroomFrame:PointToObjectSpace(showroomArrival.Position), Vector3.new(0, 3.2, -25), Vector3.new(-24, 3.2, -25), showroomFrame:PointToObjectSpace(customerSpot.Position) }, showroomFrame, showroomSolids, "Indoor furniture counter approach")
 local furnitureDoorLocal = plazaFrame:PointToObjectSpace(furnitureExit.Position)
 walk({ Vector3.new(15, 3.4, furnitureDoorLocal.Z), Vector3.new(furnitureDoorLocal.X, 3.4, furnitureDoorLocal.Z) }, plazaFrame, plazaSolids, "Plaza route to furniture shop")
 local afterFurniture = #plaza:GetDescendants()
@@ -369,6 +410,15 @@ for _, width in { 116, 120 } do
 	dependencies.RodShop.ensure(saved)
 	check(interiors:FindFirstChild("RodStoreInterior") == rebuiltHall, "New crate hall must remain idempotent")
 end
+-- An older empty showroom must rebuild and reconnect its street door.
+showroom:SetAttribute("LayoutVersion", 4)
+dependencies.FurnitureShop.ensure(root)
+local upgradedShowroom = interiors:FindFirstChild("FurnitureStoreInterior")
+check(showroom.Parent == nil and upgradedShowroom ~= showroom, "Old furniture showroom was not upgraded")
+check(upgradedShowroom:FindFirstChild("RoomSetRug") ~= nil, "Upgraded showroom lacks furnished room sets")
+check(CollectionService:HasTag(upgradedShowroom, "FurnitureShowroom"), "Upgraded showroom lost its tag")
+check((furnitureEnter:GetAttribute("TeleportTo").Position - upgradedShowroom:GetAttribute("ArrivalFrame").Position).Magnitude < EPS, "Street door not relinked to upgraded showroom")
+
 assert(failures == 0, tostring(failures) .. " rod store geometry checks failed")
 print(
 	string.format(

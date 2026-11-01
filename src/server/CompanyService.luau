@@ -19,9 +19,11 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
+local CatchConditions = require(ReplicatedStorage.Shared.CatchConditions)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 local Paths = require(ReplicatedStorage.Shared.Paths)
+local Seasons = require(ReplicatedStorage.Shared.Seasons)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local CompanyService = {}
@@ -114,6 +116,22 @@ local function status(crew, text: string)
 	end
 end
 
+-- Hangs every part of `model` off the anchored hull root, so sailing moves one part
+-- instead of replicating hundreds of anchored CFrames every frame. The builders
+-- already joint each piece to the root; anything loose gets a weld.
+local function carry(model: Instance, root: BasePart)
+	root.Anchored = true
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") and part ~= root then
+			if not part:FindFirstChildWhichIsA("JointInstance") and not part:FindFirstChildOfClass("WeldConstraint") then
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0, weld.Part1, weld.Parent = root, part, part
+			end
+			part.Anchored = false
+		end
+	end
+end
+
 local function build(base: Model, owner: Player, boatId: string)
 	local dock = dockFrame(base)
 	if not dock then
@@ -132,9 +150,9 @@ local function build(base: Model, owner: Player, boatId: string)
 	model:SetAttribute("OwnerUserId", owner.UserId)
 	model:SetAttribute("BoatId", boatId)
 	model:SetAttribute("CompanyBoat", true)
+	local root = model.PrimaryPart :: BasePart
 	for _, part in model:GetDescendants() do
 		if part:IsA("BasePart") then
-			part.Anchored = true
 			-- Players can't board or be shoved by a hull the server slides around.
 			part.CanCollide, part.CanTouch = false, false
 			if part:IsA("Seat") or part:IsA("VehicleSeat") then
@@ -159,9 +177,12 @@ local function build(base: Model, owner: Player, boatId: string)
 		path = {},
 		catches = 0,
 		frame = moor,
-		-- The hull's pivot sits below the waterline frame it was built at.
-		pivotOffset = moor:ToObjectSpace(model:GetPivot()),
+		root = root,
+		-- The hull root sits below the waterline frame it was built at.
+		rootOffset = moor:ToObjectSpace(root.CFrame),
 	}
+	-- After the outfit, which can hang the trawl net off the hull.
+	carry(model, root)
 	model:SetAttribute("PorterPier", crew.pier)
 	model:SetAttribute("PorterPickup", crew.pickup)
 	model.Parent = folder
@@ -178,26 +199,28 @@ local function build(base: Model, owner: Player, boatId: string)
 		end
 		worker.Name = "Fisherman"
 		local humanoid = worker:FindFirstChildOfClass("Humanoid") :: Humanoid
-		local root = worker:FindFirstChild("HumanoidRootPart") :: BasePart
+		local workerRoot = worker:FindFirstChild("HumanoidRootPart") :: BasePart
 		for _, part in worker:GetDescendants() do
 			if part:IsA("BasePart") then
-				part.Anchored, part.CanCollide, part.Massless = true, false, true
+				part.CanCollide, part.Massless = false, true
 			end
 		end
 		local floor = model:GetAttribute("DryFloorHeight") or 0.8
-		local stand = crew.frame * CFrame.new(0, floor + humanoid.HipHeight + root.Size.Y / 2, crew.spec.Length * 0.28)
+		local stand = crew.frame
+			* CFrame.new(0, floor + humanoid.HipHeight + workerRoot.Size.Y / 2, crew.spec.Length * 0.28)
 		worker:PivotTo(stand * CFrame.Angles(0, math.pi / 2, 0))
 		local rod = Instance.new("Part")
 		rod.Name = "FishermanRod"
 		rod.Size = Vector3.new(0.12, 0.12, 7)
 		rod.Color, rod.Material = Color3.fromRGB(70, 52, 38), Enum.Material.Wood
-		rod.Anchored, rod.CanCollide, rod.CanQuery, rod.CanTouch = true, false, false, false
+		rod.CanCollide, rod.CanQuery, rod.CanTouch = false, false, false
 		rod.CFrame = stand
 			* CFrame.new(-1.6, 0.6, 0)
 			* CFrame.Angles(0, math.pi / 2, 0)
 			* CFrame.Angles(math.rad(28), 0, 0)
 			* CFrame.new(0, 0, -3.2)
 		rod.Parent = worker
+		carry(worker, root)
 		worker.Parent = model
 		crew.worker = { model = worker, humanoid = humanoid, root = root }
 		status(crew, "Getting the boat ready")
@@ -242,7 +265,12 @@ end
 
 local function landFish(crew, owner: Player)
 	local position = crew.frame.Position
-	local pool = Catalog.Pools[if Weather.inLake(position) then Catalog.DefaultPool else "OpenSea"]
+	local pool = FishCatch.inSeason(
+		Catalog.Pools[if Weather.inLake(position) then Catalog.DefaultPool else "OpenSea"],
+		Catalog.Fish,
+		(Seasons.current()),
+		CatchConditions.at(position)
+	)
 	local function rng()
 		return random:NextNumber()
 	end
@@ -299,7 +327,7 @@ local function move(crew, dt: number)
 		table.remove(crew.path, 1)
 		if #crew.path == 0 and crew.mode == "Returning" then
 			crew.frame = crew.moor
-			crew.model:PivotTo(crew.moor * crew.pivotOffset)
+			crew.root.CFrame = crew.moor * crew.rootOffset
 			return
 		end
 		crew.frame = CFrame.new(Vector3.new(goal.X, Biomes.WaterLevel, goal.Z)) * CFrame.Angles(0, yaw, 0)
@@ -312,7 +340,8 @@ local function move(crew, dt: number)
 		local step = heading.LookVector * math.min(speed * dt, offset.Magnitude) * math.max(0.25, math.cos(delta))
 		crew.frame = CFrame.new(Vector3.new(position.X, Biomes.WaterLevel, position.Z) + step) * heading
 	end
-	crew.model:PivotTo(crew.frame * crew.pivotOffset)
+	-- Only the anchored root replicates; the welded hull and crew follow it on each client.
+	crew.root.CFrame = crew.frame * crew.rootOffset
 end
 
 -- One decision per tick: rest at the mooring, keep fishing, or set off again.

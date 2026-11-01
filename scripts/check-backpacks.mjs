@@ -30,7 +30,7 @@ for (const [marker,path] of Object.entries({ GRID:'src/shared/Cargo.luau', BAGS:
 }
 const customer = await read('src/server/CustomerService.luau');
 const stockStart = customer.indexOf('local function stock(');
-const stockEnd = customer.indexOf('\n-- Supermarket path:', stockStart);
+const stockEnd = customer.indexOf('\nlocal function arrive(', stockStart);
 if (stockStart < 0 || stockEnd < 0) throw Error('Freezer stock handler not found');
 program = program.replace('-- FREEZER_STOCK_SOURCE --', () => customer.slice(stockStart, stockEnd));
 const folder = await mkdtemp(join(tmpdir(), 'fishing-backpacks-'));

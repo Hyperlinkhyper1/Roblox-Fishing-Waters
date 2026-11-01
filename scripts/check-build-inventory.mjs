@@ -111,6 +111,12 @@ ${section(build, '\tlocal function render()', '\n\tlocal function clearPreview('
     "Only owned, unplaced item types belong in the bottom bar")
   check(string.find(stockLabels.Freezer.Text, "2") and string.find(inventoryTitle.Text, "2"), "Stock quantities must be shown")
   check(not emptyInventory.Visible and itemButtons.Freezer.Active, "Available stock must be selectable")
+  state.PendingWallMigration = true
+  render()
+  check(string.find(hint.Text, "new walls") and string.find(hint.Text, "make space"), "Crowded wall migration must tell the player how to resolve it")
+  state.PendingWallMigration = false
+  render()
+  check(not string.find(hint.Text, "new walls"), "Resolved migration must clear the notice")
   check(previewCalls.Freezer == 1 and previewCalls.Register == nil and previewCalls.StorageRack == nil,
     "Only owned inventory needs a thumbnail clone")
   held = {ItemId = "Freezer", From = "Freezer"}
@@ -161,6 +167,10 @@ do
   }
   local DiningRoom = {buildTable = builder("DiningTable").build}
   local WeatherRadar = {build = builder("WeatherRadar").build}
+  local Decorations = {
+    has = function(id) return Furniture.Items[id].Decoration == true end,
+    build = function(parent, frame, id) return builder(id).build(parent, frame) end,
+  }
 ${section(service, 'local function buildPreviews(', '\nfunction FurnitureService.start()')}
   local parent = {}
   buildPreviews(parent)

@@ -16,33 +16,25 @@ end
 
 local fresh = BoatData.decode(nil)
 check(fresh.Cash == 0, "New players must start with $0")
-check(next(fresh.OwnedBoats) == nil, "New players must not own a boat")
+check(fresh.OwnedBoats.Rowboat == true, "New players start with a rowboat")
 check(fresh.OwnedRods.StarterRod == true, "New players start with a starter rod")
 local freshAgain = BoatData.decode(nil)
 check(freshAgain ~= fresh and freshAgain.OwnedBoats ~= fresh.OwnedBoats, "Profiles must not share mutable defaults")
 
 local poor, poorResult = BoatData.purchase(nil)
-check(poorResult == "InsufficientFunds", "A new player cannot buy the $500 rowboat")
-check(poor.Cash == 0 and not poor.OwnedBoats.Rowboat, "Failed purchase must not award a boat or currency")
+check(poorResult == "AlreadyOwned", "New players already own their rowboat")
+check(poor.Cash == 0 and poor.OwnedBoats.Rowboat, "Starter ownership must not award currency")
 
-for _, cash in { 0, 1, 499 } do
-	local input = { Version = 1, Cash = cash, OwnedBoats = {} }
-	local profile, outcome = BoatData.purchase(input)
-	check(outcome == "InsufficientFunds", `A player with ${cash} cannot afford a rowboat`)
-	check(profile.Cash == cash and not profile.OwnedBoats.Rowboat, "Insufficient funds must leave progress intact")
-	check(input.Cash == cash and next(input.OwnedBoats) == nil, "Purchase must not mutate its input")
-end
-
-for _, cash in { 500, 501, 1500 } do
+for _, cash in { 0, 1, 499, 500, 501, 1500 } do
 	local input = { Version = 1, Cash = cash, OwnedBoats = {} }
 	local profile, outcome = BoatData.purchase(input)
 	check(outcome == "Purchased", `A player with ${cash} must be able to buy the rowboat`)
-	check(profile.Cash == cash - 500 and profile.OwnedBoats.Rowboat == true, "Rowboat must cost exactly $500")
+	check(profile.Cash == cash and profile.OwnedBoats.Rowboat == true, "Rowboat must be free")
 	check(profile ~= input and profile.OwnedBoats ~= input.OwnedBoats, "Purchase must copy the profile and boat set")
 	check(input.Cash == cash and next(input.OwnedBoats) == nil, "Successful purchase must not mutate its input")
 	local again, againResult = BoatData.purchase(profile)
 	check(againResult == "AlreadyOwned", "A repeated purchase must recognize ownership")
-	check(again.Cash == cash - 500 and again.OwnedBoats.Rowboat == true, "A repeated purchase must not charge twice")
+	check(again.Cash == cash and again.OwnedBoats.Rowboat == true, "A repeated purchase must not charge")
 end
 
 local otherBoats: any = {
@@ -53,7 +45,7 @@ local otherBoats: any = {
 	UnknownNumber = 42,
 }
 local preserved: any, preservedResult = BoatData.purchase(otherBoats)
-check(preservedResult == "Purchased" and preserved.Cash == 700, "Future progress must not block a valid purchase")
+check(preservedResult == "Purchased" and preserved.Cash == 1200, "Future progress must not block a free claim")
 check(
 	preserved.OwnedBoats.Sailboat == true and preserved.OwnedBoats.FutureBoat == false,
 	"Purchasing must preserve other boats"
@@ -90,7 +82,7 @@ local purchaseOk = pcall(BoatData.purchase, invalidPurchase)
 check(not purchaseOk and invalidPurchase.Cash == -500, "Purchase must not silently replace invalid saved progress")
 
 local rod = BoatData.decode(nil)
-check(rod.Cash == 0 and not rod.OwnedBoats.Rowboat, "Starting rod must not grant cash or a boat")
+check(rod.Cash == 0 and rod.OwnedBoats.Rowboat, "Starting equipment must not grant cash")
 local legacy = { Version = 1, Cash = 1200, OwnedBoats = { Rowboat = true }, Quest = 9 }
 local migrated = BoatData.decode(legacy)
 check(
@@ -107,7 +99,7 @@ check(
 check(not otherRods.OwnedRods.StarterRod, "Rod inventory must be copied before mutation")
 local boatAfterRod = BoatData.purchase(starterAdded)
 check(
-	boatAfterRod.Cash == 300 and boatAfterRod.OwnedRods.StarterRod and boatAfterRod.OwnedRods.OceanRod,
+	boatAfterRod.Cash == 800 and boatAfterRod.OwnedRods.StarterRod and boatAfterRod.OwnedRods.OceanRod,
 	"Boat purchases must preserve rods"
 )
 rejects({ Version = 1, Cash = 0, OwnedBoats = {}, OwnedRods = false }, "Malformed rod inventories must be rejected")
@@ -222,6 +214,32 @@ local trawlerAgain, trawlerAgainResult = BoatData.purchase(trawlerOwner, "Trawle
 check(trawlerAgainResult == "AlreadyOwned" and trawlerAgain.Cash == 0, "Repeat trawler purchase cannot charge twice")
 local trawlerPoor, trawlerPoorResult = BoatData.purchase({ Version = 1, Cash = 17499, OwnedBoats = {} }, "Trawler")
 check(trawlerPoorResult == "InsufficientFunds" and trawlerPoor.Cash == 17499 and not trawlerPoor.OwnedBoats.Trawler, "Insufficient trawler funds preserve wallet")
+check(Catalog.Tugboat.Price == 17500 and Catalog.Tugboat.ForwardSpeed == 75, "Tugboat has requested price and speed")
+check(Catalog.Tugboat.Hold == Catalog.FishingBoat.Hold, "Tugboat carries the fishing boat hold")
+check(
+	Catalog.Hovercraft.Price == 4000
+		and Catalog.Hovercraft.ForwardSpeed == 65
+		and Catalog.Hovercraft.MaxHealth == Catalog.FishingBoat.MaxHealth
+		and Catalog.Hovercraft.Seats == Catalog.FishingBoat.Seats
+		and Catalog.Hovercraft.Hold == Catalog.FishingBoat.Hold,
+	"Hovercraft is a faster fishing boat at its own price"
+)
+local toughest = true
+for id, spec in Catalog do
+	if id ~= "Tugboat" and spec.MaxHealth >= Catalog.Tugboat.MaxHealth then
+		toughest = false
+	end
+end
+check(toughest, "Tugboat has the most hull health")
+local tugInput = { Version = 1, Cash = 17500, OwnedBoats = {} }
+check(BoatData.pathLocked(BoatData.decode(tugInput), "Tugboat"), "Tugboat is locked before the Company path")
+check(not BoatData.pathLocked(BoatData.decode(tugInput), "Trawler"), "Boats without a path are never locked")
+local tugLocked, tugLockedResult = BoatData.purchase(tugInput, "Tugboat")
+check(tugLockedResult == "Locked" and tugLocked.Cash == 17500 and not tugLocked.OwnedBoats.Tugboat, "Locked tugboat purchase keeps the wallet")
+local companyProfile = BoatData.decode(tugInput)
+companyProfile.Angler.Paths.Unlocked.Company = true
+local tugOwner, tugResult = BoatData.purchase(companyProfile, "Tugboat")
+check(tugResult == "Purchased" and tugOwner.Cash == 0 and BoatData.decode(tugOwner).OwnedBoats.Tugboat, "Company path unlocks the tugboat purchase")
 check(Cargo.capacity(Catalog.FishingBoat.Hold) - Cargo.capacity(Catalog.RacingSpeedboat.Hold) == 15, "Racing hold sacrifices exactly fifteen tiles")
 local racingKit = {}
 for _, item in Catalog.RacingSpeedboat.StarterParts do

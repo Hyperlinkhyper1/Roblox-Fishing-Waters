@@ -53,9 +53,10 @@ function WorldMap.start()
 	end
 	started = true
 	local player = Players.LocalPlayer
-	local half = Biomes.MapHalfSize * 1.06
+	local center = (Biomes.OceanMin + Biomes.OceanMax) / 2
+	local half = (Biomes.OceanMax - Biomes.OceanMin) / 2 * 1.06
 	local function project(x, z)
-		return Vector2.new(0.5 + x / (half * 2), 0.5 + z / (half * 2))
+		return Vector2.new(0.5 + (x - center) / (half * 2), 0.5 + (z - center) / (half * 2))
 	end
 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
 		Name = "WorldMap",
@@ -253,6 +254,9 @@ function WorldMap.start()
 				center += project(point[1], point[2])
 			end
 			center /= #coast
+			if record.Name == "Modern City" then
+				label(holder, "Modern City", UDim2.fromScale(center.X - 0.09, center.Y - 0.06), UDim2.fromScale(0.18, 0.04), 14)
+			end
 			for i, point in coast do
 				local nextPoint = coast[i % #coast + 1]
 				local a, b = project(point[1], point[2]), project(nextPoint[1], nextPoint[2])

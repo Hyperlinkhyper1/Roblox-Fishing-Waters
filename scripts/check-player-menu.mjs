@@ -135,7 +135,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
     source = source.replace(/require\(ReplicatedStorage.Shared.AnglerCatalog\)/g, 'Catalog')
       .replace(/require\(ReplicatedStorage.Shared.BackpackCatalog\)/g, `(function() ${await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8')} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.Gamepasses\)/g, `(function() ${await readFile(join(root, 'src/shared/Gamepasses.luau'), 'utf8')} end)()`)
-      .replace(/require\(script.Parent.GamepassService\)/g, '{ start = function() end, ownsAutoStore = function() return false end }')
+      .replace(/require\(script.Parent.GamepassService\)/g, '{ start = function() end, ownsAutoStore = function() return false end, ownsDoubleXP = function() return false end }')
       .replace(/require\(ReplicatedStorage.Shared.Aboard\)/g, 'function() return false end')
       .replace(/require\(ReplicatedStorage.Shared.StaffCatalog\)/g, 'StaffCatalog')
       .replace(/require\(ReplicatedStorage.Shared.ShopUpgrades\)/g, () => `(function() ${shopUpgrades} end)()`)
@@ -153,7 +153,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(game:GetService\("ReplicatedFirst"\):WaitForChild\("UITheme"\)\)/g, 'Theme')
       .replace(/require\(script.Parent.BoatService\)/g, 'BoatService')
       .replace(/require\(script.Parent.AnglerData\)/g, 'Data');
-    for (const pure of ['Paths', 'Recipes', 'FishingRanks']) {
+    for (const pure of ['Paths', 'Recipes', 'FishingRanks', 'FishCatch']) {
       const inlined = `(function() ${await readFile(join(root, `src/shared/${pure}.luau`), 'utf8')} end)()`;
       source = source.replace(new RegExp(`require\\(ReplicatedStorage.Shared.${pure}\\)`, 'g'), () => inlined);
     }

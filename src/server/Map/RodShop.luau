@@ -726,14 +726,20 @@ local function ensureCrabCageStand(hall: Model)
 end
 
 local function ensureMusselNetStand(hall: Model)
-	if hall:FindFirstChild("MusselNetStand") then
-		return
+	local existing = hall:FindFirstChild("MusselNetStand")
+	if existing then
+		if existing:GetAttribute("NetDesignVersion") == 2 then
+			return
+		end
+		existing:Destroy()
 	end
 	local stand = Instance.new("Model")
 	stand.Name = "MusselNetStand"
+	stand:SetAttribute("NetDesignVersion", 2)
 	local base = INTERIOR_ORIGIN * CFrame.new(-15, 0, -7) * CFrame.Angles(0, math.pi / 2, 0)
 	Props.part(stand, Vector3.new(4.5, 0.4, 3), base * CFrame.new(0, 0.2, 0), WOOD, M.WoodPlanks)
-	Props.musselNet(stand, base * CFrame.new(0, 0.4, 0), false)
+	local net = Props.musselNet(stand, base * CFrame.new(0, 0.4, 0), false)
+	net:ScaleTo(0.6)
 	local sign = Props.part(stand, Vector3.new(4.5, 1.4, 0.15), base * CFrame.new(0, 4, -1.6) * CFrame.Angles(0, math.pi, 0), DARK_WOOD, M.WoodPlanks)
 	sign.CanCollide, sign.CanQuery = false, false
 	PlazaHouses.boardText(sign, "MUSSEL NET · $125\n5 HAULS · 3–5 MIN\n2–5 CATCHES", Enum.NormalId.Front)
@@ -743,6 +749,62 @@ local function ensureMusselNetStand(hall: Model)
 	prompt.Name, prompt.ActionText, prompt.ObjectText = "BuyMusselNetPrompt", "Buy · $125", "Mussel Net"
 	prompt.MaxActivationDistance, prompt.HoldDuration, prompt.RequiresLineOfSight = 9, 0.35, false
 	prompt.Parent = anchor
+	stand.Parent = hall
+end
+
+local function ensureSpearStand(hall: Model)
+	if hall:FindFirstChild("SpearStand") then
+		return
+	end
+	local stand = Instance.new("Model")
+	stand.Name = "SpearStand"
+	local base = INTERIOR_ORIGIN * CFrame.new(15, 0, 3) * CFrame.Angles(0, -math.pi / 2, 0)
+	Props.part(stand, Vector3.new(4, 0.5, 2.4), base * CFrame.new(0, 0.25, 0), WOOD, M.WoodPlanks)
+	for _, x in { -1, 0, 1 } do
+		local shaft = Props.part(stand, Vector3.new(0.2, 4, 0.2), base * CFrame.new(x, 2.5, 0), WOOD, M.Wood)
+		shaft.Name, shaft.CanCollide, shaft.CanQuery = "DisplaySpear", false, false
+		local tip = Props.part(stand, Vector3.new(0.4, 1, 0.15), base * CFrame.new(x, 5, 0), IRON, M.Metal)
+		tip.Name, tip.CanCollide, tip.CanQuery = "Spearhead", false, false
+	end
+	local sign = Props.part(stand, Vector3.new(4.6, 1.2, 0.15), base * CFrame.new(0, 6.2, -1.2) * CFrame.Angles(0, math.pi, 0), DARK_WOOD, M.WoodPlanks)
+	sign.CanCollide, sign.CanQuery = false, false
+	PlazaHouses.boardText(sign, "SHARK SPEAR · $250", Enum.NormalId.Front)
+	local anchor = Props.part(stand, Vector3.one, base * CFrame.new(0, 3, 1.3), WOOD)
+	anchor.Name = "SpearPromptAnchor"
+	anchor.Transparency, anchor.CanCollide, anchor.CastShadow = 1, false, false
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name, prompt.ActionText, prompt.ObjectText = "BuySpearPrompt", "Buy · $250", "Shark Spear"
+	prompt.MaxActivationDistance, prompt.HoldDuration, prompt.RequiresLineOfSight = 9, 0.35, false
+	prompt.Parent = anchor
+	stand.Parent = hall
+end
+
+-- Added independently so existing saved shop interiors receive the new case too.
+local function ensureSpearCrateStand(hall: Model)
+	if hall:FindFirstChild("SpearCrateDisplay") then
+		return
+	end
+	local stand = Instance.new("Model")
+	stand.Name = "SpearCrateDisplay"
+	local base = INTERIOR_ORIGIN * CFrame.new(10, 0, -13) * CFrame.Angles(0, math.pi / 2, 0)
+	stand:SetAttribute("CrateFrame", base)
+	stand:SetAttribute("LidHinge", base * CFrame.new(0, 2.4, 0.9))
+	Props.part(stand, Vector3.new(3.4, 0.8, 3), base * CFrame.new(0, 0.4, 0), rgb(120, 116, 112), M.Slate)
+	local crate = Props.part(stand, Vector3.new(2.6, 1.5, 1.8), base * CFrame.new(0, 1.65, 0), WOOD, M.WoodPlanks)
+	crate.Name = "SpearCrate"
+	local lid = Instance.new("Model")
+	lid.Name = "SpearCrateLid"
+	local board = Props.part(lid, Vector3.new(2.7, 0.2, 1.9), base * CFrame.new(0, 2.5, 0), DARK_WOOD, M.WoodPlanks)
+	board.CanCollide = false
+	lid.PrimaryPart = board
+	lid.Parent = stand
+	local sign = Props.part(stand, Vector3.new(3, 0.8, 0.12), base * CFrame.new(0, 4.4, 0.6), DARK_WOOD, M.WoodPlanks)
+	sign.CanCollide, sign.CanQuery = false, false
+	PlazaHouses.boardText(sign, "SPEAR SKINS\n$350", Enum.NormalId.Front)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name, prompt.ActionText, prompt.ObjectText = "OpenSpearCratePrompt", "Open case", "Spear Skins · $350"
+	prompt.MaxActivationDistance, prompt.HoldDuration, prompt.RequiresLineOfSight = 9, 0, false
+	prompt.Parent = crate
 	stand.Parent = hall
 end
 
@@ -772,6 +834,8 @@ local function ensureInterior(): Model
 	end
 	ensureCrabCageStand(hall)
 	ensureMusselNetStand(hall)
+	ensureSpearStand(hall)
+	ensureSpearCrateStand(hall)
 	hall:SetAttribute("KeeperFrame", KEEPER_FRAME)
 	CollectionService:AddTag(hall, "FishingRodShop")
 	return hall

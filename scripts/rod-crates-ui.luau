@@ -89,7 +89,7 @@ feedback.Name, feedback.Parent, feedback.OnClientEvent = "Feedback", remotes, si
 local requests = {}
 function request:FireServer(action, value)
 	table.insert(requests, { action, value })
-	if action == "OpenRodCrate" or action == "OpenBobberCrate" then
+	if action == "OpenRodCrate" or action == "OpenBobberCrate" or action == "OpenSpearCrate" then
 		check(not player:GetAttribute("RodCratesOpen"), "Menu closes immediately before purchase request")
 	end
 end
@@ -269,4 +269,30 @@ check(
 	not player:GetAttribute("RodCrateOpening") and bobberWindow:FindFirstChildOfClass("UIScale").Scale < 1,
 	"Bobber reveal cleans up and the case fits a phone"
 )
+local spearStand = Instance.new("Part")
+spearStand.Parent, spearStand.Position = interiors, Vector3.zero
+local spearPrompt = Instance.new("ProximityPrompt")
+spearPrompt.Name, spearPrompt.Parent = "OpenSpearCratePrompt", spearStand
+local spearScreen = playerGui:WaitForChild("SpearCrates")
+local spearOverlay = spearScreen.CrateOverlay
+local spearWindow = spearOverlay.SpearCrateWindow
+local spearOpen = spearWindow.Footer.OpenSpearCrate
+advance(1)
+feedback.OnClientEvent:Fire("OpenSpearCrates")
+check(spearOverlay.Visible and string.find(spearOpen.Text, "$350", 1, true), "Spear stand opens its $350 case")
+player:SetAttribute("SpearSkinCountDriftwood", 1)
+check(spearWindow.SkinsSpearCrate.Driftwood.EquipDriftwood.Text == "Equip in equipment bag", "Spear copies are equipped in the bag")
+spearOpen.Activated:Fire()
+check(requests[#requests][1] == "OpenSpearCrate" and requests[#requests][2] == "SpearCrate", "Purchase opens spear case")
+feedback.OnClientEvent:Fire("SpearCrateResult", true, "Unboxed!", { { SkinId = "Driftwood", Serial = 5, Wear = 0.5 } })
+revealCallbacks.reward()
+local displayedWear, displayedPerk = false, false
+for _, child in spearScreen.RewardCaption:GetChildren() do
+	if child:IsA("TextLabel") then
+		displayedWear = displayedWear or string.find(child.Text, "Battle-Scarred", 1, true) ~= nil
+		displayedPerk = displayedPerk or string.find(child.Text, "+4% shark damage", 1, true) ~= nil
+	end
+end
+check(displayedWear and displayedPerk, "Spear reveal shows rolled wear and adjusted boost")
+revealCallbacks.finish()
 print(`Rod and bobber case menus: {checks} checks passed (recording mocks; no Studio rendering)`)

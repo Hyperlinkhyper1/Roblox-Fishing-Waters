@@ -11,6 +11,7 @@ local ShopUpgrades = require(ReplicatedStorage.Shared.ShopUpgrades)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Paths = require(ReplicatedStorage.Shared.Paths)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
+local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Settings = require(script.Parent.PlayerSettings)
 local Freecam = require(script.Parent.Freecam)
@@ -1043,11 +1044,13 @@ function Menu.start()
 
 		local all = {}
 		local discovered = 0
-		for id in Catalog.Fish do
-			table.insert(all, id)
-			local entry = profile.Angler.Catches[id]
-			if entry and (entry.Count or 0) > 0 then
-				discovered += 1
+		for id, species in Catalog.Fish do
+			if not species.DropOnly then
+				table.insert(all, id)
+				local entry = profile.Angler.Catches[id]
+				if entry and (entry.Count or 0) > 0 then
+					discovered += 1
+				end
 			end
 		end
 		table.sort(all, function(a, b)
@@ -1148,6 +1151,8 @@ function Menu.start()
 				{ "CAUGHT", if known then tostring(entry.Count) else "—" },
 				{ "BIGGEST", if known then string.format("%.2f kg", entry.BiggestKg) else "—" },
 				{ "SIZE RANGE", if known then string.format("%g–%g kg", species.MinKg, species.MaxKg) else "—" },
+				-- Shown before discovery so anglers know when to look for it.
+				{ "SEASON", FishCatch.seasonLabel(species) },
 			}
 			for column, stat in stats do
 				local x = (column - 1) / #stats
@@ -2262,6 +2267,8 @@ function Menu.start()
 						.. " more needed"
 					elseif not hired then "Select Hire on the card to add this worker to your crew."
 					elseif selectedStaff == "Fisherman" then "Choose the boat he takes out:"
+					elseif selectedStaff == "RestaurantChef" or selectedStaff == "CompanyChef" then
+						"Choose a recipe for this chef."
 					else "Permanent crew. No daily wages. Returns whenever you join."
 				text(details, status, 12, if locked then gold else muted, {
 					LayoutOrder = 3,
@@ -2341,7 +2348,7 @@ function Menu.start()
 						return BoatCatalog[a].Price < BoatCatalog[b].Price
 					end)
 					if #boats == 0 then
-						text(details, "Buy a boat at the drydock first.", 13, gold, { LayoutOrder = 4 })
+						text(details, "Claim a free rowboat at the drydock first.", 13, gold, { LayoutOrder = 4 })
 					end
 					for index, boatId in boats do
 						local chosen = profile.Angler.FishermanBoat == boatId
@@ -2362,6 +2369,55 @@ function Menu.start()
 						)
 						Theme.glassButton(pick, if chosen then "Selected" else "Normal")
 						withIcon(pick, if chosen then "Check" else "Equipmentbag", cream, 16)
+					end
+				end
+				if hired and (selectedStaff == "RestaurantChef" or selectedStaff == "CompanyChef") then
+					local selectedRecipe = (profile.Angler.ChefRecipes or {})[selectedStaff]
+					text(
+						details,
+						"Uses fish from kitchen storage and the required station. Dishes go to the shared kitchen pass for supermarket customers and, when unlocked, restaurant diners.",
+						12,
+						muted,
+						{ LayoutOrder = 4, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y }
+					)
+					local paused = not selectedRecipe or selectedRecipe == ""
+					local pause = button(details, if paused then "Paused" else "Pause cooking", function()
+						if not paused then
+							request("SetChefRecipe", selectedStaff, "")
+						end
+					end, {
+						Name = "PauseChef",
+						LayoutOrder = 5,
+						Size = UDim2.new(1, 0, 0, 40),
+						TextSize = 13,
+					})
+					Theme.glassButton(pause, if paused then "Selected" else "Normal")
+					for index, recipeId in Recipes.Order do
+						local recipe = Recipes.Items[recipeId]
+						local chosen = selectedRecipe == recipeId
+						local station = Recipes.Stations[recipe.Station].Name
+						local pick = button(
+							details,
+							string.format(
+								"%s · %s · %s+%s",
+								recipe.Name,
+								station,
+								recipe.MinRarity,
+								if chosen then " · Assigned" else ""
+							),
+							function()
+								if not chosen then
+									request("SetChefRecipe", selectedStaff, recipeId)
+								end
+							end,
+							{
+								Name = "ChefRecipe" .. recipeId,
+								LayoutOrder = index + 5,
+								Size = UDim2.new(1, 0, 0, 40),
+								TextSize = 13,
+							}
+						)
+						Theme.glassButton(pick, if chosen then "Selected" else "Normal")
 					end
 				end
 			end
@@ -2926,7 +2982,6 @@ function Menu.start()
 			Shop = "The Fishing Waters Robux shop.",
 		})[active]
 		if active == "Shop" then
-			local owned = player:GetAttribute("OwnsAutoStore") == true
 			iconTitle(
 				content,
 				"Shop",
@@ -2935,75 +2990,86 @@ function Menu.start()
 				cream,
 				{ Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 0, 36) }
 			)
-			-- One product card: icon tile, details and its buy button grouped on a panel.
-			local product = make("Frame", content, {
-				Name = "AutoStoreCard",
-				BackgroundColor3 = paper,
-				Position = UDim2.fromOffset(8, 48),
-				Size = UDim2.new(1, -16, 0, if narrow then 330 else 228),
-			})
-			local tileSize = if narrow then 84 else 150
-			local tile = make("Frame", product, {
-				Name = "ProductIcon",
-				BackgroundColor3 = paper,
-				Position = UDim2.fromOffset(14, 14),
-				Size = UDim2.fromOffset(tileSize, tileSize),
-			})
-			Theme.glassPanel(tile, true)
-			glyph(tile, "AutoStore", if owned then green else cream, UDim2.fromScale(0.5, 0.5), tileSize * 0.55)
-			local left = if narrow then 14 else tileSize + 30
-			local textTop = if narrow then tileSize + 24 else 14
-			local titleLeft = if narrow then tileSize + 30 else left
-			text(product, "Auto Store", 24, cream, {
-				Position = UDim2.fromOffset(titleLeft, 14),
-				Size = UDim2.new(1, -(titleLeft + 14), 0, 32),
-				Font = Enum.Font.GothamBold,
-			})
-			local tag = make("Frame", product, {
-				Name = "PassTag",
-				BackgroundColor3 = paper,
-				Position = UDim2.fromOffset(titleLeft, 50),
-				Size = UDim2.fromOffset(if owned then 92 else 104, 24),
-			})
-			Theme.glassPanel(tag, true)
-			tag.ThemeBorder.Color = if owned then green else gold
-			tag.ThemeBorder.Transparency = 0.2
-			glyph(tag, if owned then "Check" else "Robux", if owned then green else cream, UDim2.fromOffset(14, 12), 14)
-			text(tag, if owned then "OWNED" else "GAMEPASS", 11, if owned then green else cream, {
-				Position = UDim2.fromOffset(26, 0),
-				Size = UDim2.new(1, -30, 1, 0),
-			})
-			text(
-				product,
-				"Automatically packs caught fish into your ship's hold while you are aboard your own ship. Tries every rotation for a snug fit. If the hold is full, the fish stays in your hand.",
-				15,
-				muted,
-				{
-					Position = UDim2.fromOffset(left, if narrow then textTop else 84),
-					Size = UDim2.new(1, -(left + 14), 0, if narrow then 120 else 72),
-					TextWrapped = true,
-					TextYAlignment = Enum.TextYAlignment.Top,
-				}
-			)
-			local buy = button(product, if owned then "Owned" else "Buy Auto Store · Robux", function()
-				if player:GetAttribute("OwnsAutoStore") == true then
-					return
+			local products = {
+				{ Key = "AutoStore", Name = "Auto Store", Description = "Automatically packs caught fish into your ship's hold while you are aboard your own ship. Tries every rotation for a snug fit. If the hold is full, the fish stays in your hand." },
+				{ Key = "DoubleXP", Name = "2x XP", Description = "Earn double XP from every catch, including crab cages, mussel nets and the trawler net." },
+			}
+			for index, pass in products do
+				local owned = player:GetAttribute("Owns" .. pass.Key) == true
+				-- One product card: icon tile, details and its buy button grouped on a panel.
+				local product = make("Frame", content, {
+					Name = pass.Key .. "Card",
+					BackgroundColor3 = paper,
+					Position = UDim2.fromOffset(8, 48 + (index - 1) * (if narrow then 342 else 240)),
+					Size = UDim2.new(1, -16, 0, if narrow then 330 else 228),
+				})
+				local tileSize = if narrow then 84 else 150
+				local tile = make("Frame", product, {
+					Name = "ProductIcon",
+					BackgroundColor3 = paper,
+					Position = UDim2.fromOffset(14, 14),
+					Size = UDim2.fromOffset(tileSize, tileSize),
+				})
+				Theme.glassPanel(tile, true)
+				if pass.Key == "AutoStore" then
+					glyph(tile, "AutoStore", if owned then green else cream, UDim2.fromScale(0.5, 0.5), tileSize * 0.55)
+				else
+					text(tile, "2x XP", 24, if owned then green else gold, { Size = UDim2.fromScale(1, 1), TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold })
 				end
-				local ok = pcall(function()
-					MarketplaceService:PromptGamePassPurchase(player, Gamepasses.AutoStore.Id)
-				end)
-				if not ok then
-					notice.Text = "The purchase prompt could not open. Please try again."
-				end
-			end, {
-				Name = "BuyAutoStore",
-				Position = UDim2.new(0, left, 1, -60),
-				Size = UDim2.new(1, -(left + 14), 0, 44),
-				BackgroundColor3 = if owned then navy else gold,
-				Active = not owned,
-			})
-			Theme.glassButton(buy, if owned then "Disabled" else "Selected")
-			withIcon(buy, if owned then "Check" else "Robux", if owned then green else cream)
+				local left = if narrow then 14 else tileSize + 30
+				local textTop = if narrow then tileSize + 24 else 14
+				local titleLeft = if narrow then tileSize + 30 else left
+				text(product, pass.Name, 24, cream, {
+					Position = UDim2.fromOffset(titleLeft, 14),
+					Size = UDim2.new(1, -(titleLeft + 14), 0, 32),
+					Font = Enum.Font.GothamBold,
+				})
+				local tag = make("Frame", product, {
+					Name = "PassTag",
+					BackgroundColor3 = paper,
+					Position = UDim2.fromOffset(titleLeft, 50),
+					Size = UDim2.fromOffset(if owned then 92 else 104, 24),
+				})
+				Theme.glassPanel(tag, true)
+				tag.ThemeBorder.Color = if owned then green else gold
+				tag.ThemeBorder.Transparency = 0.2
+				glyph(tag, if owned then "Check" else "Robux", if owned then green else cream, UDim2.fromOffset(14, 12), 14)
+				text(tag, if owned then "OWNED" else "GAMEPASS", 11, if owned then green else cream, {
+					Position = UDim2.fromOffset(26, 0),
+					Size = UDim2.new(1, -30, 1, 0),
+				})
+				text(
+					product,
+					pass.Description,
+					15,
+					muted,
+					{
+						Position = UDim2.fromOffset(left, if narrow then textTop else 84),
+						Size = UDim2.new(1, -(left + 14), 0, if narrow then 120 else 72),
+						TextWrapped = true,
+						TextYAlignment = Enum.TextYAlignment.Top,
+					}
+				)
+				local buy = button(product, if owned then "Owned" else "Buy " .. pass.Name .. " · Robux", function()
+					if player:GetAttribute("Owns" .. pass.Key) == true then
+						return
+					end
+					local ok = pcall(function()
+						MarketplaceService:PromptGamePassPurchase(player, Gamepasses[pass.Key].Id)
+					end)
+					if not ok then
+						notice.Text = "The purchase prompt could not open. Please try again."
+					end
+				end, {
+					Name = "Buy" .. pass.Key,
+					Position = UDim2.new(0, left, 1, -60),
+					Size = UDim2.new(1, -(left + 14), 0, 44),
+					BackgroundColor3 = if owned then navy else gold,
+					Active = not owned,
+				})
+				Theme.glassButton(buy, if owned then "Disabled" else "Selected")
+				withIcon(buy, if owned then "Check" else "Robux", if owned then green else cream)
+			end
 		elseif not profile then
 			empty(
 				content,
@@ -3027,11 +3093,13 @@ function Menu.start()
 			render()
 		end
 	end)
-	player:GetAttributeChangedSignal("OwnsAutoStore"):Connect(function()
-		if active == "Shop" then
-			render()
-		end
-	end)
+	for _, attribute in { "OwnsAutoStore", "OwnsDoubleXP" } do
+		player:GetAttributeChangedSignal(attribute):Connect(function()
+			if active == "Shop" then
+				render()
+			end
+		end)
+	end
 	for index, name in { "Bestiary", "Journal", "Home", "Equipment bag", "Settings", "Shop" } do
 		navButtons[name] = button(sidebar, name, function()
 			if player:GetAttribute("DrydockScreenOpen") or player:GetAttribute("RodCrateOpening") then

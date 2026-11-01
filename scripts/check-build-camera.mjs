@@ -9,6 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = name => readFile(join(root, name), 'utf8');
 const source = (await read('src/client/BuildMode.luau')).replace(/\r\n/g, '\n');
 const furniture = await read('src/shared/FurnitureCatalog.luau');
+const baseGrid = await read('src/shared/BaseGrid.luau');
 function section(start, end) {
   const first = source.indexOf(start);
   const last = source.indexOf(end, first);
@@ -40,6 +41,9 @@ local FLOOR_Y = 0.16
 local ROOF_HEIGHT = 8.4
 local Furniture = (function()
 ${furniture}
+end)()
+local BaseGrid = (function()
+${baseGrid}
 end)()
 ${section('local CAMERA_PITCH', '\nlocal started')}
 local pan, zoom, cameraDistance = Vector2.zero, 1, 60
@@ -81,8 +85,8 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
         return Vector2.new(size[1] / 2 + focal * p.X / -p.Z,
           size[2] / 2 - focal * p.Y / -p.Z)
       end
-      for _, x in {-23, 23} do
-        for _, z in {-15, 15} do
+      for _, x in {-24.75, 24.75} do
+        for _, z in {-15.75, 15.75} do
           for _, y in {0, ROOF_HEIGHT} do
             local screen = project(houseFrame * Vector3.new(x, FLOOR_Y + y, z))
             assert(screen.X >= 12 and screen.X <= size[1] - 12, "House cropped horizontally")
@@ -97,7 +101,7 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
         return {Origin = self.CFrame.Position, Direction = direction.Unit}
       end
       local function checkPointer()
-        for _, point in {Vector3.new(8.5, FLOOR_Y, 6), Vector3.new(-12.5, FLOOR_Y, -8), Vector3.new(0, FLOOR_Y, 0)} do
+        for _, point in {Vector3.new(9, FLOOR_Y, 4.5), Vector3.new(-13.5, FLOOR_Y, -9), Vector3.new(0, FLOOR_Y, 0)} do
           mouse = project(houseFrame * point)
           local x, z = pointerSpot(mousePosition())
           assert(x == point.X and z == point.Z, "Placement ray misses pointed floor tile")
@@ -125,7 +129,7 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
 ${section('\tlocal function aim(', '\n\tlocal function hold(')}
 ${section('\tlocal function placeHeld(', '\n\tlocal function clickFurniture(')}
 ${section('\tlocal function clickWorld(', '\n\tUserInputService.InputBegan:Connect(')}
-        for r, tile in {{16, -13.5}, {19.5, -8}, {8, -12}, {13, -8}} do
+        for r, tile in {{18, -13.5}, {18, -9}, {13.5, -9}, {9, -9}} do
           held, sent = {ItemId = "StorageRack", From = "StorageRack", R = r - 1}, nil
           mouse = project(houseFrame * Vector3.new(tile[1], FLOOR_Y, tile[2]))
           aim(mousePosition())
@@ -137,8 +141,8 @@ ${section('\tlocal function clickWorld(', '\n\tUserInputService.InputBegan:Conne
             "Green rack preview must place on the same tile")
           checks += 2
         end
-        assert(Furniture.check({}, "StorageRack", -10, 9, 0) ~= nil, "Shop must still reject racks")
-        assert(Furniture.check({}, "StorageRack", 12, -1, 0) ~= nil, "Storage doorway must stay clear")
+        assert(Furniture.check({}, "StorageRack", -9, 72, 0) ~= nil, "Shop must still reject racks")
+        assert(Furniture.check({}, "StorageRack", 9, 13.5, 2) ~= nil, "Storage doorway must stay clear")
       end
       local before = camera.Focus.Position
       assert(cameraInput("pan", "Begin", {KeyCode = "W"}) == "Sink", "Movement must be consumed")

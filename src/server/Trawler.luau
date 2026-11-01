@@ -264,7 +264,13 @@ function Trawler.build(frame: CFrame, anchored: boolean?): Model
 		part("WindscreenMullion", V(0.17, 3.24, 0.18), front * F(x, 0, 0), CREAM, nil, true)
 	end
 	for _, x in { -2.2, 0, 2.2 } do
-		part("WindscreenSeal", V(2.05, 3.07, 0.09), front * F(x, 0, 0.015), DARK)
+		-- Frame the pane without placing an opaque sheet behind the glass.
+		for _, dx in { -0.985, 0.985 } do
+			part("WindscreenSeal", V(0.08, 3.07, 0.09), front * F(x + dx, 0, 0.015), DARK)
+		end
+		for _, dy in { -1.495, 1.495 } do
+			part("WindscreenSeal", V(1.89, 0.08, 0.09), front * F(x, dy, 0.015), DARK)
+		end
 		local window = part("Windscreen", V(1.89, 2.91, 0.12), front * F(x, 0, -0.065), GLASS, nil, true)
 		window.Transparency = 0.27
 		part("WiperArm", V(0.055, 1.43, 0.045), front * F(x + 0.3, -0.48, -0.15) * CFrame.Angles(0, 0, -0.3), DARK)

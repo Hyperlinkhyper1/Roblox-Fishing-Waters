@@ -42,10 +42,18 @@ local function loadFishFreezer()
 	-- FISHFREEZER_SOURCE --
 end
 dependencies.FishFreezer = loadFishFreezer()
+local function loadBaseGrid()
+	-- BASEGRID_SOURCE --
+end
+dependencies.BaseGrid = loadBaseGrid()
 local function loadBaseHouse()
 	-- BASEHOUSE_SOURCE --
 end
 local BaseHouse = loadBaseHouse()
+local function loadDiningRoom()
+	-- DININGROOM_SOURCE --
+end
+local DiningRoom = loadDiningRoom()
 -- GEOMETRY_HELPERS --
 
 -- WedgeParts have six physical corners; their bounding boxes include an empty
@@ -71,18 +79,71 @@ local function check(condition, message)
 	assert(condition, message)
 end
 
+local grid = dependencies.BaseGrid
+check(grid.COLUMNS == 11 and grid.ROWS == 7 and grid.CELL_SIZE == 4.5, "Unexpected house grid dimensions")
+for column = 1, grid.COLUMNS do
+	for row = 1, grid.ROWS do
+		local x, z = grid.cellToLocal(column, row)
+		local gotColumn, gotRow = grid.localToCell(x, z)
+		check(gotColumn == column and gotRow == row, "Grid center did not round trip")
+		check(grid.snap(x) == x and grid.snap(z) == z, "Grid center did not snap to itself")
+	end
+end
+check(grid.localToCell(grid.HALF_WIDTH, 0) == nil, "Grid includes its positive outside edge")
+check(grid.localToCell(0, -grid.HALF_LENGTH - 0.01) == nil, "Grid includes points outside the house")
+
 local function probe(size, frame)
 	local item = Instance.new("Part")
 	item.Size, item.CFrame = size, frame
 	return item
 end
 
+-- The dining extension is built separately when the Restaurant path opens.
+-- Its wall centerlines must share the same lattice, with a clear west entrance.
+do
+	local parent = Instance.new("Model")
+	local house = BaseHouse.build(parent, CFrame.identity, Color3.fromRGB(30, 120, 160), 1)
+	local room = DiningRoom.build(house, CFrame.identity)
+	for _, part in room:GetChildren() do
+		if part:IsA("BasePart") then
+			if part.Name == "DiningWestWall" or part.Name == "DiningEastWall" then
+				check(math.abs((part.Position.X - grid.HALF_WIDTH) / grid.CELL_SIZE - math.round((part.Position.X - grid.HALF_WIDTH) / grid.CELL_SIZE)) < EPS, "Dining side wall is not on a grid border")
+			elseif part.Name == "DiningBackWall" then
+				check(math.abs((part.Position.Z - grid.HALF_LENGTH) / grid.CELL_SIZE - math.round((part.Position.Z - grid.HALF_LENGTH) / grid.CELL_SIZE)) < EPS, "Dining rear wall is not on a grid border")
+			end
+		end
+	end
+	for step = 0, 18 do
+		local x = DiningRoom.ARRIVAL.X + (DiningRoom.INSIDE.X - DiningRoom.ARRIVAL.X) * step / 18
+		local avatar = probe(Vector3.new(3.9, 5.55, 3.9), CFrame.new(x, 0.16 + 3.225, DiningRoom.DOOR.Z))
+		for _, part in room:GetChildren() do
+			if part:IsA("BasePart") and part.CanCollide then
+				check(not overlaps(avatar, part), "Dining west entrance obstructed by " .. part.Name)
+			end
+		end
+	end
+	-- The walk from the street stays between the house wall and the 58-stud
+	-- quay edge. Check the full standing envelope against both shells.
+	for step = 0, 78 do
+		local z = 12 + (DiningRoom.ARRIVAL.Z - 12) * step / 78
+		local avatar = probe(Vector3.new(3.9, 5.55, 3.9), CFrame.new(DiningRoom.ARRIVAL.X, 0.16 + 3.225, z))
+		for _, group in { house.Shell, room } do
+			for _, part in group:GetChildren() do
+				if part:IsA("BasePart") and part.CanCollide then
+					check(not overlaps(avatar, part), "Dining quay approach obstructed by " .. part.Name)
+				end
+			end
+		end
+		check(DiningRoom.ARRIVAL.X - 1.5 >= -29, "Dining approach is not supported by the quay")
+	end
+end
+
 local function checkLights(house, houseFrame)
 	for roomName, area in
 		{
-			Shop = { -22, 22, 2, 14, 3 },
-			Processing = { -22, 2, -14, 0, 2 },
-			Storage = { 4, 22, -14, 0, 2 },
+			Shop = { -22, 22, grid.SHOP_FRONT + 2, grid.SHOP_BACK - 2, 3 },
+			Processing = { -22, 0, -14, 14, 4 },
+			Storage = { 4, 22, -14, 14, 4 },
 		}
 	do
 		local lights = house:FindFirstChild(roomName):FindFirstChild("CeilingLights")
@@ -92,7 +153,11 @@ local function checkLights(house, houseFrame)
 			local mount, cord, bulb = fixture.CeilingMount, fixture.HangingCord, fixture.LampGlobe
 			local localMount = houseFrame:PointToObjectSpace(mount.Position)
 			check(math.abs(localMount.Y + mount.Size.Y / 2 - 10.875) < 0.01, "Pendant detached from ceiling tie")
-			check(math.abs(math.abs(localMount.Z) - 10) < EPS, "Pendant does not align with a ceiling tie")
+			if roomName == "Shop" then
+				check(math.min(math.abs(localMount.X), math.abs(math.abs(localMount.X) - 15)) < EPS, "Shop pendant does not align with a ceiling tie")
+			else
+				check(math.abs(math.abs(localMount.Z) - 10) < EPS, "Pendant does not align with a ceiling tie")
+			end
 			check(cord.Size.Y > 1 and bulb.Position.Y < mount.Position.Y, "Lamp does not hang below the ceiling")
 			for _, piece in fixture:GetChildren() do
 				check(piece.Anchored and not piece.CanCollide and not piece.CanQuery, "Hanging light blocks players")
@@ -242,6 +307,7 @@ for index, houseFrame in
 do
 	local parent = Instance.new("Model")
 	local house = BaseHouse.build(parent, houseFrame, Color3.fromRGB(63, 123, 139), index)
+	check(house:GetAttribute("GridColumns") == grid.COLUMNS and house:GetAttribute("GridRows") == grid.ROWS and house:GetAttribute("GridCellSize") == grid.CELL_SIZE, "House grid attributes disagree with shared grid")
 	for _, piece in house.Shell:GetChildren() do
 		if
 			table.find(
@@ -285,7 +351,25 @@ do
 		check(#children == 2 and children[1].Name == floorName, "Unexpected furniture in " .. roomName)
 	end
 	local shop = house:FindFirstChild("Shop")
-	check(#shop:GetChildren() == 4, "Shop must start with its floor, freezer, furnished desk and ceiling lights")
+	check(#shop:GetChildren() == 5, "Shop must start with its shell, floor, freezer, furnished desk and ceiling lights")
+	-- The shop is its own building across the road, on the same grid and floor level.
+	local shopShell = shop:FindFirstChild("ShopShell")
+	check(shopShell and shopShell:IsA("Model") and shop.ShopFloor:IsA("BasePart"), "Shop building lacks its shell or floor")
+	local shopFloorLow, shopFloorHigh = bounds(shop.ShopFloor, houseFrame)
+	check(math.abs(shopFloorHigh.Y - 0.16) < EPS, "Shop floor is not level with the house floor")
+	check(math.abs(shopFloorLow.Z - grid.SHOP_FRONT) < EPS and math.abs(shopFloorHigh.Z - grid.SHOP_BACK) < EPS, "Shop floor does not span its walls")
+	check(math.abs(shopFloorLow.X + grid.HALF_WIDTH) < EPS and math.abs(shopFloorHigh.X - grid.HALF_WIDTH) < EPS, "Shop floor is not as wide as the house")
+	check(shopShell:FindFirstChild("ShopSign") and not house.Shell:FindFirstChild("ShopSign"), "The owner's shop sign belongs on the shop building")
+	for _, part in shopShell:GetChildren() do
+		local position = houseFrame:PointToObjectSpace(part.Position)
+		if part.Name == "ShopFrontWall" or part.Name == "ShopFrontWallLintel" or part.Name == "ShopFrontWallSillWall" then
+			check(math.abs(position.Z - grid.SHOP_FRONT) < EPS, "Shop front wall is not on a grid border")
+		elseif part.Name == "ShopBackWall" or part.Name == "ShopBackWallLintel" or part.Name == "ShopBackWallSillWall" then
+			check(math.abs(position.Z - grid.SHOP_BACK) < EPS, "Shop back wall is not on a grid border")
+		elseif part.Name == "ShopSideWall" then
+			check(math.abs(math.abs(position.X) - grid.HALF_WIDTH) < EPS, "Shop side wall is not on a grid border")
+		end
+	end
 	checkLights(house, houseFrame)
 	local freezer = shop:FindFirstChild("FishFreezer")
 	local desk = shop:FindFirstChild("ShopDesk")
@@ -307,11 +391,11 @@ do
 		obj_0_color_14541540 = Enum.Material.SmoothPlastic,
 	})
 	check(#desk:GetChildren() == 7 and #register:GetChildren() == 4, "Desk/register source groups changed")
-	local deskFrame = houseFrame * CFrame.new(16, 0.16, 10.675) * CFrame.Angles(0, math.pi / 2, 0)
+	local deskFrame = houseFrame * CFrame.new(-16, 0.16, 70.325) * CFrame.Angles(0, -math.pi / 2, 0)
 	local registerFrame = deskFrame * CFrame.new(-2.325, 3, 0)
 	local registerLow, registerHigh =
 		Vector3.new(math.huge, math.huge, math.huge), Vector3.new(-math.huge, -math.huge, -math.huge)
-	local deskFront = -math.huge
+	local deskEnd = math.huge
 	for _, group in desk:GetChildren() do
 		if group == register then
 			continue
@@ -319,19 +403,19 @@ do
 		for _, part in group:GetChildren() do
 			local low, high = bounds(part, houseFrame)
 			check(
-				low.X >= 14.47 and high.X <= 17.53 and low.Z >= 6.924 and high.Z <= 14.426,
+				low.X >= -17.53 and high.X <= -14.47 and low.Z >= 66.574 and high.Z <= 74.076,
 				"Rotated desk is outside its window-wall footprint"
 			)
-			deskFront = math.max(deskFront, high.Z)
-			for _, wall in house.Shell:GetChildren() do
-				if wall:IsA("BasePart") and (wall.Name == "StoneSill" or wall.Name == "FrontWallSillWall") then
+			deskEnd = math.min(deskEnd, low.Z)
+			for _, wall in shopShell:GetChildren() do
+				if wall:IsA("BasePart") and (wall.Name == "StoneSill" or wall.Name == "ShopFrontWallSillWall") then
 					check(not overlaps(part, wall), "Desk clips the window wall or sill")
 				end
 			end
 			check(low.Y >= 0.159 and high.Y <= 3.161, "Desk does not rest on the shop floor")
 		end
 	end
-	check(math.abs(deskFront - 14.425) < EPS, "Counter end must sit flush against the window sill")
+	check(math.abs(deskEnd - 66.575) < EPS, "Counter end must stand just clear of the window sill")
 	for _, part in register:GetDescendants() do
 		if not part:IsA("BasePart") then
 			continue
@@ -375,14 +459,14 @@ do
 		for _, part in object:GetChildren() do
 			local low, high = bounds(part, houseFrame)
 			check(
-				low.X >= -20.81 and high.X <= -17.19 and low.Z >= 2.49 and high.Z <= 11.51,
+				low.X >= 17.19 and high.X <= 20.81 and low.Z >= 69.49 and high.Z <= 78.51,
 				"Freezer is outside its left-wall footprint"
 			)
 			check(low.Y >= 0.14 and high.Y < 4.19, "Freezer is not resting on the shop floor")
 		end
 	end
 	check(sourceFaces == 288, "Freezer conversion lost source faces")
-	local freezerFrame = houseFrame * CFrame.new(-19, 0.16, 7) * CFrame.Angles(0, math.pi / 2, 0)
+	local freezerFrame = houseFrame * CFrame.new(19, 0.16, 74) * CFrame.Angles(0, -math.pi / 2, 0)
 	local function sourcePoint(v)
 		return Vector3.new(v.X + 2, v.Z, 15 - v.Y) * (9 / 150)
 	end
@@ -438,9 +522,48 @@ do
 			check(nearest < 0.001, "Source vertex moved or was lost in " .. source.name .. ": " .. vertexIndex)
 		end
 	end
-	for _, name in { "RoomPartition", "StorePartitionRear", "StorePartitionFront", "StorePassageLintel" } do
+	check(not house.Shell:FindFirstChild("RoomPartition"), "The house still has the old shop partition")
+	local dividerLow, dividerHigh = bounds(house.Shell.StorePartitionFront, houseFrame)
+	check(math.abs(dividerHigh.Z - 1.5 * grid.CELL_SIZE) < EPS and dividerLow.Z <= -grid.CELL_SIZE / 2 + EPS, "Storage divider does not leave the front vestibule open")
+	local entranceLow, entranceHigh = bounds(house.Shell.EntranceStep, houseFrame)
+	check(math.abs(entranceLow.X + entranceHigh.X) < EPS, "Front entrance is not centered on the house")
+	local office = house:FindFirstChild("Office")
+	check(office and office:FindFirstChild("OfficeFloor"), "Missing enclosed office")
+	local officeFloorLow, officeFloorHigh = bounds(office.OfficeFloor, houseFrame)
+	local officeBack, officeEast = 1.5 * grid.CELL_SIZE, -1.5 * grid.CELL_SIZE
+	check(
+		math.abs(officeFloorLow.X + grid.HALF_WIDTH) < EPS
+			and math.abs(officeFloorHigh.X - officeEast) < EPS
+			and math.abs(officeFloorLow.Z - officeBack) < EPS
+			and math.abs(officeFloorHigh.Z - grid.HALF_LENGTH) < EPS,
+		"Office floor does not fill the kitchen's front-left corner"
+	)
+	check(office:FindFirstChild("OfficeSign") and office.OfficeSign:FindFirstChildWhichIsA("SurfaceGui"), "Missing office sign")
+	for _, name in { "StorePartitionRear", "StorePartitionFront", "StorePassageLintel" } do
 		local divider = house.Shell:FindFirstChild(name)
 		check(divider and divider:IsA("BasePart") and divider.CanCollide, "Missing interior wall: " .. name)
+	end
+	for _, name in { "OfficeBackWall", "OfficeEastWallRear", "OfficeEastWallFront", "OfficeDoorLintel" } do
+		local wall = house.Shell:FindFirstChild(name)
+		check(wall and wall:IsA("BasePart") and wall.CanCollide, "Missing office wall: " .. name)
+	end
+	for _, part in house.Shell:GetChildren() do
+		if part:IsA("BasePart") then
+			local position = houseFrame:PointToObjectSpace(part.Position)
+			if part.Name == "RoomPartition" or part.Name == "RoomPartitionLintel" then
+				check(math.abs(position.Z - grid.CELL_SIZE / 2) < EPS, "Shop partition is not on a grid border")
+			elseif part.Name == "StorePartitionRear" or part.Name == "StorePartitionFront" or part.Name == "StorePassageLintel" then
+				check(math.abs(position.X - grid.CELL_SIZE / 2) < EPS, "Rear partition is not on a grid border")
+			elseif part.Name == "OfficeBackWall" then
+				check(math.abs(position.Z - officeBack) < EPS, "Office back wall is not on a grid border")
+			elseif part.Name == "OfficeEastWallRear" or part.Name == "OfficeEastWallFront" or part.Name == "OfficeDoorLintel" then
+				check(math.abs(position.X - officeEast) < EPS, "Office east wall is not on a grid border")
+			elseif part.Name == "SideWall" then
+				check(math.abs(math.abs(position.X) - grid.HALF_WIDTH) < EPS, "Side wall is not on a grid border")
+			elseif part.Name == "FrontWall" or part.Name == "RearWall" then
+				check(math.abs(math.abs(position.Z) - grid.HALF_LENGTH) < EPS, "End wall is not on a grid border")
+			end
+		end
 	end
 	local parts, solid = {}, {}
 	for _, item in house:GetDescendants() do
@@ -468,7 +591,7 @@ do
 		)
 	end
 	check(#parts > 100, "House exterior shell is incomplete")
-	check(house.PrimaryPart == house.Shop.ShopFloor, "House primary part must reference its physical shop floor")
+	check(house.PrimaryPart == house.Processing.WashableFloor, "House primary part must reference its physical kitchen floor")
 
 	local function surfaceAt(x, z)
 		local height = -math.huge
@@ -513,17 +636,18 @@ do
 			end
 		end
 	end
-	clearRoute("Front entrance to shop", { Vector2.new(0, 18), Vector2.new(0, 7) })
-	clearRoute("Shop to processing", { Vector2.new(0, 7), Vector2.new(-10, 7), Vector2.new(-10, -7) })
-	clearRoute(
-		"Shop to storage through processing",
-		{ Vector2.new(0, 7), Vector2.new(-10, 7), Vector2.new(-10, -7), Vector2.new(12, -7) }
-	)
+	clearRoute("Front entrance", { Vector2.new(0, 18), Vector2.new(0, 9) })
+	clearRoute("Front entrance to kitchen", { Vector2.new(-0.6, 18), Vector2.new(-0.6, 4.5), Vector2.new(-10, 4.5), Vector2.new(-10, -7) })
+	clearRoute("Office entrance", { Vector2.new(-2, 11.25), Vector2.new(-10, 11.25) })
+	clearRoute("Front entrance to storage", { Vector2.new(3, 18), Vector2.new(3, 9), Vector2.new(6, 7), Vector2.new(13.5, 7), Vector2.new(13.5, -7) })
 	clearRoute("Processing to storage", { Vector2.new(-10, -7), Vector2.new(12, -7) })
-	clearRoute("Desk customer aisle", { Vector2.new(8, 7.5), Vector2.new(10.5, 7.5), Vector2.new(10.5, 12) })
-	clearRoute("Desk handle side", { Vector2.new(20.5, 3), Vector2.new(20.5, 12) })
-	clearRoute("Freezer customer aisle", { Vector2.new(-15, 3), Vector2.new(-15, 12) })
-	clearRoute("Rear entrance", { Vector2.new(-10, -7), Vector2.new(0, -7), Vector2.new(0, -18) })
+	-- The shop across the road: the forecourt, its door and the former front-room aisles.
+	clearRoute("Forecourt into shop", { Vector2.new(-22.5, 62), Vector2.new(0, 62.4), Vector2.new(0, 70), Vector2.new(0, 78) })
+	clearRoute("Forecourt from the right", { Vector2.new(22.5, 62), Vector2.new(0, 62.4) })
+	clearRoute("Desk customer aisle", { Vector2.new(-8, 73.5), Vector2.new(-10.5, 73.5), Vector2.new(-10.5, 69) })
+	clearRoute("Desk handle side", { Vector2.new(-20.5, 76.75), Vector2.new(-20.5, 69) })
+	clearRoute("Freezer customer aisle", { Vector2.new(15, 76.75), Vector2.new(15, 69) })
+	clearRoute("Rear entrance", { Vector2.new(-10, -7), Vector2.new(-2.25, -7), Vector2.new(-2.25, -18) })
 
 	if referenceParts then
 		check(#parts == #referenceParts, "House transforms change the emitted part count")
@@ -643,7 +767,7 @@ for _, recoverFrame in { false, true } do
 	end
 	BaseHouse.ensure(base)
 	local house = base:FindFirstChild("BaseHouse")
-	check(house and house:GetAttribute("LayoutVersion") == 4, "Saved base did not receive the current house layout")
+	check(house and house:GetAttribute("LayoutVersion") == 11, "Saved base did not receive the current house layout")
 	check(not staleHouse or staleHouse.Parent == nil, "Saved base retains a stale house")
 	check(
 		base:GetAttribute("OwnerUserId") == 12345 and base:GetAttribute("BaseId") == 4,
@@ -740,7 +864,7 @@ for _, recoverFrame in { false, true } do
 	currentLights:SetAttribute("LayoutVersion", 1)
 	BaseHouse.ensure(base)
 	check(
-		currentLights.Parent == nil and shop.CeilingLights:GetAttribute("LayoutVersion") == 2,
+		currentLights.Parent == nil and shop.CeilingLights:GetAttribute("LayoutVersion") == 3,
 		"Overbright saved lighting was not replaced"
 	)
 	check(shop.ShopDesk == currentDesk and base.BaseHouse == house, "Dimming lamps replaced the counter or house")
@@ -749,15 +873,15 @@ for _, recoverFrame in { false, true } do
 	BaseHouse.ensure(base)
 	check(base:FindFirstChild("BaseHouse") == house, "Freezer upgrade rebuilt a current house")
 	local freezer = shop:FindFirstChild("FishFreezer")
-	check(freezer and #shop:GetChildren() == 4, "Current saved shop did not receive exactly one freezer")
+	check(freezer and #shop:GetChildren() == 5, "Current saved shop did not receive exactly one freezer")
 	BaseHouse.ensure(base)
 	check(
-		shop:FindFirstChild("FishFreezer") == freezer and #shop:GetChildren() == 4,
+		shop:FindFirstChild("FishFreezer") == freezer and #shop:GetChildren() == 5,
 		"Repeated furnishing duplicates the freezer"
 	)
 	freezer:SetAttribute("ModelVersion", 2)
 	BaseHouse.ensure(base)
-	check(freezer.Parent == nil and #shop:GetChildren() == 4, "Old freezer model is not replaced in place")
+	check(freezer.Parent == nil and #shop:GetChildren() == 5, "Old freezer model is not replaced in place")
 	check(
 		shop:FindFirstChild("FishFreezer"):GetAttribute("ModelVersion") == 3,
 		"Saved freezer did not receive the smaller scale and wall clearance"
@@ -772,11 +896,11 @@ for _, recoverFrame in { false, true } do
 	)
 	desk = shop:FindFirstChild("ShopDesk")
 	check(
-		desk and desk:FindFirstChild("CashRegister") and #shop:GetChildren() == 4,
+		desk and desk:FindFirstChild("CashRegister") and #shop:GetChildren() == 5,
 		"Saved shop did not receive one furnished desk"
 	)
 	BaseHouse.ensure(base)
-	check(shop:FindFirstChild("ShopDesk") == desk and #shop:GetChildren() == 4, "Repeated upgrade duplicates the desk")
+	check(shop:FindFirstChild("ShopDesk") == desk and #shop:GetChildren() == 5, "Repeated upgrade duplicates the desk")
 	desk:SetAttribute("ModelVersion", 3)
 	BaseHouse.ensure(base)
 	check(
@@ -791,7 +915,7 @@ for _, recoverFrame in { false, true } do
 	desk:FindFirstChild("CashRegister"):Destroy()
 	BaseHouse.ensure(base)
 	check(
-		shop:FindFirstChild("ShopDesk"):FindFirstChild("CashRegister") ~= nil and #shop:GetChildren() == 4,
+		shop:FindFirstChild("ShopDesk"):FindFirstChild("CashRegister") ~= nil and #shop:GetChildren() == 5,
 		"Missing saved register is not repaired"
 	)
 	migrations += 1

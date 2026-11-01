@@ -14,12 +14,14 @@ try {
   const catalog = await readFile(join(root, 'src/shared/BoatCatalog.luau'), 'utf8');
   const rodUpgrades = await readFile(join(root, 'src/shared/RodUpgrades.luau'), 'utf8');
   const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
+  const spearSkins = await readFile(join(root, 'src/shared/SpearSkins.luau'), 'utf8');
   const bobberSkins = await readFile(join(root, 'src/shared/BobberSkins.luau'), 'utf8');
   const data = (await readFile(join(root, 'src/server/BoatData.luau'), 'utf8')).replace(
     'local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")',
     `local AnglerData = (function()\n${anglerData}\nend)()`,
   ).replace(/local RodUpgrades = if script[\s\S]*?"\.\.\/shared\/RodUpgrades"\)/, () => `local RodUpgrades = (function()\n${rodUpgrades}\nend)()`)
     .replace(/local RodSkins = if script[\s\S]*?"\.\.\/shared\/RodSkins"\)/, () => `local RodSkins = (function()\n${rodSkins}\nend)()`)
+    .replace(/local SpearSkins = if script[\s\S]*?"\.\.\/shared\/SpearSkins"\)/, () => `local SpearSkins = (function()\n${spearSkins}\nend)()`)
     .replace(/local BobberSkins = if script[\s\S]*?"\.\.\/shared\/BobberSkins"\)/, () => `local BobberSkins = (function()\n${bobberSkins}\nend)()`)
     .replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
   let service = await readFile(join(root, 'src/server/BoatService.luau'), 'utf8');
@@ -82,12 +84,16 @@ try {
     .replace(/local RacingSpeedboat = require\(script.Parent.RacingSpeedboat\)/, 'local RacingSpeedboat = dependencies.RacingSpeedboat')
     .replace(/local PatrolBoat = require\(script.Parent.PatrolBoat\)/, 'local PatrolBoat = dependencies.PatrolBoat')
     .replace(/local Trawler = require\(script.Parent.Trawler\)/, 'local Trawler = dependencies.Trawler')
+    .replace(/local Tugboat = require\(script.Parent.Tugboat\)/, 'local Tugboat = dependencies.Tugboat')
+    .replace(/local Hovercraft = require\(script.Parent.Hovercraft\)/, 'local Hovercraft = dependencies.Hovercraft')
     .replace(/local DrydockLaunch = require\(script.Parent.DrydockLaunch\)/, 'local DrydockLaunch = dependencies.DrydockLaunch')
     .replace(/local BoatLaunchCollision = require\(script.Parent.BoatLaunchCollision\)/, 'local BoatLaunchCollision = dependencies.BoatLaunchCollision')
     .replace(/local BoatCatalog = require\(ReplicatedStorage.Shared.BoatCatalog\)/, 'local BoatCatalog = dependencies.BoatCatalog')
+    .replace(/local AnglerCatalog = require\(ReplicatedStorage.Shared.AnglerCatalog\)/, 'local AnglerCatalog = dependencies.AnglerCatalog')
     .replace(/local BoatMotion = require\(ReplicatedStorage.Shared.BoatMotion\)/, `local BoatMotion = (function()\n${await readFile(join(root, 'src/shared/BoatMotion.luau'), 'utf8')}\nend)()`)
     .replace(/local RodUpgrades = require\(ReplicatedStorage.Shared.RodUpgrades\)/, () => `local RodUpgrades = (function()\n${rodUpgrades}\nend)()`)
     .replace(/local RodSkins = require\(ReplicatedStorage.Shared.RodSkins\)/, () => `local RodSkins = (function()\n${rodSkins}\nend)()`)
+    .replace(/local SpearSkins = require\(ReplicatedStorage.Shared.SpearSkins\)/, () => `local SpearSkins = (function()\n${spearSkins}\nend)()`)
     .replace(/local BobberSkins = require\(ReplicatedStorage.Shared.BobberSkins\)/, () => `local BobberSkins = (function()\n${bobberSkins}\nend)()`)
     .replace(/local Biomes = require\(ReplicatedStorage.Shared.Biomes\)/, 'local Biomes = dependencies.Biomes')
     .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather');
@@ -103,6 +109,7 @@ try {
     start = BoatService.start, loadPlayer = loadPlayer, nearPrompt = nearPrompt,
     shopPrompt = shopPrompt, purchase = purchase, spawnBoat = spawnBoat,
     getProfile = BoatService.getProfile, updateProgress = BoatService.updateProgress,
+    damageBoat = BoatService.damageBoat,
     profiles = profiles, active = active,
   }`);
   const program = harness

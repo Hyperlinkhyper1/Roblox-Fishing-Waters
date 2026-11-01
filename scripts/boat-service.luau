@@ -286,7 +286,9 @@ function workspace:GetServerTimeNow()
 end
 local overlaps = {}
 local sightResult = nil
-function workspace:Raycast()
+local lastRaycastParams
+function workspace:Raycast(_origin, _direction, parameters)
+	lastRaycastParams = parameters
 	return sightResult
 end
 function workspace:GetPartBoundsInBox()
@@ -379,11 +381,16 @@ local game = {
 }
 local now = 100
 local delayed = {}
+local yieldOnWait = false
 local task = {
 	delay = function(seconds, callback)
 		table.insert(delayed, { at = now + seconds, callback = callback })
 	end,
-	wait = function() end,
+	wait = function()
+		if yieldOnWait then
+			coroutine.yield()
+		end
+	end,
 	spawn = function(callback, ...)
 		callback(...)
 	end,
@@ -489,6 +496,20 @@ local Trawler = {
 		return model
 	end,
 }
+local Tugboat = {
+	build = function(frame, anchored)
+		local model = FishingBoat.build(frame, anchored)
+		model:SetAttribute("BoatId", "Tugboat")
+		return model
+	end,
+}
+local Hovercraft = {
+	build = function(frame, anchored)
+		local model = FishingBoat.build(frame, anchored)
+		model:SetAttribute("BoatId", "Hovercraft")
+		return model
+	end,
+}
 local waveHeight, waveNormal = 0, Vector3.new(0, 1, 0)
 local waveSampleTime, waveSamplePosition, waveHull
 local parkedRelease
@@ -562,10 +583,14 @@ local dependencies = {
 	RacingSpeedboat = RacingSpeedboat,
 	PatrolBoat = PatrolBoat,
 	Trawler = Trawler,
+	Tugboat = Tugboat,
+	Hovercraft = Hovercraft,
 	DrydockLaunch = DrydockLaunch,
 	BoatLaunchCollision = BoatLaunchCollision,
 	BoatCatalog = BoatCatalog,
-	Biomes = { WaterLevel = 0 },
+	-- Three visible pages and one shark drop keep percentages predictable.
+	AnglerCatalog = { Fish = { TestFishA = {}, TestFishB = {}, TestFishC = {}, TestDrop = { DropOnly = true } } },
+	Biomes = { WaterLevel = 0, inOceanBounds = function() return true end },
 	Weather = {
 		Presets = { Clear = {}, LightRain = {}, Rain = {}, Storm = {}, BlackHole = {} },
 		TornadoReach = 2.4,
@@ -674,10 +699,11 @@ local feedback = ReplicatedStorage:FindFirstChild("Boating"):FindFirstChild("Fee
 local request = ReplicatedStorage:FindFirstChild("Boating"):FindFirstChild("Request")
 local fresh = makePlayer(1)
 check(
-	fresh:GetAttribute("Cash") == 0 and fresh:GetAttribute("OwnsRowboat") == false,
-	"New players start with $0 and no boat"
+	fresh:GetAttribute("Cash") == 0 and fresh:GetAttribute("OwnsRowboat") == true,
+	"New players start with $0 and a rowboat"
 )
 check(fresh:GetAttribute("BoatDataStatus") == "Ready", "Fresh player profile must load")
+check(fresh:GetAttribute("BestiaryPercent") == 0, "A new player has discovered no bestiary pages")
 local freshStats = fresh:FindFirstChild("leaderstats")
 check(
 	freshStats and freshStats:FindFirstChild("Level").Value == 1 and freshStats:FindFirstChild("Money").Value == 0,
@@ -690,7 +716,7 @@ check(
 	"Level is the primary numeric stat used to rank players"
 )
 Service.purchase(fresh)
-check(store.updates == 0 and fresh:GetAttribute("Cash") == 0, "Insufficient funds must not write or award money")
+check(store.updates == 0 and fresh:GetAttribute("Cash") == 0, "Claiming an owned boat must not write or award money")
 
 local rich, richRoot, richHumanoid = makePlayer(2, 1000)
 local richStats = rich:FindFirstChild("leaderstats")
@@ -743,22 +769,22 @@ local before = store.updates
 Service.purchase(rich)
 check(store.updates == before + 1, "Purchase must use one atomic UpdateAsync")
 check(
-	store.data.Player_2.Cash == 500 and store.data.Player_2.OwnedBoats.Rowboat,
-	"Deduction and ownership must commit together"
+	store.data.Player_2.Cash == 1000 and store.data.Player_2.OwnedBoats.Rowboat,
+	"Free ownership must commit without charging"
 )
 check(
-	rich:GetAttribute("Cash") == 500 and rich:GetAttribute("OwnsRowboat"),
+	rich:GetAttribute("Cash") == 1000 and rich:GetAttribute("OwnsRowboat"),
 	"Confirmed progress must be mirrored to attributes"
 )
 check(
 	rich:FindFirstChild("leaderstats") == richStats
 		and richStats:FindFirstChild("Money") == richMoney
-		and richMoney.Value == 500
+		and richMoney.Value == 1000
 		and #richStats:GetDescendants() == 3,
 	"Purchases update the existing leaderboard values without duplicate stats"
 )
 Service.purchase(rich)
-check(store.updates == before + 1 and rich:GetAttribute("Cash") == 500, "Repeated purchase must not charge twice")
+check(store.updates == before + 1 and rich:GetAttribute("Cash") == 1000, "Repeated purchase must not charge")
 local cashBefore = fresh:GetAttribute("Cash")
 request.OnServerEvent:Fire(fresh, "SetCash", 1000000)
 check(fresh:GetAttribute("Cash") == cashBefore and store.updates == before + 1, "Remote cannot grant currency")
@@ -766,6 +792,7 @@ check(fresh:GetAttribute("Cash") == cashBefore and store.updates == before + 1, 
 store.getFailures = 3
 local unavailable = makePlayer(3, 1000)
 check(unavailable:GetAttribute("BoatDataStatus") == "Unavailable", "Failed load must disable trading")
+check(unavailable:GetAttribute("BestiaryPercent") == nil, "Unavailable progress does not look like an empty bestiary")
 before = store.updates
 Service.purchase(unavailable)
 check(
@@ -788,8 +815,8 @@ local stale = makePlayer(5, 800)
 store.data.Player_5.Cash = 200
 Service.purchase(stale)
 check(
-	stale:GetAttribute("Cash") == 200 and not stale:GetAttribute("OwnsRowboat"),
-	"Atomic purchase must use current stored funds rather than stale mirrors"
+	stale:GetAttribute("Cash") == 200 and stale:GetAttribute("OwnsRowboat"),
+	"A free claim must preserve current stored funds rather than stale mirrors"
 )
 local concurrent = makePlayer(6, 1000)
 before = store.updates
@@ -799,7 +826,7 @@ end
 Service.purchase(concurrent)
 store.beforeUpdate = nil
 check(
-	store.updates == before + 1 and concurrent:GetAttribute("Cash") == 500,
+	store.updates == before + 1 and concurrent:GetAttribute("Cash") == 1000,
 	"Concurrent local purchase must not reenter a busy transaction"
 )
 
@@ -808,8 +835,8 @@ store.retryTransform = true
 Service.purchase(retrying)
 store.retryTransform = false
 check(
-	retrying:GetAttribute("Cash") == 500 and retrying:GetAttribute("OwnsRowboat"),
-	"Retried atomic transforms must charge only once"
+	retrying:GetAttribute("Cash") == 1000 and retrying:GetAttribute("OwnsRowboat"),
+	"Retried atomic transforms must preserve cash"
 )
 local corrupt = makePlayer(9, 1000)
 store.data.Player_9 = "invalid saved profile"
@@ -848,9 +875,9 @@ rich:SetAttribute("BaseId", 2)
 Service.spawnBoat(rich, spawnPrompt)
 check(#builtBoats == 0, "Dock ownership and current player BaseId must both match")
 rich:SetAttribute("BaseId", 1)
-base:SetAttribute("OwnerUserId", fresh.UserId)
-fresh:SetAttribute("BaseId", 1)
-Service.spawnBoat(fresh, spawnPrompt)
+base:SetAttribute("OwnerUserId", failing.UserId)
+failing:SetAttribute("BaseId", 1)
+Service.spawnBoat(failing, spawnPrompt)
 check(#builtBoats == 0, "A player without ownership cannot spawn a free boat")
 base:SetAttribute("OwnerUserId", rich.UserId)
 richRoot.Position = Vector3.new(100, 0, 0)
@@ -1088,6 +1115,15 @@ checkParked(floatingBoat, "Neutral helm after turning")
 waveHeight, waveNormal = 0, Vector3.new(0, 1, 0)
 local rowSpec = floatingBoat.spec
 for id, spec in BoatCatalog do
+	check(type(spec.MaxHealth) == "number" and spec.MaxHealth > 0, id .. " must have positive maximum health")
+	for otherId, otherSpec in BoatCatalog do
+		-- The hovercraft deliberately keeps the fishing boat's hull and only buys speed.
+		if id == "Hovercraft" and otherId == "FishingBoat" then
+			check(spec.MaxHealth == otherSpec.MaxHealth, "Hovercraft keeps the fishing boat's health")
+		elseif spec.Price > otherSpec.Price then
+			check(spec.MaxHealth > otherSpec.MaxHealth, id .. " must have more health than " .. otherId)
+		end
+	end
 	floatingBoat.spec = spec
 	for _, yaw in { 0, math.pi / 2, math.pi * 0.75 } do
 		for _, direction in { -1, 1 } do
@@ -1209,8 +1245,26 @@ check(
 )
 local newAngler = makePlayer(52)
 check(
-	newAngler:GetAttribute("OwnsStarterRod") == true and newAngler:GetAttribute("Cash") == 0,
-	"New anglers start with a rod and no cash"
+	newAngler:GetAttribute("OwnsStarterRod") == true
+		and newAngler:GetAttribute("OwnsRowboat") == true
+		and newAngler:GetAttribute("Cash") == 0,
+	"New anglers start with a rod and rowboat without spending cash"
+)
+check(Service.updateProgress(newAngler, function() end), "A new angler's starter inventory can be saved")
+check(
+	store.data.Player_52.OwnedBoats.Rowboat and store.data.Player_52.OwnedRods.StarterRod,
+	"Starter inventory persists"
+)
+Players.PlayerRemoving:Fire(newAngler)
+local returningAngler = makePlayer(52)
+check(
+	returningAngler:GetAttribute("OwnsRowboat") and returningAngler:GetAttribute("OwnsStarterRod"),
+	"Starter inventory survives rejoining"
+)
+local existingWithoutBoat = makePlayer(53, 700, false)
+check(
+	not existingWithoutBoat:GetAttribute("OwnsRowboat") and existingWithoutBoat:GetAttribute("Cash") == 700,
+	"Existing boat inventories and cash are preserved"
 )
 check(
 	Service.updateProgress(rodBuyer, function(profile)
@@ -1308,13 +1362,9 @@ check(
 	"Failed saves must not publish or retain a new balance"
 )
 before = store.updates
-store.beforeUpdate = function()
-	command(admin, "/set cash 999")
-	Service.purchase(admin)
-end
 store.retryTransform = true
 command(admin, "/set cash 500")
-store.beforeUpdate, store.retryTransform = nil, false
+store.retryTransform = false
 check(
 	store.updates == before + 1 and admin:GetAttribute("Cash") == 500,
 	"Cash changes share the wallet lock and remain exact across transform retries"
@@ -1372,8 +1422,8 @@ end
 Service.purchase(buyer)
 duringLaunch = nil
 check(
-	store.updates == before + 1 and buyer:GetAttribute("Cash") == 500,
-	"Successful drydock purchase must charge exactly once"
+	store.updates == before + 1 and buyer:GetAttribute("Cash") == 1000,
+	"Successful drydock claim must preserve cash"
 )
 check(
 	Service.active[buyer].model == launchedModel and #builtBoats == boatsBefore + 1,
@@ -1393,6 +1443,11 @@ check(
 		and Service.active[buyer].seat.CanTouch,
 	"Purchased preview must park afloat with normal seat entry"
 )
+check(launchedModel:GetAttribute("Health") == 100 and launchedModel:GetAttribute("MaxHealth") == 100, "Launched boats start at full replicated health")
+check(Service.damageBoat(buyer, 35) and launchedModel:GetAttribute("Health") == 65, "Server damage reduces health")
+check(not Service.damageBoat(buyer, -1) and not Service.damageBoat(buyer, math.huge) and not Service.damageBoat(buyer, 0 / 0), "Invalid damage is rejected")
+check(Service.damageBoat(buyer, 1000) and launchedModel:GetAttribute("Health") == 0, "Health cannot fall below zero")
+launchedModel:SetAttribute("Health", 100)
 check(next(launchReservations) == nil, "Completed purchase must release its reservation")
 checkSuspension(Service.active[buyer], "Drydock rowboat")
 do
@@ -1439,6 +1494,17 @@ do
 		not boat.clearWater and boat.velocity.PlaneVelocity.Y == 0,
 		"Normal obstacle handling must resume after expiry"
 	)
+	check(
+		lastRaycastParams.FilterType == Enum.RaycastFilterType.Include
+			and #lastRaycastParams.FilterDescendantsInstances == 1
+			and lastRaycastParams.FilterDescendantsInstances[1] == workspace.Terrain,
+		"Water checks must ignore props and other boats"
+	)
+	sightResult = nil
+	now += 0.2
+	boat.lastInput = now
+	RunService.PreSimulation:Fire(1 / 60)
+	check(boat.clearWater and boat.velocity.PlaneVelocity.Y < 0, "A missed water ray must not stop the boat")
 	local afterGrace = Instance.new("Part")
 	afterGrace.Parent = boat.model
 	check(afterGrace.CollisionGroup == "Default", "Expiry must disconnect grace filtering for future parts")
@@ -1451,7 +1517,7 @@ launchFails = true
 Service.purchase(interrupted)
 launchFails = false
 check(
-	interrupted:GetAttribute("OwnsRowboat") and interrupted:GetAttribute("Cash") == 500,
+	interrupted:GetAttribute("OwnsRowboat") and interrupted:GetAttribute("Cash") == 1000,
 	"An interrupted launch must retain the saved boat"
 )
 check(next(launchReservations) == nil, "An interrupted launch must release its bay")
@@ -1499,11 +1565,81 @@ check(
 	"Failed writes preserve saved settings and mirrors"
 )
 check(not Service.profiles[menuPlayer].busy, "Failed menu writes release the shared transaction lock")
-Service.profiles[menuPlayer].busy = true
-check(not Service.updateProgress(menuPlayer, function()
-	error("Must never run while locked")
-end), "Menus honor the purchase lock")
-Service.profiles[menuPlayer].busy = false
+-- Pause a DataStore request while other actions arrive, then resume them in
+-- order. Each must commit against the previous result and publish that result.
+local queuePlayer = makePlayer(991, 1000)
+yieldOnWait = true
+store.beforeUpdate = function(key)
+	if key == "Player_991" then
+		store.beforeUpdate = nil
+		coroutine.yield()
+	end
+end
+local first = coroutine.create(function()
+	check(Service.updateProgress(queuePlayer, function(profile)
+		profile.Cash += 10
+	end), "First overlapping update succeeds")
+end)
+local second = coroutine.create(function()
+	check(Service.updateProgress(queuePlayer, function(profile)
+		profile.Cash += 20
+	end), "Second overlapping update succeeds")
+end)
+local third = coroutine.create(function()
+	check(Service.updateProgress(queuePlayer, function(profile)
+		profile.Cash += 30
+	end), "Third overlapping update succeeds")
+end)
+check(coroutine.resume(first) and coroutine.resume(second) and coroutine.resume(third), "Overlapping updates start")
+check(coroutine.resume(third) and coroutine.status(third) == "suspended", "Later requests cannot bypass the queue")
+check(coroutine.resume(first) and coroutine.resume(second) and coroutine.resume(third), "Queued updates finish")
+yieldOnWait = false
+check(
+	store.data.Player_991.Cash == 1060 and Service.getProfile(queuePlayer).Cash == 1060
+		and queuePlayer:GetAttribute("Cash") == 1060,
+	"Overlapping updates retain all changes in storage and the published profile"
+)
+yieldOnWait = true
+store.beforeUpdate = function(key)
+	if key == "Player_991" then
+		store.beforeUpdate = nil
+		coroutine.yield()
+	end
+end
+local failed = coroutine.create(function()
+	check(not Service.updateProgress(queuePlayer, function(profile)
+		profile.Cash += 100
+	end), "A failed queued save reports failure")
+end)
+local afterFailure = coroutine.create(function()
+	check(Service.updateProgress(queuePlayer, function(profile)
+		profile.Cash += 5
+	end), "The next queued save runs after a failure")
+end)
+check(coroutine.resume(failed) and coroutine.resume(afterFailure), "Failure scenario starts")
+store.updateFailures = 1
+check(coroutine.resume(failed) and coroutine.resume(afterFailure), "Failure releases the next queued request")
+check(store.data.Player_991.Cash == 1065 and queuePlayer:GetAttribute("Cash") == 1065, "Failed changes are not published")
+store.beforeUpdate = function(key)
+	if key == "Player_991" then
+		store.beforeUpdate = nil
+		coroutine.yield()
+	end
+end
+local leaving = coroutine.create(function()
+	Service.updateProgress(queuePlayer, function(profile)
+		profile.Cash += 1
+	end)
+end)
+local afterLeaving = coroutine.create(function()
+	check(not Service.updateProgress(queuePlayer, function()
+		error("A departed player's queued change must not run")
+	end), "Queued changes stop when the session ends")
+end)
+check(coroutine.resume(leaving) and coroutine.resume(afterLeaving), "Departure scenario starts")
+Players.PlayerRemoving:Fire(queuePlayer)
+check(coroutine.resume(afterLeaving) and coroutine.resume(leaving), "Departed requests finish safely")
+yieldOnWait = false
 check(
 	Service.getProfile(menuPlayer).OwnedRods.StarterRod and store.data.Player_91.Angler.Settings.MasterVolume == 30,
 	"Starter inventory preserves menu progress"
@@ -1606,6 +1742,7 @@ check(
 )
 check(fisher:GetAttribute("OwnsRowboat"), "Buying the fishing boat retains wooden boat ownership")
 local workingFisher = Service.active[fisher]
+check(workingFisher.model:GetAttribute("Health") == BoatCatalog.FishingBoat.MaxHealth and workingFisher.model:GetAttribute("MaxHealth") == BoatCatalog.FishingBoat.MaxHealth, "Purchased fishing boats start at their full health")
 checkSuspension(workingFisher, "Drydock fishing boat")
 check(
 	workingFisher.model == fisherDisplay and workingFisher.seat.Name == "HelmSeat",
@@ -1696,6 +1833,7 @@ check(
 request.OnServerEvent:Fire(fisher, "SpawnBoat", "FishingBoat")
 local respawnFisher = Service.active[fisher]
 checkSuspension(respawnFisher, "Dock fishing boat")
+check(respawnFisher.model:GetAttribute("Health") == BoatCatalog.FishingBoat.MaxHealth and respawnFisher.model:GetAttribute("MaxHealth") == BoatCatalog.FishingBoat.MaxHealth, "Dock-spawned boats start at full health")
 check(
 	respawnFisher.model:GetAttribute("BoatId") == "FishingBoat" and fisherDisplay.destroyed,
 	"Dock selection respawns the owned fishing boat"
@@ -1958,6 +2096,86 @@ trawlerBuyer:SetAttribute("BaseId", 1)
 trawlerActive.seat.Occupant = nil
 Service.spawnBoat(trawlerBuyer, spawnPrompt, "Trawler")
 check(Service.active[trawlerBuyer].model:GetAttribute("BoatId") == "Trawler" and trawlerPreview.destroyed, "Owned trawler respawns at the owner's dock")
+
+-- A destroyed hull enters a sinking sequence before it is removed, while ownership
+-- remains in the saved profile so players can launch it again.
+local sinkingBoat = Service.active[trawlerBuyer]
+local driver = { Parent = trawlerBuyer.Character, Sit = true }
+local passenger = { Sit = true }
+sinkingBoat.seat.Occupant = driver
+local passengerSeat = sinkingBoat.model:FindFirstChild("PassengerSeat1")
+passengerSeat.Occupant = passenger
+local sinkStart = workspace.serverTime
+local startPosition = sinkingBoat.root.Position
+check(Service.damageBoat(trawlerBuyer, BoatCatalog.Trawler.MaxHealth), "Lethal damage applies to an active boat")
+check(not Service.damageBoat(trawlerBuyer, 1), "A destroyed hull cannot take further damage")
+RunService.PreSimulation:Fire(1 / 60)
+check(sinkingBoat.model:GetAttribute("Sinking") and not sinkingBoat.root.Anchored, "Lethal damage starts sinking and releases a parked hull")
+check(not driver.Sit and not passenger.Sit and sinkingBoat.seat.Disabled and passengerSeat.Disabled, "Sinking ejects riders and disables seats")
+check(not sinkingBoat.velocity.Enabled and sinkingBoat.float.Enabled and sinkingBoat.lift.Enabled, "Sinking stops propulsion and retains controlled vertical support")
+workspace.serverTime = sinkStart + 5
+RunService.PreSimulation:Fire(1 / 60)
+check(sinkingBoat.float.Position.Y == startPosition.Y - 15 and Service.active[trawlerBuyer] == sinkingBoat, "Sinking lowers the target before removing the hull")
+workspace.serverTime = sinkStart + 12
+RunService.PreSimulation:Fire(1 / 60)
+check(sinkingBoat.model.destroyed and not Service.active[trawlerBuyer] and trawlerBuyer:GetAttribute("ActiveBoatId") == nil, "A fully sunk hull is removed and its active-boat marker cleared")
+check(Service.getProfile(trawlerBuyer).OwnedBoats.Trawler, "Sinking preserves owned boats")
+
+-- The tugboat stays off sale until the Company path is unlocked.
+local tugBuyer = makePlayer(127, 17500)
+local tugPreview = Tugboat.build(CFrame.new(Vector3.new(0, 0, 100)), true)
+local tugReserved = false
+function DrydockLaunch.reserve(shop, player, boatId)
+	tugReserved = true
+	check(player == tugBuyer and boatId == "Tugboat", "Tugboat purchase reserves its own display")
+	return { shop = shop, player = player, boatId = boatId }
+end
+function DrydockLaunch.run(reservation, activate)
+	return activate(tugBuyer, CFrame.new(Vector3.new(0, 0, 100)), tugPreview)
+end
+check(
+	tugBuyer:GetAttribute("BoatLockedTugboat") == true and tugBuyer:GetAttribute("BoatLockedTrawler") == false,
+	"Only the tugboat publishes a path lock"
+)
+Service.purchase(tugBuyer, "Tugboat")
+check(
+	not tugReserved and tugBuyer:GetAttribute("Cash") == 17500 and not store.data.Player_127.OwnedBoats.Tugboat,
+	"A locked tugboat cannot be bought or reserve the drydock"
+)
+check(Service.updateProgress(tugBuyer, function(profile)
+	profile.Angler.Paths.Unlocked.Company = true
+end), "Company path unlock saves")
+check(tugBuyer:GetAttribute("BoatLockedTugboat") == false, "Unlocking the Company path lifts the tugboat lock")
+Service.purchase(tugBuyer, "Tugboat")
+check(
+	tugReserved and tugBuyer:GetAttribute("Cash") == 0 and tugBuyer:GetAttribute("OwnsTugboat"),
+	"Tugboat charges $17500 once the Company path is unlocked"
+)
+local tugActive = Service.active[tugBuyer]
+check(
+	tugActive and tugActive.model == tugPreview and tugActive.spec == BoatCatalog.Tugboat and tugActive.model:GetAttribute("MaxHealth") == 650,
+	"Purchased tugboat launches with its own handling and armoured hull"
+)
+
+store.data.Player_5000 = {
+	Version = 1, Cash = 0, RodSerialScope = "GlobalV1",
+	Angler = { Catches = {
+		TestFishA = { Count = 2, BiggestKg = 1, Mutations = {} },
+		TestDrop = { Count = 1, BiggestKg = 1, Mutations = {} },
+		UnknownFish = { Count = 1, BiggestKg = 1, Mutations = {} },
+	} },
+}
+local bestiaryPlayer = makePlayer(5000)
+check(bestiaryPlayer:GetAttribute("BestiaryPercent") == 33, "Saved catches count unique visible pages only")
+check(Service.updateProgress(bestiaryPlayer, function(profile)
+	profile.Angler.Catches.TestFishB = { Count = 1, BiggestKg = 1, Mutations = {} }
+end), "A new bestiary discovery saves")
+check(bestiaryPlayer:GetAttribute("BestiaryPercent") == 67, "A committed discovery immediately updates the rounded percentage")
+store.updateFailures = 1
+check(not Service.updateProgress(bestiaryPlayer, function(profile)
+	profile.Angler.Catches.TestFishC = { Count = 1, BiggestKg = 1, Mutations = {} }
+end), "A failed discovery save reports failure")
+check(bestiaryPlayer:GetAttribute("BestiaryPercent") == 67, "An uncommitted discovery does not change the percentage")
 
 print(
 	`Boat service recording-mock checks passed: {checks}. No Roblox runtime, DataStore network, or live physics were exercised.`

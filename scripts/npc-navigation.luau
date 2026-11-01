@@ -16,13 +16,27 @@ function vector.__index(a, key)
 	if key == "Unit" then return Vector3.new(a.X/a.Magnitude, a.Y/a.Magnitude, a.Z/a.Magnitude) end
 end
 Vector3.zero = Vector3.new(0, 0, 0)
-local CFrame = { new = function(position) return { Position = position } end }
+local frameMeta = { __mul = function(a, _) return a end }
+local CFrame = { new = function(position) return setmetatable({ Position = position }, frameMeta) end }
+local OverlapParams = { new = function() return {} end }
+local typeof = function(value) return if type(value) == "table" and value.isGridFrame then "CFrame" else type(value) end
+local BaseGrid = (function()
+	-- BASE_GRID_SOURCE --
+end)()
+local require = function(_) return BaseGrid end
+local gridFrame = {
+	isGridFrame = true,
+	Position = Vector3.zero,
+	Rotation = {},
+	PointToObjectSpace = function(_, value) return value end,
+	PointToWorldSpace = function(_, value) return value end,
+}
 local RaycastParams = { new = function() return {} end }
 local function ground(x, z, y)
 	return Vector3.new(x, y or 0, z or 0)
 end
 local Enum = { PathStatus = { Success = "Success", NoPath = "NoPath" }, RaycastFilterType = { Exclude = "Exclude" }, Material = { Water = "Water" } }
-local now, npc, paths, commands, config, walking, steering, tick, parameters, casts
+local now, npc, paths, commands, config, walking, steering, tick, parameters, casts, rays, boxes, idleWalkingTicks
 local os = { clock = function() return now end }
 local sweepWalls
 local function positionAt(point)
@@ -47,6 +61,8 @@ function task.wait(seconds)
 		if distance > 1 then
 			local step = math.min(distance, npc.humanoid.WalkSpeed * seconds)
 			positionAt(Vector3.new(current.X + dx/distance*step, walking.Y, current.Z + dz/distance*step))
+		else
+			idleWalkingTicks += 1
 		end
 	end
 end
@@ -77,8 +93,14 @@ function workspace:Blockcast(frame, size, direction, params)
 	if config.onCast then return config.onCast(frame, size, direction) end
 	return sweepWalls(frame.Position, size, direction)
 end
+function workspace:GetPartBoundsInBox(frame, size, params)
+	boxes += 1
+	check(params.RespectCanCollide and params.CollisionGroup == npc.root.CollisionGroup, "Grid queries use rig collision rules")
+	return if sweepWalls(frame.Position, size, Vector3.zero) then { true } else {}
+end
 function workspace:Raycast(origin, direction)
-	if config.onRay then return config.onRay(origin) end
+	rays += 1
+	if config.onRay then return config.onRay(origin, direction) end
 	if not config.ground and not config.water then return nil end
 	local height = if config.groundHeight then config.groundHeight(origin.X, origin.Z) else 0
 	if height > origin.Y or height < origin.Y + direction.Y then return nil end
@@ -109,15 +131,18 @@ function service:CreatePath(options)
 	return path
 end
 local game = { GetService = function(_, name)
+	if name == "ReplicatedStorage" then return { Shared = { BaseGrid = true } } end
 	assert(name == "PathfindingService")
 	return service
 end }
 local Navigation = (function()
 	-- NAVIGATION_SOURCE --
 end)()
+local NpcNavigation = Navigation
+-- CUSTOMER_WALK_SOURCE --
 
 local function reset(options)
-	now, paths, commands, config, walking, steering, tick, casts = 0, {}, {}, options or {}, nil, nil, 0, 0
+	now, paths, commands, config, walking, steering, tick, casts, rays, boxes, idleWalkingTicks = 0, {}, {}, options or {}, nil, nil, 0, 0, 0, 0, 0
 	npc = {
 		active = true,
 		root = { Parent = true, Position = Vector3.new(0, 3, 0), Size = Vector3.new(2, 2, 1), CollisionGroup = "Default" },
@@ -145,6 +170,25 @@ local function clean()
 	end
 end
 
+-- The built-in shop's front wall is at z=15 with a seven-stud opening.
+-- Exercise the actual customer wrapper through the same approach points used
+-- by the visit, including the return trip after the customer starts leaving.
+reset({ ground = true, walls = {
+	{ min = ground(-23, 14.675), max = ground(-3.5, 15.325) },
+	{ min = ground(3.5, 14.675), max = ground(23, 15.325) },
+} })
+positionAt(ground(0, 24))
+check(walk(npc, ground(0, 18.6)) and walk(npc, ground(0, 11)), "Customer enters through the shop doorway")
+check(npc.root.Position.Z < 15, "Customer reaches the inside of the shop")
+npc.leaving = true
+check(walk(npc, ground(0, 18.6)) and walk(npc, ground(0, 24)), "A leaving customer walks back outside")
+clean()
+
+reset({ ground = true, onWait = function() npc.leaving = true end })
+check(not walk(npc, ground(10), function() return not npc.leaving end), "Customer wrapper forwards cancellation")
+check(npc.root.Position.X < 2, "Cancelled customer stops before the destination")
+clean()
+
 reset({ detour = { ground(0, 6), ground(8, 6) } })
 check(Navigation.walk(npc, ground(8, 0)), "Follow a route around a wall")
 check(commands[1].Z >= 6 and commands[2].Z >= 6, "Use intermediate detour points before the destination")
@@ -157,6 +201,13 @@ reset({ walls = { { min = ground(3, -5), max = ground(5, 4.5) } },
 npc.humanoid.WalkSpeed = 16
 check(Navigation.walk(npc, ground(8)), "Porter rounds a tight solid corner without clipping the wall")
 check(#paths == 1, "Precise corner arrival avoids repeatedly replanning the same valid route")
+clean()
+
+reset({ walls = { { min = ground(-5, 8), max = ground(5, 9) } },
+	detour = { ground(0, 6), ground(8, 6) } })
+npc.humanoid.WalkSpeed = 16
+check(Navigation.walk(npc, ground(8, 6)), "Do not extend a valid corner waypoint into the wall beyond it")
+check(#paths == 1 and commands[1].Z <= 6.1, "Wall clearance limits the corner extension before moving")
 clean()
 
 reset({ ground = true, walls = { { min = ground(4, -5), max = ground(6, 5) } },
@@ -193,7 +244,7 @@ reset({ groundHeight = function(x) return x * 2.7 / 8 end,
 	detour = { ground(2, 0, 0.675), ground(4, 0, 1.35), ground(6, 0, 2.025) } })
 check(Navigation.walk(npc, ground(8, 0, 2.7), nil, true), "Uphill dock route is not vetoed by a horizontal body sweep")
 check(#paths == 1 and npc.root.Position.Y > 5, "NPC actually gains elevation across the ramp")
-check(casts == 0, "Normal path following relies on progress rather than level recovery probes")
+check(casts > 0, "Corner extensions are checked for walls on the ramp")
 clean()
 
 reset({ groundHeight = function(x) return 2.7 - x * 2.7 / 8 end,
@@ -393,6 +444,207 @@ npc.model.FindFirstChild = function(_, name)
 end
 check(Navigation.clearance(npc) == 3, "Large body rigs reserve additional clearance")
 check(Navigation.walk(npc, ground(10)) and parameters.AgentHeight == 8, "Tall avatars reserve head clearance without counting accessories")
+clean()
+
+
+
+reset({ ground = true, walls = {
+	{ min = ground(1.975, -15.75), max = ground(2.525, -11.25) },
+	{ min = ground(1.975, -2.25), max = ground(2.525, 2.25) },
+}, noPath = true })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(-9, 3, -9)
+check(Navigation.walk(npc, ground(13.5, -9)), "Grid route crosses the rear room divider passage")
+check(#paths == 0 and npc.root.Position.X > 3.57, "Rear passage is traversed without the navmesh")
+
+-- The grid also connects the shop to the base outside the front doorway.
+reset({ ground = true, walls = {
+	{ min = ground(-24.75, 15.4), max = ground(-3.765, 16.1) },
+	{ min = ground(3.765, 15.4), max = ground(24.75, 16.1) },
+} })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(0, 3, 11.25)
+check(Navigation.walk(npc, ground(0, 18.6)), "NPC exits the grid through the front doorway")
+check(Navigation.walk(npc, ground(0, 11.25)), "NPC enters the grid through the front doorway")
+check(#paths == 0, "Door transitions stay on the base grid")
+clean()
+
+-- Exercise the production grid planner against real-width room openings and
+-- dynamic obstacle boxes. Both ends are inside the 11 by 7 house grid.
+local roomWalls = {
+	{ min = ground(-24.75, 1.925), max = ground(-13, 2.575) },
+	{ min = ground(-7, 1.925), max = ground(9, 2.575) },
+	{ min = ground(15.5, 1.925), max = ground(24.75, 2.575) },
+}
+reset({ ground = true, walls = roomWalls, noPath = true })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(0, 3, 9)
+local kitchenReached = Navigation.walk(npc, ground(-18, -9))
+check(kitchenReached, "Grid route passes through the kitchen doorway")
+check(#paths == 0 and npc.root.Position.Z < 0, "Indoor route succeeds without the navmesh")
+
+reset({ ground = true, walls = roomWalls, noPath = true })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(0, 3, 9)
+check(Navigation.walk(npc, ground(18, -9)), "Grid route passes through the storage doorway")
+check(#paths == 0 and npc.root.Position.Z < 0, "Storage route stays on the grid")
+
+reset({ ground = true, walls = { { min = ground(2, -2), max = ground(7, 2) } }, noPath = true })
+npc.gridFrame = gridFrame
+positionAt(ground(-9, 0))
+check(Navigation.walk(npc, ground(13.5, 0)), "Grid route goes around a placed obstacle")
+check(#paths == 0 and math.abs(npc.root.Position.X - 13.5) < 1.25, "Obstacle detour reaches the target")
+
+reset({ ground = true, noPath = true })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(-18, 3, 0)
+check(Navigation.walk(npc, ground(18, 0), nil, true), "Cross a clear room")
+check(#paths == 0 and #commands <= 2, "A clear grid corridor uses one movement command instead of stopping at every square")
+
+reset({ ground = true, noPath = true, walls = {
+	{ min = ground(-4, -6), max = ground(1, 2) },
+	{ min = ground(5, -2), max = ground(10, 5) },
+	{ min = ground(-14, 7), max = ground(-8, 10) },
+} })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(-18, 3, 0)
+local multipleReached = Navigation.walk(npc, ground(18, 0), nil, true)
+check(multipleReached, "Walk around multiple placed furniture obstacles")
+check(#paths == 0 and #commands < 8, "Multiple-furniture route stays on the grid without per-cell stops")
+check(idleWalkingTicks == 0, "Walking remains continuous through furniture detour turns")
+
+-- The aligned dining extension is entered from the west, along the narrow
+-- quay beside the house and through the centered opening in the west wall.
+reset({ noPath = true, walls = {
+	{ min = ground(-25.1, -15.75), max = ground(-24.4, 15.75) },
+	{ min = ground(-25.1, -23.75), max = ground(-24.4, -15.75) },
+	{ min = ground(-25.1, -33.75), max = ground(-24.4, -30.25) },
+}, onRay = function(origin, direction)
+	if math.abs(origin.X) > 29 or origin.Z < -35 or origin.Z > 24 or origin.Y < 0 or origin.Y + direction.Y > 0 then
+		return nil
+	end
+	return { Position = ground(origin.X, origin.Z), Normal = Vector3.new(0, 1, 0), Material = "Concrete" }
+end })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(-27.1, 3, 12)
+check(Navigation.walk(npc, ground(-27.1, -27), nil, true), "Diner follows the quay beside the aligned walls")
+check(Navigation.walk(npc, ground(-22.5, -27), nil, true), "Diner crosses the west dining doorway")
+check(#paths == 0, "Diner's west-side approach uses the grid")
+
+
+-- The freezer access point fits a real R15 torso even though a rounded-up
+-- navmesh agent radius would incorrectly mark it as inside the freezer.
+reset({ ground = true, walls = { { min = ground(-20.8, 2.5), max = ground(-17.2, 11.5) } } })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(0, 3, 9)
+check(Navigation.walk(npc, ground(-15.6, 7)), "Customer reaches the built-in freezer access point")
+check(#paths == 0 and npc.root.Position.X < -14, "Tight access stays on the grid")
+clean()
+
+-- House-local geometry for the separated shop: the house has a split 10.5-stud
+-- doorway, the shop has a 7.5-stud doorway, and the freezer faces the aisle. The road
+-- and forecourt provide continuous support between the two buildings.
+local acrossStreetWalls = {
+	{ min = ground(-24.75, 15.4), max = ground(-3, 16.1) },
+	{ min = ground(7.5, 15.4), max = ground(24.75, 16.1) },
+	{ min = ground(1.975, 2.25), max = ground(2.525, 15.75) },
+	{ min = ground(-24.75, 64.925), max = ground(-3.75, 65.575) },
+	{ min = ground(3.75, 64.925), max = ground(24.75, 65.575) },
+	{ min = ground(17.2, 69.5), max = ground(20.8, 78.5) },
+}
+local function streetHeight(z)
+	if z <= 15.75 or z >= 65.25 then return 0.16 end
+	if z >= 60.5 then return -0.1 end
+	return -0.16
+end
+reset({ noPath = true, walls = acrossStreetWalls, groundHeight = function(_, z) return streetHeight(z) end, onRay = function(origin, direction)
+	-- Floors, base track, ring road and shop forecourt in the route corridor.
+	local supported = (math.abs(origin.X) <= 24.75 and origin.Z >= -35 and origin.Z <= 24)
+		or (math.abs(origin.X) <= 4.5 and origin.Z >= 24 and origin.Z <= 61)
+		or (math.abs(origin.X) <= 26.5 and origin.Z >= 61 and origin.Z <= 83.25)
+	local y = streetHeight(origin.Z)
+	if not supported or origin.Y < y or origin.Y + direction.Y > y then return nil end
+	return { Position = ground(origin.X, origin.Z, y), Normal = Vector3.new(0, 1, 0), Material = "Concrete" }
+end })
+npc.gridFrame = gridFrame
+npc.humanoid.WalkSpeed = 16
+positionAt(ground(5, 11))
+for _, point in { ground(5, 18.6), ground(0, 62.4), ground(0, 70), ground(15.6, 74) } do
+	check(Navigation.walk(npc, point, nil, true), "Porter carries rack fish through both doorways to the across-street freezer")
+end
+check(npc.root.Position.X > 14 and npc.root.Position.Z > 65.25, "Porter reaches the freezer aisle")
+for _, point in { ground(0, 70), ground(0, 62.4), ground(5, 18.6), ground(5, 11) } do
+	check(Navigation.walk(npc, point, nil, true), "Porter returns from the shop to collect more fish")
+end
+check(#paths == 0, "Across-street route stays on supported grid cells")
+clean()
+
+reset({ ground = true, walls = { { min = ground(-40, -1), max = ground(40, 1) } }, noPath = true })
+npc.gridFrame = gridFrame
+npc.root.Position = Vector3.new(0, 3, -9)
+check(not Navigation.walk(npc, ground(0, 9)), "Blocked grid cannot route through a wall")
+check(npc.root.Position.Z < 0, "Neither grid nor fallback walks through the obstacle")
+
+-- The actual base's right-hand pier is seven studs wide, its crosswalk five,
+-- and the gangway rises 2.7 studs over eight studs. Coordinates here are in
+-- HouseFrame rather than BoatDockFrame (the latter is 43 studs behind it).
+local function baseFloor(x, z)
+	if math.abs(x) <= 24 and z >= -35 and z <= 24 then return 0 end
+	if x >= 13.5 and x <= 20.5 and z >= -86 and z < -35 then
+		return -2.7 + 2.7 * math.clamp((z + 43) / 8, 0, 1)
+	end
+	if x >= -13.5 and x <= 13.5 and z >= -83.5 and z <= -78.5 then return -2.7 end
+	return nil
+end
+local function dockRay(origin, direction)
+	local y = baseFloor(origin.X, origin.Z)
+	if not y or y > origin.Y or y < origin.Y + direction.Y then return nil end
+	return { Position = ground(origin.X, origin.Z, y), Normal = Vector3.new(0, 1, 0), Material = "Wood" }
+end
+reset({ noPath = true, onRay = dockRay, groundHeight = function(x, z)
+	return assert(baseFloor(x, z), "Grid route stepped off the quay or dock")
+end })
+npc.gridFrame = gridFrame
+positionAt(ground(0, -9))
+for _, target in {
+	ground(17, -39, -1.35), ground(17, -81, -2.7), ground(0, -81, -2.7),
+	ground(17, -81, -2.7), ground(17, -39, -1.35), ground(0, -9),
+} do
+	check(Navigation.walk(npc, target, nil, true), "Grid route reaches each house-to-dock destination and returns")
+end
+check(#paths == 0, "House, ramp, pier and crosswalk use the grid without a navmesh")
+print(string.format("House-to-dock round trip: %d raycasts, %d blockcasts, %d box queries", rays, casts, boxes))
+
+-- Water and gaps must be rejected even when another dry cell is reachable
+-- across them; the width test samples both sides, not just the cell centers.
+for _, hazard in { "gap", "water", "narrow" } do
+	reset({ noPath = true, onRay = function(origin, direction)
+		local inPier = origin.X >= 13.5 and origin.X <= 20.5 and origin.Z >= -86 and origin.Z <= -43
+		if hazard == "narrow" then inPier = origin.X >= 17 and origin.X <= 19 end
+		if not inPier then return nil end
+		if hazard ~= "narrow" and origin.Z < -65 and origin.Z > -69 then
+			return if hazard == "water" then { Position = ground(origin.X, origin.Z, -2.7), Normal = Vector3.new(0, 1, 0), Material = Enum.Material.Water } else nil
+		end
+		if -2.7 > origin.Y or -2.7 < origin.Y + direction.Y then return nil end
+		return { Position = ground(origin.X, origin.Z, -2.7), Normal = Vector3.new(0, 1, 0), Material = "Wood" }
+	end })
+	npc.gridFrame = gridFrame
+	npc.root.Position = Vector3.new(18, 0.3, -54)
+	check(not Navigation.walk(npc, ground(18, -76, -2.7), nil, true), "Grid rejects dock " .. hazard)
+	check(npc.root.Position.Z > -65, "NPC stays on the safe side of the dock " .. hazard)
+	clean()
+end
+
+-- A surface high above the house floor is furniture, not a grid floor.
+reset({ noPath = true, onRay = function(origin, direction)
+	local y = if origin.X > 2 and origin.X < 7 then 2 else 0
+	if y > origin.Y or y < origin.Y + direction.Y then return nil end
+	return { Position = ground(origin.X, origin.Z, y), Normal = Vector3.new(0, 1, 0), Material = "Wood" }
+end })
+npc.gridFrame = gridFrame
+positionAt(ground(-9, 0))
+check(not Navigation.walk(npc, ground(13.5, 0), nil, true), "Grid never treats a tall tabletop as walkable floor")
+check(npc.root.Position.X < 2, "NPC does not climb onto the tabletop")
 clean()
 
 print("NPC navigation: " .. checks .. " route, recovery, cancellation and cleanup checks passed (simulated world).")

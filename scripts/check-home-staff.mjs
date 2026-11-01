@@ -17,6 +17,7 @@ function section(start, end) {
 let program = await readFile(join(root, 'scripts/home-staff.luau'), 'utf8');
 program = program.replace('-- DATA_SOURCE --', injectFreezer(await readFile(join(root, 'src/server/AnglerData.luau'), 'utf8')))
   .replace('-- STAFF_SOURCE --', await readFile(join(root, 'src/shared/StaffCatalog.luau'), 'utf8'))
+  .replace('-- ROUTE_SOURCE --', section('-- House-local doorway approach points.', 'local function face('))
   .replace('-- SELL_SOURCE --', section('local function sell(', 'local function removeStaff('))
   .replace('-- PORTER_SOURCE --', section('local function dockedBoat(', 'local function ensureStaff('));
 program = await freezerRuntime() + program;

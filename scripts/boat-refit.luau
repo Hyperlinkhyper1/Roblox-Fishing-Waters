@@ -142,7 +142,7 @@ local UDim2 = {
 	end,
 }
 local dependencies = {
-	Biomes = { WaterLevel = 0 },
+	Biomes = { WaterLevel = 0, inOceanBounds = function() return true end },
 	BoatCatalog = {},
 	AnglerData = {},
 	BoatService = {},

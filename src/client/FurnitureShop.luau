@@ -8,6 +8,7 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
+local FurniturePreview = require(script.Parent.FurniturePreview)
 local Paths = require(ReplicatedStorage.Shared.Paths)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
@@ -113,6 +114,10 @@ function FurnitureShop.start()
 	local pending = false
 	local selectedItem: string? = nil
 	local activePrompt: ProximityPrompt? = nil
+	local category = "All"
+	local categoryButtons = {}
+	local previewStarted = {}
+	local list: ScrollingFrame
 	local function render()
 		local cash = if state then state.Cash else 0
 		status.Text = if not state
@@ -123,16 +128,30 @@ function FurnitureShop.start()
 				state.FreezerCount,
 				state.StorageCapacity
 			)
+		for name, button in categoryButtons do
+			button.Visible = selectedItem == nil
+			Theme.button(button, if category == name then "Selected" else "Normal")
+		end
+		list.Position = UDim2.fromOffset(18, if selectedItem then 118 else 158)
+		list.Size = UDim2.new(1, -36, 1, if selectedItem then -132 else -172)
 		for _, id in Furniture.Order do
 			local item, row = Furniture.Items[id], rows[id]
-			row.frame.Visible = selectedItem == nil or selectedItem == id
+			row.frame.Visible = if selectedItem
+				then selectedItem == id
+				else category == "All"
+					or (category == "Decorations" and item.Decoration == true)
+					or (category == "Equipment" and not item.Decoration)
+			if row.frame.Visible and not previewStarted[id] then
+				previewStarted[id] = true
+				FurniturePreview.show(row.preview, remotes, id)
+			end
 			local owned = if state then state.Stock[id] or 0 else 0
 			local placed = if state then Furniture.count(state.Placed, id) else 0
 			local locked = state ~= nil and Furniture.locked(id, state.Unlocked) ~= nil
 			row.detail.Text = string.format(
-				"%s\nOnly in the %s · %d placed, %d in stock (max %d placed)",
+				"%s\n%s · %d placed, %d in stock (max %d placed)",
 				item.Description,
-				Furniture.RoomNames[item.Room],
+				Furniture.roomNames(id),
 				placed,
 				owned,
 				item.MaxPlaced
@@ -146,7 +165,7 @@ function FurnitureShop.start()
 			Theme.button(row.buy, if enabled then "Selected" else "Disabled")
 		end
 	end
-	local list = make("ScrollingFrame", card, {
+	list = make("ScrollingFrame", card, {
 		Name = "CatalogueRows",
 		Position = UDim2.fromOffset(18, 118),
 		Size = UDim2.new(1, -36, 1, -132),
@@ -156,32 +175,53 @@ function FurnitureShop.start()
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 	})
 	Theme.scroll(list)
+	for index, name in { "All", "Equipment", "Decorations" } do
+		local button = make("TextButton", card, {
+			Name = name .. "Category",
+			Position = UDim2.new((index - 1) / 3, 18, 0, 115),
+			Size = UDim2.new(1 / 3, -16, 0, 32),
+			Text = name,
+			TextSize = 13,
+		})
+		button.Activated:Connect(function()
+			category = name
+			list.CanvasPosition = Vector2.zero
+			render()
+		end)
+		categoryButtons[name] = button
+	end
 	make("UIListLayout", list, { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 10) })
 	for index, id in Furniture.Order do
 		local item = Furniture.Items[id]
 		local row = make("Frame", list, {
 			Name = id .. "Row",
 			LayoutOrder = index,
-			Size = UDim2.new(1, -10, 0, 102),
+			Size = UDim2.new(1, -10, 0, 150),
 		})
 		Theme.panel(row, true, 8)
+		local preview = make("ViewportFrame", row, {
+			Name = "Preview",
+			Position = UDim2.fromOffset(10, 12),
+			Size = UDim2.fromOffset(66, 66),
+			BackgroundTransparency = 1,
+		})
 		label(row, item.Name, {
-			Position = UDim2.fromOffset(14, 10),
-			Size = UDim2.new(1, -170, 0, 22),
+			Position = UDim2.fromOffset(84, 10),
+			Size = UDim2.new(1, -96, 0, 22),
 			TextSize = 17,
 		})
 		local detail = label(row, "", {
-			Position = UDim2.fromOffset(14, 36),
-			Size = UDim2.new(1, -170, 0, 60),
+			Position = UDim2.fromOffset(84, 36),
+			Size = UDim2.new(1, -96, 0, 72),
 			TextSize = 12,
 			Font = Enum.Font.Gotham,
 			TextColor3 = Theme.Colors.Muted,
 		})
 		local buy = make("TextButton", row, {
 			Name = "Buy" .. id,
-			AnchorPoint = Vector2.new(1, 0.5),
-			Position = UDim2.new(1, -12, 0.5, 0),
-			Size = UDim2.fromOffset(140, 44),
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, -12, 1, -7),
+			Size = UDim2.fromOffset(140, 30),
 			TextSize = 15,
 		})
 		buy.Activated:Connect(function()
@@ -202,7 +242,7 @@ function FurnitureShop.start()
 			end
 			render()
 		end)
-		rows[id] = { frame = row, detail = detail, buy = buy }
+		rows[id] = { frame = row, detail = detail, buy = buy, preview = preview }
 	end
 
 	local function refresh()
@@ -238,7 +278,7 @@ function FurnitureShop.start()
 			selectedItem = if type(itemId) == "string" and Furniture.Items[itemId] then itemId else nil
 			activePrompt = prompt
 			list.CanvasPosition = Vector2.zero
-			card.Size = UDim2.new(1, -28, 0, if selectedItem then 238 else 470)
+			card.Size = UDim2.new(1, -28, 0, if selectedItem then 293 else 470)
 			overlay.Visible = true
 			render()
 			task.spawn(refresh)

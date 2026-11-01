@@ -9,6 +9,7 @@ local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
+local City = require(script.ModernCity)
 local Lod = require(script.Lod)
 local Med = require(script.Mediterranean)
 local Props = require(script.Props)
@@ -21,6 +22,43 @@ local Map = {}
 
 local Terrain = workspace.Terrain
 local TILE = 1024
+
+-- Extend the existing ocean only toward the distant southeast city. The
+-- original bounds still govern island generation, preserving its seeded layout.
+local function fillCityOcean()
+	local half = Biomes.MapHalfSize
+	local edge = Biomes.OceanMax
+	local depth = Biomes.WaterLevel - Biomes.SeaFloor
+	local function fill(x0: number, x1: number, z0: number, z1: number)
+		for x = x0, x1 - 1, TILE do
+			for z = z0, z1 - 1, TILE do
+				local sx, sz = math.min(TILE, x1 - x), math.min(TILE, z1 - z)
+				local cx, cz = x + sx / 2, z + sz / 2
+				Terrain:FillBlock(CFrame.new(cx, Biomes.WaterLevel - depth / 2, cz), Vector3.new(sx, depth, sz), Enum.Material.Water)
+				Terrain:FillBlock(CFrame.new(cx, Biomes.SeaFloor - 4, cz), Vector3.new(sx, 8, sz), Enum.Material.Rock)
+			end
+			task.wait()
+		end
+	end
+	-- Keep the remote shop interiors outside the ocean while joining the new
+	-- southeast water to the original sea along both sides of its corner.
+	fill(half, edge, Biomes.CityOceanStart, edge)
+	fill(Biomes.CityOceanStart, half, half, edge)
+end
+
+function Map.ensureCity(root: Instance)
+	local existing = root:FindFirstChild("Modern City")
+	if not (existing and existing:IsA("Model") and existing:GetAttribute("CityVersion") == City.VERSION) then
+		if not existing then
+			fillCityOcean()
+		end
+		City.build(root)
+	end
+	-- The metro station sits below sea level, in a pocket cleared of water
+	for _, pocket in Biomes.DryPockets do
+		Terrain:FillBlock(CFrame.new((pocket.min + pocket.max) / 2), pocket.max - pocket.min, Enum.Material.Air)
+	end
+end
 
 local function fillOcean(root: Folder)
 	local half = Biomes.MapHalfSize
@@ -155,6 +193,7 @@ function Map.build(onHarbourReady: ((Folder) -> ())?, onStage: ((string, number)
 	Regions.volcanic(context(Biomes.Volcanic, 4))
 	Regions.ice(context(Biomes.Ice, 5))
 	Regions.openSea(context(Biomes.OpenSea, 6))
+	Map.ensureCity(root)
 	SeabedDetails.ensure(root)
 	Lod.build(root)
 	Map.ensureSignText()
@@ -195,7 +234,13 @@ function Map.ensureSignText()
 	if not root then
 		return
 	end
+	-- Runs after players are in, over the whole map: yield now and then to stay inside the script timeout
+	local resumed = os.clock()
 	for _, gui in root:GetDescendants() do
+		if os.clock() - resumed > 0.05 then
+			task.wait()
+			resumed = os.clock()
+		end
 		if not gui:IsA("SurfaceGui") or not gui:FindFirstChildWhichIsA("TextLabel", true) then
 			continue
 		end
@@ -233,10 +278,20 @@ function Map.animate()
 	if not root then
 		return
 	end
+	local resumed = os.clock()
 	for _, lens in root:GetDescendants() do
-		-- Repair glazing already baked into saved maps, including current layouts
-		-- whose builders correctly reuse their existing models at startup.
-		if lens:IsA("BasePart") and lens.Material == Enum.Material.Glass and lens.Transparency > 0 then
+		if os.clock() - resumed > 0.05 then
+			task.wait()
+			resumed = os.clock()
+		end
+		-- Repair older glazing, while retaining deliberately transparent glass
+		-- such as the transit hall roof.
+		if
+			lens:IsA("BasePart")
+			and lens.Material == Enum.Material.Glass
+			and lens.Transparency > 0
+			and not lens:GetAttribute("PreserveGlassMaterial")
+		then
 			lens.Material = Enum.Material.SmoothPlastic
 		end
 		if lens.Name == "LighthouseLens" and lens:IsA("BasePart") then

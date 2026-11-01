@@ -48,11 +48,12 @@ end
 ShopDesk.WIDTH = DESK_WIDTH
 ShopDesk.HEIGHT = DESK_HEIGHT
 ShopDesk.DEPTH = 65 * DESK_WIDTH / 160
--- Turn counterclockwise as seen from above. The end meets the front
--- window sill's inside edge (z=14.425) without clipping its stone lip.
--- Customers stand on the desk's local -Z side, facing the shopkeeper.
+-- Turned clockwise as seen from above, beside the shop's front window to the
+-- right of its door (house-local; the shop stands across the road). The end
+-- stays clear of the window sill's stone lip. Customers stand on the desk's
+-- local -Z side (toward the aisle), facing the shopkeeper.
 function ShopDesk.frame(houseFrame: CFrame): CFrame
-	return houseFrame * CFrame.new(16, 0.16, 14.425 - DESK_WIDTH / 2) * CFrame.Angles(0, math.pi / 2, 0)
+	return houseFrame * CFrame.new(-16, 0.16, 66.575 + DESK_WIDTH / 2) * CFrame.Angles(0, -math.pi / 2, 0)
 end
 
 function ShopDesk.ensure(shop: Model, houseFrame: CFrame)

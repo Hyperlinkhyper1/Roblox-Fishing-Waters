@@ -35,7 +35,7 @@ function MusselNets.footprint(size: Vector3): { Vector3 }
 		Vector3.new(-half.X, 0, half.Z),
 		Vector3.new(half.X, 0, -half.Z),
 		Vector3.new(-half.X, 0, -half.Z),
-		Vector3.new(size.X / 2 + 0.7, 0, size.Z / 2 - 0.35),
+		Vector3.new(size.X / 2 + 0.3, 0, 0.3),
 	}
 end
 

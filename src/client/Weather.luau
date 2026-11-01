@@ -188,8 +188,7 @@ function WeatherController.start()
 		local state = Weather.getState(now, camera.CFrame.Position)
 		local effectsEnabled = player:GetAttribute("WeatherEffectsEnabled") ~= false
 		local position = camera.CFrame.Position
-		local submerged = math.abs(position.X) < Biomes.MapHalfSize
-			and math.abs(position.Z) < Biomes.MapHalfSize
+		local submerged = Biomes.inOceanBounds(position)
 			and position.Y > Biomes.SeaFloor
 			and position.Y < Biomes.WaterLevel - 0.15
 		local character = player.Character

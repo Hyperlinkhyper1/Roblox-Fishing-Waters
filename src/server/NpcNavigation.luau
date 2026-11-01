@@ -78,11 +78,8 @@ function NpcNavigation.walk(
 	-- A path can report a successful route across a gap or along a pier edge.
 	-- Check the deck under the whole body along the segment before walking it.
 	-- The segment Y is interpolated so ramps and steps stay supported.
-	local function supported(position: Vector3): boolean
-		if not stayOnGround then
-			return true
-		end
-		local from = Vector3.new(root.Position.X, 0, root.Position.Z)
+	local function supportedBetween(fromPosition: Vector3, position: Vector3, strict: boolean?, sampleStep: number?): boolean
+		local from = Vector3.new(fromPosition.X, 0, fromPosition.Z)
 		local to = Vector3.new(position.X, 0, position.Z)
 		local delta = to - from
 		local distance = delta.Magnitude
@@ -91,8 +88,8 @@ function NpcNavigation.walk(
 		end
 		local forward = delta.Unit
 		local side = Vector3.new(-forward.Z, 0, forward.X) * (clearance - 0.5)
-		local fromY, toY = feet(), position.Y
-		local samples = math.max(1, math.ceil(distance / 0.5))
+		local fromY, toY = fromPosition.Y, position.Y
+		local samples = math.max(1, math.ceil(distance / (sampleStep or 0.5)))
 		for sample = 1, samples do
 			local t = sample / samples
 			local point = from + delta * t
@@ -106,7 +103,8 @@ function NpcNavigation.walk(
 						Vector3.new(0, -5, 0),
 						parameters
 					)
-					if floor and floor.Material ~= Enum.Material.Water and floor.Normal.Y >= 0.7 then
+					if floor and floor.Material ~= Enum.Material.Water and floor.Normal.Y >= 0.7
+						and (not strict or math.abs(floor.Position.Y - sampleY) <= 1.1) then
 						break
 					end
 					floor = nil
@@ -118,12 +116,10 @@ function NpcNavigation.walk(
 		end
 		return true
 	end
-	local function follow(
-		position: Vector3,
-		radius: number,
-		moveDeadline: number,
-		blocked: () -> boolean
-	): boolean
+	local function supported(position: Vector3): boolean
+		return not stayOnGround or supportedBetween(Vector3.new(root.Position.X, feet(), root.Position.Z), position, true)
+	end
+	local function follow(position: Vector3, radius: number, moveDeadline: number, blocked: () -> boolean): boolean
 		if arrived(position, radius) then
 			return true
 		end
@@ -196,6 +192,198 @@ function NpcNavigation.walk(
 		return valid() and ok
 	end
 
+
+	-- Route across the base's house-local grid. Sample the actual walking
+	-- surface for each cell: the yard, ramps and piers are at different heights,
+	-- and empty cells over water must never become shortcuts.
+	local gridFrame = npc.gridFrame
+	if typeof(gridFrame) == "CFrame" then
+		local grid = require(game:GetService("ReplicatedStorage").Shared.BaseGrid)
+		local startLocal = gridFrame:PointToObjectSpace(root.Position)
+		local goalLocal = gridFrame:PointToObjectSpace(target)
+		local startColumn = grid.localToExtendedCell(startLocal.X, startLocal.Z)
+		local goalColumn = grid.localToExtendedCell(goalLocal.X, goalLocal.Z)
+		if startColumn and goalColumn then
+			local overlap = OverlapParams.new()
+			overlap.FilterType = Enum.RaycastFilterType.Exclude
+			overlap.FilterDescendantsInstances = { npc.model }
+			overlap.RespectCanCollide = true
+			overlap.CollisionGroup = root.CollisionGroup
+			-- The path service uses a conservative whole-stud radius, but that
+			-- overstates the physical body for grid queries. In particular it
+			-- marks customer access points next to counters as inside the counter.
+			-- Reserve the actual torso/root footprint plus room for limbs instead.
+			local torso = npc.model:FindFirstChild("UpperTorso") or root
+			local width = math.max(3, torso.Size.X + 0.5, torso.Size.Z + 0.5, root.Size.X + 0.5, root.Size.Z + 0.5)
+			local bodyHeight = math.max(2, math.min(height, 5))
+			local bodySize = Vector3.new(width, bodyHeight, width)
+			local topY = math.max(feet(), target.Y) + 2.5
+			local bottomY = math.min(feet(), target.Y) - 3
+			local function point(column: number, row: number): Vector3?
+				local x, z = grid.extendedCellToLocal(column, row)
+				local horizontal = gridFrame:PointToWorldSpace(Vector3.new(x, 0, z))
+				local hit = workspace:Raycast(Vector3.new(horizontal.X, topY, horizontal.Z), Vector3.new(0, bottomY - topY, 0), parameters)
+				-- The base house floor is 0.16 studs above HouseFrame, while the
+				-- quay and docks are lower. Furniture tops are not walking surfaces.
+				if not hit or hit.Material == Enum.Material.Water or hit.Normal.Y < 0.7
+					or hit.Position.Y > gridFrame.Position.Y + 0.25 then
+					return nil
+				end
+				return hit.Position
+			end
+			local function bodyFrame(position: Vector3): CFrame
+				-- Leave room below the box for a sloping ramp under its uphill edge.
+				return CFrame.new(position + Vector3.new(0, bodyHeight / 2 + 0.85, 0)) * gridFrame.Rotation
+			end
+			local function clearAt(position: Vector3): boolean
+				return #workspace:GetPartBoundsInBox(bodyFrame(position), bodySize, overlap) == 0
+			end
+			local function clearBetween(from: Vector3, to: Vector3): boolean
+				local delta = to - from
+				return math.abs(delta.Y) <= 2
+					and (delta.Magnitude < 0.05 or workspace:Blockcast(bodyFrame(from), bodySize, delta, parameters) == nil)
+					-- Route search samples at one-stud intervals; follow() checks
+					-- the actual segment again at half-stud intervals before moving.
+					and supportedBetween(from, to, true, 1)
+			end
+			local function route(): { Vector3 }?
+				local queue, previous, points, usable, edges, cost, closed = {}, {}, {}, {}, {}, {}, {}
+				local function key(column: number, row: number): number
+					return (row - grid.BASE_MIN_ROW) * (grid.BASE_MAX_COLUMN - grid.BASE_MIN_COLUMN + 1) + column - grid.BASE_MIN_COLUMN + 1
+				end
+				local function isUsable(column: number, row: number): boolean
+					if column < grid.BASE_MIN_COLUMN or column > grid.BASE_MAX_COLUMN or row < grid.BASE_MIN_ROW or row > grid.BASE_MAX_ROW then
+						return false
+					end
+					local id = key(column, row)
+					if usable[id] == nil then
+						points[id] = point(column, row)
+						usable[id] = points[id] ~= nil and clearAt(points[id])
+					end
+					return usable[id]
+				end
+				-- Multiple nearby entry cells avoid stranding a rig that starts
+				-- beside a fixture or was pushed away from a cell center.
+				local starts = {}
+				for row = grid.BASE_MIN_ROW, grid.BASE_MAX_ROW do
+					for column = grid.BASE_MIN_COLUMN, grid.BASE_MAX_COLUMN do
+						local x, z = grid.extendedCellToLocal(column, row)
+						local distance = (Vector3.new(x - startLocal.X, 0, z - startLocal.Z)).Magnitude
+						if distance <= grid.CELL_SIZE * 1.5 and isUsable(column, row) then
+							local candidate = points[key(column, row)]
+							if clearBetween(Vector3.new(root.Position.X, feet(), root.Position.Z), candidate) then
+								table.insert(starts, { column, row, distance })
+							end
+						end
+					end
+				end
+				table.sort(starts, function(a, b) return a[3] < b[3] end)
+				for _, start in starts do
+					local id = key(start[1], start[2])
+					previous[id] = 0
+					cost[id] = start[3] / grid.CELL_SIZE
+					table.insert(queue, { start[1], start[2] })
+				end
+				local finish = nil
+				while #queue > 0 do
+					-- Favor cells nearer the destination; this avoids scanning the
+					-- whole quay for every trip down a narrow pier.
+					local best, bestScore = 1, math.huge
+					for index, candidate in queue do
+						local id = key(candidate[1], candidate[2])
+						local score = cost[id] + flatDistance(points[id], target) / grid.CELL_SIZE
+						if score < bestScore then best, bestScore = index, score end
+					end
+					local current = table.remove(queue, best)
+					local id = key(current[1], current[2])
+					if closed[id] then continue end
+					closed[id] = true
+					local position = points[id]
+					if flatDistance(position, target) <= grid.CELL_SIZE * 1.5 and clearBetween(position, target) then
+						finish = id
+						break
+					end
+					for _, step in { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } do
+						local column, row = current[1] + step[1], current[2] + step[2]
+						local nextId = key(column, row)
+						local nextCost = cost[id] + 1
+						if not closed[nextId] and (cost[nextId] == nil or nextCost < cost[nextId]) and isUsable(column, row) then
+							local edgeKey = math.min(id, nextId) .. ":" .. math.max(id, nextId)
+							if edges[edgeKey] == nil then
+								edges[edgeKey] = clearBetween(position, points[nextId])
+							end
+							if edges[edgeKey] then
+								previous[nextId] = id
+								cost[nextId] = nextCost
+								table.insert(queue, { column, row })
+							end
+						end
+					end
+				end
+				if not finish then return nil end
+				local result = { target }
+				while finish ~= 0 do
+					table.insert(result, 1, points[finish])
+					finish = previous[finish]
+				end
+				-- Consecutive grid cells are planning details, not stopping points.
+				-- Skip as many as the actual swept body and continuous floor allow;
+				-- retaining turns only where obstacles or dock edges require them.
+				local simplified = {}
+				local from = Vector3.new(root.Position.X, feet(), root.Position.Z)
+				local first = 1
+				while first <= #result do
+					local last = first
+					for candidate = #result, first + 1, -1 do
+						local destination = result[candidate]
+						if clearBetween(from, destination) and supportedBetween(from, destination, true) then
+							last = candidate
+							break
+						end
+					end
+					from = result[last]
+					table.insert(simplified, from)
+					first = last + 1
+				end
+				return simplified
+			end
+			for attempt = 1, MAX_ATTEMPTS do
+				if not valid() or os.clock() >= deadline then break end
+				if arrived(target) then stop() return true end
+				local waypoints = route()
+				if not waypoints then break end
+				local failed = false
+				for index, position in waypoints do
+					local aim = position
+					if index < #waypoints then
+						local from = if index == 1 then root.Position else waypoints[index - 1]
+						local direction = Vector3.new(position.X - from.X, 0, position.Z - from.Z)
+						if direction.Magnitude > 0.1 then
+							local ahead = position + direction.Unit * 1.1
+							local current = Vector3.new(root.Position.X, feet(), root.Position.Z)
+							-- Do not overshoot a corner if doing so makes the following
+							-- leg cut across a wall, furniture, or the edge of a pier.
+							if clearBetween(current, ahead) and supportedBetween(current, ahead, true)
+								and clearBetween(ahead, waypoints[index + 1]) then
+								aim = ahead
+							end
+						end
+					end
+					local distance = flatDistance(root.Position, aim)
+					local moveDeadline = math.min(deadline, os.clock() + math.max(3, distance / math.max(1, humanoid.WalkSpeed) * 2 + 1))
+					if not follow(aim, ARRIVAL_RADIUS, moveDeadline, function() return false end) then
+						failed = true
+						break
+					end
+				end
+				if not failed and valid() and arrived(target) then stop() return true end
+				if valid() and os.clock() < deadline then task.wait(0.25 * attempt) end
+			end
+			-- A tight fixture approach may not reach a whole-cell center even
+			-- though the navmesh can reach it. Preserve that route as a fallback.
+		end
+	end
+
 	for attempt = 1, MAX_ATTEMPTS do
 		if not valid() or os.clock() >= deadline then
 			break
@@ -241,10 +429,8 @@ function NpcNavigation.walk(
 				nextWaypoint = index
 				local position = waypoints[index].Position
 				local distance = flatDistance(root.Position, position)
-				local moveDeadline = math.min(
-					deadline,
-					os.clock() + math.max(3, distance / math.max(1, humanoid.WalkSpeed) * 2 + 1)
-				)
+				local moveDeadline =
+					math.min(deadline, os.clock() + math.max(3, distance / math.max(1, humanoid.WalkSpeed) * 2 + 1))
 				local startPosition = root.Position
 				local from = previous or startPosition
 				local targetPosition = position
@@ -254,7 +440,19 @@ function NpcNavigation.walk(
 					-- across the inside of a doorway or wall.
 					local direction = Vector3.new(position.X - from.X, 0, position.Z - from.Z)
 					if direction.Magnitude >= 0.5 then
-						local ahead = position + direction.Unit * CORNER_RADIUS
+						-- The navmesh only guarantees clearance up to the waypoint.
+						-- A wall can be immediately beyond a valid turn, so do not
+						-- blindly extend the target into it.
+						local extension = direction.Unit * CORNER_RADIUS
+						local width = math.max(1, clearance * 2 - 0.1)
+						local hit = workspace:Blockcast(
+							CFrame.new(position + Vector3.new(0, 2.5, 0)),
+							Vector3.new(width, 2, width),
+							extension,
+							parameters
+						)
+						local distance = if hit then math.max(0, (hit.Distance or 0) - 0.2) else CORNER_RADIUS
+						local ahead = position + direction.Unit * math.min(CORNER_RADIUS, distance)
 						local candidate = Vector3.new(ahead.X, position.Y, ahead.Z)
 						if not stayOnGround or supported(candidate) then
 							targetPosition = candidate

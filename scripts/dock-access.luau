@@ -16,6 +16,7 @@ for _, angle in { 0, 0.73, 2.1 } do
 		local oldDock = nil
 		if saved == "plankDocks" then
 			buildBaseDocks(base, dockFrame, 1)
+			base:FindFirstChild("BeachStairs"):Destroy() -- Saved map predates these stairs.
 			oldDock = base:FindFirstChild("Dock")
 			for _, part in base:GetDescendants() do
 				if part.Name == "DeckSurface" then
@@ -42,6 +43,12 @@ for _, angle in { 0, 0.73, 2.1 } do
 			oldAccess.Parent = base
 			Props.part(oldAccess, Vector3.new(7, 0.4, 8.8), dockFrame * CFrame.new(-17, 4.3, 4), QUAY)
 		end
+		-- The original quay placed a bollard in the middle of the new route.
+		-- Its cylinder orientation is world-upright even when the plot is rotated.
+		local bollard =
+			Props.cylinder(base, dockFrame * Vector3.new(0, 6.7, 9), 1.6, 1.4, Color3.fromRGB(52, 50, 48), M.Metal)
+		local sideBollard =
+			Props.cylinder(base, dockFrame * Vector3.new(24, 6.7, 9), 1.6, 1.4, Color3.fromRGB(52, 50, 48), M.Metal)
 		if saved ~= "fresh" then
 			Harbour.ensureDocks({
 				GetDescendants = function()
@@ -49,8 +56,37 @@ for _, angle in { 0, 0.73, 2.1 } do
 				end,
 			})
 		else
-			ensureDockAccess(base, dockFrame)
+			buildBaseDocks(base, dockFrame, 1)
 		end
+		local stairs = base:FindFirstChild("BeachStairs")
+		check(stairs ~= nil, "Fresh and saved plots receive beach stairs")
+		check(bollard.Parent == nil and sideBollard.Parent == base, "Only the center bollard is removed")
+		local steps = {}
+		for _, part in stairs:GetChildren() do
+			if part.Name == "Step" then
+				table.insert(steps, part)
+			end
+		end
+		table.sort(steps, function(a, b)
+			return dockFrame:PointToObjectSpace(a.Position).Z < dockFrame:PointToObjectSpace(b.Position).Z
+		end)
+		check(#steps == 7, "The stairs have seven steps")
+		local lastTop = 0
+		for _, step in steps do
+			local localFrame = dockFrame:ToObjectSpace(step.CFrame)
+			local top = localFrame.Position.Y + step.Size.Y / 2
+			check(step.Anchored and step.CanCollide and step.Size.X >= 7, "Every step is a solid, wide walking surface")
+			check(math.abs(localFrame.Position.X) < 0.001, "Stairs stay centered between rotated docks")
+			check(top > lastTop and top - lastTop < 1, "Steps rise gradually toward the quay")
+			lastTop = top
+		end
+		check(math.abs(lastTop - 5.9) < 0.02, "The top step meets the quay deck")
+		Harbour.ensureDocks({
+			GetDescendants = function()
+				return { base }
+			end,
+		})
+		check(base:FindFirstChild("BeachStairs") == stairs, "Repeated startup keeps the same stairs")
 		local access = base:FindFirstChild("DockAccess")
 		check(access and #access:GetChildren() == 2, "Both piers need ramps on fresh and saved maps")
 		for _, item in old do

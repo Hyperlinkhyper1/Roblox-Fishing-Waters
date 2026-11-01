@@ -1,12 +1,25 @@
 -- Empty player-base shell. Local +Z is the front; the deck is y=0.
--- The same builder is used for fresh plots and upgrades to a saved map.
+-- The house holds the kitchen (Processing), the owner's office in the
+-- kitchen's front-left corner, and the storage room; customers shop in a
+-- separate building across the road (the "Shop" model, built in the same
+-- house-local frame). The same builder is used for fresh plots and upgrades
+-- to a saved map.
+local BaseGrid = require(game:GetService("ReplicatedStorage").Shared.BaseGrid)
 local Props = require(script.Parent.Props)
 local FishFreezer = require(script.Parent.FishFreezer)
 local ShopDesk = require(script.Parent.ShopDesk)
 
 local BaseHouse = {}
-local VERSION = 4
-local LIGHTING_VERSION = 2
+local VERSION = 11
+-- Scale the original shell around its house-local origin to the grid edges.
+local SCALE_X = (BaseGrid.HALF_WIDTH * 2) / 46
+local SCALE_Z = (BaseGrid.HALF_LENGTH * 2) / 30
+local LIGHTING_VERSION = 3
+local AWNING_VERSION = 1
+-- The shop's walls: front (facing the house), back and sides, all on grid borders.
+local SHOP_FRONT, SHOP_BACK = BaseGrid.SHOP_FRONT, BaseGrid.SHOP_BACK
+local SHOP_MID = (SHOP_FRONT + SHOP_BACK) / 2
+local SHOP_HALF = BaseGrid.HALF_WIDTH
 local rgb = Color3.fromRGB
 local M = Enum.Material
 local PLASTER = rgb(230, 222, 199)
@@ -29,9 +42,14 @@ end
 local function ensureLights(house: Model, frame: CFrame)
 	for roomName, positions in
 		{
-			Shop = { Vector3.new(-15, 0, 10), Vector3.new(0, 0, 10), Vector3.new(15, 0, 10) },
-			Processing = { Vector3.new(-16, 0, -10), Vector3.new(-4, 0, -10) },
-			Storage = { Vector3.new(8, 0, -10), Vector3.new(18, 0, -10) },
+			Shop = { Vector3.new(-15, 0, SHOP_MID), Vector3.new(0, 0, SHOP_MID), Vector3.new(15, 0, SHOP_MID) },
+			Processing = {
+				Vector3.new(-16, 0, -10),
+				Vector3.new(-4, 0, -10),
+				Vector3.new(-16, 0, 10),
+				Vector3.new(-4, 0, 10),
+			},
+			Storage = { Vector3.new(8, 0, -10), Vector3.new(18, 0, -10), Vector3.new(8, 0, 10), Vector3.new(18, 0, 10) },
 		}
 	do
 		local room = house:FindFirstChild(roomName)
@@ -74,16 +92,181 @@ local function ensureLights(house: Model, frame: CFrame)
 	end
 end
 
+-- A sign board whose SurfaceGui matches its physical size, so glyphs keep their proportions.
+local function signText(board: BasePart, face: Enum.NormalId, value: string)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = face
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+	gui.CanvasSize = Vector2.new(board.Size.X * 20, board.Size.Y * 20)
+	gui.Parent = board
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -24, 1, -12)
+	label.Position = UDim2.new(0, 12, 0, 6)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.TextWrapped = false
+	label.TextColor3 = CREAM
+	label.Text = value
+	label.Parent = gui
+end
+
+-- The customer shop across the road. House-local coordinates, unscaled: the
+-- floor plan is the former front shop room turned to face the house, one row
+-- deeper, so its freezer, counter and entrance aisle keep their places.
+local function buildShop(house: Model, frame: CFrame, accent: Color3, index: number): Model
+	local shop = model(house, "Shop")
+	shop:SetAttribute("RoomType", "Shop")
+	local shell = model(shop, "ShopShell")
+	local function block(
+		group: Instance,
+		name: string,
+		size: Vector3,
+		x: number,
+		y: number,
+		z: number,
+		color: Color3,
+		material: Enum.Material?,
+		rotation: CFrame?,
+		decorative: boolean?
+	): Part
+		local piece = Props.part(group, size, frame * CFrame.new(x, y, z) * (rotation or CFrame.identity), color, material)
+		piece.Name = name
+		if decorative then
+			piece.CanCollide = false
+			piece.CanQuery = false
+		end
+		return piece
+	end
+	local depth = SHOP_BACK - SHOP_FRONT
+	-- The village ground is ~0.9 below the house floor; a stone footing carries
+	-- the shop floor at the same height as the house, so furniture and the
+	-- navigation grid share one floor level.
+	block(shell, "ShopFoundation", Vector3.new(2 * SHOP_HALF + 0.8, 1.2, depth + 0.8), 0, -0.6, SHOP_MID, STONE, M.Slate)
+	block(shop, "ShopFloor", Vector3.new(2 * SHOP_HALF, 0.16, depth), 0, 0.08, SHOP_MID, WOOD, M.WoodPlanks)
+	-- A paved forecourt from the far kerb up to the door, above the road's own top.
+	block(shell, "ShopForecourt", Vector3.new(2 * SHOP_HALF + 3.5, 0.6, 4.75), 0, -0.4, SHOP_FRONT - 2.375, STONE, M.Cobblestone)
+	block(shell, "ShopEntranceStep", Vector3.new(8.5, 0.25, 1.35), 0, -0.095, SHOP_FRONT - 0.675, STONE, M.Slate)
+	-- Zebra crossing over the ring road on the line of the base's dirt track.
+	for stripe = 0, 6 do
+		block(shell, "Crosswalk", Vector3.new(6, 0.05, 1), 0, -0.165, 46 + stripe * 2, CREAM, M.SmoothPlastic, nil, true)
+	end
+
+	type Opening = { x: number, width: number, bottom: number, top: number }
+	local function wall(z: number, openings: { Opening }, name: string)
+		local cursor = -SHOP_HALF
+		local function piece(suffix: string, width: number, height: number, x: number, y: number)
+			block(shell, name .. suffix, Vector3.new(width, height, 0.65), x, y, z, PLASTER, M.Plaster)
+		end
+		for _, opening in openings do
+			local left, right = opening.x - opening.width / 2, opening.x + opening.width / 2
+			if left > cursor then
+				piece("", left - cursor, 11.5, (cursor + left) / 2, 5.75)
+			end
+			if opening.bottom > 0 then
+				piece("SillWall", opening.width, opening.bottom, opening.x, opening.bottom / 2)
+			end
+			piece("Lintel", opening.width, 11.5 - opening.top, opening.x, (11.5 + opening.top) / 2)
+			cursor = right
+		end
+		if cursor < SHOP_HALF then
+			piece("", SHOP_HALF - cursor, 11.5, (cursor + SHOP_HALF) / 2, 5.75)
+		end
+	end
+	local frontWindows = { -14, 14 }
+	wall(SHOP_FRONT, {
+		{ x = -14, width = 10.5, bottom = 3, top = 8.7 },
+		{ x = 0, width = 7.5, bottom = 0, top = 8.8 },
+		{ x = 14, width = 10.5, bottom = 3, top = 8.7 },
+	}, "ShopFrontWall")
+	wall(SHOP_BACK, {
+		{ x = -12, width = 6, bottom = 4, top = 8.3 },
+		{ x = 12, width = 6, bottom = 4, top = 8.3 },
+	}, "ShopBackWall")
+	for _, x in { -SHOP_HALF, SHOP_HALF } do
+		block(shell, "ShopSideWall", Vector3.new(0.65, 11.5, depth + 0.65), x, 5.75, SHOP_MID, PLASTER, M.Plaster)
+		block(shell, "ShopSidePlinth", Vector3.new(0.82, 0.75, depth + 0.65), x, 0.5, SHOP_MID, STONE, M.Slate)
+		for _, z in { SHOP_FRONT, SHOP_BACK } do
+			block(shell, "ShopCornerPost", Vector3.new(0.9, 11.5, 0.9), x, 5.75, z, WOOD, M.Wood)
+		end
+	end
+
+	-- Divided windows with stone sills, like the house; the front pair has open shutters.
+	for _, spec in {
+		{ z = SHOP_FRONT, xs = frontWindows, width = 10.5, bottom = 3, top = 8.7, outward = -1 },
+		{ z = SHOP_BACK, xs = { -12, 12 }, width = 6, bottom = 4, top = 8.3, outward = 1 },
+	} do
+		local width, bottom, top = spec.width, spec.bottom, spec.top
+		for _, x in spec.xs do
+			local glass = block(shell, "WindowGlass", Vector3.new(width, top - bottom, 0.12), x, (bottom + top) / 2, spec.z, rgb(105, 165, 175), M.SmoothPlastic, nil, true)
+			glass.Transparency = 0.68
+			for _, dx in { -width / 2, 0, width / 2 } do
+				block(shell, "WindowMullion", Vector3.new(0.16, top - bottom + 0.2, 0.32), x + dx, (bottom + top) / 2, spec.z, CREAM, M.Wood, nil, true)
+			end
+			for _, y in { bottom, (bottom + top) / 2, top } do
+				block(shell, "WindowRail", Vector3.new(width, 0.17, 0.32), x, y, spec.z, CREAM, M.Wood, nil, true)
+			end
+			block(shell, "StoneSill", Vector3.new(width + 0.6, 0.24, 1.15), x, bottom - 0.1, spec.z, STONE, M.Slate, nil, true)
+			if spec.outward < 0 then
+				for _, side in { -1, 1 } do
+					block(shell, "OpenShutter", Vector3.new(1.7, 5.7, 0.3), x + side * (width / 2 + 0.95), 5.85, spec.z - 0.65, accent, M.WoodPlanks, CFrame.Angles(0, -side * 0.22, 0), true)
+				end
+			end
+		end
+	end
+	for _, side in { -1, 1 } do
+		block(shell, "DoorJamb", Vector3.new(0.34, 8.8, 0.9), side * (7.5 / 2 + 0.14), 4.4, SHOP_FRONT, WOOD, M.Wood)
+	end
+	block(shell, "DoorHeader", Vector3.new(7.5 + 0.6, 0.3, 0.9), 0, 8.95, SHOP_FRONT, WOOD, M.Wood)
+
+	-- Terracotta roof pitched front to back, with gables over the side walls.
+	local rise, run = 3.2, depth / 2
+	local pitch = math.atan2(rise, run)
+	local slope = math.sqrt(rise * rise + run * run) + 1.2
+	for _, side in { -1, 1 } do
+		-- side -1 is the front slope, falling toward the road.
+		local eaveZ = SHOP_MID + side * run
+		local centerZ = (eaveZ + SHOP_MID) / 2 + side * 0.6 * math.cos(pitch)
+		local centerY = 11.7 + rise / 2 + 0.25 - 0.6 * math.sin(pitch)
+		block(shell, "ShopRoofSlope", Vector3.new(2 * SHOP_HALF + 1.8, 0.45, slope), 0, centerY, centerZ, TERRACOTTA, M.RoofShingles, CFrame.Angles(side * pitch, 0, 0))
+		block(shell, "ShopRainGutter", Vector3.new(2 * SHOP_HALF + 2, 0.35, 0.4), 0, 11.6, eaveZ + side * 1.3, IRON, M.Metal, nil, true)
+		block(shell, "ShopEavesBeam", Vector3.new(2 * SHOP_HALF + 1, 0.55, 0.5), 0, 11.4, eaveZ, DARK_WOOD, M.Wood)
+	end
+	block(shell, "ShopRidgeCap", Vector3.new(2 * SHOP_HALF + 2, 0.55, 0.8), 0, 11.7 + rise + 0.3, SHOP_MID, rgb(195, 101, 66), M.Brick)
+	for _, x in { -SHOP_HALF, SHOP_HALF } do
+		for row = 0, 5 do
+			local height = (row + 0.5) * rise / 6
+			block(shell, "ShopGable", Vector3.new(0.65, rise / 6 + 0.05, math.max(0.6, depth * (1 - height / rise))), x, 11.5 + height, SHOP_MID, PLASTER, M.Plaster)
+		end
+	end
+	for _, x in { -15, 0, 15 } do
+		block(shell, "ShopCeilingTie", Vector3.new(0.4, 0.45, depth), x, 11.1, SHOP_MID, DARK_WOOD, M.Wood)
+	end
+
+	-- The owner's shop name over the door; BaseService writes custom names here.
+	local sign = block(shell, "ShopSign", Vector3.new(20, 1.8, 0.16), 0, 10.3, SHOP_FRONT - 0.5, IRON, M.WoodPlanks, nil, true)
+	signText(sign, Enum.NormalId.Front, "FISH & TACKLE  /  " .. string.format("%02d", index))
+	-- Striped canvas awning over the entrance, rising out toward the road.
+	for stripe = -5, 5 do
+		local color = if stripe % 2 == 0 then accent else CREAM
+		block(shell, "AwningStripe", Vector3.new(1.776, 0.15, 3.78), stripe * 1.776, 9.2, SHOP_FRONT - 2.1, color, M.Fabric, CFrame.Angles(0.12, 0, 0), true)
+		block(shell, "AwningValance", Vector3.new(1.776, 0.5, 0.12), stripe * 1.776, 8.8, SHOP_FRONT - 3.94, color, M.Fabric, nil, true)
+	end
+	return shop
+end
+
 function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index: number): Model
 	local house = model(parent, "BaseHouse")
 	house:SetAttribute("LayoutVersion", VERSION)
+	house:SetAttribute("AwningVersion", AWNING_VERSION)
 	house:SetAttribute("BaseId", index)
 	house:SetAttribute("HouseFrame", frame)
+	house:SetAttribute("GridCellSize", BaseGrid.CELL_SIZE)
+	house:SetAttribute("GridColumns", BaseGrid.COLUMNS)
+	house:SetAttribute("GridRows", BaseGrid.ROWS)
 	local shell = model(house, "Shell")
-	local shop = model(house, "Shop")
 	local processing = model(house, "Processing")
 	local storage = model(house, "Storage")
-	shop:SetAttribute("RoomType", "Shop")
 	processing:SetAttribute("RoomType", "Processing")
 	storage:SetAttribute("RoomType", "Storage")
 
@@ -99,8 +282,21 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 		rotation: CFrame?,
 		decorative: boolean?
 	): Part
+		-- Interior walls use house-local coordinates directly; their centerlines
+		-- sit on grid boundaries rather than being stretched with the shell.
+		local interior = string.find(name, "^StorePartition") ~= nil
+			or string.find(name, "^StorePassage") ~= nil
+			or string.find(name, "^Office") ~= nil
+		local sx = if interior then 1 else SCALE_X
+		local sz = if interior then 1 else SCALE_Z
 		local piece =
-			Props.part(group, size, frame * CFrame.new(x, y, z) * (rotation or CFrame.identity), color, material)
+			Props.part(
+				group,
+				Vector3.new(size.X * sx, size.Y, size.Z * sz),
+				frame * CFrame.new(x * sx, y, z * sz) * (rotation or CFrame.identity),
+				color,
+				material
+			)
 		piece.Name = name
 		if decorative then
 			piece.CanCollide = false
@@ -120,33 +316,20 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 		back: boolean?
 	)
 		local board = block(group, name, Vector3.new(width, height, 0.16), x, y, z, IRON, M.WoodPlanks, nil, true)
-		local gui = Instance.new("SurfaceGui")
-		gui.Face = if back then Enum.NormalId.Front else Enum.NormalId.Back
-		-- Match the canvas to the physical board so glyphs retain their proportions.
-		gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-		gui.CanvasSize = Vector2.new(math.round(width * 20), math.round(height * 20))
-		gui.Parent = board
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.new(1, -24, 1, -12)
-		label.Position = UDim2.new(0, 12, 0, 6)
-		label.BackgroundTransparency = 1
-		label.Font = Enum.Font.GothamBold
-		label.TextScaled = true
-		label.TextWrapped = false
-		label.TextColor3 = CREAM
-		label.Text = value
-		label.Parent = gui
+		signText(board, if back then Enum.NormalId.Front else Enum.NormalId.Back, value)
 	end
-	-- Preserve the original room floors and connecting passage.
-	local shopFloor = block(shop, "ShopFloor", Vector3.new(45.3, 0.16, 14), 0, 0.08, 7.65, WOOD, M.WoodPlanks)
-	block(processing, "WashableFloor", Vector3.new(25.3, 0.16, 15.3), -10, 0.08, -7, TILE, M.CeramicTiles)
-	block(storage, "StoreFloor", Vector3.new(19.3, 0.16, 15.3), 13, 0.08, -7, rgb(148, 135, 111), M.Concrete)
-	block(shell, "PassageFloor", Vector3.new(0.7, 0.16, 6), 3, 0.08, -7, TILE, M.CeramicTiles)
+	-- The kitchen and storage floors meet beneath the partition centerline, so
+	-- there are no gaps even in the doorways. Convert back through the shell scale.
+	local splitX = BaseGrid.CELL_SIZE / 2
+	local width, length = BaseGrid.HALF_WIDTH, BaseGrid.HALF_LENGTH
+	local kitchenFloor = block(processing, "WashableFloor", Vector3.new((width + splitX) / SCALE_X, 0.16, 2 * length / SCALE_Z), (-width + splitX) / (2 * SCALE_X), 0.08, 0, TILE, M.CeramicTiles)
+	block(storage, "StoreFloor", Vector3.new((width - splitX) / SCALE_X, 0.16, 2 * length / SCALE_Z), (width + splitX) / (2 * SCALE_X), 0.08, 0, rgb(148, 135, 111), M.Concrete)
 
 	-- Wall openings are actual gaps. Windows have thin panes, never a solid hut core.
 	type Opening = { x: number, width: number, bottom: number, top: number }
 	local function wall(z: number, openings: { Opening }, name: string)
-		local cursor = -23
+		local halfWidth = 23
+		local cursor = -halfWidth
 		for _, opening in openings do
 			local left, right = opening.x - opening.width / 2, opening.x + opening.width / 2
 			if left > cursor then
@@ -185,24 +368,25 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 			)
 			cursor = right
 		end
-		if cursor < 23 then
-			block(shell, name, Vector3.new(23 - cursor, 11.5, 0.65), (cursor + 23) / 2, 5.75, z, PLASTER, M.Plaster)
+		if cursor < halfWidth then
+			block(shell, name, Vector3.new(halfWidth - cursor, 11.5, 0.65), (cursor + halfWidth) / 2, 5.75, z, PLASTER, M.Plaster)
 		end
 	end
+	-- The front doorway sits on the house centerline and opens into the shared
+	-- vestibule between the kitchen and stores.
+	local doorX, doorWidth = 0, 10.5 / SCALE_X
+	-- The rear door opens into the kitchen, clear of the storage partition.
+	local rearDoorX = -BaseGrid.CELL_SIZE / 2 / SCALE_X
 	wall(15, {
 		{ x = -13, width = 10, bottom = 3, top = 8.7 },
-		{ x = 0, width = 7, bottom = 0, top = 8.8 },
+		{ x = doorX, width = doorWidth, bottom = 0, top = 8.8 },
 		{ x = 13, width = 10, bottom = 3, top = 8.7 },
 	}, "FrontWall")
 	wall(-15, {
 		{ x = -13, width = 7, bottom = 4, top = 8.3 },
-		{ x = 0, width = 6, bottom = 0, top = 8.5 },
+		{ x = rearDoorX, width = 6, bottom = 0, top = 8.5 },
 		{ x = 13, width = 7, bottom = 4, top = 8.3 },
 	}, "RearWall")
-	wall(1, {
-		{ x = -10, width = 6, bottom = 0, top = 8.5 },
-		{ x = 12, width = 6, bottom = 0, top = 8.5 },
-	}, "RoomPartition")
 	for _, x in { -23, 23 } do
 		block(shell, "SideWall", Vector3.new(0.65, 11.5, 30), x, 5.75, 0, PLASTER, M.Plaster)
 		block(shell, "SidePlinth", Vector3.new(0.82, 0.75, 30), x, 0.5, 0, STONE, M.Slate)
@@ -211,12 +395,102 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 			block(shell, "TimberPost", Vector3.new(0.9, 10.8, 0.9), x * 0.97, 5.4, z, WOOD, M.Wood)
 		end
 	end
-	-- Rear room divider, with a six-stud cross passage at z=-7.
-	block(shell, "StorePartitionRear", Vector3.new(0.55, 11.5, 5), 3, 5.75, -12.5, PLASTER, M.Plaster)
-	block(shell, "StorePartitionFront", Vector3.new(0.55, 11.5, 5), 3, 5.75, -1.5, PLASTER, M.Plaster)
-	block(shell, "StorePassageLintel", Vector3.new(0.55, 3, 6), 3, 10, -7, PLASTER, M.Plaster)
+	-- Kitchen/storage divider and its two-cell-wide cross passage, both aligned
+	-- to cell boundaries. The wider opening leaves room to turn through the grid.
+	-- Stop the divider short of the entrance to leave the vestibule open.
+	local passageBack, passageFront = -2.5 * BaseGrid.CELL_SIZE, -0.5 * BaseGrid.CELL_SIZE
+	block(shell, "StorePartitionRear", Vector3.new(0.55, 11.5, passageBack + length), splitX, 5.75, (passageBack - length) / 2, PLASTER, M.Plaster)
+	local dividerFront = 1.5 * BaseGrid.CELL_SIZE
+	block(shell, "StorePartitionFront", Vector3.new(0.55, 11.5, dividerFront - passageFront), splitX, 5.75, (dividerFront + passageFront) / 2, PLASTER, M.Plaster)
+	block(shell, "StorePassageLintel", Vector3.new(0.55, 3, passageFront - passageBack), splitX, 10, (passageFront + passageBack) / 2, PLASTER, M.Plaster)
 
-	-- Recessed shop windows, divided lights, deep stone sills, and opened shutters.
+	-- The office fills the kitchen's front-left corner. Its back and east walls
+	-- meet the exterior shell and leave a doorway facing the entrance vestibule.
+	local office = model(house, "Office")
+	office:SetAttribute("RoomType", "Office")
+	local officeBack, officeEast = 1.5 * BaseGrid.CELL_SIZE, -1.5 * BaseGrid.CELL_SIZE
+	local officeDoorZ, officeDoorWidth, officeDoorTop = 2.5 * BaseGrid.CELL_SIZE, BaseGrid.CELL_SIZE, 8.5
+	local doorLow, doorHigh = officeDoorZ - officeDoorWidth / 2, officeDoorZ + officeDoorWidth / 2
+	block(
+		office,
+		"OfficeFloor",
+		Vector3.new(width + officeEast, 0.02, length - officeBack),
+		(-width + officeEast) / 2,
+		0.17,
+		(length + officeBack) / 2,
+		WOOD,
+		M.WoodPlanks,
+		nil,
+		true
+	)
+	block(
+		shell,
+		"OfficeBackWall",
+		Vector3.new(width + officeEast, 11.5, 0.55),
+		(-width + officeEast) / 2,
+		5.75,
+		officeBack,
+		PLASTER,
+		M.Plaster
+	)
+	block(
+		shell,
+		"OfficeEastWallRear",
+		Vector3.new(0.55, 11.5, doorLow - officeBack),
+		officeEast,
+		5.75,
+		(officeBack + doorLow) / 2,
+		PLASTER,
+		M.Plaster
+	)
+	block(
+		shell,
+		"OfficeEastWallFront",
+		Vector3.new(0.55, 11.5, length - doorHigh),
+		officeEast,
+		5.75,
+		(doorHigh + length) / 2,
+		PLASTER,
+		M.Plaster
+	)
+	block(
+		shell,
+		"OfficeDoorLintel",
+		Vector3.new(0.55, 11.5 - officeDoorTop, officeDoorWidth),
+		officeEast,
+		(11.5 + officeDoorTop) / 2,
+		officeDoorZ,
+		PLASTER,
+		M.Plaster
+	)
+	for _, z in { doorLow, doorHigh } do
+		block(shell, "OfficeDoorJamb", Vector3.new(0.9, officeDoorTop, 0.28), officeEast, officeDoorTop / 2, z, WOOD, M.Wood)
+	end
+	block(
+		shell,
+		"OfficeDoorHeader",
+		Vector3.new(0.9, 0.3, officeDoorWidth + 0.6),
+		officeEast,
+		officeDoorTop + 0.15,
+		officeDoorZ,
+		WOOD,
+		M.Wood
+	)
+	local officeSign = block(
+		office,
+		"OfficeSign",
+		Vector3.new(3.5, 0.8, 0.16),
+		officeEast + 0.34,
+		7.8,
+		officeDoorZ,
+		IRON,
+		M.WoodPlanks,
+		CFrame.Angles(0, math.pi / 2, 0),
+		true
+	)
+	signText(officeSign, Enum.NormalId.Back, "OFFICE")
+
+	-- Recessed windows, divided lights, deep stone sills, and opened shutters.
 	-- Avoid refractive Glass so the sea remains visible through the glazing.
 	for _, z in { -15, 15 } do
 		local front = z > 0
@@ -267,6 +541,10 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 			)
 			if front then
 				for _, side in { -1, 1 } do
+					if x > 0 and side < 0 then
+						-- This shutter would swing across the storage doorway.
+						continue
+					end
 					block(
 						shell,
 						"OpenShutter",
@@ -284,16 +562,16 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 		end
 	end
 	for _, z in { 15, -15 } do
-		local doorWidth = if z > 0 then 7 else 6
+		local x, openingWidth = if z > 0 then doorX else rearDoorX, if z > 0 then doorWidth else 6
 		for _, side in { -1, 1 } do
-			block(shell, "DoorJamb", Vector3.new(0.28, 8.7, 0.9), side * (doorWidth / 2 + 0.16), 4.35, z, WOOD, M.Wood)
+			block(shell, "DoorJamb", Vector3.new(0.28, 8.7, 0.9), x + side * (openingWidth / 2 + 0.16), 4.35, z, WOOD, M.Wood)
 		end
-		block(shell, "DoorHeader", Vector3.new(doorWidth + 0.6, 0.3, 0.9), 0, 8.85, z, WOOD, M.Wood)
+		block(shell, "DoorHeader", Vector3.new(openingWidth + 0.6, 0.3, 0.9), x, 8.85, z, WOOD, M.Wood)
 	end
-	block(shell, "EntranceStep", Vector3.new(7, 0.2, 1.8), 0, 0.06, 15.6, STONE, M.Slate)
-	block(shell, "FrontApproachStep", Vector3.new(7, 0.4, 2.2), 0, -0.45, 17.6, STONE, M.Slate)
-	block(shell, "RearLanding", Vector3.new(7, 0.3, 2.6), 0, 0, -16.2, STONE, M.Slate)
-	block(shell, "RearStep", Vector3.new(7, 0.4, 1.8), 0, -0.45, -18.2, STONE, M.Slate)
+	block(shell, "EntranceStep", Vector3.new(doorWidth, 0.2, 1.8), doorX, 0.06, 15.6, STONE, M.Slate)
+	block(shell, "FrontApproachStep", Vector3.new(doorWidth, 0.4, 2.2), doorX, -0.45, 17.6, STONE, M.Slate)
+	block(shell, "RearLanding", Vector3.new(7, 0.3, 3.2), rearDoorX, 0, -16.2, STONE, M.Slate)
+	block(shell, "RearStep", Vector3.new(7, 0.4, 1.8), rearDoorX, -0.45, -18.2, STONE, M.Slate)
 
 	-- Pitched terracotta roof, separate rafters, tile courses, ridge caps and gutters.
 	local pitch = math.atan2(4.8, 24)
@@ -341,26 +619,26 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 		block(shell, "CeilingTie", Vector3.new(45, 0.45, 0.4), 0, 11.1, z, DARK_WOOD, M.Wood)
 	end
 	block(shell, "Downpipe", Vector3.new(0.22, 10.8, 0.22), -23.7, 5.8, -13, IRON, M.Metal, nil, true)
-	text(shell, "ShopSign", "FISH & TACKLE  /  " .. string.format("%02d", index), 0, 10.45, 15.5, 20, 1.8)
+	text(shell, "HouseSign", "KITCHEN & STORES  /  " .. string.format("%02d", index), 0, 10.45, 15.5, 20, 1.8)
 	-- Striped canvas awning above the open entrance.
 	for stripe = -5, 5 do
 		block(
 			shell,
 			"AwningStripe",
 			Vector3.new(1.65, 0.15, 3.6),
-			stripe * 1.65,
+			doorX + stripe * 1.65,
 			9.2,
 			17,
 			if stripe % 2 == 0 then accent else CREAM,
 			M.Fabric,
-			CFrame.Angles(-0.12, 0, 0),
+			CFrame.Angles(0.12, 0, 0),
 			true
 		)
 		block(
 			shell,
 			"AwningValance",
 			Vector3.new(1.65, 0.5, 0.12),
-			stripe * 1.65,
+			doorX + stripe * 1.65,
 			8.8,
 			18.75,
 			if stripe % 2 == 0 then accent else CREAM,
@@ -371,7 +649,8 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 	end
 
 	-- The structural floor is the queryable reference for the plot, not an invisible blocker.
-	house.PrimaryPart = shopFloor
+	house.PrimaryPart = kitchenFloor
+	local shop = buildShop(house, frame, accent, index)
 	FishFreezer.ensure(shop, frame)
 	ShopDesk.ensure(shop, frame)
 	ensureLights(house, frame)
@@ -406,11 +685,24 @@ function BaseHouse.ensure(base: Model)
 	end
 	local existing = base:FindFirstChild("BaseHouse")
 	if existing and existing:GetAttribute("LayoutVersion") == VERSION then
+		-- Earlier shells tilted the canvas upward at its outer edge, leaving it
+		-- detached from the valance. Repair the saved pieces without rebuilding.
+		if existing:GetAttribute("AwningVersion") ~= AWNING_VERSION then
+			local shell = existing:FindFirstChild("Shell")
+			if shell then
+				for _, piece in shell:GetChildren() do
+					if piece:IsA("BasePart") and piece.Name == "AwningStripe" then
+						piece.CFrame *= CFrame.Angles(0.24, 0, 0)
+					end
+				end
+				existing:SetAttribute("AwningVersion", AWNING_VERSION)
+			end
+		end
 		local sign = existing:FindFirstChild("ShopSign", true)
 		local gui = sign and sign:FindFirstChildWhichIsA("SurfaceGui")
 		if gui then
 			gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-			gui.CanvasSize = Vector2.new(400, 36)
+			gui.CanvasSize = Vector2.new(sign.Size.X * 20, sign.Size.Y * 20)
 			local label = gui:FindFirstChildWhichIsA("TextLabel", true)
 			if label then
 				label.TextScaled = true

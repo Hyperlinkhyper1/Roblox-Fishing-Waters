@@ -39,7 +39,8 @@ local patrolHold = table.freeze({
 return table.freeze({
 	Rowboat = table.freeze({
 		Name = "Wooden rowboat",
-		Price = 500,
+		Price = 0,
+		MaxHealth = 100,
 		ForwardSpeed = 24,
 		ReverseSpeed = 9,
 		TurnRate = 1.2,
@@ -69,6 +70,7 @@ return table.freeze({
 	FishingBoat = table.freeze({
 		Name = "Small fishing boat",
 		Price = 2500,
+		MaxHealth = 150,
 		ForwardSpeed = 50,
 		ReverseSpeed = 14,
 		TurnRate = 0.9,
@@ -90,9 +92,36 @@ return table.freeze({
 			table.freeze({ PartId = "Lantern", X = 4, Y = 1, R = 0 }),
 		}),
 	}),
+	Hovercraft = table.freeze({
+		Name = "Navy hovercraft",
+		Price = 4000,
+		-- Same hull strength, seats and hold as the small fishing boat, but faster.
+		MaxHealth = 150,
+		ForwardSpeed = 65,
+		ReverseSpeed = 18,
+		TurnRate = 1.3,
+		Acceleration = 32.5,
+		CoastDeceleration = 5,
+		BrakeDeceleration = 30,
+		TurnAcceleration = 3,
+		-- The skirt pivots on its air cushion, so it turns slowly even at rest.
+		IdleSteering = 0.4,
+		MaxBankAngle = 6,
+		EngineSoundId = "rbxassetid://6667206432",
+		Length = 22,
+		Beam = 10.4,
+		Seats = 3,
+		DriverSeat = "HelmSeat",
+		Hold = fishingHold,
+		StarterParts = table.freeze({
+			table.freeze({ PartId = "Engine", X = 3, Y = 11, R = 0 }),
+			table.freeze({ PartId = "Lantern", X = 4, Y = 1, R = 0 }),
+		}),
+	}),
 	RacingSpeedboat = table.freeze({
 		Name = "Racing speedboat",
 		Price = 12500,
+		MaxHealth = 250,
 		ForwardSpeed = 80,
 		ReverseSpeed = 24,
 		TurnRate = 1.8,
@@ -128,6 +157,7 @@ return table.freeze({
 	Speedboat = table.freeze({
 		Name = "Bluewater speedboat",
 		Price = 6500,
+		MaxHealth = 200,
 		ForwardSpeed = 60,
 		ReverseSpeed = 20,
 		TurnRate = 1.4,
@@ -150,6 +180,7 @@ return table.freeze({
 	PatrolBoat = table.freeze({
 		Name = "Gray patrol cruiser",
 		Price = 15000,
+		MaxHealth = 300,
 		ForwardSpeed = 70,
 		ReverseSpeed = 26,
 		TurnRate = 1.35,
@@ -175,6 +206,7 @@ return table.freeze({
 	Trawler = table.freeze({
 		Name = "Teal fishing trawler",
 		Price = 17500,
+		MaxHealth = 350,
 		ForwardSpeed = 70,
 		ReverseSpeed = 20,
 		TurnRate = 0.85,
@@ -210,6 +242,34 @@ return table.freeze({
 		StarterParts = table.freeze({
 			-- Eight-tile engine bed, centered across the aft hold.
 			table.freeze({ PartId = "TrawlerEngine", X = 3, Y = 13, R = 0 }),
+			table.freeze({ PartId = "Lantern", X = 4, Y = 1, R = 0 }),
+		}),
+	}),
+	Tugboat = table.freeze({
+		Name = "Harbour tugboat",
+		Price = 17500,
+		-- Only on sale once the business has bought this path (Shared.Paths stage id).
+		RequiresPath = "Company",
+		-- Armoured push hull with a full rubber fender: the toughest boat in the yard.
+		MaxHealth = 650,
+		ForwardSpeed = 75,
+		ReverseSpeed = 30,
+		TurnRate = 1.3,
+		Acceleration = 37.5,
+		CoastDeceleration = 7,
+		BrakeDeceleration = 52,
+		TurnAcceleration = 3.4,
+		-- Twin azimuth thrusters turn it on the spot.
+		IdleSteering = 0.8,
+		MaxBankAngle = 8,
+		EngineSoundId = "rbxassetid://6667206432",
+		Length = 30,
+		Beam = 13.4,
+		Seats = 3,
+		DriverSeat = "HelmSeat",
+		Hold = fishingHold,
+		StarterParts = table.freeze({
+			table.freeze({ PartId = "Engine", X = 3, Y = 11, R = 0 }),
 			table.freeze({ PartId = "Lantern", X = 4, Y = 1, R = 0 }),
 		}),
 	}),

@@ -33,12 +33,20 @@ for (const [name, sourcePath] of Object.entries({
   SHOPDESKGEOMETRY: "src/server/Map/ShopDeskGeometry.luau",
   CASHREGISTERGEOMETRY: "src/server/Map/CashRegisterGeometry.luau",
   SHOPDESK: "src/server/Map/ShopDesk.luau",
+  BASEGRID: "src/shared/BaseGrid.luau",
   BASEHOUSE: "src/server/Map/BaseHouse.luau",
+  DININGROOM: "src/server/Map/DiningRoom.luau",
 })) {
-  const source = read(sourcePath).replace(
+  let source = read(sourcePath).replace(
     /local (\w+) = require\(script\.Parent\.(?:Parent\.)?(\w+)\)/g,
     "local $1 = dependencies.$2"
   );
+  if (name === "BASEHOUSE") {
+    source = source.replace(
+      'local BaseGrid = require(game:GetService("ReplicatedStorage").Shared.BaseGrid)',
+      "local BaseGrid = dependencies.BaseGrid"
+    );
+  }
   const marker = `-- ${name}_SOURCE --`;
   if (!harness.includes(marker)) throw new Error(`Missing ${name} source hook`);
   harness = harness.replace(marker, () => source);

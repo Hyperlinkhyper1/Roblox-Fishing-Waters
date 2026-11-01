@@ -12,6 +12,8 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local FishingRod = require(Shared:WaitForChild("FishingRod"))
 local RodSkins = require(Shared:WaitForChild("RodSkins"))
 local BobberSkins = require(Shared:WaitForChild("BobberSkins"))
+local SpearSkins = require(Shared:WaitForChild("SpearSkins"))
+local Spears = require(Shared:WaitForChild("Spears"))
 local FishingBobber = require(Shared:WaitForChild("FishingBobber"))
 local CrateReveal = require(script.Parent:WaitForChild("RodCrateReveal"))
 local RodCaseOpening = require(script.Parent:WaitForChild("RodCaseOpening"))
@@ -58,7 +60,7 @@ local function percent(chance: number): string
 end
 
 -- A still, anchored copy of the real skin, so the card shows exactly what the angler will hold.
-local function preview(parent: GuiObject, skinId: string, bobber: boolean)
+local function preview(parent: GuiObject, skinId: string, kind: string)
 	local view = Instance.new("ViewportFrame")
 	view.Name = "SkinPreview"
 	view.BackgroundTransparency = 1
@@ -70,9 +72,10 @@ local function preview(parent: GuiObject, skinId: string, bobber: boolean)
 	view.Parent = parent
 	local world = Instance.new("WorldModel")
 	world.Parent = view
-	local rod = if bobber then FishingBobber.build(skinId) else FishingRod.build(skinId)
+	local bobber = kind == "Bobber"
+	local rod = if bobber then FishingBobber.build(skinId) elseif kind == "Spear" then Spears.build(skinId) else FishingRod.build(skinId)
 	-- Preview tools must never join the live rod animation/tag listeners.
-	if not bobber then
+	if kind == "Rod" then
 		CollectionService:RemoveTag(rod, "FishingRod")
 		rod.Enabled = false
 	end
@@ -105,15 +108,17 @@ local function preview(parent: GuiObject, skinId: string, bobber: boolean)
 	frame()
 end
 
-local function startShop(RodSkins, bobber: boolean)
-	local kind = if bobber then "Bobber" else "Rod"
+local function startShop(RodSkins, kind: string)
+	local bobber = kind == "Bobber"
+	local spear = kind == "Spear"
+	local rod = kind == "Rod"
 	local openAction = "Open" .. kind .. "Crate"
 	local buyAction = "BuyRodCrate"
 	local ownedAction = "OpenOwnedRodCrate"
 	local equipAction = "Equip" .. kind .. "Skin"
-	local openEvent = if bobber then "OpenBobberCrates" else "OpenCrates"
-	local resultEvent = if bobber then "BobberCrateResult" else "CrateResult"
-	local skinEvent = if bobber then "BobberSkinResult" else "SkinResult"
+	local openEvent = if bobber then "OpenBobberCrates" elseif spear then "OpenSpearCrates" else "OpenCrates"
+	local resultEvent = if bobber then "BobberCrateResult" elseif spear then "SpearCrateResult" else "CrateResult"
+	local skinEvent = if bobber then "BobberSkinResult" elseif spear then "SpearSkinResult" else "SkinResult"
 	local skinAttribute = kind .. "Skin"
 	local countAttribute = kind .. "SkinCount"
 	local player = Players.LocalPlayer
@@ -198,7 +203,7 @@ local function startShop(RodSkins, bobber: boolean)
 	gradient(header, Color3.fromRGB(86, 52, 120), Color3.fromRGB(40, 26, 66))
 	label(
 		header,
-		"TIDE & TACKLE · " .. (if bobber then "BOBBERS" else "ROD CRATES"),
+		"TIDE & TACKLE · " .. (if bobber then "BOBBERS" elseif spear then "SPEAR CRATES" else "ROD CRATES"),
 		UDim2.fromOffset(18, 12),
 		UDim2.fromOffset(360, 18),
 		13,
@@ -265,7 +270,7 @@ local function startShop(RodSkins, bobber: boolean)
 			glow.BackgroundTransparency = 0.85
 			local fade = gradient(glow, Color3.new(1, 1, 1), Color3.new(1, 1, 1))
 			fade.Transparency = NumberSequence.new(0, 1)
-			preview(card, skinId, bobber)
+			preview(card, skinId, kind)
 			label(card, skin.Name, UDim2.fromOffset(10, 88), UDim2.new(1, -20, 0, 20), 15, cream)
 			local rarity = label(
 				card,
@@ -300,11 +305,11 @@ local function startShop(RodSkins, bobber: boolean)
 	local plain = button(
 		footer,
 		"UseStarterLook",
-		if bobber then "Use starter bobber" else "Use starter rod look",
+		if bobber then "Use starter bobber" elseif spear then "Use starter spear look" else "Use starter rod look",
 		UDim2.fromOffset(0, 40),
 		UDim2.fromOffset(200, 28)
 	)
-	local openOwned = if not bobber
+	local openOwned = if rod
 		then button(footer, "OpenOwnedCase", "", UDim2.fromOffset(204, 40), UDim2.fromOffset(190, 28))
 		else nil
 	local opens = {}
@@ -413,8 +418,8 @@ local function startShop(RodSkins, bobber: boolean)
 		for skinId, view in crateViews[crateId].cards do
 			local count = owned(skinId)
 			local active = equipped == skinId
-			local enabled = idle and count > 0 and not active
-			view.equip.Text = if count == 0
+			local enabled = idle and count > 0 and not active and not spear
+			view.equip.Text = if spear and count > 0 then "Equip in equipment bag" elseif count == 0
 				then "Not owned"
 				elseif active then "EQUIPPED"
 				elseif count > 1 then string.format('Equip  <font color="#bdbdbd">×%d</font>', count)
@@ -442,10 +447,10 @@ local function startShop(RodSkins, bobber: boolean)
 			open.Text = if pending == openAction
 					or pending == buyAction
 					or revealing
-				then if bobber then "Opening…" else "Buying…"
+				then if not rod then "Opening…" else "Buying…"
 				else string.format(
 					(
-						if bobber
+						if not rod
 							then 'OPEN %d×\n<font color="%s">$%s</font>'
 							else 'BUY %d×\n<font color="%s">$%s</font>'
 					),
@@ -488,6 +493,7 @@ local function startShop(RodSkins, bobber: boolean)
 		setStatus(
 			if bobber
 				then "Equip one bobber for small luck and mutation boosts. Duplicate copies do not stack perks."
+				elseif spear then "Spear skins boost shark damage or fire rate. Wear affects each bonus; equip copies in your equipment bag."
 				else "Each skin adds its stats on top of Finn's upgrades. Duplicates stack as spares.",
 			muted
 		)
@@ -548,7 +554,7 @@ local function startShop(RodSkins, bobber: boolean)
 		)
 	end
 
-	if not bobber then
+	if rod then
 		caseScreen = RodCaseOpening.create(overlay, function(id)
 			if pending or revealing then
 				return
@@ -574,7 +580,7 @@ local function startShop(RodSkins, bobber: boolean)
 	end
 
 	-- Only animate the actual skin after the server has charged and saved it.
-	local function play(skinId: string, message: string, serial: number?, rewards: any?)
+	local function play(skinId: string, message: string, serial: number?, rewards: any?, wear: number?)
 		if stopReveal then
 			stopReveal()
 		end
@@ -591,8 +597,9 @@ local function startShop(RodSkins, bobber: boolean)
 			revealName.TextColor3 = final
 			revealRarity.Text = string.upper(skinRarity)
 				.. (if serial then string.format(" · Serial #%06d", serial) else "")
+				.. (if spear and wear then " · " .. RodSkins.wearState(wear) else "")
 			revealRarity.TextColor3 = final
-			revealPerks.Text = table.concat(RodSkins.perks(skinId), "   ·   ")
+			revealPerks.Text = table.concat(RodSkins.perks(skinId, wear), "   ·   ")
 			revealRing.Color = final
 			setStatus(message, AFFORD)
 		end
@@ -617,7 +624,8 @@ local function startShop(RodSkins, bobber: boolean)
 							'<font color="%s">%s</font>%s',
 							hex(rarityColor(rarity)),
 							RodSkins.Skins[reward.SkinId].Name,
-							if reward.Serial then string.format(" · #%06d", reward.Serial) else ""
+							(if reward.Serial then string.format(" · #%06d", reward.Serial) else "")
+								.. (if spear and reward.Wear then " · " .. RodSkins.wearState(reward.Wear) .. " · " .. table.concat(RodSkins.perks(reward.SkinId, reward.Wear), " · ") else "")
 						)
 					)
 				end
@@ -637,7 +645,15 @@ local function startShop(RodSkins, bobber: boolean)
 				then function()
 					return FishingBobber.build(skinId)
 				end
-				else nil
+				elseif spear then function()
+					local model = Instance.new("Model")
+					local tool = Spears.build(skinId, wear)
+					tool.Parent = model
+					model.PrimaryPart = tool:FindFirstChild("Handle")
+					return model
+				end
+				else nil,
+			if spear then 1 else nil
 		)
 		if not stopReveal then
 			-- The stand may have streamed away while the save was in flight.
@@ -661,8 +677,8 @@ local function startShop(RodSkins, bobber: boolean)
 	for count, open in opens do
 		open.Activated:Connect(function()
 			if open.Active then
-				setStatus(if bobber then "Finn is prying the lid off…" else "Purchasing your case…", muted)
-				if bobber then
+				setStatus(if not rod then "Finn is prying the lid off…" else "Purchasing your case…", muted)
+				if not rod then
 					send(openAction, if count == 1 then crateId else { CrateId = crateId, Count = count })
 				else
 					send(buyAction, { CrateId = crateId, Count = count })
@@ -715,7 +731,7 @@ local function startShop(RodSkins, bobber: boolean)
 			local stand = hall and hall:FindFirstChild(openAction .. "Prompt", true)
 			standPart = if stand and stand.Parent and stand.Parent:IsA("BasePart") then stand.Parent else nil
 			openWindow()
-		elseif not bobber and kind == "RodCratePurchaseResult" and type(b) == "string" then
+		elseif rod and kind == "RodCratePurchaseResult" and type(b) == "string" then
 			pending = nil
 			if a == true and type(c) == "string" and RodSkins.validCrate(c) then
 				crateId, crate = c, RodSkins.Crates[c]
@@ -728,7 +744,7 @@ local function startShop(RodSkins, bobber: boolean)
 				setStatus(b, SHORT)
 			end
 			task.delay(0.15, refresh)
-		elseif not bobber and kind == resultEvent and type(b) == "string" then
+		elseif rod and kind == resultEvent and type(b) == "string" then
 			pending = nil
 			if a == true and type(c) == "table" and RodSkins.valid(c.SkinId) then
 				if overlay.Visible then
@@ -745,7 +761,7 @@ local function startShop(RodSkins, bobber: boolean)
 		elseif kind == resultEvent and type(b) == "string" then
 			pending = nil
 			if a == true and type(c) == "table" and #c > 0 and RodSkins.valid(c[1].SkinId) then
-				play(c[1].SkinId, b, c[1].Serial, c)
+				play(c[1].SkinId, b, c[1].Serial, c, c[1].Wear)
 			elseif a == true and RodSkins.valid(c) then
 				play(c, b, if type(d) == "number" then d else nil)
 			else
@@ -764,7 +780,7 @@ local function startShop(RodSkins, bobber: boolean)
 	for skinId in RodSkins.Skins do
 		table.insert(watched, countAttribute .. skinId)
 	end
-	if not bobber then
+	if rod then
 		for _, id in RodSkins.CrateOrder do
 			table.insert(watched, "RodCrateCount" .. id)
 		end
@@ -830,8 +846,9 @@ function RodCrates.start()
 		return
 	end
 	started = true
-	startShop(RodSkins, false)
-	startShop(BobberSkins, true)
+	startShop(RodSkins, "Rod")
+	startShop(BobberSkins, "Bobber")
+	startShop(SpearSkins, "Spear")
 end
 
 return RodCrates

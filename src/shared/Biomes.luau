@@ -35,6 +35,33 @@ Biomes.Seed = 1847
 Biomes.WaterLevel = 0
 Biomes.SeaFloor = -64
 Biomes.MapHalfSize = 5200
+-- The original archipelago keeps its generation bounds; the ocean extends
+-- farther southeast to encompass the distant city and its approaches.
+Biomes.OceanMin = -Biomes.MapHalfSize
+Biomes.OceanMax = 8200
+Biomes.CityOceanStart = 4200
+-- Dry rooms below sea level inside the ocean bounds: the city's metro station. The map
+-- clears terrain water out of them, and nobody in them is underwater.
+Biomes.DryPockets = {
+	{ min = Vector3.new(6618, -46, 6882), max = Vector3.new(6884, 8, 7032) },
+}
+
+function Biomes.inOceanBounds(position: Vector3): boolean
+	for _, pocket in Biomes.DryPockets do
+		local lo, hi = pocket.min, pocket.max
+		if
+			position.X > lo.X and position.X < hi.X
+			and position.Y > lo.Y and position.Y < hi.Y
+			and position.Z > lo.Z and position.Z < hi.Z
+		then
+			return false
+		end
+	end
+	local original = math.abs(position.X) < Biomes.MapHalfSize and math.abs(position.Z) < Biomes.MapHalfSize
+	local southeast = position.X > Biomes.CityOceanStart and position.X < Biomes.OceanMax
+		and position.Z > Biomes.CityOceanStart and position.Z < Biomes.OceanMax
+	return original or southeast
+end
 -- Blend distant islands into the horizon instead of keeping sharp silhouettes.
 Biomes.DistanceFogOffset = 0.1
 

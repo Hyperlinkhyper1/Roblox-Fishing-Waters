@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local GamepassService = require(script.Parent.GamepassService)
 local Props = require(script.Parent.Map.Props)
 local BackpackCatalog = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
@@ -136,7 +137,7 @@ local function buildTool(): Tool
 	local model = Props.musselNet(tool, CFrame.new(), false)
 	model.Name = "CageModel"
 	model:ScaleTo(TOOL_SCALE)
-	-- Carried by the shackle on its bridle, so the cage hangs below the hand.
+	-- Carried by the bridle, so the net hangs below the hand.
 	handle.CFrame = CFrame.new(0, (Props.MUSSEL_NET_SIZE.Y + 0.47) * TOOL_SCALE, 0)
 	for _, piece in model:GetDescendants() do
 		if piece:IsA("BasePart") then
@@ -213,7 +214,7 @@ local function buildCage(folder: Folder, dock: CFrame, cage, userId: number): Mo
 	anchor.Size = Vector3.one
 	anchor.Transparency, anchor.Anchored = 1, true
 	anchor.CanCollide, anchor.CanQuery, anchor.CanTouch = false, false, false
-	anchor.CFrame = frame * CFrame.new(0, Props.MUSSEL_NET_SIZE.Y + 0.6, 0)
+	anchor.CFrame = frame * CFrame.new(0, Props.MUSSEL_NET_WATERLINE + 0.6, 0)
 	anchor.Parent = model
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = PROMPT_NAME
@@ -472,6 +473,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 		end
 		pendingRolls[model] = rolls
 	end
+	local doubleXP = GamepassService.ownsDoubleXP(player)
 	local noRoom = "Clear your hands or backpack to make room for the whole harvest."
 	local function award(angler, layout)
 		local destinations = {}
@@ -488,7 +490,8 @@ local function collect(player: Player, prompt: ProximityPrompt)
 				Catalog.Mutations,
 				roll.Size,
 				roll.Traits,
-				layout
+				layout,
+				doubleXP
 			)
 			if destination == "Released" then
 				return nil

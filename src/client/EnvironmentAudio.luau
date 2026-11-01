@@ -61,8 +61,7 @@ local function fade(loop: Sound, target: number, dt: number)
 end
 
 local function inOcean(position: Vector3): boolean
-	return math.abs(position.X) < Biomes.MapHalfSize
-		and math.abs(position.Z) < Biomes.MapHalfSize
+	return Biomes.inOceanBounds(position)
 		and position.Y > Biomes.SeaFloor
 end
 

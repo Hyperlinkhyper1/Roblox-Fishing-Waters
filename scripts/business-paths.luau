@@ -74,15 +74,15 @@ check(Data.decode(market).Paths.Baseline.CoinsEarned == 2500, "Path progress sur
 -- Locked furniture: food cases need the supermarket.
 local locked = Data.decode(nil)
 locked.FurnitureStock.FoodCase = 1
-local _, why = Data.placeFurniture(locked, "FoodCase", -10, 8, 0)
+local _, why = Data.placeFurniture(locked, "FoodCase", 9, 72, 2)
 check(why ~= nil and string.find(why, "Supermarket") ~= nil, "Path furniture can't be placed before its path")
-local placedCase, reason = Data.placeFurniture(market, "FoodCase", -10, 8, 0)
+local placedCase, reason = Data.placeFurniture(market, "FoodCase", 9, 72, 2)
 check(placedCase ~= nil, "A food case fits in the shop once unlocked: " .. tostring(reason))
 check(Furniture.locked("Freezer", nil) == nil, "Base furniture is never locked")
-check(Furniture.check({}, "GrillStation", -10, -8, 0) == nil, "A station fits in the processing room")
-check(Furniture.check({}, "DiningTable", -14, -20, 0) == nil, "A table fits in the dining room")
-check(Furniture.check({}, "DiningTable", 10, 8, 0) ~= nil, "Tables stay in the dining room")
-check(Furniture.check({}, "GrillStation", -21, -8, 1) ~= nil, "Built-in benches stay clear")
+check(Furniture.check({}, "GrillStation", -13.5, -9, 0) == nil, "A station fits in the processing room")
+check(Furniture.check({}, "DiningTable", -13.5, -22.5, 0) == nil, "A table fits in the dining room")
+check(Furniture.check({}, "DiningTable", 9, 9, 0) ~= nil, "Tables stay in the dining room")
+check(Furniture.check({}, "GrillStation", -18, -9, 1) ~= nil, "Built-in benches stay clear")
 
 -- Cooking: the carried fish becomes a saved kitchen job, then a dish on the pass.
 local cook = Data.decode(placedCase)
@@ -122,7 +122,7 @@ check(select(1, Data.sellDish(sold, dish, 1, "FoodSold")) == nil, "A dish can't 
 local grill = Data.decode(cooked)
 grill.Paths.Unlocked.Supermarket = true
 grill.FurnitureStock.GrillStation = 1
-grill = assert(Data.placeFurniture(grill, "GrillStation", -10, -8, 0))
+grill = assert(Data.placeFurniture(grill, "GrillStation", -13.5, -9, 0))
 grill.Hand = fish("Trout", 50)
 grill.Hand.FishId = "Tuna"
 grill = assert(Data.startCooking(grill, "GrillStation", "GrilledFish", species, 300))
@@ -155,7 +155,7 @@ check(Data.fishermanCatch(second, "Rowboat", layout, roll, 12, species, mutation
 -- Both branches open after the supermarket; the other follows the first.
 local branch = Data.decode(market)
 branch.Stats.FoodCooked, branch.Stats.FoodSold, branch.Stats.CoinsEarned = 20, 15, 12500
-branch.Furniture = { { ItemId = "FoodCase", X = -10, Z = 8, R = 0 }, { ItemId = "GrillStation", X = -10, Z = -8, R = 0 } }
+branch.Furniture = { { ItemId = "FoodCase", X = 10, Z = 73, R = 2 }, { ItemId = "GrillStation", X = -10, Z = -8, R = 0 } }
 local open = Paths.choices(profile(branch))
 check(#open == 2 and table.find(open, "Restaurant") and table.find(open, "Company"), "Choose restaurant or company")
 local company = Data.choosePath(branch, "Company", Paths.Stages.Company)
@@ -174,5 +174,46 @@ check(not Paths.finished(profile(all)), "The last stage still has goals")
 for _, id in Paths.Order do
 	check(all.Paths.Unlocked[id], "Every stage stacks: " .. id)
 end
+
+-- Each branch has an independently assigned chef. Jobs consume kitchen storage,
+-- never the owner's hand, and remain saved until their chef can collect them.
+check(fresh.ChefRecipes.RestaurantChef == nil and fresh.ChefRecipes.CompanyChef == nil, "Legacy profiles gain empty chef assignments")
+check(not pcall(Data.decode, { ChefRecipes = { Stranger = "FishFillet" } }), "Unknown chef assignments are rejected")
+check(not pcall(Data.decode, { ChefRecipes = { RestaurantChef = true } }), "Malformed chef assignments are rejected")
+local chefs = Data.decode(all)
+chefs.Staff.RestaurantChef, chefs.Staff.CompanyChef = true, true
+check(select(2, Data.setChefRecipe(fresh, "RestaurantChef", "FishFillet")) ~= nil, "A chef requires their path")
+local unstaffed = Data.decode(all)
+check(select(2, Data.setChefRecipe(unstaffed, "RestaurantChef", "FishFillet")) ~= nil, "A chef must be hired")
+check(select(2, Data.setChefRecipe(chefs, "RestaurantChef", "Missing")) ~= nil, "Unknown recipes cannot be assigned")
+chefs = assert(Data.setChefRecipe(chefs, "RestaurantChef", "FishFillet"))
+chefs = assert(Data.setChefRecipe(chefs, "CompanyChef", "FishAndChips"))
+check(Data.decode(chefs).ChefRecipes.RestaurantChef == "FishFillet" and chefs.ChefRecipes.CompanyChef == "FishAndChips", "Assignments persist independently")
+chefs.Hand = fish("Trout", 99, 4)
+chefs.KitchenStorage.Fish = { fish("Trout", 30, 5), fish("Tuna", 100, 6) }
+check(select(2, Data.startChefCooking(chefs, "CompanyChef", "Prep1", species, 100)) == nil, "Chef finds a fish meeting the recipe rarity")
+local job1 = assert(Data.startChefCooking(chefs, "RestaurantChef", "Prep1", species, 100))
+check(job1.Hand.Value == 99 and #job1.KitchenStorage.Fish == 1 and job1.KitchenStorage.Fish[1].FishId == "Tuna", "Chef reserves only the selected storage fish")
+check(job1.Kitchen.Prep1.ChefRole == "RestaurantChef" and job1.Kitchen.Prep1.Dish.Value == 42, "Job records chef and dish value")
+check(#chefs.KitchenStorage.Fish == 2 and chefs.Kitchen.Prep1 == nil, "Starting never mutates the old profile")
+check(select(2, Data.startChefCooking(job1, "CompanyChef", "Prep1", species, 101)) ~= nil, "A busy station cannot be shared")
+local job2 = assert(Data.startChefCooking(job1, "CompanyChef", "Prep2", species, 101))
+check(job2.Kitchen.Prep2.Dish.FishId == "Tuna" and #job2.KitchenStorage.Fish == 0, "The second chef works independently")
+check(select(2, Data.collectChefDish(job2, "CompanyChef", "Prep1", 200)) ~= nil, "Chefs cannot collect each other's jobs")
+check(select(2, Data.collectChefDish(job2, "RestaurantChef", "Prep1", 101)) ~= nil, "Chefs wait until dishes are ready")
+local full = Data.decode(job2)
+while #full.Pantry < Data.pantryCapacity(full) do
+	table.insert(full.Pantry, job2.Kitchen.Prep1.Dish)
+end
+check(select(2, Data.collectChefDish(full, "RestaurantChef", "Prep1", 200)) ~= nil and full.Kitchen.Prep1 ~= nil, "A full pass keeps the finished chef job")
+local finished = assert(Data.collectChefDish(Data.decode(job2), "RestaurantChef", "Prep1", 200))
+check(#finished.Pantry == 1 and finished.Stats.FoodCooked == job2.Stats.FoodCooked + 1, "Chef collections use the shared pass and stats")
+check(select(2, Data.collectChefDish(cooking, "RestaurantChef", "Prep1", 200)) ~= nil, "Chefs do not collect manual jobs")
+local cleared = assert(Data.setChefRecipe(finished, "RestaurantChef", nil))
+check(cleared.ChefRecipes.RestaurantChef == nil and cleared.ChefRecipes.CompanyChef == "FishAndChips", "Clearing one assignment leaves the other intact")
+check(select(2, Data.startChefCooking(cleared, "RestaurantChef", "Prep1", species, 200)) ~= nil, "An unassigned chef cannot start work")
+local noGrill = assert(Data.setChefRecipe(chefs, "RestaurantChef", "GrilledFish"))
+noGrill.Furniture = {}
+check(select(2, Data.startChefCooking(noGrill, "RestaurantChef", "GrillStation", species, 200)) ~= nil, "A chef requires the placed station")
 
 print("Business paths: " .. checks .. " path, kitchen, pantry and fisherman checks passed (pure data).")

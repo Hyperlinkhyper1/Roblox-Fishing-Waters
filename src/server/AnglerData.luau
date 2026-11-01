@@ -113,7 +113,8 @@ local defaults = {
 	DinersServed = 0,
 	FishermanCatches = 0,
 }
-local STAFF_ROLES = { Seller = true, Porter = true, Fisherman = true }
+local STAFF_ROLES = { Seller = true, Porter = true, Fisherman = true, RestaurantChef = true, CompanyChef = true }
+local CHEF_PATHS = { RestaurantChef = "Restaurant", CompanyChef = "Company" }
 
 local function number(value, integer)
 	return type(value) == "number" and value >= 0 and value < 2 ^ 53 and (not integer or value % 1 == 0)
@@ -193,6 +194,71 @@ function Data.validSetting(key, value)
 	return default ~= nil
 		and (if type(default) == "boolean" then type(value) == "boolean" else number(value, true) and value <= 100)
 end
+
+-- The shop moved out of the house's front room into its own building across
+-- the street, laid out as that room turned half a circle to face the house
+-- (BaseGrid.SHOP_TURN). Everything placed in the old front room (centred
+-- between its partition at z=2.25 and the front wall) turns with it, so every
+-- saved layout fits exactly as it did and entries keep their place in the list.
+local SHOP_TURN, OLD_SHOP_PARTITION, OLD_FRONT_WALL = 81, 2.25, 15.75
+local function migrateShopBuilding(data)
+	if data.ShopBuildingVersion == 1 then return end
+	for _, entry in data.Furniture do
+		if entry.Z > OLD_SHOP_PARTITION and entry.Z < OLD_FRONT_WALL then
+			entry.X, entry.Z, entry.R = -entry.X, SHOP_TURN - entry.Z, (entry.R + 2) % 4
+		end
+	end
+	data.ShopBuildingVersion = 1
+end
+
+-- The house's partitions and dining entrance moved onto grid borders, and the
+-- kitchen's front corner was enclosed as the owner's office. Move only affected
+-- furniture, retaining its entry and rotation so freezer/rack capacity and
+-- active kitchen jobs stay attached to the player's profile.
+local FURNITURE_WALL_VERSION = 2
+local function migrateFurnitureWalls(data, retry)
+	if data.FurnitureWallVersion == FURNITURE_WALL_VERSION and not retry then return end
+	data.FurnitureWallMigrationPending = nil
+	local indices = {}
+	for index in data.Furniture do table.insert(indices, index) end
+	table.sort(indices)
+	if #indices > 0 then
+		local catalog = furniture()
+		for _, index in indices do
+			local entry = data.Furniture[index]
+			if not catalog.intersectsGridWall(entry) then continue end
+			local others = {}
+			for otherIndex, other in data.Furniture do
+				if otherIndex ~= index and catalog.Items[other.ItemId] then table.insert(others, other) end
+			end
+			local bestX, bestZ, bestDistance = nil, nil, math.huge
+			-- Scan the old half-stud lattice, not only the new coarse grid, so
+			-- crowded legacy layouts have the best chance of remaining intact.
+			for _, roomId in catalog.allowedRooms(entry.ItemId) do
+				local room = catalog.Rooms[roomId]
+				for ix = math.ceil(room[1] * 2), math.floor(room[3] * 2) do
+					for iz = math.ceil(room[2] * 2), math.floor(room[4] * 2) do
+						local x, z = ix / 2, iz / 2
+						local distance = (x - entry.X) ^ 2 + (z - entry.Z) ^ 2
+						if distance < bestDistance and not catalog.checkRelocation(others, entry.ItemId, x, z, entry.R)
+							and not catalog.intersectsGridWall({ ItemId = entry.ItemId, X = x, Z = z, R = entry.R }) then
+							bestX, bestZ, bestDistance = x, z, distance
+						end
+					end
+				end
+			end
+			if bestX ~= nil then
+				entry.X, entry.Z = bestX, bestZ
+			else
+				-- Do not discard a purchase or remove a capacity-bearing fixture
+				-- if the existing room is too crowded to relocate it safely.
+				data.FurnitureWallMigrationPending = true
+			end
+		end
+	end
+	data.FurnitureWallVersion = FURNITURE_WALL_VERSION
+end
+
 function Data.decode(raw)
 	assert(raw == nil or type(raw) == "table", "Invalid angler progress")
 	local data = copy(raw or {})
@@ -211,6 +277,7 @@ function Data.decode(raw)
 			"Holds",
 			"Backpack",
 			"Staff",
+			"ChefRecipes",
 			"FurnitureStock",
 			"Furniture",
 			"Storage",
@@ -228,13 +295,17 @@ function Data.decode(raw)
 	for role, hired in data.Staff do
 		assert(STAFF_ROLES[role] and type(hired) == "boolean", "Invalid staff member")
 	end
+	for role, recipeId in data.ChefRecipes do
+		assert(CHEF_PATHS[role] and type(recipeId) == "string" and #recipeId <= 100, "Invalid chef recipe")
+	end
 	assert(data.FishermanBoat == nil or type(data.FishermanBoat) == "string", "Invalid fisherman boat")
 	for index, dish in data.Pantry do
 		assert(type(index) == "number" and dishValid(dish), "Invalid dish")
 	end
 	for key, job in data.Kitchen do
 		assert(
-			type(key) == "string" and type(job) == "table" and dishValid(job.Dish) and number(job.ReadyAt, true),
+			type(key) == "string" and type(job) == "table" and dishValid(job.Dish) and number(job.ReadyAt, true)
+				and (job.ChefRole == nil or CHEF_PATHS[job.ChefRole] ~= nil),
 			"Invalid kitchen job"
 		)
 	end
@@ -296,6 +367,14 @@ function Data.decode(raw)
 		data.Stats.TotalXP = data.Stats.TotalCaught * Data.XP_PER_CATCH
 	end
 	assert(number(data.Stats.TotalXP, true), "Invalid total XP")
+	-- Anglers who fished before the island tutorial existed start with it finished; /tutorial replays it.
+	if data.TutorialStep == nil then
+		data.TutorialStep = 1
+		data.TutorialDone = data.Stats.TotalCaught > 0
+	end
+	assert(number(data.TutorialStep, true) and data.TutorialStep >= 1, "Invalid tutorial step")
+	data.TutorialDone = data.TutorialDone == true
+	data.TutorialRewarded = data.TutorialRewarded == true
 	if data.Weekly ~= nil then
 		assert(type(data.Weekly) == "table", "Invalid weekly progress")
 		assert(number(data.Weekly.Start, true), "Invalid week start")
@@ -345,6 +424,8 @@ function Data.decode(raw)
 			"Invalid furniture"
 		)
 	end
+	migrateShopBuilding(data)
+	migrateFurnitureWalls(data)
 	-- Crab cages wait in Stock until dropped by the dock; Placed spots are dock-local
 	-- studs (Shared.CrabCages holds the rules, which are checked when cages move).
 	if data.CrabCages == nil then
@@ -461,7 +542,7 @@ end
 
 -- Shared bestiary, streak, XP and findings bookkeeping for every landed fish.
 -- `record` is always a fresh record owned by this transaction.
-local function registerCatch(data, record, species)
+local function registerCatch(data, record, species, doubleXP)
 	local entry = data.Catches[record.FishId] or { Count = 0, BiggestKg = 0, Mutations = {} }
 	data.Catches[record.FishId] = entry
 	entry.Count += 1
@@ -470,7 +551,7 @@ local function registerCatch(data, record, species)
 	local catchXP = species[record.FishId].CatchXP or Data.XP_PER_CATCH
 	assert(number(catchXP, true) and catchXP > 0, "Invalid catch XP")
 	data.Stats.TotalCaught += 1
-	data.Stats.TotalXP += catchXP
+	data.Stats.TotalXP += catchXP * (if doubleXP then 2 else 1)
 	data.Stats.CatchStreak += 1
 	data.Stats.HighestCatchStreak = math.max(data.Stats.HighestCatchStreak, data.Stats.CatchStreak)
 	for key, field in { HighestValue = "Value", Rarest = "Rarity", Largest = "Kg", RelativeLargest = "Relative" } do
@@ -482,11 +563,11 @@ end
 
 -- Gameplay supplies the owned backpack layout. Returns the catch's destination
 -- so identical fish already in hand cannot be mistaken for the new catch.
-function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size, traits, backpackLayout)
+function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size, traits, backpackLayout, doubleXP)
 	assert(type(fishId) == "string" and species[fishId], "Unknown fish")
 	local record = catchRecord(fishId, mutation, kg, value, caughtAt, species, mutations, size, traits)
 	local data = Data.decode(raw)
-	registerCatch(data, record, species)
+	registerCatch(data, record, species, doubleXP)
 	local destination = "Released"
 	if data.Hand == nil then
 		data.Hand = copy(record)
@@ -499,6 +580,29 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 		end
 	end
 	return data, destination
+end
+
+-- Shark rewards are awarded together. Overflow stays in storage so no roll is lost
+-- when the player's hand and backpack are full.
+function Data.recordSharkDrops(raw, drops, caughtAt, species, backpackLayout)
+	local data = Data.decode(raw)
+	local overflow = false
+	for _, fishId in drops do
+		local info = assert(species[fishId], "Unknown shark drop")
+		local record = catchRecord(fishId, "Normal", info.AverageKg, info.BaseValue, caughtAt, species, { Normal = {} }, "Normal")
+		if not data.Hand then
+			data.Hand = record
+		else
+			local spot = cargo().bestSpot(backpackLayout.Hold, data.Backpack, { Fish = record }, species)
+			if spot then
+				table.insert(data.Backpack, { Fish = record, X = spot.X, Y = spot.Y, R = spot.R })
+			else
+				table.insert(data.Storage, record)
+				overflow = true
+			end
+		end
+	end
+	return data, overflow
 end
 
 -- Repack an old wide patrol hold once. Install the larger engine first, then
@@ -990,6 +1094,7 @@ function Data.placeFurniture(raw, from, x, z, r)
 		end
 		table.insert(data.Furniture, placed)
 	end
+	if data.FurnitureWallMigrationPending then migrateFurnitureWalls(data, true) end
 	return data
 end
 
@@ -1013,6 +1118,7 @@ function Data.pickUpFurniture(raw, index)
 		return nil, "Collect the dish on this station first."
 	end
 	data.FurnitureStock[entry.ItemId] = (data.FurnitureStock[entry.ItemId] or 0) + 1
+	if data.FurnitureWallMigrationPending then migrateFurnitureWalls(data, true) end
 	return data
 end
 
@@ -1116,6 +1222,79 @@ function Data.collectDish(raw, key, now)
 	return data
 end
 
+-- Each branch unlocks its own hire and its own independently selected recipe.
+local function chefProblem(data, role)
+	local path = CHEF_PATHS[role]
+	if not path then
+		return "That isn't a chef."
+	elseif not paths().unlocked(data, path) then
+		return "Unlock the " .. path .. " path first."
+	elseif not data.Staff[role] then
+		return "Hire this chef first."
+	end
+	return nil
+end
+
+function Data.setChefRecipe(raw, role, recipeId)
+	local data = Data.decode(raw)
+	local problem = chefProblem(data, role)
+	if problem then
+		return nil, problem
+	elseif recipeId ~= nil and (type(recipeId) ~= "string" or not recipes().Items[recipeId]) then
+		return nil, "Choose a valid recipe."
+	end
+	data.ChefRecipes[role] = recipeId
+	return data
+end
+
+-- Reserve the fish and station together in one profile update. The player's hand
+-- is never consumed: it is restored after using the same rules as manual cooking.
+function Data.startChefCooking(raw, role, key, species, now)
+	local data = Data.decode(raw)
+	local problem = chefProblem(data, role)
+	if problem then
+		return nil, problem
+	end
+	local recipeId = data.ChefRecipes[role]
+	local recipe = recipeId and recipes().Items[recipeId]
+	if not recipe then
+		return nil, "Choose a recipe for this chef."
+	end
+	local station = type(key) == "string" and recipes().stationOf(key)
+	if station ~= recipe.Station then
+		return nil, "This recipe needs a different station."
+	end
+	local index
+	for i, fish in data.KitchenStorage.Fish do
+		local info = species[fish.FishId]
+		if not recipes().problem(recipeId, station, info and info.Rarity) then
+			index = i
+			break
+		end
+	end
+	if not index then
+		return nil, "Kitchen storage needs a suitable fish."
+	end
+	local hand = data.Hand
+	data.Hand = table.remove(data.KitchenStorage.Fish, index)
+	local cooked, failure = Data.startCooking(data, key, recipeId, species, now)
+	if not cooked then
+		return nil, failure
+	end
+	cooked.Hand = hand
+	cooked.Kitchen[key].ChefRole = role
+	return cooked
+end
+
+function Data.collectChefDish(raw, role, key, now)
+	local data = Data.decode(raw)
+	local job = type(key) == "string" and data.Kitchen[key]
+	if not CHEF_PATHS[role] or not job or job.ChefRole ~= role then
+		return nil, "This chef has no dish at that station."
+	end
+	return Data.collectDish(data, key, now)
+end
+
 -- A customer or diner pays for one dish. `multiplier` is 1 in the shop and the
 -- restaurant markup for diners; `stat` is the counter the sale adds to.
 function Data.sellDish(raw, dish, multiplier, stat)
@@ -1193,7 +1372,7 @@ end
 -- The trawler's stern net lands fish straight into the hold, but they still
 -- count in the bestiary, XP and findings like any other catch. Returns nil when
 -- the hold has no room, so a full boat never awards the fish.
-function Data.netCatch(raw, boatId, layout, roll, caughtAt, species, mutations)
+function Data.netCatch(raw, boatId, layout, roll, caughtAt, species, mutations, doubleXP)
 	local data = Data.decode(raw)
 	local traits = roll.Traits or {}
 	local mutation = traits.Mutation or "Normal"
@@ -1206,7 +1385,7 @@ function Data.netCatch(raw, boatId, layout, roll, caughtAt, species, mutations)
 	end
 	table.insert(items, { Fish = record, X = placement.X, Y = placement.Y, R = placement.R })
 	data.Holds[boatId] = items
-	registerCatch(data, record, species)
+	registerCatch(data, record, species, doubleXP)
 	return Data.decode(data)
 end
 

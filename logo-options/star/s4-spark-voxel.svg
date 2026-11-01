@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-120 -120 240 240" width="240" height="240" role="img" aria-label="Simply Voxelworks">
+  <title>Simply Voxelworks</title>
+  <defs><linearGradient id="g4" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#9155FF"/><stop offset="0.5" stop-color="#4F78FF"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>
+  <path d="M0,-96 Q8,-8 80,0 Q8,8 0,96 Q-8,8 -80,0 Q-8,-8 0,-96Z" transform="translate(-14 14) rotate(-14)" fill="url(#g4)"/>
+  <polygon points="64,-86 81.32,-76 64,-66 46.68,-76" fill="#FFD27A"/>
+  <polygon points="46.68,-76 64,-66 64,-46 46.68,-56" fill="#FFB547"/>
+  <polygon points="81.32,-76 64,-66 64,-46 81.32,-56" fill="#E08A16"/>
+</svg>

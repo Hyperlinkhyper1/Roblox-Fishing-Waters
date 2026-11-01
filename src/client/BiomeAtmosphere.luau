@@ -230,8 +230,7 @@ function BiomeAtmosphere.start()
 			end
 		end
 		-- A small surface margin avoids flickering as the camera skims the waves.
-		local inOcean = math.abs(position.X) < Biomes.MapHalfSize
-			and math.abs(position.Z) < Biomes.MapHalfSize
+		local inOcean = Biomes.inOceanBounds(position)
 			and position.Y > Biomes.SeaFloor
 		local submerged = inOcean and position.Y < Biomes.WaterLevel + (if underwater then 0.1 else -0.1)
 		local waterChanged = submerged ~= underwater

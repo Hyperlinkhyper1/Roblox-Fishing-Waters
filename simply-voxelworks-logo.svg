@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 171.88 196" width="344" height="392" role="img" aria-label="Simply Voxelworks">
+  <title>Simply Voxelworks</title>
+  <g stroke-width="0.6" stroke-linejoin="round">
+    <polygon points="85.94,8 111.92,23 85.94,38 59.96,23" fill="#7BE09D" stroke="#7BE09D"/>
+    <polygon points="8,113 33.98,128 33.98,158 8,143" fill="#3DB46A" stroke="#3DB46A"/>
+    <polygon points="163.88,113 137.9,128 137.9,158 163.88,143" fill="#24864C" stroke="#24864C"/>
+    <polygon points="59.96,23 85.94,38 59.96,53 33.98,38" fill="#7BE09D" stroke="#7BE09D"/>
+    <polygon points="8,83 33.98,98 33.98,128 8,113" fill="#3DB46A" stroke="#3DB46A"/>
+    <polygon points="111.92,23 137.9,38 111.92,53 85.94,38" fill="#7BE09D" stroke="#7BE09D"/>
+    <polygon points="33.98,128 59.96,143 59.96,173 33.98,158" fill="#3DB46A" stroke="#3DB46A"/>
+    <polygon points="163.88,83 137.9,98 137.9,128 163.88,113" fill="#24864C" stroke="#24864C"/>
+    <polygon points="137.9,128 111.92,143 111.92,173 137.9,158" fill="#24864C" stroke="#24864C"/>
+    <polygon points="33.98,38 59.96,53 33.98,68 8,53" fill="#7BE09D" stroke="#7BE09D"/>
+    <polygon points="59.96,53 33.98,68 33.98,98 59.96,83" fill="#24864C" stroke="#24864C"/>
+    <polygon points="8,53 33.98,68 33.98,98 8,83" fill="#3DB46A" stroke="#3DB46A"/>
+    <polygon points="137.9,38 163.88,53 137.9,68 111.92,53" fill="#7BE09D" stroke="#7BE09D"/>
+    <polygon points="163.88,53 137.9,68 137.9,98 163.88,83" fill="#24864C" stroke="#24864C"/>
+    <polygon points="111.92,53 137.9,68 137.9,98 111.92,83" fill="#3DB46A" stroke="#3DB46A"/>
+    <polygon points="85.94,128 111.92,143 85.94,158 59.96,143" fill="#7BE09D" stroke="#7BE09D"/>
+    <polygon points="111.92,143 85.94,158 85.94,188 111.92,173" fill="#24864C" stroke="#24864C"/>
+    <polygon points="59.96,143 85.94,158 85.94,188 59.96,173" fill="#3DB46A" stroke="#3DB46A"/>
+    <polygon points="111.92,83 137.9,98 111.92,113 85.94,98" fill="#FFB866" stroke="#FFB866"/>
+    <polygon points="137.9,98 111.92,113 111.92,143 137.9,128" fill="#D2650F" stroke="#D2650F"/>
+    <polygon points="85.94,98 111.92,113 111.92,143 85.94,128" fill="#F5892A" stroke="#F5892A"/>
+    <polygon points="59.96,83 85.94,98 59.96,113 33.98,98" fill="#FFB866" stroke="#FFB866"/>
+    <polygon points="85.94,98 59.96,113 59.96,143 85.94,128" fill="#D2650F" stroke="#D2650F"/>
+    <polygon points="33.98,98 59.96,113 59.96,143 33.98,128" fill="#F5892A" stroke="#F5892A"/>
+    <polygon points="85.94,38 111.92,53 85.94,68 59.96,53" fill="#FFB866" stroke="#FFB866"/>
+    <polygon points="111.92,53 85.94,68 85.94,98 111.92,83" fill="#D2650F" stroke="#D2650F"/>
+    <polygon points="59.96,53 85.94,68 85.94,98 59.96,83" fill="#F5892A" stroke="#F5892A"/>
+  </g>
+</svg>

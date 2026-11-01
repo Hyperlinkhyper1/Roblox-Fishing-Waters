@@ -25,9 +25,9 @@ function CollectionService:GetTagged(tag)
 	return tagged
 end
 local anchors = {}
--- Like the real showroom, every catalogue item has its own display prompt, on a
--- grid wide enough that only the matching display authorizes its item.
-local displayed = Furniture.Order
+-- The original showroom samples have dedicated prompts. Decorations are sold
+-- through the generic counter, which offers the complete catalogue.
+local displayed = { "Freezer", "Register", "StorageRack", "FoodCase", "GrillStation", "Smoker", "SushiBar", "KitchenStorage", "DiningTable", "WeatherRadar" }
 for index, id in displayed do
 	local row, column = math.ceil(index / 5), (index - 1) % 5 + 1
 	local anchor = Instance.new("Part")
@@ -183,14 +183,14 @@ profile = { Cash = 0, Angler = AnglerData.decode(nil) }
 for _, id in { "StorageRack", "Freezer", "Register" } do
 	profile.Angler = AnglerData.buyFurniture(profile.Angler, id)
 end
-check(place(player, "StorageRack", 16, -12, 0), "Server must place an owned rack inside storage")
+check(place(player, "StorageRack", 13.5, -13.5, 0), "Server must place an owned rack inside storage")
 check(
 	#profile.Angler.Furniture == 1 and profile.Angler.FurnitureStock.StorageRack == nil,
 	"Successful server placement must save furniture and consume stock"
 )
-check(place(player, 1, 16, -6, 0), "Server must move an existing rack")
+check(place(player, 1, 18, -9, 0), "Server must move an existing rack")
 check(
-	#profile.Angler.Furniture == 1 and profile.Angler.Furniture[1].Z == -6,
+	#profile.Angler.Furniture == 1 and profile.Angler.Furniture[1].Z == -9,
 	"Server move must save the new position without duplicating furniture"
 )
 check(pickUp(player, 1), "Server must allow picking up furniture at home")
@@ -198,17 +198,17 @@ check(
 	#profile.Angler.Furniture == 0 and profile.Angler.FurnitureStock.StorageRack == 1,
 	"Server pickup must return the item to stock"
 )
-check(place(player, "Freezer", 7, 9, 1), "Server must also place a freezer in the shop")
-check(place(player, "Register", -10, 9, 0), "Server must also place a register in the shop")
+check(place(player, "Freezer", -9, 72, 1), "Server must also place a freezer in the shop across the street")
+check(place(player, "Register", 9, 72, 2), "Server must also place a register in the shop across the street")
 local savedBefore = saves
 check(
-	not place(player, "StorageRack", -10, 9, 0) and saves == savedBefore,
+	not place(player, "StorageRack", -9, 72, 0) and saves == savedBefore,
 	"The home fix must preserve room restrictions without saving rejected placements"
 )
 root.CFrame = homeFrame * CFrame.new(HOME_DISTANCE + 1, 0, 0)
 check(not atHome(player), "Distant owners must not pass the home gate")
 check(
-	not place(player, "StorageRack", 16, -12, 0) and saves == savedBefore,
+	not place(player, "StorageRack", 13.5, -13.5, 0) and saves == savedBefore,
 	"Remote placement away from home must not save"
 )
 check(not pickUp(player, 1) and saves == savedBefore, "Remote pickup away from home must not save")

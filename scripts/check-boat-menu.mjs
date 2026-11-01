@@ -12,6 +12,7 @@ const folder = await mkdtemp(join(tmpdir(), 'boat-menu-'));
 try {
   const mocks = await read('scripts/player-menu.luau');
   let program = mocks.slice(0, mocks.indexOf('local Theme = (function()')) + await read('scripts/boat-menu.luau');
+  const paths = await read('src/shared/Paths.luau');
   const sources = {
     THEME: await read('src/first/UITheme.luau'),
     CATALOG: await read('src/shared/BoatCatalog.luau'),
@@ -19,7 +20,10 @@ try {
     CLIENT: (await read('src/client/Boating.luau'))
       .replace('require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))', 'Theme')
       .replace('require(ReplicatedStorage.Shared.BoatCatalog)', 'BoatCatalog')
+      .replace('require(ReplicatedStorage.Shared.Paths)', () => `(function()\n${paths}\nend)()`)
       .replace('require(ReplicatedStorage.Shared.Weather)', '{ getState = function() return { kind = "Clear" } end }')
+      .replace('require(ReplicatedStorage.Shared.DayNight)', '{ clockTime = function() return 21.5 end, isNight = function(clock) return clock >= 18 or clock < 6 end }')
+      .replace('require(ReplicatedStorage.Shared.Seasons)', '{ current = function() return "Autumn", 2 end }')
       .replace('require(script.Parent.DrydockCamera)', 'DrydockCamera')
       .replace('require(script.Parent.BoatPreview)', 'BoatPreview')
       .replace(

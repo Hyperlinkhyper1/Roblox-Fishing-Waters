@@ -1413,8 +1413,14 @@ end
 -- Upgrade the decorative boats in saved maps too. Their original floor records
 -- the exact position, rotation, beam and length, so no scenery is rerolled.
 function Med.ensureBoats(root: Instance)
+	-- Runs after players are in, over the whole map: yield now and then to stay inside the script timeout
+	local resumed = os.clock()
 	for _, old in root:GetDescendants() do
-		if not old:IsA("Model") or old.Name ~= "Boat" or old:GetAttribute("BoatGeometryVersion") == 2 then
+		if os.clock() - resumed > 0.05 then
+			task.wait()
+			resumed = os.clock()
+		end
+		if not old.Parent or not old:IsA("Model") or old.Name ~= "Boat" or old:GetAttribute("BoatGeometryVersion") == 2 then
 			continue
 		end
 		local floor: BasePart? = nil

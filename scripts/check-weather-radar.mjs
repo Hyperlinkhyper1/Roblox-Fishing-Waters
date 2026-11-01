@@ -231,12 +231,12 @@ print("PASS radar screen lifetime, merged land and rain runs, idle refresh and p
 -- The radar is yard furniture: on the deck behind the house, never indoors or in the way.
 local radar = Furniture.Items.WeatherRadar
 assert(radar and radar.Room == "Yard" and table.find(Furniture.Order, "WeatherRadar"), "The radar is in the catalogue")
-assert(Furniture.check({}, "WeatherRadar", 10, -22, 0) == nil, "The open yard takes a radar")
-assert(Furniture.check({}, "WeatherRadar", 0, 8, 0) ~= nil, "A radar can't go inside the shop")
-assert(Furniture.check({}, "WeatherRadar", 1, -24, 0) ~= nil, "The walk from the back door stays clear")
-assert(Furniture.check({}, "WeatherRadar", 20, -25, 0) ~= nil, "The crates and barrels stay where they are")
-assert(Furniture.check({}, "WeatherRadar", 17, -31, 0) ~= nil, "The gangway head stays clear")
-assert(Furniture.check({}, "Freezer", 10, -22, 0) ~= nil, "Indoor furniture can't go in the yard")
+assert(Furniture.check({}, "WeatherRadar", 9, -27, 0) == nil, "The open yard takes a radar")
+assert(Furniture.check({}, "WeatherRadar", 0, 9, 0) ~= nil, "A radar can't go inside the shop")
+assert(Furniture.check({}, "WeatherRadar", 0, -22.5, 0) ~= nil, "The walk from the back door stays clear")
+assert(Furniture.check({}, "WeatherRadar", 18, -22.5, 0) ~= nil, "The crates and barrels stay where they are")
+assert(Furniture.check({}, "WeatherRadar", 18, -31.5, 0) ~= nil, "The gangway head stays clear")
+assert(Furniture.check({}, "Freezer", 9, -27, 0) ~= nil, "Indoor furniture can't go in the yard")
 assert(Furniture.floor("WeatherRadar") == 0 and Furniture.floor("Freezer") == 0.16, "Yard items stand on the deck")
 local yard = Furniture.Rooms.Yard
 for name, room in Furniture.Rooms do

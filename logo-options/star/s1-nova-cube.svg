@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-120 -120 240 240" width="240" height="240" role="img" aria-label="Simply Voxelworks">
+  <title>Simply Voxelworks</title>
+  <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9155FF"/><stop offset="0.5" stop-color="#4F78FF"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>
+  <mask id="m1"><rect x="-120" y="-120" width="240" height="240" fill="#fff"/><polygon points="0,-28 24.25,-14 24.25,14 0,28 -24.25,14 -24.25,-14" fill="#000"/></mask>
+  <path d="M0,-112 Q7,-7 78,0 Q7,7 0,112 Q-7,7 -78,0 Q-7,-7 0,-112Z" transform="rotate(16)" fill="url(#g1)" mask="url(#m1)"/>
+  <polygon points="0,-21 18.19,-10.5 0,0 -18.19,-10.5" fill="#FFB547"/>
+  <polygon points="-18.19,-10.5 0,0 0,21 -18.19,10.5" fill="#F08A1C"/>
+  <polygon points="18.19,-10.5 0,0 0,21 18.19,10.5" fill="#C96A0E"/>
+</svg>

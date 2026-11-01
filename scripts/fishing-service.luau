@@ -260,6 +260,11 @@ local game = {
 }
 local purchases, builds, failSave, upgrades = 0, 0, false, 0
 local dependencies = {
+	buildSpear = function()
+		local tool = Instance.new("Tool")
+		tool:SetAttribute("SpearId", "BasicSpear")
+		return tool
+	end,
 	BoatData = {
 		upgradeRod = function(profile, stat)
 			profile.RodUpgrades[stat] = (profile.RodUpgrades[stat] or 0) + 1
@@ -569,6 +574,8 @@ dependencies.BoatData.openRodCrate = SkinData.openRodCrate
 dependencies.BoatData.canOpenRodCrate = SkinData.canOpenRodCrate
 dependencies.BoatData.equipRodSkin = SkinData.equipRodSkin
 dependencies.BoatData.claimGroupRod = SkinData.claimGroupRod
+dependencies.BoatData.openSpearCrate = SkinData.openSpearCrate
+dependencies.BoatData.equipSpearSkin = SkinData.equipSpearSkin
 dependencies.BoatData.openBobberCrate = SkinData.openBobberCrate
 dependencies.BoatData.equipBobberSkin = SkinData.equipBobberSkin
 local storedSkins = SkinData.decode(nil)
@@ -578,12 +585,20 @@ local serialCounters = {}
 dependencies.BoatService.getProfile = function()
 	return SkinData.decode(storedSkins)
 end
-dependencies.BoatService.updateProgress = function(player, transform, rodSkinId)
+dependencies.BoatService.updateProgress = function(player, transform, rodSkinId, spearSkinIds)
 	skinSaves += 1
 	local reservedSerial
 	if rodSkinId then
 		reservedSerial = (serialCounters[rodSkinId] or 0) + 1
 		serialCounters[rodSkinId] = reservedSerial
+	end
+	if spearSkinIds then
+		reservedSerial = {}
+		for _, id in spearSkinIds do
+			local key = "Spear_" .. id
+			serialCounters[key] = (serialCounters[key] or 0) + 1
+			table.insert(reservedSerial, serialCounters[key])
+		end
 	end
 	transform(SkinData.decode(storedSkins), reservedSerial) -- discarded UpdateAsync attempt
 	local nextProfile = SkinData.decode(storedSkins)
@@ -595,6 +610,7 @@ dependencies.BoatService.updateProgress = function(player, transform, rodSkinId)
 	player:SetAttribute("RodSkin", storedSkins.EquippedRodSkin or "")
 	player:SetAttribute("RodSkinSerial", storedSkins.EquippedRodSkinSerial or 0)
 	player:SetAttribute("BobberSkin", storedSkins.EquippedBobberSkin or "")
+	player:SetAttribute("OwnsBasicSpear", storedSkins.OwnedSpears.BasicSpear == true)
 	return true, "Saved."
 end
 local cratePrompt = Instance.new("ProximityPrompt")
@@ -809,6 +825,85 @@ check(
 	storedSkins.EquippedBobberSkin == nil and storedSkins.BobberSkins[bobberId] == 1,
 	"Bobber can be removed without losing its copy"
 )
+
+-- Spear purchases are shop-bound and committed once even when UpdateAsync retries.
+local spearPrompt = Instance.new("ProximityPrompt")
+spearPrompt.Name, spearPrompt.MaxActivationDistance, spearPrompt.Parent = "BuySpearPrompt", 8, counter
+local memberRoot = member.Character:FindFirstChild("HumanoidRootPart")
+memberRoot.Position = Vector3.new(100, 0, 0)
+storedSkins.Cash = 500
+local spearSaves = skinSaves
+ProximityPromptService.PromptTriggered:Fire(spearPrompt, member)
+flush()
+check(skinSaves == spearSaves, "Distant spear prompt cannot authorize a purchase")
+memberRoot.Position = Vector3.zero
+failSkinSave = true
+ProximityPromptService.PromptTriggered:Fire(spearPrompt, member)
+flush()
+check(storedSkins.Cash == 500 and not storedSkins.OwnedSpears.BasicSpear, "A failed spear save grants nothing")
+failSkinSave = false
+ProximityPromptService.PromptTriggered:Fire(spearPrompt, member)
+flush()
+check(storedSkins.Cash == 250 and storedSkins.OwnedSpears.BasicSpear, "A spear purchase charges once and persists")
+local spearBackpack = member:FindFirstChildOfClass("Backpack")
+local function spearCount()
+	local count = 0
+	for _, container in { member.Character, member:FindFirstChildOfClass("Backpack") } do
+		for _, item in container:GetChildren() do
+			if item:IsA("Tool") and item:GetAttribute("SpearId") == "BasicSpear" then
+				count += 1
+			end
+		end
+	end
+	return count
+end
+check(spearCount() == 1 and member:GetAttribute("OwnsBasicSpear"), "Owned spear appears once in the hotbar")
+spearSaves = skinSaves
+ProximityPromptService.PromptTriggered:Fire(spearPrompt, member)
+flush()
+check(skinSaves == spearSaves and storedSkins.Cash == 250, "Repeat purchase does not charge twice")
+local duplicateSpear = dependencies.buildSpear()
+duplicateSpear.Parent = spearBackpack
+flush()
+check(duplicateSpear.destroyed and spearCount() == 1, "Spear sync removes duplicates")
+local oldSpearCharacter = member.Character
+member.CharacterRemoving:Fire(oldSpearCharacter)
+member.Character = nil
+oldSpearCharacter:Destroy()
+spearBackpack:Destroy()
+flush()
+local newSpearBackpack = Instance.new("Backpack")
+newSpearBackpack.Parent = member
+local newSpearCharacter = makeCharacter(member)
+member.CharacterAdded:Fire(newSpearCharacter)
+flush()
+check(spearCount() == 1, "Respawn restores one owned spear")
+
+-- Crate purchases are shop-bound and retain the same reward through save retries.
+local spearCratePrompt = Instance.new("ProximityPrompt")
+spearCratePrompt.Name, spearCratePrompt.MaxActivationDistance, spearCratePrompt.Parent = "OpenSpearCratePrompt", 8, counter
+storedSkins.Cash = 700
+local root = member.Character:FindFirstChild("HumanoidRootPart")
+root.Position = Vector3.new(100, 0, 0)
+local previousSaves = skinSaves
+send(member, "OpenSpearCrate", "SpearCrate")
+check(skinSaves == previousSaves, "Distant spear crate requests cannot purchase")
+root.Position = Vector3.zero
+ProximityPromptService.PromptTriggered:Fire(spearCratePrompt, member)
+check(feedback.messages[#feedback.messages].values[1] == "OpenSpearCrates", "Spear stand opens its menu")
+failSkinSave = true
+send(member, "OpenSpearCrate", "SpearCrate")
+check(storedSkins.Cash == 700 and #storedSkins.SpearSkinCopies == 0, "Failed crate save grants nothing")
+failSkinSave = false
+send(member, "OpenSpearCrate", "SpearCrate")
+local spearReward = feedback.messages[#feedback.messages].values
+local copy = storedSkins.SpearSkinCopies[1]
+check(spearReward[1] == "SpearCrateResult" and spearReward[2] == true and #spearReward[4] == 1, "Crate returns a reward array")
+check(storedSkins.Cash == 350 and copy.Wear == spearReward[4][1].Wear and copy.Serial == spearReward[4][1].Serial, "Crate charges once and saves its rolled copy")
+send(member, "EquipSpearSkin", { SkinId = copy.SkinId, Serial = copy.Serial })
+check(storedSkins.EquippedSpearSkin == copy.SkinId and storedSkins.EquippedSpearSkinSerial == copy.Serial, "Owned spear copy can be equipped")
+send(member, "EquipSpearSkin", { SkinId = copy.SkinId, Serial = copy.Serial + 100 })
+check(storedSkins.EquippedSpearSkinSerial == copy.Serial and feedback.messages[#feedback.messages].values[2] == false, "Unowned spear copy cannot be equipped")
 
 print(
 	"Fishing service: " .. checks .. " authorization and lifecycle checks passed (recording mocks; no Roblox runtime)."

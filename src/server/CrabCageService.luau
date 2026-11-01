@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local GamepassService = require(script.Parent.GamepassService)
 local Props = require(script.Parent.Map.Props)
 local BackpackCatalog = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
@@ -498,6 +499,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 		roll.Value = FishMutations.value(roll.Value, roll.Traits.Mutation, roll.Traits.Corruptions)
 	end
 	pendingRolls[model] = roll
+	local doubleXP = GamepassService.ownsDoubleXP(player)
 	local noRoom = "this is a big one, clear your hands to grab this one"
 	local function award(angler, layout)
 		return AnglerData.recordCatch(
@@ -511,7 +513,8 @@ local function collect(player: Player, prompt: ProximityPrompt)
 			Catalog.Mutations,
 			roll.Size,
 			roll.Traits,
-			layout
+			layout,
+			doubleXP
 		)
 	end
 	-- recordCatch checks the entire rotated shape, not just one free tile. Its

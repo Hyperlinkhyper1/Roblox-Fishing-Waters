@@ -19,19 +19,26 @@ local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 
 local CargoHold = {}
 local rgb = Color3.fromRGB
-local INK = rgb(10, 10, 10)
-local HULL = rgb(26, 23, 20)
-local HEADER = rgb(92, 36, 34)
-local BRONZE = rgb(150, 118, 72)
-local CELL_EMPTY = rgb(16, 16, 16)
-local DECK = rgb(74, 54, 36)
-local RIM = rgb(36, 26, 18)
-local CELL_EDGE = rgb(70, 64, 56)
+-- Dark glass panel with accent-bracketed buttons and rarity-lit tiles.
+local INK = rgb(22, 24, 28)
+local HULL = rgb(12, 13, 16)
+local EDGE = rgb(40, 42, 48)
+local CELL_EMPTY = rgb(16, 17, 20)
+local DECK = rgb(21, 22, 26)
+local RIM = rgb(28, 30, 35)
+local CELL_EDGE = rgb(38, 40, 46)
 local PART = rgb(96, 100, 104)
 local FITS = rgb(84, 192, 92)
 local BLOCKED = rgb(226, 72, 60)
 local WHITE = rgb(240, 240, 236)
-local MUTED = rgb(170, 170, 164)
+local MUTED = rgb(150, 152, 158)
+local GOLD = rgb(255, 226, 128)
+local CREAM = rgb(226, 218, 196)
+local CYAN = rgb(110, 228, 240)
+local VIOLET = rgb(178, 142, 255)
+local MINT = rgb(150, 230, 140)
+local AMBER = rgb(255, 176, 96)
+local RED = rgb(255, 82, 82)
 local CELL = 40
 local GAP = 4
 local STEP = CELL + GAP
@@ -69,7 +76,7 @@ end
 local function text(parent: Instance, value: string, props: { [string]: any }): TextLabel
 	local label = make("TextLabel", parent, {
 		BackgroundTransparency = 1,
-		Font = Enum.Font.GothamMedium,
+		Font = Enum.Font.BuilderSansMedium,
 		Text = value,
 		TextColor3 = WHITE,
 		TextSize = 14,
@@ -81,20 +88,39 @@ local function text(parent: Instance, value: string, props: { [string]: any }): 
 	return label
 end
 
-local function button(parent: Instance, caption: string, props: { [string]: any }): TextButton
+-- Short accent strokes in each corner, like a targeting frame.
+local function brackets(item: GuiObject, color: Color3)
+	for _, corner in { Vector2.new(0, 0), Vector2.new(1, 0), Vector2.new(0, 1), Vector2.new(1, 1) } do
+		for _, size in { UDim2.fromOffset(7, 2), UDim2.fromOffset(2, 7) } do
+			make("Frame", item, {
+				Name = "Bracket",
+				AnchorPoint = corner,
+				Position = UDim2.fromScale(corner.X, corner.Y),
+				Size = size,
+				BackgroundColor3 = color,
+				BorderSizePixel = 0,
+				ZIndex = 2,
+			})
+		end
+	end
+end
+
+local function button(parent: Instance, caption: string, props: { [string]: any }, accent: Color3?): TextButton
 	local item = make("TextButton", parent, {
 		AutoButtonColor = true,
 		BackgroundColor3 = INK,
-		Font = Enum.Font.GothamBold,
+		Font = Enum.Font.BuilderSansBold,
 		Text = caption,
-		TextColor3 = WHITE,
-		TextSize = 14,
+		TextColor3 = accent or WHITE,
+		TextSize = 15,
 	})
+	item.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Bold, Enum.FontStyle.Italic)
 	for key, value in props do
 		item[key] = value
 	end
-	round(item, 4)
-	stroke(item, BRONZE, 2)
+	round(item, 2)
+	stroke(item, EDGE, 1)
+	brackets(item, accent or MUTED)
 	return item
 end
 
@@ -180,10 +206,17 @@ local function drawItem(parent: Instance, item, rotation: number): (Frame, { Fra
 			Position = UDim2.fromOffset(cell[1] * STEP, cell[2] * STEP),
 			Size = UDim2.fromOffset(CELL, CELL),
 			BackgroundColor3 = tint,
-			BackgroundTransparency = if item.PartId then 0.15 else 0.62,
+			BackgroundTransparency = if item.PartId then 0.1 else 0.2,
 			BorderSizePixel = 0,
 		})
 		round(square, 3)
+		-- Near-black at the top, lit by the tint toward the bottom edge.
+		make("UIGradient", square, {
+			Color = ColorSequence.new(rgb(30, 31, 36), WHITE),
+			Transparency = NumberSequence.new(0.1, 0.45),
+			Rotation = 90,
+		})
+		stroke(square, tint, 1).Transparency = 0.55
 		table.insert(squares, square)
 	end
 	local view
@@ -209,20 +242,36 @@ local function drawItem(parent: Instance, item, rotation: number): (Frame, { Fra
 				ZIndex = 4,
 			})
 		end
+		-- One-cell fish are too small for a name next to the model.
+		if width > 1 then
+			text(box, if species then species.Name else tostring(item.Fish.FishId), {
+				Position = UDim2.new(0, 3, 1, -27),
+				Size = UDim2.new(1, -6, 0, 13),
+				TextSize = 12,
+				Font = Enum.Font.BuilderSansBold,
+				TextStrokeTransparency = 0.3,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextXAlignment = Enum.TextXAlignment.Center,
+				ZIndex = 3,
+			})
+		end
+		local heavy = item.Fish.Size == "Huge" or item.Fish.Size == "Big"
 		text(box, FishCatch.formatKg(item.Fish.Kg), {
 			Position = UDim2.new(0, 3, 1, -13),
 			Size = UDim2.new(1, -6, 0, 12),
-			TextSize = 10,
-			Font = Enum.Font.GothamBold,
+			TextSize = 11,
+			Font = Enum.Font.BuilderSansBold,
+			TextColor3 = if heavy then GOLD else CREAM,
 			TextStrokeTransparency = 0.2,
+			TextXAlignment = Enum.TextXAlignment.Right,
 			ZIndex = 3,
 		})
 	else
 		local part = Cargo.Parts[item.PartId]
 		text(box, string.upper(if part then part.Name else item.PartId), {
 			Size = UDim2.fromScale(1, 1),
-			TextSize = 10,
-			Font = Enum.Font.GothamBlack,
+			TextSize = 11,
+			Font = Enum.Font.BuilderSansExtraBold,
 			TextColor3 = rgb(226, 226, 220),
 			TextWrapped = true,
 			TextXAlignment = Enum.TextXAlignment.Center,
@@ -254,8 +303,8 @@ function CargoHold.start()
 		Name = "OpenCargo",
 		Position = UDim2.new(1, -126, 1, -100),
 		Size = UDim2.fromOffset(112, 38),
-		TextSize = 14,
-	})
+		TextSize = 15,
+	}, GOLD)
 	local handDot = make("Frame", toggle, {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.new(1, -3, 0, 3),
@@ -272,48 +321,60 @@ function CargoHold.start()
 		Position = UDim2.new(1, -20, 0.5, -24),
 		Size = UDim2.fromOffset(352, 420),
 		BackgroundColor3 = HULL,
+		BackgroundTransparency = 0.06,
 		BorderSizePixel = 0,
 		Active = true,
 		Visible = false,
 	})
-	round(panel, 4)
-	stroke(panel, BRONZE, 3)
+	round(panel, 3)
+	stroke(panel, EDGE, 1)
 	local scale = make("UIScale", panel, {})
 	local header = make("Frame", panel, {
 		Size = UDim2.new(1, 0, 0, 58),
-		BackgroundColor3 = HEADER,
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 	})
-	round(header, 4)
-	text(header, "CARGO", {
-		Position = UDim2.fromOffset(PAD, 7),
-		Size = UDim2.new(1, -PAD * 2 - 40, 0, 24),
-		Font = Enum.Font.GothamBlack,
-		TextSize = 20,
+	local title = text(header, "", {
+		Position = UDim2.fromOffset(PAD, 8),
+		Size = UDim2.new(1, -PAD * 2 - 40, 0, 26),
+		Font = Enum.Font.BuilderSansBold,
+		TextColor3 = GOLD,
+		TextSize = 22,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
 	local subtitle = text(header, "", {
-		Position = UDim2.fromOffset(PAD, 32),
+		Position = UDim2.fromOffset(PAD, 33),
 		Size = UDim2.new(1, -PAD * 2, 0, 18),
-		TextSize = 13,
-		TextColor3 = rgb(226, 206, 196),
+		TextSize = 14,
+		TextColor3 = MUTED,
 		TextTruncate = Enum.TextTruncate.AtEnd,
+	})
+	make("Frame", header, {
+		Name = "Divider",
+		Position = UDim2.new(0, PAD / 2, 1, 0),
+		Size = UDim2.new(1, -PAD, 0, 1),
+		BackgroundColor3 = EDGE,
+		BorderSizePixel = 0,
 	})
 	local close = make("TextButton", header, {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -8, 0, 8),
+		Position = UDim2.new(1, -10, 0, 10),
 		Size = UDim2.fromOffset(32, 32),
-		BackgroundTransparency = 1,
-		Font = Enum.Font.GothamBold,
-		Text = "×",
-		TextColor3 = WHITE,
-		TextSize = 28,
+		BackgroundColor3 = INK,
+		Font = Enum.Font.BuilderSansBold,
+		Text = "X",
+		TextColor3 = RED,
+		TextSize = 20,
 	})
+	close.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Bold, Enum.FontStyle.Italic)
+	round(close, 2)
+	stroke(close, EDGE, 1)
 
 	-- The single-fish hand slot and its actions.
 	text(panel, "IN HAND", {
 		Position = UDim2.fromOffset(PAD, 70),
 		Size = UDim2.fromOffset(120, 16),
-		Font = Enum.Font.GothamBold,
+		Font = Enum.Font.BuilderSansBold,
 		TextSize = 12,
 		TextColor3 = MUTED,
 	})
@@ -342,8 +403,8 @@ function CargoHold.start()
 	local handName = text(panel, "", {
 		Position = UDim2.fromOffset(PAD + 114, 90),
 		Size = UDim2.new(1, -(PAD * 2 + 114), 0, 20),
-		Font = Enum.Font.GothamBold,
-		TextSize = 16,
+		Font = Enum.Font.BuilderSansBold,
+		TextSize = 18,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
 	local handInfo = text(panel, "", {
@@ -357,13 +418,11 @@ function CargoHold.start()
 	local rotate = button(panel, "Rotate [R]", {
 		Position = UDim2.fromOffset(PAD + 114, 154),
 		Size = UDim2.fromOffset(96, 34),
-		TextSize = 13,
-	})
+	}, GOLD)
 	local release = button(panel, "Release", {
 		Position = UDim2.fromOffset(PAD + 218, 154),
 		Size = UDim2.fromOffset(84, 34),
-		TextSize = 13,
-	})
+	}, AMBER)
 
 	-- The hold: empty cells, placed items, the held item's ghost and one hit area
 	-- on top that turns clicks into grid cells.
@@ -400,15 +459,18 @@ function CargoHold.start()
 	})
 
 	local backpackTab =
-		button(panel, "Backpack", { Position = UDim2.fromOffset(PAD, 204), Size = UDim2.fromOffset(142, 30) })
-	local boatTab =
-		button(panel, "Boat hold", { Position = UDim2.fromOffset(PAD + 152, 204), Size = UDim2.fromOffset(142, 30) })
+		button(panel, "Backpack", { Position = UDim2.fromOffset(PAD, 204), Size = UDim2.fromOffset(142, 30) }, CYAN)
+	local boatTab = button(
+		panel,
+		"Boat hold",
+		{ Position = UDim2.fromOffset(PAD + 152, 204), Size = UDim2.fromOffset(142, 30) },
+		VIOLET
+	)
 	local moveAll = button(panel, "Move all to backpack", {
 		Position = UDim2.fromOffset(PAD, MOVE_TOP),
 		Size = UDim2.new(1, -PAD * 2, 0, 30),
-		TextSize = 13,
 		Visible = false,
-	})
+	}, MINT)
 	local container = "Backpack"
 	local state = {
 		Hand = nil,
@@ -527,21 +589,23 @@ function CargoHold.start()
 		lastHand = handKey
 		panel.Visible = open
 		toggle.Visible = true
-		backpackTab.TextColor3 = if container == "Backpack" then FITS else WHITE
-		boatTab.TextColor3 = if container == "Boat" then FITS else MUTED
+		backpackTab.TextColor3 = if container == "Backpack" then CYAN else MUTED
+		boatTab.TextColor3 = if container == "Boat" then VIOLET else MUTED
 		boatTab.Text = if aboard then "Boat hold" else "Boat · aboard only"
 		handDot.Visible = state.Hand ~= nil
 
 		-- Header line.
-		local used, total = 0, 0
+		local used, total, fish = 0, 0, 0
 		if spec then
 			total = Cargo.capacity(spec.Hold)
 			for _, item in contents() do
 				used += #Cargo.cells(shapeOf(item))
+				fish += if item.Fish then 1 else 0
 			end
 		end
-		subtitle.Text = (if spec then string.format("%s · %d/%d cells", spec.Name, used, total) else "No boat")
-			.. string.format("  ·  Freezer %d fish · %d%% used", state.Freezer or 0, state.FreezerUsage or 0)
+		title.Text = if spec then string.format("%d Fish • %d/%d Cells", fish, used, total) else "No boat"
+		subtitle.Text = (if spec then spec.Name .. "  ·  " else "")
+			.. string.format("Freezer %d fish · %d%% used", state.Freezer or 0, state.FreezerUsage or 0)
 
 		-- Hand slot.
 		local hand = state.Hand

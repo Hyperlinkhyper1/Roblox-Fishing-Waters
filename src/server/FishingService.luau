@@ -12,6 +12,8 @@ local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local CrabCages = require(ReplicatedStorage.Shared.CrabCages)
 local MusselNets = require(ReplicatedStorage.Shared.MusselNets)
+local Spears = require(ReplicatedStorage.Shared.Spears)
+local SpearSkins = require(ReplicatedStorage.Shared.SpearSkins)
 
 local FishingService = {}
 local states = {}
@@ -392,8 +394,104 @@ local function openOwnedRodCrate(player: Player, crateId: any): (boolean, string
 	return true, "You unboxed the " .. RodSkins.Skins[skinId].Name .. "!", reward
 end
 
+local SPEAR_CRATE_PROMPT = "OpenSpearCratePrompt"
+
+local function openSpearCrate(player: Player, request: any): (boolean, string, any)
+	local crateId = if type(request) == "table" then request.CrateId else request
+	local count = if type(request) == "table" then request.Count else 1
+	if not SpearSkins.validCrate(crateId) then
+		return false, "That spear crate is unavailable."
+	end
+	if count ~= 1 and count ~= 3 and count ~= 10 then
+		return false, "Choose 1, 3, or 10 crates."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your wallet is still loading. Try again in a moment."
+	end
+	local crate = SpearSkins.Crates[crateId]
+	if profile.Cash < crate.Price * count then
+		return false, "You don't have enough coins."
+	end
+	local rewards, ids = {}, {}
+	for _ = 1, count do
+		local id = SpearSkins.roll(crateId, math.random(), math.random())
+		table.insert(ids, id)
+		table.insert(rewards, { SkinId = id, Wear = math.random() })
+	end
+	local ok, message = BoatService.updateProgress(player, function(current, serials)
+		for index, reward in rewards do
+			assert(
+				BoatData.openSpearCrate(current, crateId, reward.SkinId, serials[index], reward.Wear) == "Opened",
+				"Spear crate purchase failed"
+			)
+			reward.Serial = serials[index]
+		end
+	end, nil, ids)
+	if not ok then
+		return false, message
+	end
+	if count == 1 then
+		return true, "You unboxed the " .. SpearSkins.Skins[rewards[1].SkinId].Name .. "!", rewards
+	end
+	return true, string.format("You unboxed %d spear crates!", count), rewards
+end
+
+local function equipSpearSkin(player: Player, request: any): (boolean, string)
+	local id = if type(request) == "table" then request.SkinId else request
+	local serial = if type(request) == "table" then request.Serial else nil
+	if id == "" then
+		id = nil
+	end
+	if id ~= nil and not SpearSkins.valid(id) then
+		return false, "That spear skin doesn't exist."
+	end
+	if serial ~= nil and (type(serial) ~= "number" or serial < 1 or serial % 1 ~= 0) then
+		return false, "Invalid spear skin serial."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your inventory is still loading."
+	end
+	if BoatData.equipSpearSkin(profile, id, serial) ~= "Equipped" then
+		return false, "You don't own that spear skin."
+	end
+	local ok, message = BoatService.updateProgress(player, function(current)
+		assert(BoatData.equipSpearSkin(current, id, serial) == "Equipped", "Spear skin equip failed")
+	end)
+	if not ok then
+		return false, message
+	end
+	return true, if id then SpearSkins.Skins[id].Name .. " equipped!" else "Starter spear look equipped."
+end
+
 local CAGE_PROMPT = "BuyCrabCagePrompt"
 local NET_PROMPT = "BuyMusselNetPrompt"
+local SPEAR_PROMPT = "BuySpearPrompt"
+
+local function buySpear(player: Player): (boolean, string)
+	local state = states[player]
+	if not state or state.cageBusy then
+		return false, "Please wait a moment and try again."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your wallet is still loading. Try again in a moment."
+	end
+	local problem = Spears.buyProblem(profile)
+	if problem then
+		return false, problem
+	end
+	state.cageBusy = true
+	local ok, message = BoatService.updateProgress(player, function(current)
+		Spears.buy(current)
+	end)
+	state.cageBusy = false
+	if not ok then
+		return false, message
+	end
+	return true, "Spear bought! Equip it from your hotbar to hunt sharks."
+end
 
 local function buyMusselNet(player: Player): (boolean, string)
 	local state = states[player]
@@ -637,6 +735,57 @@ local function ensureTool(player: Player): Tool?
 	return rod
 end
 
+local function ensureSpear(player: Player)
+	local character = livingCharacter(player)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if
+		player:GetAttribute("BoatDataStatus") ~= "Ready"
+		or not player:GetAttribute("OwnsBasicSpear")
+		or not character
+		or not backpack
+	then
+		return
+	end
+	local spear: Tool? = nil
+	for _, container in { character, backpack } do
+		for _, child in container:GetChildren() do
+			if child:IsA("Tool") and child:GetAttribute("SpearId") == Spears.ID then
+				if spear then
+					child:Destroy()
+				else
+					spear = child
+				end
+			end
+		end
+	end
+	local skin = player:GetAttribute("SpearSkin") or ""
+	local wear = player:GetAttribute("SpearSkinWear")
+	if
+		spear
+		and (
+			(spear:GetAttribute("SpearSkin") or "") ~= skin
+			or (skin ~= "" and spear:GetAttribute("SpearSkinWear") ~= wear)
+		)
+	then
+		local wasEquipped = spear.Parent == character
+		spear:Destroy()
+		spear = Spears.build(skin, wear)
+		spear:SetAttribute("OwnerUserId", player.UserId)
+		spear.Parent = backpack
+		if wasEquipped then
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid:EquipTool(spear)
+			end
+		end
+	end
+	if not spear then
+		spear = Spears.build(skin, wear)
+		spear:SetAttribute("OwnerUserId", player.UserId)
+		spear.Parent = backpack
+	end
+end
+
 local function equip(player: Player)
 	local character, humanoid = livingCharacter(player)
 	if not character or not humanoid then
@@ -690,6 +839,7 @@ local function bindPlayer(player: Player)
 			state.queued = false
 			if states[player] == state and player.Parent == Players then
 				ensureTool(player)
+				ensureSpear(player)
 			end
 		end)
 	end
@@ -721,7 +871,7 @@ local function bindPlayer(player: Player)
 			scheduleSync()
 		end)
 	end
-	for _, attribute in { "BoatDataStatus", "OwnsStarterRod", "RodSkin", "RodSkinWear", "BobberSkin" } do
+	for _, attribute in { "BoatDataStatus", "OwnsStarterRod", "OwnsBasicSpear", "SpearSkin", "SpearSkinWear", "RodSkin", "RodSkinWear", "BobberSkin" } do
 		table.insert(state.connections, player:GetAttributeChangedSignal(attribute):Connect(scheduleSync))
 	end
 	table.insert(state.connections, player.CharacterAdded:Connect(bindCharacter))
@@ -770,6 +920,8 @@ function FishingService.start()
 			and action ~= "OpenBobberCrate"
 			and action ~= "EquipBobberSkin"
 			and action ~= "EquipRodSkin"
+			and action ~= "OpenSpearCrate"
+			and action ~= "EquipSpearSkin"
 			and action ~= "ClaimGroupReward"
 		then
 			return
@@ -781,6 +933,25 @@ function FishingService.start()
 		state.lastRequest = os.clock()
 		if action == "ClaimGroupReward" then
 			claimGroupReward(player)
+		elseif action == "OpenSpearCrate" then
+			if not shopPrompt(player, SPEAR_CRATE_PROMPT) then
+				feedback:FireClient(
+					player,
+					"SpearCrateResult",
+					false,
+					"Step up to the spear crate stand in the tackle shop."
+				)
+				return
+			end
+			local success, message, reward = openSpearCrate(player, value)
+			if player.Parent == Players then
+				feedback:FireClient(player, "SpearCrateResult", success, message, reward)
+			end
+		elseif action == "EquipSpearSkin" then
+			local success, message = equipSpearSkin(player, value)
+			if player.Parent == Players then
+				feedback:FireClient(player, "SpearSkinResult", success, message)
+			end
 		elseif action == "BuyRodCrate" then
 			if not shopPrompt(player, CRATE_PROMPT) then
 				feedback:FireClient(
@@ -851,6 +1022,13 @@ function FishingService.start()
 			feedback:FireClient(player, "OpenCrates")
 		elseif prompt.Name == BOBBER_PROMPT and shopPrompt(player, BOBBER_PROMPT) == prompt then
 			feedback:FireClient(player, "OpenBobberCrates")
+		elseif prompt.Name == SPEAR_CRATE_PROMPT and shopPrompt(player, SPEAR_CRATE_PROMPT) == prompt then
+			feedback:FireClient(player, "OpenSpearCrates")
+		elseif prompt.Name == SPEAR_PROMPT and shopPrompt(player, SPEAR_PROMPT) == prompt then
+			task.spawn(function()
+				local _, message = buySpear(player)
+				notify(player, message)
+			end)
 		elseif prompt.Name == NET_PROMPT and shopPrompt(player, NET_PROMPT) == prompt then
 			task.spawn(function()
 				local _, message = buyMusselNet(player)

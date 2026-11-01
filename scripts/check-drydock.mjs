@@ -27,6 +27,8 @@ const modules = {
   RACINGSPEEDBOAT: 'src/server/RacingSpeedboat.luau',
   PATROLBOAT: 'src/server/PatrolBoat.luau',
   TRAWLER: 'src/server/Trawler.luau',
+  TUGBOAT: 'src/server/Tugboat.luau',
+  HOVERCRAFT: 'src/server/Hovercraft.luau',
   SHIPWRIGHT: 'src/server/Map/Shipwright.luau',
   DRYDOCKINTERIOR: 'src/server/Map/DrydockInterior.luau',
   DRYDOCK: 'src/server/Map/Drydock.luau',

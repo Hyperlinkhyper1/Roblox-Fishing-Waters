@@ -1,6 +1,6 @@
 -- One permanent hire per role; prices are charged by the server once.
 local Staff = {
-	Order = { "Seller", "Porter", "Fisherman" },
+	Order = { "Seller", "Porter", "Fisherman", "RestaurantChef", "CompanyChef" },
 	Roles = {
 		Seller = {
 			Name = "Seller",
@@ -20,6 +20,18 @@ local Staff = {
 			Requires = "Company",
 			Description = "Takes the boat you assign onto the water and fishes on his own. "
 				.. "He moors beside your dock when the hold is full; your porter unloads the catch.",
+		},
+		RestaurantChef = {
+			Name = "Restaurant Chef",
+			Price = 6000,
+			Requires = "Restaurant",
+			Description = "Cooks your chosen recipe using fish from kitchen storage. Dishes go to the kitchen pass for diners and shop customers.",
+		},
+		CompanyChef = {
+			Name = "Company Chef",
+			Price = 6000,
+			Requires = "Company",
+			Description = "Cooks your chosen recipe using fish from kitchen storage. Dishes go to the kitchen pass for shop customers and diners.",
 		},
 	},
 }
@@ -75,6 +87,20 @@ local OUTFITS = {
 		Hair = "",
 		Hat = "110050567314495", -- Plain Navy Beanie
 		Skin = Color3.fromRGB(198, 140, 104),
+	},
+	RestaurantChef = {
+		Shirt = 382578523,
+		Pants = 129459077,
+		Hair = "376548738",
+		Hat = "",
+		Skin = Color3.fromRGB(224, 173, 132),
+	},
+	CompanyChef = {
+		Shirt = 382578523,
+		Pants = 129459077,
+		Hair = "",
+		Hat = "",
+		Skin = Color3.fromRGB(157, 105, 74),
 	},
 }
 

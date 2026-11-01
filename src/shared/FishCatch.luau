@@ -29,12 +29,60 @@ local function weight(fish, luck: number): number
 	return (1 / fish.RarityDenominator) ^ (1 - luck)
 end
 
+-- A copy of `pool` holding only the fish that bite in `season`. Species
+-- without Seasons bite all year. A species with Requires also needs that key
+-- set in `conditions` (Shared.CatchConditions.at); without conditions it never bites.
+function FishCatch.inSeason(pool, species, season: string, conditions: { [string]: boolean }?)
+	local fish = {}
+	for _, id in pool.Fish or {} do
+		local entry = species[id]
+		if
+			entry
+			and (entry.Seasons == nil or table.find(entry.Seasons, season) ~= nil)
+			and (entry.Requires == nil or (conditions ~= nil and conditions[entry.Requires] == true))
+		then
+			table.insert(fish, id)
+		end
+	end
+	local copy = table.clone(pool)
+	copy.Fish = fish
+	return copy
+end
+
+local SEASON_ORDER = { "Spring", "Summer", "Autumn", "Winter" }
+local requirementLabels = { Rain = "rain", Night = "night", Beach = "beach" }
+
+-- Short bestiary text such as "Summer", "Autumn–Spring" or "Summer (rain)".
+-- Season lists are one unbroken run of the year, so they read as a range.
+function FishCatch.seasonLabel(fish): string
+	local list = fish.Seasons
+	local text = "All year"
+	if list and #list > 0 and #list < #SEASON_ORDER then
+		-- The run starts at the listed season whose predecessor is not listed.
+		local first = list[1]
+		for index, season in SEASON_ORDER do
+			local previous = SEASON_ORDER[(index - 2) % #SEASON_ORDER + 1]
+			if table.find(list, season) and not table.find(list, previous) then
+				first = season
+				break
+			end
+		end
+		local start = table.find(SEASON_ORDER, first) :: number
+		local last = SEASON_ORDER[(start + #list - 2) % #SEASON_ORDER + 1]
+		text = if #list == 1 then first else first .. "–" .. last
+	end
+	local requirement = fish.Requires and requirementLabels[fish.Requires]
+	return if requirement then text .. " (" .. requirement .. ")" else text
+end
+
 function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?): string
 	local bias = math.clamp(luck or 0, 0, 0.9)
 	local pick = rng()
 	if pool.Junk and #pool.Junk > 0 then
-		if pick < FishCatch.JUNK_CHANCE then
-			return pool.Junk[math.floor(pick / FishCatch.JUNK_CHANCE * #pool.Junk) + 1]
+		-- Out of season, junk is all that bites.
+		local junkChance = if #pool.Fish == 0 then 1 else FishCatch.JUNK_CHANCE
+		if pick < junkChance then
+			return pool.Junk[math.floor(pick / junkChance * #pool.Junk) + 1]
 		end
 		-- Keep the existing relative fish odds within the remaining catch chance.
 		pick = (pick - FishCatch.JUNK_CHANCE) / (1 - FishCatch.JUNK_CHANCE)

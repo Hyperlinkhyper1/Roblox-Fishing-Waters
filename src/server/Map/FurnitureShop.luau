@@ -17,9 +17,9 @@ local WeatherRadar = require(script.Parent.WeatherRadar)
 
 local FurnitureShop = {}
 local LAYOUT_VERSION = 2
-local INTERIOR_VERSION = 3
+local INTERIOR_VERSION = 5
 local ORIGIN = CFrame.new(6700, 300, 160)
-local W, D, H = 48, 40, 18
+local W, D, H = 64, 60, 18
 local rgb = Color3.fromRGB
 local M = Enum.Material
 local CREAM = rgb(255, 245, 213)
@@ -86,23 +86,23 @@ local function buildSample(id: string, parent: Instance, frame: CFrame): Model
 end
 
 -- Where each item stands in the showroom. `side` names the wall it lines:
--- left/right displays face the side aisles, back displays face the cross aisle
--- by the entrance. `turn` swings the item's customer side toward that aisle.
+-- left/right displays face the side aisles, back displays face the centre.
+-- `turn` swings the item's customer side toward that aisle.
 local DISPLAYS = {
 	-- Left wall: the cooking line.
-	{ id = "GrillStation", side = "left", x = -18, z = 0, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
-	{ id = "Smoker", side = "left", x = -18, z = 6.5, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
-	{ id = "SushiBar", side = "left", x = -18, z = 13, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
+	{ id = "GrillStation", side = "left", x = -27, z = -6, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
+	{ id = "Smoker", side = "left", x = -27, z = 4, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
+	{ id = "SushiBar", side = "left", x = -27, z = 14, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
 	-- Right wall: the shop floor and storage.
-	{ id = "Freezer", side = "right", x = 18, z = -3, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 9) },
-	{ id = "FoodCase", side = "right", x = 18, z = 4.75, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
-	{ id = "StorageRack", side = "right", x = 18, z = 11.25, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
+	{ id = "Freezer", side = "right", x = 27, z = -7, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 9) },
+	{ id = "FoodCase", side = "right", x = 27, z = 4, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
+	{ id = "StorageRack", side = "right", x = 27, z = 14, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
 	-- By the entrance, between the corner plant and the freezer: the one outdoor piece.
-	{ id = "WeatherRadar", side = "right", x = 17, z = -12, turn = -math.pi / 2, plinth = Vector3.new(5.5, 0.3, 5.5) },
+	{ id = "WeatherRadar", side = "right", x = 27, z = -18, turn = -math.pi / 2, plinth = Vector3.new(5.5, 0.3, 5.5) },
 	-- Back wall: the sales row under the welcome sign.
-	{ id = "KitchenStorage", side = "back", x = -10, z = 15, turn = math.pi, plinth = Vector3.new(7, 0.3, 7) },
-	{ id = "Register", side = "back", x = 0, z = 15, turn = 0, plinth = Vector3.new(8.5, 0.3, 7) },
-	{ id = "DiningTable", side = "back", x = 10, z = 15, turn = math.pi, plinth = Vector3.new(7, 0.3, 7) },
+	{ id = "KitchenStorage", side = "back", x = -12, z = 24, turn = math.pi, plinth = Vector3.new(7, 0.3, 7) },
+	{ id = "Register", side = "back", x = 0, z = 24, turn = 0, plinth = Vector3.new(8.5, 0.3, 7) },
+	{ id = "DiningTable", side = "back", x = 12, z = 24, turn = math.pi, plinth = Vector3.new(7, 0.3, 7) },
 }
 
 local function ensureInterior(): Model
@@ -138,7 +138,7 @@ local function ensureInterior(): Model
 	part("Ceiling", Vector3.new(W + 2, 1, D + 2), CFrame.new(0, H + 0.5, 0), rgb(244, 234, 210), M.Plaster)
 	for _, side in { -1, 1 } do
 		part("SideWall", Vector3.new(1, H, D + 2), CFrame.new(side * (W / 2 + 0.5), H / 2, 0), rgb(244, 234, 210), M.Plaster)
-		part("EndWall", Vector3.new(W, H, 1), CFrame.new(0, H / 2, side * (D / 2 + 0.5)), rgb(236, 160, 96), M.Plaster)
+		part("EndWall", Vector3.new(W, H, 1), CFrame.new(0, H / 2, side * (D / 2 + 0.5)), rgb(225, 189, 155), M.Plaster)
 		part("Wainscot", Vector3.new(0.2, 3, D), CFrame.new(side * (W / 2 - 0.1), 1.5, 0), TEAL, M.WoodPlanks)
 		part("Skirting", Vector3.new(W, 0.4, 0.25), CFrame.new(0, 0.2, side * (D / 2 - 0.1)), TEAL, M.Wood)
 		part("WainscotCap", Vector3.new(0.35, 0.18, D), CFrame.new(side * (W / 2 - 0.22), 3.06, 0), GOLD, M.Wood)
@@ -146,20 +146,20 @@ local function ensureInterior(): Model
 		part("CrownTrim", Vector3.new(W, 0.7, 0.45), CFrame.new(0, H - 0.6, side * (D / 2 - 0.25)), CREAM, M.Wood)
 	end
 	-- Coffered ceiling: transverse beams carry the lanterns, long beams between.
-	for _, z in { -12, 0, 12 } do
+	for _, z in { -22, -8, 6, 20 } do
 		part("CeilingBeam", Vector3.new(W, 0.7, 0.7), CFrame.new(0, H - 0.4, z), WOOD, M.Wood)
-		for _, x in { -12, 12 } do
+		for _, x in { -20, 0, 20 } do
 			local lamp = Props.lantern(hall, ORIGIN * CFrame.new(x, H - 2.5, z), 22, 0.8)
 			for _, piece in lamp:GetChildren() do
 				if piece:IsA("BasePart") then piece.CanCollide = false end
 			end
 		end
 	end
-	for _, x in { -16, 0, 16 } do
+	for _, x in { -22, 0, 22 } do
 		part("CeilingBeam", Vector3.new(0.7, 0.7, D), CFrame.new(x, H - 0.4, 0), WOOD, M.Wood)
 	end
 	-- Lower lanterns over the entrance, the sales counter and the back row.
-	for _, spot in { Vector3.new(-17, 11, -7), Vector3.new(0, 13.5, -13), Vector3.new(0, 13.5, 12) } do
+	for _, spot in { Vector3.new(-24, 11, -20), Vector3.new(0, 13.5, -25), Vector3.new(0, 13.5, 24) } do
 		local lamp = Props.lantern(hall, ORIGIN * CFrame.new(spot), 18, 0.8)
 		for _, piece in lamp:GetChildren() do
 			if piece:IsA("BasePart") then piece.CanCollide = false end
@@ -168,13 +168,17 @@ local function ensureInterior(): Model
 	-- Side windows light the aisles; back windows flank the welcome sign and
 	-- wear linen curtains.
 	for _, side in { -1, 1 } do
-		for _, z in { -16, -8 } do
+		for _, z in { -26, -16 } do
 			part("WindowFrame", Vector3.new(0.3, 7, 6), CFrame.new(side * (W / 2 - 0.25), 10, z), TEAL, M.Wood)
 			local pane = part("WindowLight", Vector3.new(0.1, 6, 5), CFrame.new(side * (W / 2 - 0.45), 10, z), CREAM, M.Neon)
 			pane.CanCollide = false
 			Props.light(pane, CREAM, 14, 0.35)
+			for _, dz in { -3.2, 3.2 } do
+				local curtain = part("Curtain", Vector3.new(0.15, 7.5, 1.25), CFrame.new(side * (W / 2 - 0.65), 9.7, z + dz), LINEN, M.Fabric)
+				curtain.CanCollide = false
+			end
 		end
-		local x = side * 18
+		local x = side * 25
 		part("WindowFrame", Vector3.new(6, 7, 0.3), CFrame.new(x, 10, D / 2 - 0.25), TEAL, M.Wood)
 		local pane = part("WindowLight", Vector3.new(5, 6, 0.1), CFrame.new(x, 10, D / 2 - 0.45), CREAM, M.Neon)
 		pane.CanCollide = false
@@ -194,24 +198,28 @@ local function ensureInterior(): Model
 		frame.CanCollide = false
 		local canvas = part("ArtCanvas", Vector3.new(6, 3.5, 0.12), CFrame.new(side * 12, 6, -D / 2 + 0.3), TEAL, M.SmoothPlastic)
 		canvas.CanCollide = false
-		part("DoorColumn", Vector3.new(1.3, 12, 1.3), CFrame.new(side * 5, 6, -19.2), CREAM, M.Wood)
-		part("DoorColumnCap", Vector3.new(1.7, 0.5, 1.7), CFrame.new(side * 5, 12.25, -19.2), WOOD, M.Wood)
-		part("DoorColumnBase", Vector3.new(1.7, 0.6, 1.7), CFrame.new(side * 5, 0.3, -19.2), WOOD, M.Wood)
+		local horizon = part("ArtHorizon", Vector3.new(5.6, 0.65, 0.08), CFrame.new(side * 12, 5.25, -D / 2 + 0.39), rgb(157, 192, 168), M.SmoothPlastic)
+		horizon.CanCollide = false
+		local sun = part("ArtSun", Vector3.new(0.9, 0.9, 0.08), CFrame.new(side * 12 + 1.4, 6.7, -D / 2 + 0.39), CREAM, M.SmoothPlastic)
+		sun.CanCollide = false
+		part("DoorColumn", Vector3.new(1.3, 12, 1.3), CFrame.new(side * 5, 6, -D / 2 + 0.8), CREAM, M.Wood)
+		part("DoorColumnCap", Vector3.new(1.7, 0.5, 1.7), CFrame.new(side * 5, 12.25, -D / 2 + 0.8), WOOD, M.Wood)
+		part("DoorColumnBase", Vector3.new(1.7, 0.6, 1.7), CFrame.new(side * 5, 0.3, -D / 2 + 0.8), WOOD, M.Wood)
 	end
-	part("DoorArch", Vector3.new(12.3, 1.2, 1.3), CFrame.new(0, 13, -19.2), WOOD, M.Wood)
+	part("DoorArch", Vector3.new(12.3, 1.2, 1.3), CFrame.new(0, 13, -D / 2 + 0.8), WOOD, M.Wood)
 	-- Runner rugs warm the aisles; none of it blocks a walking avatar.
 	local function rug(name: string, size: Vector3, at: Vector3, color: Color3)
-		local carpet = part(name, size, ORIGIN * CFrame.new(at), color, M.Fabric)
+		local carpet = part(name, size, CFrame.new(at), color, M.Fabric)
 		carpet.CanCollide = false
 	end
-	rug("CentreRunnerTrim", Vector3.new(5.8, 0.06, 28.8), Vector3.new(0, 0.03, -1), GOLD)
-	rug("CentreRunner", Vector3.new(5, 0.08, 28), Vector3.new(0, 0.05, -1), RUG)
-	for _, x in { -10, 10 } do
-		rug("AisleRunnerTrim", Vector3.new(3.8, 0.06, 22.8), Vector3.new(x, 0.03, 4), GOLD)
-		rug("AisleRunner", Vector3.new(3, 0.08, 22), Vector3.new(x, 0.05, 4), RUG)
+	rug("CentreRunnerTrim", Vector3.new(7.8, 0.06, 43.8), Vector3.new(0, 0.03, -3), GOLD)
+	rug("CentreRunner", Vector3.new(7, 0.08, 43), Vector3.new(0, 0.05, -3), RUG)
+	for _, x in { -18, 18 } do
+		rug("AisleRunnerTrim", Vector3.new(4.8, 0.06, 32.8), Vector3.new(x, 0.03, 1), LINEN)
+		rug("AisleRunner", Vector3.new(4, 0.08, 32), Vector3.new(x, 0.05, 1), TEAL)
 	end
-	rug("EntryMat", Vector3.new(6, 0.08, 2.5), Vector3.new(0, 0.05, -18), TEAL)
-	-- Potted greenery by the door and in the counter corner.
+	rug("EntryMat", Vector3.new(6, 0.08, 2.5), Vector3.new(0, 0.05, -D / 2 + 2), TEAL)
+	-- Potted greenery softens the entrance and the back corners.
 	local rng = Random.new(90210)
 	local function plant(x: number, z: number)
 		local m = Instance.new("Model")
@@ -235,8 +243,90 @@ local function ensureInterior(): Model
 		end
 		m.Parent = hall
 	end
-	for _, spot in { Vector2.new(-7, -16.5), Vector2.new(7, -16.5), Vector2.new(-21, -12), Vector2.new(21, -12) } do
+	for _, spot in { Vector2.new(-8, -26), Vector2.new(8, -26), Vector2.new(-30, 23), Vector2.new(30, 23) } do
 		plant(spot.X, spot.Y)
+	end
+	-- A little upholstered bench makes the entrance feel like a home, while
+	-- leaving the centre and both browsing aisles clear.
+	part("WelcomeBench", Vector3.new(7, 0.45, 2.6), CFrame.new(16, 1.55, -27), WOOD, M.Wood)
+	part("BenchCushion", Vector3.new(6.7, 0.45, 2.35), CFrame.new(16, 2, -27), LINEN, M.Fabric)
+	part("BenchBack", Vector3.new(7, 2.3, 0.35), CFrame.new(16, 2.8, -28.1), WOOD, M.Wood)
+	for _, x in { 13.1, 18.9 } do
+		for _, z in { -27.9, -26.1 } do
+			part("BenchLeg", Vector3.new(0.45, 1.4, 0.45), CFrame.new(x, 0.7, z), WOOD, M.Wood)
+		end
+	end
+	for _, x in { 14, 18 } do
+		local cushion = part("BenchPillow", Vector3.new(1.5, 1.2, 0.55), CFrame.new(x, 2.9, -27.75), TEAL, M.Fabric)
+		cushion.CanCollide = false
+	end
+
+	-- Two room sets turn the middle of the shop into a showroom. The main
+	-- runner and the side aisles remain open all the way around the sets.
+	for _, x in { -10, 10 } do
+		rug("RoomSetRug", Vector3.new(8, 0.08, 14), Vector3.new(x, 0.05, 4), if x < 0 then LINEN else rgb(194, 210, 190))
+		part("RoomDivider", Vector3.new(8, 8, 0.35), CFrame.new(x, 4, 11), if x < 0 then rgb(210, 181, 153) else rgb(187, 207, 189), M.WoodPlanks)
+		part("RoomDividerCap", Vector3.new(8.2, 0.25, 0.5), CFrame.new(x, 8.1, 11), WOOD, M.Wood)
+	end
+	-- A small lounge with a sofa, coffee table and dressed shelves.
+	part("ShowroomSofaBase", Vector3.new(6.5, 1, 2.7), CFrame.new(-10, 1.1, -1), rgb(183, 154, 126), M.Fabric)
+	part("ShowroomSofaBack", Vector3.new(6.5, 2.3, 0.65), CFrame.new(-10, 2.3, -2), rgb(183, 154, 126), M.Fabric)
+	for _, x in { -13, -7 } do
+		part("ShowroomSofaArm", Vector3.new(0.55, 1.5, 2.7), CFrame.new(x, 1.9, -1), rgb(183, 154, 126), M.Fabric)
+	end
+	for _, x in { -11.8, -8.2 } do
+		local pillow = part("ShowroomPillow", Vector3.new(1.4, 1.2, 0.45), CFrame.new(x, 2.45, -1.55), TEAL, M.Fabric)
+		pillow.CanCollide = false
+	end
+	part("CoffeeTableTop", Vector3.new(4.5, 0.3, 2.2), CFrame.new(-10, 1.7, 3.2), WOOD, M.Wood)
+	for _, x in { -11.8, -8.2 } do
+		for _, z in { 2.5, 3.9 } do
+			part("CoffeeTableLeg", Vector3.new(0.3, 1.55, 0.3), CFrame.new(x, 0.78, z), SHADE, M.Wood)
+		end
+	end
+	local book = part("ShowroomBook", Vector3.new(1.2, 0.16, 0.9), CFrame.new(-10.5, 1.93, 3.2), TEAL, M.SmoothPlastic)
+	book.CanCollide = false
+	for _, y in { 2.3, 4.4, 6.5 } do
+		part("ShowroomShelf", Vector3.new(6.5, 0.22, 1.1), CFrame.new(-10, y, 10.25), WOOD, M.Wood)
+		for _, x in { -12, -10, -8 } do
+			local box = part("ShelfBox", Vector3.new(1.1, 1.2, 0.8), CFrame.new(x, y + 0.7, 10.2), if x == -10 then TEAL else LINEN, M.Fabric)
+			box.CanCollide = false
+		end
+	end
+	-- A dining vignette and stocked shelving suggest how pieces can be used
+	-- together, while the actual catalogue samples remain on their plinths.
+	part("ShowroomTableTop", Vector3.new(5.5, 0.35, 3.2), CFrame.new(10, 2.6, 2.5), WOOD, M.Wood)
+	for _, x in { 7.8, 12.2 } do
+		for _, z in { 1.3, 3.7 } do
+			part("ShowroomTableLeg", Vector3.new(0.45, 2.4, 0.45), CFrame.new(x, 1.2, z), SHADE, M.Wood)
+		end
+	end
+	for _, z in { -0.4, 5.4 } do
+		part("ShowroomSeat", Vector3.new(3.6, 0.4, 1.1), CFrame.new(10, 1.35, z), TEAL, M.Wood)
+		for _, x in { 8.5, 11.5 } do
+			part("ShowroomSeatLeg", Vector3.new(0.35, 1.2, 0.35), CFrame.new(x, 0.6, z), WOOD, M.Wood)
+		end
+	end
+	for _, y in { 2.3, 4.4, 6.5 } do
+		part("ShowroomShelf", Vector3.new(6.5, 0.22, 1.1), CFrame.new(10, y, 10.25), WOOD, M.Wood)
+		for _, x in { 8, 10, 12 } do
+			local basket = part("ShelfBasket", Vector3.new(1.3, 0.8, 0.8), CFrame.new(x, y + 0.5, 10.2), if x == 10 then POT else LINEN, M.Fabric)
+			basket.CanCollide = false
+		end
+	end
+	sign("RoomSetSign", Vector3.new(7, 1.3, 0.15), CFrame.new(-10, 9.2, 10.9), "A COSY CORNER", TEAL)
+	sign("RoomSetSign", Vector3.new(7, 1.3, 0.15), CFrame.new(10, 9.2, 10.9), "GATHER & DINE", TEAL)
+	sign("ShowroomRouteSign", Vector3.new(13, 1.5, 0.2), CFrame.new(0, 13, -11), "SHOWROOM  ·  FOLLOW THE AISLES", TEAL)
+	sign("ShowroomRouteSign", Vector3.new(12, 1.5, 0.2), CFrame.new(0, 13, 15), "MORE IDEAS AHEAD", TEAL)
+	for _, x in { -13, -7, 7, 13 } do
+		local support = part("RoomSignSupport", Vector3.new(0.16, 0.55, 0.16), CFrame.new(x, 8.4, 10.9), WOOD, M.Wood)
+		support.CanCollide = false
+	end
+	for _, z in { -11, 15 } do
+		for _, x in { -5, 5 } do
+			local hanger = part("RouteSignHanger", Vector3.new(0.12, 4.1, 0.12), CFrame.new(x, 15.8, z), SHADE, M.Metal)
+			hanger.CanCollide = false
+		end
 	end
 	sign("ZoneSign", Vector3.new(12, 2, 0.15), CFrame.new(-(W / 2 - 0.65), 11.8, 8) * CFrame.Angles(0, -math.pi / 2, 0), "COOKING & KITCHEN", TEAL)
 	sign("ZoneSign", Vector3.new(12, 2, 0.15), CFrame.new(W / 2 - 0.65, 11.8, 8) * CFrame.Angles(0, math.pi / 2, 0), "SHOP FLOOR & STORAGE", TEAL)
@@ -262,13 +352,12 @@ local function ensureInterior(): Model
 			labelFrame = CFrame.new(spec.x + 4.45, 1.9, spec.z) * CFrame.Angles(0, -math.pi / 2, 0)
 			detailFrame = CFrame.new(-(W / 2 - 0.65), 8.8, spec.z) * CFrame.Angles(0, -math.pi / 2, 0)
 			detailSize = Vector3.new(spec.plinth.Z, 2.8, 0.15)
-			-- Aisle spots stop short of the back row's samples.
-			customer = Vector3.new(spec.x + 8, 3.2, math.min(spec.z, 12))
+			customer = Vector3.new(spec.x + 8, 3.2, spec.z)
 		elseif spec.side == "right" then
 			labelFrame = CFrame.new(spec.x - 4.45, 1.9, spec.z) * CFrame.Angles(0, math.pi / 2, 0)
 			detailFrame = CFrame.new(W / 2 - 0.65, 8.8, spec.z) * CFrame.Angles(0, math.pi / 2, 0)
 			detailSize = Vector3.new(spec.plinth.Z, 2.8, 0.15)
-			customer = Vector3.new(spec.x - 8, 3.2, math.min(spec.z, 10))
+			customer = Vector3.new(spec.x - 8, 3.2, spec.z)
 		else
 			labelFrame = CFrame.new(spec.x, 1.9, spec.z - 3.8)
 			detailFrame = CFrame.new(spec.x, 8.8, D / 2 - 0.4)
@@ -303,17 +392,17 @@ local function ensureInterior(): Model
 	end
 
 	-- An indoor service desk also offers the whole catalogue.
-	local counterFrame = ORIGIN * CFrame.new(-17, 0, -7)
+	local counterFrame = ORIGIN * CFrame.new(-24, 0, -20)
 	local counter = ShopDesk.build(hall, counterFrame)
 	counter.Name = "SalesCounter"
-	local top = part("CounterTop", Vector3.new(ShopDesk.WIDTH, 0.2, ShopDesk.DEPTH), CFrame.new(-17, ShopDesk.HEIGHT + 0.1, -7), WOOD, M.Wood)
+	local top = part("CounterTop", Vector3.new(ShopDesk.WIDTH, 0.2, ShopDesk.DEPTH), CFrame.new(-24, ShopDesk.HEIGHT + 0.1, -20), WOOD, M.Wood)
 	top.Transparency, top.CanCollide, top.CanQuery, top.CanTouch = 1, false, false, false
 	local browse = Instance.new("ProximityPrompt")
 	browse.Name, browse.ActionText, browse.ObjectText = "BrowseFurniturePrompt", "Browse furniture", "Harbour Home"
 	browse.MaxActivationDistance, browse.RequiresLineOfSight, browse.HoldDuration = 7, false, 0
 	browse.Parent = top
 	hall:SetAttribute("KeeperFrame", counterFrame * CFrame.new(0, 0, ShopDesk.DEPTH / 2 + 1.3))
-	sign("ServiceSign", Vector3.new(10, 2, 0.2), CFrame.new(-17, 8, -3), "Need a hand?\nBrowse at the counter", TEAL)
+	sign("ServiceSign", Vector3.new(10, 2, 0.2), CFrame.new(-24, 8, -D / 2 + 0.4) * CFrame.Angles(0, math.pi, 0), "Need a hand?\nBrowse at the counter", TEAL)
 	-- Tag after parenting so listeners inspect the finished showroom.
 	hall.Parent = folder
 	restoreTags(hall)

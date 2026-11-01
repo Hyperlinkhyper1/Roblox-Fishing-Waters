@@ -16,11 +16,15 @@ local Speedboat = require(script.Parent.Speedboat)
 local RacingSpeedboat = require(script.Parent.RacingSpeedboat)
 local PatrolBoat = require(script.Parent.PatrolBoat)
 local Trawler = require(script.Parent.Trawler)
+local Tugboat = require(script.Parent.Tugboat)
+local Hovercraft = require(script.Parent.Hovercraft)
 local DrydockLaunch = require(script.Parent.DrydockLaunch)
 local BoatLaunchCollision = require(script.Parent.BoatLaunchCollision)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local AnglerCatalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local BoatMotion = require(ReplicatedStorage.Shared.BoatMotion)
 local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
+local SpearSkins = require(ReplicatedStorage.Shared.SpearSkins)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
@@ -32,6 +36,8 @@ local builders = {
 	PatrolBoat = PatrolBoat,
 	RacingSpeedboat = RacingSpeedboat,
 	Trawler = Trawler,
+	Tugboat = Tugboat,
+	Hovercraft = Hovercraft,
 }
 
 local BoatService = {}
@@ -87,9 +93,11 @@ local function publish(player: Player, state)
 	player:SetAttribute("BoatDataStatus", state.status)
 	player:SetAttribute("Cash", state.profile.Cash)
 	for id in BoatCatalog do
-		player:SetAttribute("Owns" .. id, state.profile.OwnedBoats[id] == true)
+		player:SetAttribute("Owns" .. id, state.status == "Ready" and state.profile.OwnedBoats[id] == true)
+		player:SetAttribute("BoatLocked" .. id, BoatData.pathLocked(state.profile, id))
 	end
 	player:SetAttribute("OwnsStarterRod", state.status == "Ready" and state.profile.OwnedRods.StarterRod == true)
+	player:SetAttribute("OwnsBasicSpear", state.status == "Ready" and state.profile.OwnedSpears.BasicSpear == true)
 	for _, stat in RodUpgrades.Order do
 		player:SetAttribute(RodUpgrades.attribute(stat), RodUpgrades.level(state.profile.RodUpgrades, stat))
 	end
@@ -99,6 +107,16 @@ local function publish(player: Player, state)
 	for id in RodSkins.Crates do
 		player:SetAttribute("RodCrateCount" .. id, state.profile.RodCrates[id] or 0)
 	end
+	local spearCounts = {}
+	for _, copy in state.profile.SpearSkinCopies do
+		spearCounts[copy.SkinId] = (spearCounts[copy.SkinId] or 0) + 1
+	end
+	for id in SpearSkins.Skins do
+		player:SetAttribute("SpearSkinCount" .. id, spearCounts[id] or 0)
+	end
+	player:SetAttribute("SpearSkin", state.profile.EquippedSpearSkin or "")
+	player:SetAttribute("SpearSkinSerial", state.profile.EquippedSpearSkinSerial or 0)
+	player:SetAttribute("SpearSkinWear", BoatData.equippedSpearWear(state.profile))
 	player:SetAttribute("RodSkinWear", BoatData.equippedRodWear(state.profile))
 	player:SetAttribute("RodSkin", state.profile.EquippedRodSkin or "")
 	player:SetAttribute("RodSkinSerial", state.profile.EquippedRodSkinSerial or 0)
@@ -110,6 +128,22 @@ local function publish(player: Player, state)
 	player:SetAttribute("Level", level)
 	player:SetAttribute("LevelXP", levelXP)
 	player:SetAttribute("LevelXPRequired", requiredXP)
+	-- Match the bestiary's species list, excluding shark drops which are not pages.
+	local bestiaryPercent = nil
+	if state.status == "Ready" then
+		local discovered, total = 0, 0
+		for id, species in AnglerCatalog.Fish do
+			if not species.DropOnly then
+				total += 1
+				local entry = state.profile.Angler.Catches[id]
+				if entry and (entry.Count or 0) > 0 then
+					discovered += 1
+				end
+			end
+		end
+		bestiaryPercent = if total > 0 then math.floor(discovered * 100 / total + 0.5) else 0
+	end
+	player:SetAttribute("BestiaryPercent", bestiaryPercent)
 
 	-- The built-in player list sorts by its first stat. Keep Level primary and
 	-- mirror committed profile values here alongside the gameplay attributes.
@@ -151,15 +185,34 @@ local function committedProfile(saved)
 	return BoatData.decode(saved)
 end
 
-function BoatService.updateProgress(player: Player, transform, rodSkinId: any): (boolean, string)
+-- Multiple gameplay actions can arrive during a DataStore yield. Keep them in
+-- arrival order so each sees the last committed profile and publishes in order.
+local function acquireSave(player: Player, state): boolean
+	state.nextSave = (state.nextSave or 0) + 1
+	local ticket = state.nextSave
+	while profiles[player] == state and player.Parent == Players do
+		if not state.busy and ticket == (state.finishedSaves or 0) + 1 then
+			state.busy = true
+			return true
+		end
+		task.wait(0.05)
+	end
+	return false
+end
+
+local function releaseSave(state)
+	state.finishedSaves = (state.finishedSaves or 0) + 1
+	state.busy = false
+end
+
+function BoatService.updateProgress(player: Player, transform, rodSkinId: any, spearSkinIds: any): (boolean, string)
 	local state = profiles[player]
 	if not state or state.status ~= "Ready" then
 		return false, "Your progress is still loading or unavailable."
 	end
-	if state.busy then
-		return false, "Another change is being saved. Please try again."
+	if not acquireSave(player, state) then
+		return false, "This session has ended."
 	end
-	state.busy = true
 	local awardedAt = os.time()
 	local success, saved = pcall(function()
 		local serial
@@ -172,6 +225,14 @@ function BoatService.updateProgress(player: Player, transform, rodSkinId: any): 
 		else
 			assert(rodSkinId == nil or RodSkins.valid(rodSkinId), "Unknown serial skin")
 			serial = if rodSkinId then RodSerials.reserve(store, rodSkinId) else nil
+		end
+		if spearSkinIds then
+			assert(rodSkinId == nil and type(spearSkinIds) == "table", "Invalid spear serial request")
+			serial = {}
+			for _, skinId in spearSkinIds do
+				assert(SpearSkins.valid(skinId), "Unknown spear serial skin")
+				table.insert(serial, RodSerials.reserve(store, "Spear_" .. skinId))
+			end
 		end
 		if profiles[player] ~= state or player.Parent ~= Players then
 			error("This session has ended")
@@ -186,16 +247,18 @@ function BoatService.updateProgress(player: Player, transform, rodSkinId: any): 
 		end)
 		return committedProfile(result)
 	end)
-	state.busy = false
 	if not success then
+		releaseSave(state)
 		warn("[Angler] Save failed for " .. player.UserId .. ": " .. tostring(saved))
 		return false, "Your change could not be saved. Please try again."
 	end
 	if profiles[player] ~= state or player.Parent ~= Players then
+		releaseSave(state)
 		return false, "This session has ended."
 	end
 	state.profile = saved
 	publish(player, state)
+	releaseSave(state)
 	return true, "Saved."
 end
 
@@ -329,11 +392,9 @@ function BoatService.setCashFromCommand(player: Player, message: string)
 	if not state then
 		return
 	end
-	if state.busy then
-		notify(player, "Another wallet change is being saved. Please try again shortly.")
+	if not acquireSave(player, state) then
 		return
 	end
-	state.busy = true
 	local success, saved = pcall(function()
 		local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
 			local profile = BoatData.decode(raw)
@@ -342,18 +403,20 @@ function BoatService.setCashFromCommand(player: Player, message: string)
 		end)
 		return committedProfile(result)
 	end)
-	state.busy = false
 	if not success then
+		releaseSave(state)
 		warn("[Wallet] Set cash failed for " .. player.UserId .. ": " .. tostring(saved))
 		notify(player, "Cash could not be saved. Please try again.")
 		return
 	end
 	local valid, profile = pcall(BoatData.decode, saved)
 	if not valid or profiles[player] ~= state or player.Parent ~= Players then
+		releaseSave(state)
 		return
 	end
 	state.profile = profile
 	publish(player, state)
+	releaseSave(state)
 	notify(player, "Cash set to $" .. tostring(profile.Cash) .. ".")
 end
 
@@ -363,6 +426,24 @@ local function setFromCommand(player: Player, message: string)
 	end
 	local normalized = string.lower(message)
 	local subject = normalized:match("^/set%s+(%S+)")
+	if subject == "season" then
+		local Seasons = require(ReplicatedStorage.Shared.Seasons)
+		local argument = (normalized:match("^/set%s+season%s+(%a+)%s*$") or ""):lower()
+		if argument == "auto" then
+			workspace:SetAttribute("SeasonOverride", nil)
+			notify(player, "Seasons follow the clock again.")
+			return
+		end
+		for _, season in Seasons.ORDER do
+			if string.lower(season) == argument then
+				workspace:SetAttribute("SeasonOverride", season)
+				notify(player, "Season set to " .. season .. ".")
+				return
+			end
+		end
+		notify(player, "Usage: /set season <spring|summer|autumn|winter|auto>.")
+		return
+	end
 	if subject ~= "weather" then
 		BoatService.setCashFromCommand(player, message)
 		return
@@ -411,6 +492,10 @@ local function boatOccupied(player: Player): boolean
 	return false
 end
 
+local function lockedNotice(spec): string
+	return "The " .. spec.Name .. " unlocks with the " .. spec.RequiresPath .. " path. Unlock it in Home ▸ Paths."
+end
+
 local function purchase(player: Player, boatId: string?)
 	local id = boatId or "Rowboat"
 	local spec = BoatCatalog[id]
@@ -422,18 +507,34 @@ local function purchase(player: Player, boatId: string?)
 		return
 	end
 	local state = readyState(player)
-	if not state or state.busy or launching[player] then
+	if not state or launching[player] or not acquireSave(player, state) then
+		return
+	end
+	if launching[player] then
+		releaseSave(state)
+		return
+	end
+	if shopPrompt(player) ~= prompt then
+		releaseSave(state)
 		return
 	end
 	if state.profile.OwnedBoats[id] then
+		releaseSave(state)
 		notify(player, "You already own the " .. spec.Name .. ". Spawn it at your own dock.")
 		return
 	end
+	if BoatData.pathLocked(state.profile, id) then
+		releaseSave(state)
+		notify(player, lockedNotice(spec))
+		return
+	end
 	if boatOccupied(player) then
+		releaseSave(state)
 		notify(player, "Everyone must leave your current boat before launching a new purchase.")
 		return
 	end
 	if state.profile.Cash < spec.Price then
+		releaseSave(state)
 		notify(player, "You need $" .. spec.Price .. " for the " .. spec.Name .. ".")
 		return
 	end
@@ -442,15 +543,16 @@ local function purchase(player: Player, boatId: string?)
 		shop = shop:FindFirstAncestorOfClass("Model")
 	end
 	if not shop then
+		releaseSave(state)
 		return
 	end
 	local reservation, reason = DrydockLaunch.reserve(shop, player, id)
 	if not reservation then
+		releaseSave(state)
 		notify(player, reason)
 		return
 	end
 	launching[player] = reservation
-	state.busy = true
 	local success, saved = pcall(function()
 		local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
 			local profile = BoatData.purchase(raw, id)
@@ -458,8 +560,8 @@ local function purchase(player: Player, boatId: string?)
 		end)
 		return committedProfile(result)
 	end)
-	state.busy = false
 	if not success then
+		releaseSave(state)
 		launching[player] = nil
 		DrydockLaunch.release(reservation)
 		warn("[Boats] Purchase failed for " .. player.UserId .. ": " .. tostring(saved))
@@ -469,12 +571,14 @@ local function purchase(player: Player, boatId: string?)
 	-- Both the deduction and ownership are committed in one atomic store update.
 	local valid, profile = pcall(BoatData.decode, saved)
 	if not valid or profiles[player] ~= state or player.Parent ~= Players then
+		releaseSave(state)
 		launching[player] = nil
 		DrydockLaunch.release(reservation)
 		return
 	end
 	state.profile = profile
 	publish(player, state)
+	releaseSave(state)
 	if profile.OwnedBoats[id] then
 		-- The launch camera follows the lowering, after the cradle has risen.
 		shop:SetAttribute("LaunchStartedAt", workspace:GetServerTimeNow() + DrydockLaunch.RAISE_SECONDS)
@@ -501,7 +605,12 @@ local function purchase(player: Player, boatId: string?)
 	else
 		launching[player] = nil
 		DrydockLaunch.release(reservation)
-		notify(player, "You need $" .. spec.Price .. " for the " .. spec.Name .. ".")
+		notify(
+			player,
+			if BoatData.pathLocked(profile, id)
+				then lockedNotice(spec)
+				else "You need $" .. spec.Price .. " for the " .. spec.Name .. "."
+		)
 	end
 end
 
@@ -560,27 +669,48 @@ function BoatService.activeBoat(player: Player): (string?, Model?)
 	return nil, nil
 end
 
+-- Apply damage from server systems to an active hull, without affecting cargo.
+function BoatService.damageBoat(player: Player, amount: number): boolean
+	local boat = active[player]
+	if
+		not boat
+		or not boat.model.Parent
+		or type(amount) ~= "number"
+		or amount <= 0
+		or amount ~= amount
+		or amount == math.huge
+	then
+		return false
+	end
+	local health = boat.model:GetAttribute("Health")
+	if type(health) ~= "number" or health <= 0 then
+		return false
+	end
+	boat.model:SetAttribute("Health", math.max(0, health - amount))
+	return true
+end
+
 local function waterAhead(boat, direction: Vector3): boolean
 	local parameters = RaycastParams.new()
-	parameters.FilterType = Enum.RaycastFilterType.Exclude
-	-- Other hulls collide physically. Seeing one (or an invisible trigger, line or
-	-- bobber) here zeroed the speed and made the boat stutter back up from rest.
-	local excluded = { workspace:FindFirstChild("PlayerBoats") or boat.model }
-	for _, player in Players:GetPlayers() do
-		if player.Character then
-			table.insert(excluded, player.Character)
-		end
-	end
-	parameters.FilterDescendantsInstances = excluded
+	-- Only terrain can tell us whether the water ends. Docks, floating objects,
+	-- and other boats are handled by physical collisions instead of the drive.
+	parameters.FilterType = Enum.RaycastFilterType.Include
+	parameters.FilterDescendantsInstances = { workspace.Terrain }
 	parameters.IgnoreWater = false
 	parameters.RespectCanCollide = true
 	local position = boat.root.Position + direction * (boat.spec.Length / 2 + 2)
+	-- The sea ends at the ocean bounds even where the ray below finds nothing: past them is
+	-- empty sky, and the admin-only scale models beyond (ScaleModels) must stay out of reach.
+	if not Biomes.inOceanBounds(Vector3.new(position.X, Biomes.WaterLevel, position.Z)) then
+		return false
+	end
 	local result = workspace:Raycast(
 		Vector3.new(position.X, Biomes.WaterLevel + 14, position.Z),
 		Vector3.new(0, -32, 0),
 		parameters
 	)
-	return result ~= nil and result.Material == Enum.Material.Water
+	-- A missed ray is inconclusive (for example at a water voxel boundary).
+	return result == nil or result.Material == Enum.Material.Water
 end
 
 local function updateSuspension(boat)
@@ -827,6 +957,9 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 	model.Name = id .. "_" .. player.UserId
 	model:SetAttribute("OwnerUserId", player.UserId)
 	model:SetAttribute("BoatId", id)
+	-- Each launched hull starts at full health; attributes replicate to everyone aboard.
+	model:SetAttribute("MaxHealth", BoatCatalog[id].MaxHealth)
+	model:SetAttribute("Health", BoatCatalog[id].MaxHealth)
 	model:SetAttribute("LightsEnabled", true)
 	local lights, lightParts = {}, {}
 	for _, piece in model:GetDescendants() do
@@ -1228,6 +1361,36 @@ function BoatService.start()
 			if not boat.model.Parent then
 				active[player] = nil
 				player:SetAttribute("ActiveBoatId", nil)
+				continue
+			end
+			if boat.model:GetAttribute("Health") == 0 then
+				if not boat.sinkingAt then
+					-- Release an anchored hull and lower it under its own suspension so
+					-- passengers see it sink instead of the boat vanishing at zero health.
+					setParked(boat, false)
+					boat.sinkingAt = serverTime
+					boat.sinkingPosition = boat.root.Position
+					boat.model:SetAttribute("Sinking", true)
+					boat.model:SetAttribute("RowThrottle", 0)
+					boat.model:SetAttribute("RowSteer", 0)
+					boat.velocity.Enabled = false
+					boat.float.Enabled, boat.lift.Enabled, boat.heading.Enabled = true, true, true
+					updateSuspension(boat)
+					for _, piece in boat.model:GetDescendants() do
+						if piece:IsA("Seat") or piece:IsA("VehicleSeat") then
+							if piece.Occupant then
+								piece.Occupant.Sit = false
+							end
+							piece.Disabled = true
+						end
+					end
+				end
+				local elapsed = serverTime - boat.sinkingAt
+				if elapsed >= 12 then
+					removeBoat(player)
+				else
+					boat.float.Position = boat.sinkingPosition - Vector3.new(0, elapsed * 3, 0)
+				end
 				continue
 			end
 			if boat.hoistBase then

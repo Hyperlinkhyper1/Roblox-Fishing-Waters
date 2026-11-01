@@ -369,6 +369,34 @@ end
 
 local builders = {}
 
+-- Shark rewards are individual parts, built locally like the other catch models.
+function builders.SharkMeat(b)
+	b:ellipsoid("Meat", CFrame.new(), Vector3.new(0.55, 0.27, 0.18), rgb(198, 112, 112))
+	b:ellipsoid("Cut", CFrame.new(0.01, 0.01, 0.088), Vector3.new(0.43, 0.19, 0.012), rgb(236, 164, 154))
+end
+
+function builders.SharkFin(b)
+	b:fin({ v2(-0.36, -0.16), v2(0.30, -0.16), v2(0.05, 0.38), v2(-0.08, 0.16) }, rgb(103, 121, 128))
+end
+
+function builders.SharkTail(b)
+	b:ellipsoid("TailBase", CFrame.new(0.19, 0, 0), Vector3.new(0.35, 0.13, 0.13), rgb(130, 145, 151))
+	b:fin({ v2(0.12, 0), v2(-0.40, 0.40), v2(-0.23, 0.06), v2(-0.38, -0.27) }, rgb(103, 121, 128))
+end
+
+function builders.SharkHead(b)
+	b:ellipsoid("Head", CFrame.new(), Vector3.new(0.65, 0.28, 0.25), rgb(136, 151, 156))
+	b:ellipsoid("Belly", CFrame.new(0, -0.07, 0), Vector3.new(0.59, 0.13, 0.23), rgb(214, 216, 210))
+	for _, side in { -1, 1 } do
+		b:ellipsoid("Eye", CFrame.new(0.18, 0.04, side * 0.116), Vector3.new(0.035, 0.035, 0.015), rgb(20, 24, 26))
+	end
+end
+
+function builders.GreatWhiteTooth(b)
+	b:fin({ v2(-0.26, -0.25), v2(0.26, -0.25), v2(0.04, 0.40) }, rgb(239, 235, 211))
+	b:ellipsoid("Root", CFrame.new(0, -0.24, 0), Vector3.new(0.53, 0.11, 0.10), rgb(203, 190, 161))
+end
+
 function builders.Trout(b)
 	local colors = { back = rgb(78, 90, 54), side = rgb(184, 188, 160), belly = rgb(240, 236, 224) }
 	local fin = rgb(150, 142, 108)
@@ -393,9 +421,9 @@ function builders.Trout(b)
 	b:face(0.37, 0.02, 0.045, rgb(204, 172, 96), rgb(120, 112, 96))
 end
 
-function builders.Carp(b)
-	local colors = { back = rgb(86, 68, 36), side = rgb(192, 146, 64), belly = rgb(234, 208, 148) }
-	local fin = rgb(176, 104, 60)
+-- Deep-bodied carp with scale rows, barbels and fleshy lips; `p` is the palette.
+local function carp(b, p)
+	local colors, fin = p.colors, p.fin
 	b:fishBody(0.29, 0.16, colors, 0.08)
 	b:edgeFin(0.11, -0.22, { 0.095, 0.07, 0.05, 0.045, 0.04, 0.035 }, fin, false, 0.05)
 	b:edgeFin(-0.12, -0.22, { 0.07, 0.05 }, fin, true)
@@ -411,7 +439,7 @@ function builders.Carp(b)
 				y,
 				0.036,
 				0.03,
-				if (row + math.floor(x * 40)) % 3 == 0 then rgb(164, 118, 48) else rgb(176, 130, 54)
+				if (row + math.floor(x * 40)) % 3 == 0 then p.scale else p.scaleAlt
 			)
 		end
 	end
@@ -420,19 +448,32 @@ function builders.Carp(b)
 			Vector3.new(0.47, -0.045, side * 0.02),
 			Vector3.new(0.45, -0.1, side * 0.035),
 			0.008,
-			rgb(170, 120, 70),
+			p.barbel,
 			"Barbel"
 		)
 		b:limb(
 			Vector3.new(0.485, -0.03, side * 0.015),
 			Vector3.new(0.52, -0.06, side * 0.03),
 			0.006,
-			rgb(170, 120, 70),
+			p.barbel,
 			"Barbel"
 		)
 	end
-	b:ellipsoid("Lips", CFrame.new(0.48, -0.035, 0), Vector3.new(0.04, 0.035, 0.055), rgb(198, 150, 92))
-	b:face(0.37, 0.01, 0.036, rgb(214, 172, 64), rgb(130, 96, 44))
+	b:ellipsoid("Lips", CFrame.new(0.48, -0.035, 0), Vector3.new(0.04, 0.035, 0.055), p.lips)
+	b:face(0.37, 0.01, 0.036, p.iris, p.line)
+end
+
+function builders.Carp(b)
+	carp(b, {
+		colors = { back = rgb(86, 68, 36), side = rgb(192, 146, 64), belly = rgb(234, 208, 148) },
+		fin = rgb(176, 104, 60),
+		scale = rgb(164, 118, 48),
+		scaleAlt = rgb(176, 130, 54),
+		barbel = rgb(170, 120, 70),
+		lips = rgb(198, 150, 92),
+		iris = rgb(214, 172, 64),
+		line = rgb(130, 96, 44),
+	})
 end
 
 function builders.BlueMackerel(b)
@@ -635,13 +676,15 @@ function builders.GreyEel(b)
 	b:pectoral(0.38, headY - 0.01, 0.05, 0.03, finColor, 0.1)
 end
 
-function builders.GulfFlounder(b)
-	local brown, under = rgb(124, 98, 66), rgb(238, 236, 228)
+-- Flatfish lying on its blind side with both eyes up; `p` is the palette and
+-- p.ocelli (optional) are the eye-spot positions.
+local function flatfish(b, p)
+	local brown, under = p.top, p.under
 	b:body("Disc", Vector3.new(0.02, 0, 0), Vector3.new(0.74, 0.46, 0.06), brown)
 	b:ellipsoid("Underside", CFrame.new(0.02, 0, -0.008), Vector3.new(0.735, 0.455, 0.056), under)
 	b:body("HeadBump", Vector3.new(0.33, 0.03, 0), Vector3.new(0.17, 0.18, 0.05), brown)
 	b:ellipsoid("TailStalk", CFrame.new(-0.34, 0, 0), Vector3.new(0.09, 0.1, 0.04), brown)
-	local finColor, rayColor = rgb(142, 114, 80), rgb(100, 80, 56)
+	local finColor, rayColor = p.fin, p.ray
 	local function edge(x: number, sign: number): number
 		local dx = (x - 0.02) / 0.37
 		return sign * 0.23 * math.sqrt(math.max(0, 1 - dx * dx))
@@ -673,24 +716,40 @@ function builders.GulfFlounder(b)
 			1,
 			size,
 			size * b.random(0.7, 1),
-			if b.random(0, 1) > 0.5 then rgb(156, 128, 90) else rgb(92, 70, 46)
+			if b.random(0, 1) > 0.5 then p.light else p.dark
 		)
 	end
-	for _, spot in { v2(-0.02, 0.11), v2(-0.02, -0.11), v2(-0.2, 0) } do
-		b:mark(spot.X, spot.Y, 1, 0.065, 0.065, rgb(204, 182, 142))
-		b:mark(spot.X, spot.Y, 1, 0.042, 0.042, rgb(36, 28, 22), nil, 0.001)
+	for _, spot in p.ocelli or {} do
+		b:mark(spot.X, spot.Y, 1, 0.065, 0.065, p.ring)
+		b:mark(spot.X, spot.Y, 1, 0.042, 0.042, p.center, nil, 0.001)
 	end
 	for _, eye in { v2(0.35, 0.06), v2(0.3, 0.125) } do
 		local position, normal = b:surface(eye.X, eye.Y, 1)
 		if position and normal then
 			local center = position + normal * 0.01
 			b:ellipsoid("EyeBulge", CFrame.new(center), Vector3.new(0.045, 0.04, 0.035), brown)
-			b:ellipsoid("Eye", CFrame.new(center + normal * 0.012), Vector3.new(0.032, 0.03, 0.02), rgb(206, 176, 90))
+			b:ellipsoid("Eye", CFrame.new(center + normal * 0.012), Vector3.new(0.032, 0.03, 0.02), p.iris)
 			b:ellipsoid("Pupil", CFrame.new(center + normal * 0.018), Vector3.new(0.02, 0.012, 0.014), rgb(14, 14, 14))
 		end
 	end
-	b:mark(0.41, -0.03, 1, 0.07, 0.012, rgb(60, 44, 30), v2(-1, -1.2))
+	b:mark(0.41, -0.03, 1, 0.07, 0.012, p.mouth, v2(-1, -1.2))
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.15, 0.3, 1))
+end
+
+function builders.GulfFlounder(b)
+	flatfish(b, {
+		top = rgb(124, 98, 66),
+		under = rgb(238, 236, 228),
+		fin = rgb(142, 114, 80),
+		ray = rgb(100, 80, 56),
+		light = rgb(156, 128, 90),
+		dark = rgb(92, 70, 46),
+		ocelli = { v2(-0.02, 0.11), v2(-0.02, -0.11), v2(-0.2, 0) },
+		ring = rgb(204, 182, 142),
+		center = rgb(36, 28, 22),
+		iris = rgb(206, 176, 90),
+		mouth = rgb(60, 44, 30),
+	})
 end
 
 function builders.Stingray(b)
@@ -999,6 +1058,461 @@ function builders.Yellowshark(b)
 	b:eye(0.4, 0.03, 0.03, rgb(20, 20, 20))
 end
 
+-- Long ambush predator: dorsal and anal fins set far back, flat duck-bill snout.
+function builders.Pike(b)
+	local colors = { back = rgb(58, 78, 44), side = rgb(118, 140, 82), belly = rgb(226, 228, 196) }
+	local fin = rgb(132, 110, 62)
+	b:fishBody(0.15, 0.1, colors, 0.02)
+	b:layered("Snout", Vector3.new(0.45, -0.006, 0), Vector3.new(0.2, 0.065, 0.08), colors)
+	b:edgeFin(-0.12, -0.25, { 0.06, 0.07, 0.06, 0.04 }, fin)
+	b:edgeFin(-0.14, -0.26, { 0.05, 0.06, 0.04 }, fin, true)
+	b:edgeFin(0.02, -0.04, { 0.04 }, fin, true)
+	b:forkTail(0.11, 0.04, fin)
+	b:pectoral(0.25, -0.03, 0.08, 0.025, fin)
+	b:speckle(44, v2(-0.3, 0.3), v2(-0.04, 0.06), v2(0.014, 0.026), rgb(206, 214, 150))
+	for _ = 1, 10 do
+		b:finSpot(b.random(-0.47, -0.37), b.random(-0.09, 0.09), 0.014, rgb(60, 50, 30))
+	end
+	b:stroke({ v2(0.54, -0.014), v2(0.4, -0.03) }, 0.007, rgb(36, 34, 26))
+	b:face(0.35, 0.02, 0.04, rgb(214, 186, 80), rgb(80, 96, 56))
+end
+
+-- Sturgeons share a bony-plated body, a shark-like upper tail lobe and barbels
+-- under a pointed snout; `p` is the palette and p.snout the snout size.
+local function sturgeon(b, p)
+	local colors, fin, scute = p.colors, p.fin, p.scute
+	b:fishBody(0.16, 0.14, colors, 0.04)
+	b:layered("Snout", Vector3.new(0.46, -0.018, 0), p.snout, colors)
+	b:edgeFin(-0.16, -0.26, { 0.05, 0.06, 0.04 }, fin)
+	b:edgeFin(-0.14, -0.24, { 0.04, 0.05, 0.03 }, fin, true)
+	b:edgeFin(0.02, -0.05, { 0.035 }, fin, true)
+	b:pectoral(0.24, -0.05, 0.1, 0.03, fin)
+	local stalk = b:top(-0.36)
+	local upper, lower = v2(-0.34, stalk * 0.9), v2(-0.34, -stalk * 0.9)
+	b:fin({ upper, v2(-0.58, 0.16), v2(-0.55, 0.12), v2(-0.42, 0), lower }, fin)
+	b:fin({ lower, v2(-0.44, 0), v2(-0.5, -0.09) }, fin)
+	if p.filament then
+		b:limb(Vector3.new(-0.56, 0.15, 0), Vector3.new(-0.74, 0.2, 0), 0.006, fin, "Filament")
+	end
+	for x = 0.26, -0.3, -0.05 do
+		b:ellipsoid("GrowthRidge", CFrame.new(x, b:top(x) + 0.004, 0), Vector3.new(0.03, 0.018, 0.02), scute)
+		b:marks(x, b:top(x) * 0.45, 0.026, 0.02, scute)
+		b:marks(x, b:bottom(x) * 0.4, 0.022, 0.016, scute)
+	end
+	if p.stripe then
+		b:stroke({ v2(0.3, 0.012), v2(0, 0.01), v2(-0.32, 0) }, 0.008, p.stripe)
+	end
+	local chin = b:bottom(0.46)
+	for _, z in { -0.02, -0.007, 0.007, 0.02 } do
+		b:limb(Vector3.new(0.46, chin + 0.004, z), Vector3.new(0.45, chin - 0.035, z * 1.3), 0.006, scute, "Barbel")
+	end
+	b:eye(0.36, 0.02, 0.026, p.iris)
+end
+
+function builders.GreenSturgeon(b)
+	sturgeon(b, {
+		colors = { back = rgb(62, 82, 52), side = rgb(124, 140, 100), belly = rgb(222, 224, 200) },
+		fin = rgb(84, 98, 70),
+		scute = rgb(196, 200, 172),
+		snout = Vector3.new(0.2, 0.07, 0.09),
+		stripe = rgb(96, 132, 72),
+		iris = rgb(150, 150, 110),
+	})
+end
+
+function builders.ShovelnoseSturgeon(b)
+	sturgeon(b, {
+		colors = { back = rgb(128, 106, 72), side = rgb(178, 158, 120), belly = rgb(236, 230, 212) },
+		fin = rgb(140, 118, 84),
+		scute = rgb(212, 200, 170),
+		-- The flat, wide shovel snout gives the species its name.
+		snout = Vector3.new(0.22, 0.04, 0.13),
+		filament = true,
+		iris = rgb(160, 140, 96),
+	})
+end
+
+-- Deep-bodied cichlid with faint bars and a red-edged tail.
+function builders.Tilapia(b)
+	local colors = { back = rgb(70, 84, 76), side = rgb(140, 152, 140), belly = rgb(222, 222, 210) }
+	local fin = rgb(104, 112, 104)
+	b:fishBody(0.36, 0.13, colors, 0.08)
+	local dorsal = b:edgeFin(0.14, -0.24, { 0.05, 0.06, 0.06, 0.06, 0.06, 0.07, 0.09, 0.1, 0.08 }, fin, false, 0.08)
+	b:rays(dorsal[1], { dorsal[3], dorsal[5], dorsal[7], dorsal[9] }, rgb(60, 66, 60))
+	b:edgeFin(-0.06, -0.24, { 0.06, 0.08, 0.07 }, fin, true, 0.08)
+	b:edgeFin(0.08, -0.02, { 0.06, 0.05 }, fin, true)
+	b:roundTail(0.13, fin, 0.05)
+	b:stroke({ v2(-0.47, 0.12), v2(-0.5, 0), v2(-0.47, -0.12) }, 0.012, rgb(196, 70, 60))
+	b:pectoral(0.2, -0.04, 0.12, 0.04, fin, 0.15)
+	for _, x in { 0.14, 0.05, -0.04, -0.13, -0.22 } do
+		b:stroke({ v2(x + 0.01, b:top(x) - 0.02), v2(x - 0.01, -0.07) }, 0.026, rgb(104, 116, 106))
+	end
+	for _ = 1, 12 do
+		b:finSpot(b.random(-0.2, 0.1), b:top(-0.05) + b.random(0.01, 0.06), 0.01, rgb(220, 220, 214))
+	end
+	b:face(0.38, 0.05, 0.048, rgb(196, 132, 70), rgb(84, 96, 88))
+end
+
+-- Trout-family body: adipose fin, spotted flank and an optional coloured band.
+local function trout(b, p)
+	local fin = p.fin
+	b:fishBody(0.21, 0.12, p.colors)
+	b:edgeFin(0.07, -0.08, { 0.08, 0.075, 0.06, 0.04 }, fin)
+	b:ellipsoid("AdiposeFin", CFrame.new(-0.25, b:top(-0.25) + 0.004, 0), Vector3.new(0.045, 0.028, 0.012), fin)
+	b:edgeFin(-0.12, -0.23, { 0.06, 0.05, 0.035 }, fin, true)
+	b:edgeFin(0.02, -0.07, { 0.05, 0.045 }, fin, true)
+	b:forkTail(0.11, 0.035, fin)
+	b:pectoral(0.2, -0.05, 0.1, 0.035, fin)
+	if p.band then
+		for x = 0.27, -0.31, -0.026 do
+			b:marks(x, -0.002, 0.05, 0.05 * (1 - math.abs(x) * 0.9), p.band)
+		end
+		b:marks(0.28, -0.02, 0.1, 0.085, p.band)
+	end
+	if p.vermiculate then
+		-- Tiger trout: worm-like squiggles instead of round spots.
+		for _ = 1, 22 do
+			local x, y = b.random(-0.3, 0.3), b.random(-0.06, 0.1)
+			if y < b:top(x) - 0.02 and y > b:bottom(x) + 0.02 then
+				local bend = b.random(-0.03, 0.03)
+				b:stroke({ v2(x, y), v2(x - 0.03, y + bend), v2(x - 0.06, y - bend * 0.5) }, 0.012, p.spot)
+			end
+		end
+	else
+		b:speckle(p.spots, v2(-0.33, 0.33), v2(-0.06, 0.11), v2(0.01, 0.017), p.spot)
+		for _ = 1, 12 do
+			b:finSpot(b.random(-0.47, -0.37), b.random(-0.09, 0.09), 0.012, p.spot)
+		end
+	end
+	b:face(0.37, 0.02, 0.045, p.iris, p.line)
+end
+
+function builders.RainbowTrout(b)
+	trout(b, {
+		colors = { back = rgb(70, 96, 70), side = rgb(196, 200, 176), belly = rgb(244, 240, 230) },
+		fin = rgb(156, 150, 120),
+		band = rgb(226, 112, 140),
+		spots = 70,
+		spot = rgb(28, 30, 24),
+		iris = rgb(210, 180, 100),
+		line = rgb(110, 116, 96),
+	})
+end
+
+function builders.TigerTrout(b)
+	trout(b, {
+		colors = { back = rgb(110, 92, 50), side = rgb(206, 176, 104), belly = rgb(240, 226, 186) },
+		fin = rgb(196, 140, 72),
+		vermiculate = true,
+		spot = rgb(60, 46, 24),
+		iris = rgb(220, 176, 80),
+		line = rgb(130, 106, 60),
+	})
+end
+
+-- Golden dorado: a river predator in gold with rows of dark dashes and a red tail.
+function builders.Dorado(b)
+	local colors = { back = rgb(176, 128, 30), side = rgb(232, 182, 54), belly = rgb(246, 226, 160) }
+	local fin = rgb(224, 150, 50)
+	b:fishBody(0.24, 0.14, colors, 0.05)
+	b:edgeFin(0.08, -0.1, { 0.07, 0.07, 0.06, 0.045 }, fin)
+	b:ellipsoid("AdiposeFin", CFrame.new(-0.24, b:top(-0.24) + 0.004, 0), Vector3.new(0.05, 0.03, 0.012), fin)
+	b:edgeFin(-0.12, -0.23, { 0.06, 0.05, 0.035 }, fin, true)
+	b:edgeFin(0.03, -0.06, { 0.05, 0.04 }, fin, true)
+	b:forkTail(0.14, 0.06, rgb(214, 72, 44))
+	b:stroke({ v2(-0.36, 0), v2(-0.48, 0) }, 0.014, rgb(40, 30, 20))
+	b:pectoral(0.2, -0.05, 0.1, 0.035, fin)
+	for row = 0, 5 do
+		local y = -0.07 + row * 0.03
+		for x = 0.22 - (row % 2) * 0.02, -0.3, -0.04 do
+			if y < b:top(x) - 0.012 and y > b:bottom(x) + 0.012 then
+				b:marks(x, y, 0.018, 0.008, rgb(96, 64, 20))
+			end
+		end
+	end
+	b:face(0.37, 0.025, 0.044, rgb(220, 150, 50), rgb(150, 100, 30))
+end
+
+-- Ocean sunfish: a tall disc with long dorsal and anal fins and a frilled
+-- clavus where other fish have a tail.
+function builders.Sunfish(b)
+	local colors = { back = rgb(96, 104, 112), side = rgb(156, 164, 170), belly = rgb(222, 224, 222) }
+	local fin = rgb(110, 118, 126)
+	b:layered("Body", Vector3.new(0.05, 0, 0), Vector3.new(0.7, 0.62, 0.16), colors)
+	b:layered("Head", Vector3.new(0.3, -0.02, 0), Vector3.new(0.26, 0.4, 0.14), colors)
+	local top, bottom = b:top(-0.1), b:bottom(-0.1)
+	b:fin({
+		v2(-0.06, b:top(-0.06) - 0.01),
+		v2(-0.18, top + 0.36),
+		v2(-0.25, top + 0.3),
+		v2(-0.24, b:top(-0.24) - 0.01),
+	}, fin)
+	b:fin({
+		v2(-0.06, b:bottom(-0.06) + 0.01),
+		v2(-0.18, bottom - 0.34),
+		v2(-0.25, bottom - 0.28),
+		v2(-0.24, b:bottom(-0.24) + 0.01),
+	}, fin)
+	local clavus = { v2(-0.24, 0) }
+	for index = 0, 8 do
+		local angle = math.rad(100 + index * 160 / 8)
+		local wobble = if index % 2 == 0 then 1 else 0.86
+		table.insert(clavus, v2(-0.27 + math.cos(angle) * 0.1 * wobble, math.sin(angle) * 0.28 * wobble))
+	end
+	b:fin(clavus, fin)
+	b:pectoral(0.18, 0.02, 0.07, 0.05, fin)
+	b:speckle(34, v2(-0.2, 0.3), v2(-0.25, 0.25), v2(0.02, 0.05), rgb(196, 200, 202))
+	b:ellipsoid("Lips", CFrame.new(0.43, -0.02, 0), Vector3.new(0.04, 0.05, 0.05), colors.side)
+	b:face(0.34, 0.06, 0.05, rgb(70, 76, 80), fin)
+	b.model:SetAttribute("ViewDirection", Vector3.new(0.1, 0.1, 1))
+end
+
+-- Big-headed, big-mouthed bottom dweller mottled in browns and greens.
+function builders.Lingcod(b)
+	local colors = { back = rgb(86, 82, 58), side = rgb(140, 130, 96), belly = rgb(224, 218, 196) }
+	local fin = rgb(110, 100, 70)
+	b:fishBody(0.2, 0.14, colors, 0.06)
+	b:layered("Jaw", Vector3.new(0.36, -0.03, 0), Vector3.new(0.26, 0.15, 0.13), colors)
+	local spines = b:edgeFin(0.18, 0.02, { 0.05, 0.06, 0.06, 0.05 }, fin, false, 0.05)
+	b:rays(spines[1], { spines[3], spines[5] }, rgb(70, 64, 44))
+	b:edgeFin(0.0, -0.26, { 0.06, 0.06, 0.055, 0.05, 0.04 }, fin)
+	b:edgeFin(-0.02, -0.26, { 0.05, 0.055, 0.05, 0.04 }, fin, true)
+	b:roundTail(0.11, fin)
+	b:pectoral(0.21, -0.05, 0.13, 0.05, fin)
+	for _ = 1, 50 do
+		local x, y = b.random(-0.32, 0.36), b.random(-0.06, 0.1)
+		local size = b.random(0.02, 0.045)
+		if y < b:top(x) - size and y > b:bottom(x) + size then
+			b:marks(x, y, size, size * 0.8, if b.random(0, 1) > 0.5 then rgb(64, 60, 40) else rgb(160, 150, 90))
+		end
+	end
+	b:stroke({ v2(0.5, -0.03), v2(0.32, -0.07) }, 0.009, rgb(40, 34, 26))
+	b:face(0.38, 0.03, 0.042, rgb(200, 180, 90), rgb(90, 86, 60))
+end
+
+-- Olive-gold perch with dark saddles, a spiny then soft dorsal and big glassy eyes.
+function builders.Walleye(b)
+	local colors = { back = rgb(96, 92, 46), side = rgb(186, 170, 92), belly = rgb(236, 230, 200) }
+	local fin = rgb(150, 136, 80)
+	b:fishBody(0.2, 0.12, colors, 0.04)
+	local spines = b:edgeFin(0.15, 0.0, { 0.07, 0.08, 0.075, 0.06, 0.04 }, fin, false, 0.08)
+	b:rays(spines[1], { spines[3], spines[4], spines[5], spines[6] }, rgb(70, 64, 36))
+	b:finSpot(0.02, b:top(0.02) + 0.02, 0.022, rgb(30, 28, 20))
+	b:edgeFin(-0.04, -0.2, { 0.06, 0.06, 0.05, 0.035 }, fin)
+	b:edgeFin(-0.1, -0.22, { 0.05, 0.045, 0.03 }, fin, true)
+	b:edgeFin(0.04, -0.04, { 0.04 }, fin, true)
+	b:forkTail(0.12, 0.05, fin)
+	-- The white tip on the lower tail lobe is the walleye's field mark.
+	b:fin({ v2(-0.46, -0.07), v2(-0.5, -0.12), v2(-0.44, -0.1) }, rgb(240, 240, 232))
+	b:pectoral(0.2, -0.04, 0.09, 0.03, fin)
+	for _, x in { 0.18, 0.06, -0.06, -0.18 } do
+		b:stroke({ v2(x, b:top(x) - 0.01), v2(x - 0.02, 0.0) }, 0.04, rgb(80, 74, 36))
+	end
+	b:face(0.36, 0.025, 0.06, rgb(214, 214, 196), rgb(110, 104, 56))
+end
+
+function builders.MidnightCarp(b)
+	carp(b, {
+		colors = { back = rgb(18, 20, 40), side = rgb(40, 46, 86), belly = rgb(96, 104, 150) },
+		fin = rgb(30, 36, 76),
+		scale = rgb(70, 92, 170),
+		scaleAlt = rgb(48, 58, 112),
+		barbel = rgb(60, 66, 110),
+		lips = rgb(70, 76, 120),
+		iris = rgb(190, 220, 255),
+		line = rgb(60, 70, 120),
+	})
+end
+
+-- Rosy goatfish with a steep head, a yellow stripe and two long chin barbels.
+function builders.RedMullet(b)
+	local colors = { back = rgb(176, 70, 66), side = rgb(222, 120, 110), belly = rgb(246, 214, 200) }
+	local fin = rgb(220, 150, 130)
+	b:fishBody(0.22, 0.12, colors, 0.12)
+	b:edgeFin(0.13, 0.01, { 0.07, 0.065, 0.045 }, fin, false, 0.1)
+	b:edgeFin(-0.08, -0.18, { 0.05, 0.04 }, fin, false, 0.1)
+	b:edgeFin(-0.08, -0.18, { 0.045, 0.035 }, fin, true, 0.1)
+	b:forkTail(0.12, 0.07, fin, 0.05)
+	b:pectoral(0.21, -0.04, 0.09, 0.03, fin, 0.1)
+	b:stroke({ v2(0.3, 0.0), v2(0, -0.004), v2(-0.3, -0.004) }, 0.012, rgb(236, 196, 80))
+	local chin = b:bottom(0.42)
+	for _, side in { 1, -1 } do
+		b:limb(
+			Vector3.new(0.43, chin + 0.006, side * 0.012),
+			Vector3.new(0.33, chin - 0.04, side * 0.02),
+			0.008,
+			rgb(246, 220, 190),
+			"Barbel"
+		)
+	end
+	b:face(0.36, 0.04, 0.05, rgb(220, 150, 90), rgb(176, 90, 80))
+end
+
+-- Deep red reef snapper with a sloped head, spiny dorsal and red eye.
+function builders.RedSnapper(b)
+	local colors = { back = rgb(176, 46, 46), side = rgb(222, 88, 80), belly = rgb(244, 184, 176) }
+	local fin = rgb(206, 70, 66)
+	b:fishBody(0.3, 0.13, colors, 0.1)
+	local dorsal = b:edgeFin(0.16, -0.22, { 0.06, 0.08, 0.08, 0.075, 0.07, 0.065, 0.07, 0.08, 0.07 }, fin, false, 0.05)
+	b:rays(dorsal[1], { dorsal[3], dorsal[5], dorsal[7] }, rgb(140, 36, 36))
+	b:edgeFin(-0.08, -0.22, { 0.07, 0.08, 0.06 }, fin, true)
+	b:edgeFin(0.06, -0.02, { 0.06, 0.05 }, fin, true)
+	b:forkTail(0.15, 0.06, fin)
+	b:pectoral(0.2, -0.03, 0.14, 0.035, fin)
+	for y = -0.06, 0.08, 0.035 do
+		b:stroke({ v2(0.28, y + 0.01), v2(-0.3, y) }, 0.005, rgb(234, 120, 110))
+	end
+	b:face(0.37, 0.05, 0.048, rgb(206, 40, 40), rgb(150, 40, 40))
+end
+
+function builders.Flounder(b)
+	flatfish(b, {
+		top = rgb(118, 108, 84),
+		under = rgb(240, 238, 230),
+		fin = rgb(132, 120, 94),
+		ray = rgb(90, 82, 62),
+		light = rgb(214, 120, 54),
+		dark = rgb(80, 72, 54),
+		iris = rgb(200, 180, 110),
+		mouth = rgb(60, 50, 36),
+	})
+end
+
+function builders.Halibut(b)
+	flatfish(b, {
+		top = rgb(70, 66, 50),
+		under = rgb(244, 244, 238),
+		fin = rgb(80, 76, 58),
+		ray = rgb(52, 50, 38),
+		light = rgb(100, 96, 74),
+		dark = rgb(46, 44, 34),
+		iris = rgb(170, 160, 120),
+		mouth = rgb(36, 34, 26),
+	})
+end
+
+-- Slim silver schooling fish with a blue-green back.
+function builders.Herring(b)
+	local colors = { back = rgb(46, 84, 110), side = rgb(186, 198, 206), belly = rgb(244, 246, 248) }
+	local fin = rgb(160, 172, 180)
+	b:fishBody(0.19, 0.1, colors, 0.03)
+	b:edgeFin(0.05, -0.06, { 0.065, 0.055, 0.03 }, fin, false, 0.15)
+	b:edgeFin(-0.12, -0.22, { 0.03, 0.025 }, fin, true, 0.15)
+	b:edgeFin(0.0, -0.05, { 0.03 }, fin, true, 0.15)
+	b:forkTail(0.13, 0.09, fin, 0.1)
+	b:pectoral(0.21, -0.04, 0.07, 0.025, fin, 0.15)
+	b:stroke({ v2(0.26, 0.03), v2(-0.3, 0.015) }, 0.01, rgb(140, 176, 196))
+	for x = 0.2, -0.24, -0.04 do
+		b:stroke({ v2(x, b:bottom(x) * 0.3), v2(x - 0.01, b:bottom(x) * 0.8) }, 0.004, rgb(220, 226, 232))
+	end
+	b:face(0.37, 0.018, 0.054, rgb(220, 224, 220), rgb(120, 140, 150))
+end
+
+-- A soft yellow sausage studded with papillae, tube feet underneath and a
+-- ring of feeding tentacles at the front. No eyes.
+function builders.YellowSeaCucumber(b)
+	local colors = { back = rgb(208, 160, 36), side = rgb(234, 196, 64), belly = rgb(244, 222, 140) }
+	b:layered("Body", Vector3.new(0, 0, 0), Vector3.new(0.88, 0.2, 0.22), colors)
+	b:layered("Front", Vector3.new(0.38, 0, 0), Vector3.new(0.18, 0.16, 0.17), colors)
+	b:layered("Rear", Vector3.new(-0.38, 0, 0), Vector3.new(0.16, 0.14, 0.15), colors)
+	for _ = 1, 46 do
+		local x, y = b.random(-0.4, 0.4), b.random(-0.02, 0.09)
+		local side = if b.random(0, 1) > 0.5 then 1 else -1
+		local position, normal = b:surface(x, y, side)
+		if position and normal then
+			b:limb(position - normal * 0.006, position + normal * b.random(0.02, 0.04), 0.016, rgb(246, 210, 90), "Spine")
+		end
+	end
+	for x = -0.36, 0.36, 0.045 do
+		for _, z in { -0.05, 0.05 } do
+			b:ellipsoid("TubeFoot", CFrame.new(x, b:bottom(x) + 0.004, z), Vector3.new(0.018, 0.02, 0.018), rgb(250, 236, 180))
+		end
+	end
+	for index = 0, 9 do
+		local angle = index / 10 * math.pi * 2
+		local spread = Vector3.new(0, math.cos(angle), math.sin(angle))
+		local root = Vector3.new(0.46, 0, 0) + spread * 0.04
+		local tip = Vector3.new(0.54, 0, 0) + spread * 0.08
+		b:limb(root, tip, 0.012, rgb(250, 226, 130), "Filament")
+	end
+end
+
+-- Long-finned tuna: dark blue back and pectorals that reach past the second dorsal.
+function builders.Albacore(b)
+	local colors = { back = rgb(20, 32, 66), side = rgb(140, 152, 172), belly = rgb(236, 238, 240) }
+	local fin = rgb(32, 44, 76)
+	b:fishBody(0.26, 0.19, colors, 0.03)
+	b:edgeFin(0.14, 0.02, { 0.08, 0.06, 0.03 }, fin, false, 0.05)
+	b:fin({ v2(-0.01, b:top(-0.01) - 0.008), v2(-0.1, b:top(-0.01) + 0.1), v2(-0.08, b:top(-0.08) - 0.008) }, fin)
+	b:fin({
+		v2(-0.03, b:bottom(-0.03) + 0.008),
+		v2(-0.12, b:bottom(-0.03) - 0.09),
+		v2(-0.09, b:bottom(-0.09) + 0.008),
+	}, fin)
+	for index = 0, 5 do
+		local x = -0.15 - index * 0.03
+		for _, below in { false, true } do
+			local edge = if below then b:bottom(x) else b:top(x)
+			local sign = if below then -1 else 1
+			b:fin({
+				v2(x + 0.008, edge - sign * 0.004),
+				v2(x - 0.012, edge + sign * 0.02),
+				v2(x - 0.014, edge - sign * 0.004),
+			}, rgb(120, 116, 80))
+		end
+	end
+	b:forkTail(0.23, 0.17, fin)
+	b:stroke({ v2(-0.5, 0.23), v2(-0.36, 0), v2(-0.5, -0.23) }, 0.008, rgb(236, 238, 240))
+	-- Very long pectoral fins are the albacore's trademark.
+	b:pectoral(0.21, 0.01, 0.34, 0.035, fin)
+	b:stroke({ v2(0.28, 0.03), v2(0, 0.035), v2(-0.28, 0.01) }, 0.012, rgb(100, 130, 180))
+	b:face(0.37, 0.03, 0.05, rgb(170, 170, 150), rgb(60, 70, 100))
+end
+
+-- Crimson beach fish with gold-edged, flowing fins.
+function builders.Crimsonfish(b)
+	local colors = { back = rgb(120, 16, 30), side = rgb(196, 30, 46), belly = rgb(236, 120, 110) }
+	local fin, gold = rgb(176, 26, 40), rgb(240, 190, 70)
+	b:fishBody(0.24, 0.12, colors, 0.05)
+	local dorsal = b:edgeFin(0.14, -0.2, { 0.09, 0.11, 0.12, 0.12, 0.11, 0.09, 0.06 }, fin, false, 0.1)
+	b:stroke({ dorsal[3], dorsal[4], dorsal[5], dorsal[6], dorsal[7], dorsal[8] }, 0.01, gold)
+	local anal = b:edgeFin(-0.06, -0.22, { 0.07, 0.09, 0.08, 0.05 }, fin, true, 0.1)
+	b:stroke({ anal[3], anal[4], anal[5], anal[6] }, 0.01, gold)
+	b:edgeFin(0.06, -0.01, { 0.06, 0.05 }, fin, true, 0.1)
+	b:forkTail(0.17, 0.08, fin, 0.08)
+	b:stroke({ v2(-0.5, 0.17), v2(-0.42, 0.08) }, 0.01, gold)
+	b:stroke({ v2(-0.5, -0.17), v2(-0.42, -0.08) }, 0.01, gold)
+	b:pectoral(0.2, -0.04, 0.13, 0.04, rgb(226, 90, 80), 0.2)
+	b:speckle(26, v2(-0.28, 0.3), v2(-0.04, 0.08), v2(0.01, 0.018), rgb(250, 170, 150))
+	b:face(0.37, 0.03, 0.05, gold, rgb(140, 20, 34))
+end
+
+-- Pale ice-blue legend with frost crystals along its back.
+function builders.Glacierfish(b)
+	local colors = { back = rgb(120, 176, 214), side = rgb(196, 226, 244), belly = rgb(244, 250, 255) }
+	local fin, frost = rgb(160, 210, 236), rgb(236, 248, 255)
+	b:fishBody(0.26, 0.15, colors, 0.04)
+	b:edgeFin(0.14, -0.18, { 0.08, 0.1, 0.1, 0.09, 0.07, 0.05 }, fin, false, 0.25)
+	b:edgeFin(-0.06, -0.22, { 0.06, 0.07, 0.05 }, fin, true, 0.25)
+	b:edgeFin(0.06, -0.02, { 0.05, 0.04 }, fin, true, 0.25)
+	b:forkTail(0.17, 0.07, fin, 0.25)
+	b:pectoral(0.2, -0.04, 0.13, 0.04, fin, 0.3)
+	for x = 0.26, -0.28, -0.045 do
+		local top = b:top(x)
+		local height = 0.03 + 0.03 * math.cos(x * 4)
+		b:limb(Vector3.new(x, top - 0.004, 0), Vector3.new(x - 0.012, top + height, 0), 0.016, frost, "Spine")
+	end
+	for _ = 1, 30 do
+		local x, y = b.random(-0.3, 0.32), b.random(-0.08, 0.1)
+		local size = b.random(0.015, 0.03)
+		if y < b:top(x) - size and y > b:bottom(x) + size then
+			b:marks(x, y, size, size * 0.5, frost, v2(1, b.random(-1, 1)))
+		end
+	end
+	b:stroke({ v2(0.28, 0.02), v2(0, 0.025), v2(-0.3, 0.005) }, 0.01, rgb(90, 150, 200))
+	b:face(0.37, 0.03, 0.05, rgb(140, 220, 255), rgb(120, 170, 210))
+end
+
 function builders.Seaweed(b)
 	local stem, holdfast = rgb(62, 83, 31), rgb(74, 65, 30)
 	local colors = { rgb(58, 103, 39), rgb(77, 124, 43), rgb(47, 91, 36), rgb(93, 132, 48), rgb(64, 114, 42) }
@@ -1036,12 +1550,27 @@ function builders.Seaweed(b)
 end
 
 local function mussel(b, shell, edge)
-	b:body("Shell", Vector3.zero, Vector3.new(0.95, 0.48, 0.32), shell)
-	for _, side in { -1, 1 } do
-		b:ellipsoid("ShellHalf", CFrame.new(0, 0, side * 0.08), Vector3.new(0.91, 0.46, 0.18), shell)
-		for i = 1, 5 do
-			b:ellipsoid("GrowthRidge", CFrame.new(-0.32 + i * 0.12, 0, side * 0.165), Vector3.new(0.015, 0.34 + i * 0.015, 0.012), edge)
+	-- A narrow hinge grows into a broad, rounded outer end. Overlapping lobes
+	-- give the closed shell its asymmetric mussel outline and a raised crown.
+	local dark = shell:Lerp(rgb(12, 15, 20), 0.55)
+	b:ellipsoid("ShellSeam", CFrame.new(0.02, 0, 0), Vector3.new(0.94, 0.43, 0.09), dark)
+	b:body("ShellHinge", Vector3.new(-0.29, -0.035, 0), Vector3.new(0.42, 0.20, 0.20), dark)
+	b:body("Shell", Vector3.new(0.04, 0, 0), Vector3.new(0.82, 0.43, 0.30), shell)
+	b:body("ShellCrown", Vector3.new(0.16, 0.015, 0), Vector3.new(0.58, 0.47, 0.32), shell)
+	-- Fine curved growth lines follow the exposed surface on both valves.
+	for ridge = 1, 5 do
+		local x = -0.21 + ridge * 0.105
+		for step = -3, 3 do
+			local y = step * 0.047
+			local curveX = x - 0.26 * (y / 0.2) ^ 2
+			for _, side in { -1, 1 } do
+				local mark = b:mark(curveX, y, side, 0.012, 0.052, edge:Lerp(shell, 0.45))
+				if mark then mark.Name = "GrowthRidge" end
+			end
 		end
+	end
+	for _, side in { -1, 1 } do
+		b:mark(0.13, 0.095, side, 0.30, 0.035, edge:Lerp(shell, 0.4), Vector2.new(1, -0.18))
 	end
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.2, 0.4, 1))
 end

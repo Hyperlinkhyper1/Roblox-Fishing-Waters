@@ -170,26 +170,57 @@ function Kitchen.buildStorage(parent: Instance, frame: CFrame): Model
 	return model
 end
 
--- A glass-topped chilled case. Dishes are added by the shop's display.
+-- A refrigerated shop counter. Dishes are added separately at CASE_SPOTS.
 function Kitchen.buildCase(parent: Instance, frame: CFrame): Model
 	local model, piece = builder(parent, "FoodCase", frame)
-	local w, d = Kitchen.CASE_WIDTH, Kitchen.CASE_DEPTH
-	piece("CaseBase", Vector3.new(w, Kitchen.CASE_SHELF - 0.1, d), CFrame.new(0, (Kitchen.CASE_SHELF - 0.1) / 2, 0), rgb(46, 92, 110), M.SmoothPlastic, true)
-	piece("CaseTrim", Vector3.new(w + 0.1, 0.12, d + 0.1), CFrame.new(0, Kitchen.CASE_SHELF - 0.04, 0), STEEL, M.Metal, true)
-	piece("Shelf", Vector3.new(w - 0.2, 0.08, d - 0.2), CFrame.new(0, Kitchen.CASE_SHELF + 0.06, 0), rgb(236, 242, 244), M.SmoothPlastic)
-	for _, x in { -w / 2 + 0.05, w / 2 - 0.05 } do
-		local side = piece("SideGlass", Vector3.new(0.06, 1.2, d - 0.1), CFrame.new(x, Kitchen.CASE_SHELF + 0.65, 0), rgb(200, 230, 236), M.SmoothPlastic, true)
-		side.Transparency = 0.7
+	local w, d, shelf = Kitchen.CASE_WIDTH, Kitchen.CASE_DEPTH, Kitchen.CASE_SHELF
+	local body = rgb(45, 78, 88)
+	local inset = rgb(33, 59, 68)
+	local glassColor = rgb(205, 232, 235)
+
+	-- The cabinet remains the solid footprint used by furniture placement.
+	-- Offset front details from the cabinet and each other to avoid coplanar faces.
+	piece("CaseBase", Vector3.new(w, shelf - 0.1, d), CFrame.new(0, (shelf - 0.1) / 2, 0), body, M.SmoothPlastic, true)
+	piece("Kickplate", Vector3.new(w - 0.12, 0.25, 0.04), CFrame.new(0, 0.16, d / 2 + 0.005), DARK_STEEL, M.Metal)
+	piece("FrontPanel", Vector3.new(w - 0.22, 1.58, 0.04), CFrame.new(0, 1.35, d / 2 + 0.005), inset, M.SmoothPlastic)
+	for _, x in { -1.9, 0, 1.9 } do
+		piece("PanelInset", Vector3.new(1.72, 1.35, 0.035), CFrame.new(x, 1.35, d / 2 + 0.03), body, M.SmoothPlastic)
 	end
-	local front = piece("FrontGlass", Vector3.new(w - 0.1, 1.25, 0.06), CFrame.new(0, Kitchen.CASE_SHELF + 0.6, d / 2 - 0.2) * CFrame.Angles(math.rad(-14), 0, 0), rgb(200, 230, 236), M.SmoothPlastic, true)
+	-- A shallow ventilation grille makes the lower front read as a chiller.
+	for row = 0, 3 do
+		piece("VentSlat", Vector3.new(2.4, 0.035, 0.025), CFrame.new(0, 0.52 + row * 0.09, d / 2 + 0.065), DARK_STEEL, M.Metal)
+	end
+	piece("CaseTrim", Vector3.new(w, 0.12, d), CFrame.new(0, shelf - 0.04, 0), STEEL, M.Metal, true)
+	piece("Shelf", Vector3.new(w - 0.2, 0.08, d - 0.2), CFrame.new(0, shelf + 0.06, 0), rgb(236, 242, 238), M.SmoothPlastic)
+	piece("ShelfBackLip", Vector3.new(w - 0.25, 0.1, 0.06), CFrame.new(0, shelf + 0.14, -d / 2 + 0.1), STEEL, M.Metal)
+
+	-- Sloped customer-facing glass, framed at the edges, with a clear top.
+	for _, x in { -w / 2 + 0.05, w / 2 - 0.05 } do
+		local side = piece("SideGlass", Vector3.new(0.06, 1.12, d - 0.12), CFrame.new(x, shelf + 0.68, 0), glassColor, M.Glass, true)
+		side.Transparency = 0.72
+		piece("SideTopRail", Vector3.new(0.1, 0.1, d - 0.1), CFrame.new(x, shelf + 1.25, 0), STEEL, M.Metal)
+		piece("FrontUpright", Vector3.new(0.1, 1.16, 0.1), CFrame.new(x, shelf + 0.68, 1.04) * CFrame.Angles(math.rad(-12), 0, 0), STEEL, M.Metal)
+		piece("RearUpright", Vector3.new(0.1, 1.12, 0.1), CFrame.new(x, shelf + 0.68, -d / 2 + 0.06), STEEL, M.Metal)
+	end
+	local front = piece("FrontGlass", Vector3.new(w - 0.2, 1.16, 0.06), CFrame.new(0, shelf + 0.68, 1.04) * CFrame.Angles(math.rad(-12), 0, 0), glassColor, M.Glass, true)
 	front.Transparency = 0.72
-	local top = piece("TopGlass", Vector3.new(w - 0.1, 0.06, d - 0.5), CFrame.new(0, Kitchen.CASE_SHELF + 1.24, -0.2), rgb(200, 230, 236), M.SmoothPlastic, true)
+	local top = piece("TopGlass", Vector3.new(w - 0.2, 0.06, 2.2), CFrame.new(0, shelf + 1.25, -0.18), glassColor, M.Glass, true)
 	top.Transparency = 0.72
-	piece("PriceRail", Vector3.new(w, 0.25, 0.06), CFrame.new(0, Kitchen.CASE_SHELF - 0.25, d / 2 + 0.03), rgb(240, 196, 80), M.SmoothPlastic)
+	piece("FrontTopRail", Vector3.new(w - 0.2, 0.1, 0.1), CFrame.new(0, shelf + 1.25, 0.92), STEEL, M.Metal)
+	piece("RearTopRail", Vector3.new(w - 0.2, 0.1, 0.1), CFrame.new(0, shelf + 1.25, -1.25), STEEL, M.Metal)
+	piece("FrontLowerRail", Vector3.new(w - 0.2, 0.1, 0.1), CFrame.new(0, shelf + 0.11, 1.16), STEEL, M.Metal)
+
+	-- The rear stays open for the shop's service side. Label cards are decorative;
+	-- actual dish inventory remains managed by the display service.
+	piece("PriceRail", Vector3.new(w - 0.15, 0.23, 0.04), CFrame.new(0, shelf - 0.2, d / 2 - 0.01), rgb(218, 180, 89), M.SmoothPlastic)
+	for _, x in { -1.9, 0, 1.9 } do
+		piece("PriceCard", Vector3.new(0.72, 0.14, 0.025), CFrame.new(x, shelf - 0.2, d / 2 + 0.02), rgb(250, 247, 229), M.SmoothPlastic)
+	end
+	local lamp = piece("DisplayLamp", Vector3.new(w - 0.5, 0.04, 0.12), CFrame.new(0, shelf + 1.2, -0.94), rgb(255, 241, 205), M.Neon)
 	local light = Instance.new("SurfaceLight")
 	light.Face, light.Brightness, light.Range, light.Angle = Enum.NormalId.Bottom, 0.6, 3, 120
 	light.Color = rgb(255, 246, 228)
-	light.Parent = top
+	light.Parent = lamp
 	return model
 end
 

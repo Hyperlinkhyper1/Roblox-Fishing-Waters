@@ -394,7 +394,7 @@ check(
 	profile.Angler.Staff.Fisherman and profile.Cash == 0,
 	"Fisherman card hires through the server after unlocking Company"
 )
-check(contains("Buy a boat at the drydock first"), "Fisherman without owned boats has a useful empty state")
+check(contains("Claim a free rowboat at the drydock first"), "Fisherman without owned boats has a useful empty state")
 profile.OwnedBoats = { Rowboat = true, FishingBoat = true }
 BoatService.activeBoat = function()
 	return nil

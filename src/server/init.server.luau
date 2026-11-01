@@ -16,6 +16,31 @@ local function stage(message: string, progress: number)
 end
 stage("Preparing your harbour", 0.02)
 
+-- The admin-only showcase sits far outside the ocean, so nobody waits for it. It runs in its own
+-- thread, scheduled before startup, so a startup step that fails or exhausts the script timeout
+-- cannot keep it from being built. It waits for the world to finish (or give up) so it does not
+-- compete with the harbour, but never longer than two minutes.
+task.defer(function()
+	local waited = 0
+	while
+		waited < 120
+		and not ReplicatedStorage:GetAttribute("FishingWatersGenerationComplete")
+		and not ReplicatedStorage:GetAttribute("FishingWatersGenerationError")
+		and not ReplicatedStorage:GetAttribute("FishingWatersStartupError")
+	do
+		waited += task.wait(1)
+	end
+	print("[ScaleModels] Building the scale models")
+	local built, problem = xpcall(function()
+		require(script.ScaleModels).ensure()
+	end, debug.traceback)
+	if built then
+		print("[ScaleModels] Scale models ready")
+	else
+		warn("[ScaleModels] " .. tostring(problem))
+	end
+end)
+
 local ok, failure = xpcall(function()
 	-- Update notices and stale-server admission must work even while the map loads.
 	require(script.ServerUpdates).start()
@@ -30,8 +55,10 @@ local ok, failure = xpcall(function()
 		require(script.WeatherService).start()
 		-- Install inventory/character listeners and remotes before BaseService spawns players.
 		require(script.BoatService).start()
+		require(script.SharkService).start()
 		require(script.FishingService).start()
 		require(script.AnglerService).start()
+		require(script.SharkLootService).start()
 		require(script.CatchService).start()
 		require(script.CargoService).start()
 		require(script.BoatRefitService).start()
@@ -39,11 +66,13 @@ local ok, failure = xpcall(function()
 		require(script.BackpackService).start()
 		require(script.CustomerService).start()
 		require(script.KitchenService).start()
+		require(script.ChefService).start()
 		require(script.CrabCageService).start()
 		require(script.MusselNetService).start()
 		require(script.FurnitureService).start()
 		require(script.RestaurantService).start()
 		require(script.CompanyService).start()
+		require(script.TutorialService).start()
 
 		require(script.LeaderboardService).start(root)
 		BaseService.start()
@@ -70,12 +99,29 @@ local ok, failure = xpcall(function()
 		Harbour.ensureFishing(root)
 		Harbour.ensureBases(root)
 		openHarbour(root :: Folder)
+		-- Players are in by now. Each repair gets a fresh resume, and a slow one is named, because
+		-- a run of them without a yield exhausted the script timeout and cut startup short.
+		local function repair(name: string, run: () -> ())
+			task.wait()
+			local began = os.clock()
+			run()
+			if os.clock() - began > 1 then
+				print(string.format("[Startup] %s took %.1fs", name, os.clock() - began))
+			end
+		end
+		repair("City", function()
+			Map.ensureCity(root)
+		end)
+		repair("Seabed details", Map.ensureSeabedDetails)
+		repair("Boats", function()
+			require(script.Map.Mediterranean).ensureBoats(root)
+		end)
+		repair("Surf", function()
+			Harbour.ensureSurf(root, require(ReplicatedStorage.Shared.Biomes).Normal.center)
+		end)
+		repair("Lod", Map.ensureLod)
+		repair("Sign text", Map.ensureSignText)
 		task.wait()
-		Map.ensureSeabedDetails()
-		require(script.Map.Mediterranean).ensureBoats(root)
-		Harbour.ensureSurf(root, require(ReplicatedStorage.Shared.Biomes).Normal.center)
-		Map.ensureLod()
-		Map.ensureSignText()
 	else
 		-- The callback runs once the home island, collision, shops and bases
 		-- exist, before generating the surrounding islands and distant biomes.

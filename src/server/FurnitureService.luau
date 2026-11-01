@@ -19,6 +19,7 @@ local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme")
 local Kitchen = require(script.Parent.Map.Kitchen)
 local DiningRoom = require(script.Parent.Map.DiningRoom)
 local WeatherRadar = require(script.Parent.Map.WeatherRadar)
+local Decorations = require(script.Parent.Map.Decorations)
 local KitchenService = require(script.Parent.KitchenService)
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
@@ -27,7 +28,8 @@ local FurnitureService = {}
 local BASE_TAG = "PlayerBase"
 local SHOP_TAG = "FurnitureShop"
 local OWNER_PROMPT_TAG = "ShopOwnerPrompt"
-local HOME_DISTANCE = 90
+-- The shop across the street counts as home too; matches build mode on the client.
+local HOME_DISTANCE = 110
 local started = false
 local requests = {}
 local busy: { [Player]: boolean } = {}
@@ -133,6 +135,7 @@ local function state(player: Player)
 		Cash = profile.Cash,
 		Stock = data.FurnitureStock,
 		Placed = data.Furniture,
+		PendingWallMigration = data.FurnitureWallMigrationPending == true,
 		Freezer = #data.Freezer,
 		FreezerCount = AnglerData.freezerCount(data),
 		Storage = #data.Storage,
@@ -203,9 +206,11 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 		local anchor = promptAnchor(model, frame * CFrame.new(0, Kitchen.TOP + 0.8, Kitchen.DEPTH / 2 + 0.3))
 		local config = ownerPrompt(anchor, "KitchenStorageGuiPrompt", "Configure", "Kitchen storage")
 		config.KeyboardKeyCode, config.GamepadKeyCode = Enum.KeyCode.E, Enum.KeyCode.ButtonX
+		config.UIOffset = Vector2.new(0, -55)
 		config:SetAttribute("OwnerUserId", userId)
 		local take = ownerPrompt(anchor, "TakeKitchenFishPrompt", "Take fish", "Kitchen storage")
 		take.KeyboardKeyCode, take.GamepadKeyCode = Enum.KeyCode.F, Enum.KeyCode.ButtonY
+		take.UIOffset = Vector2.new(0, 55)
 		take:SetAttribute("OwnerUserId", userId)
 		take:SetAttribute("Available", false)
 		local billboard = Instance.new("BillboardGui")
@@ -226,6 +231,8 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 		model.Parent = parent
 	elseif entry.ItemId == "WeatherRadar" then
 		model = WeatherRadar.build(parent, frame)
+	elseif Decorations.has(entry.ItemId) then
+		model = Decorations.build(parent, frame, entry.ItemId)
 	elseif Recipes.Stations[entry.ItemId] then
 		model = Kitchen.buildStation(parent, frame, entry.ItemId)
 		-- KitchenService answers both prompts and keeps them in step with the cooking job.
@@ -309,6 +316,10 @@ local function syncPlayer(player: Player)
 	if base then
 		sync(base)
 	end
+end
+
+function FurnitureService.refreshPlayer(player: Player)
+	syncPlayer(player)
 end
 
 local function transact(player: Player, transform): (boolean, string)
@@ -626,6 +637,9 @@ local function buildPreviews(parent: Instance)
 	}
 	for _, id in Furniture.Order do
 		local build = builders[id] or function(parent, frame)
+			if Decorations.has(id) then
+				return Decorations.build(parent, frame, id)
+			end
 			return Kitchen.buildStation(parent, frame, id)
 		end
 		local sample = build(folder, CFrame.identity)

@@ -133,6 +133,19 @@ local dependencies = {
 		minimumFightSeconds = function()
 			return 1
 		end,
+		inSeason = function(pool)
+			return pool
+		end,
+	},
+	Seasons = {
+		current = function()
+			return "Summer", 1
+		end,
+	},
+	CatchConditions = {
+		at = function()
+			return { Rain = false, Night = false, Beach = false }
+		end,
 	},
 	DayNight = {
 		clockTime = function()

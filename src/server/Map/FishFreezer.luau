@@ -30,12 +30,14 @@ function FishFreezer.build(parent: Instance, frame: CFrame): Model
 	})
 end
 
--- The left wall keeps both entrances and the central shop aisle clear.
--- Local +Z faces into the shop; the cabinet reaches DEPTH / 2 towards it.
+-- Against the shop's left-hand wall (seen from its door), clear of the
+-- entrance and the central aisle. Local +Z faces the aisle; the cabinet
+-- reaches DEPTH / 2 towards it. Positions are house-local: the shop stands
+-- across the road at BaseGrid.SHOP_FRONT..SHOP_BACK.
 FishFreezer.DEPTH = 3.6
 FishFreezer.HEIGHT = 4
 function FishFreezer.frame(houseFrame: CFrame): CFrame
-	return houseFrame * CFrame.new(-19, 0.16, 7) * CFrame.Angles(0, math.pi / 2, 0)
+	return houseFrame * CFrame.new(19, 0.16, 74) * CFrame.Angles(0, -math.pi / 2, 0)
 end
 
 -- The sloped ice bed under the glass (source obj_1) is 40 units high at the

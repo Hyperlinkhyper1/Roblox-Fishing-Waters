@@ -15,6 +15,10 @@ local function check(value, message)
 end
 -- Monday 2026-10-19 00:00 UTC.
 local monday = 1792368000
+local boosted = Data.recordCatch(nil, "Trout", "Normal", 1, 1, monday, Catalog.Fish, Catalog.Mutations, nil, nil, nil, true)
+local boostedTracked = Data.trackProgress(nil, boosted, monday)
+check(boosted.Stats.TotalXP == Catalog.Fish.Trout.CatchXP * 2, "XP pass doubles lifetime XP")
+check(boostedTracked.Weekly.XP == boosted.Stats.TotalXP, "Weekly XP includes the pass bonus")
 local expectedXP = { Junk = 5, Common = 50, Uncommon = 100, Rare = 200, Epic = 400, Legendary = 800 }
 for id, species in Catalog.Fish do
 	local before = Data.decode({ Stats = { TotalXP = 950 } })

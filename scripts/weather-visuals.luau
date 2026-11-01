@@ -104,7 +104,10 @@ local task = {
 	end,
 }
 local state = { rain = 0, storm = 0, windSpeed = 6, windDirection = Vector3.new(1, 0, 0) }
-dependencies.Biomes = { MapHalfSize = 5200, SeaFloor = -64, WaterLevel = 0 }
+dependencies.Biomes = { MapHalfSize = 5200, SeaFloor = -64, WaterLevel = 0, inOceanBounds = function(position)
+	return (math.abs(position.X) < 5200 and math.abs(position.Z) < 5200)
+		or (position.X > 4200 and position.X < 8200 and position.Z > 4200 and position.Z < 8200)
+end }
 dependencies.Weather = {
 	getState = function()
 		return state

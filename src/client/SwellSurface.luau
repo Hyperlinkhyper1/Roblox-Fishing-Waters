@@ -175,8 +175,7 @@ function SwellSurface.start()
 				not cameraPosition
 				or cameraPosition.Y < Biomes.WaterLevel - 0.5
 				or cameraPosition.Y > Biomes.WaterLevel + 180
-				or math.abs(cameraPosition.X) > Biomes.MapHalfSize
-				or math.abs(cameraPosition.Z) > Biomes.MapHalfSize
+				or not Biomes.inOceanBounds(cameraPosition)
 			then
 				part.LocalTransparencyModifier = 1
 				return

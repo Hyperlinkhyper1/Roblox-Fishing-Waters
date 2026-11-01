@@ -40,9 +40,9 @@ local market = { PromptGamePassPurchaseFinished = signal() }
 local queryCount, owns, failure = 0, false, false
 function market:UserOwnsGamePassAsync(id, pass)
  queryCount += 1
- check(pass == 3722004182, "Server checks configured pass")
+ check((pass == 3722004182 or pass == 2057358447), "Server checks configured pass")
  if failure then error("API unavailable") end
- return owns
+ return owns and pass == 3722004182
 end
 local game = { GetService = function(_, name)
  return ({ Players = players, MarketplaceService = market, ReplicatedStorage = {} })[name]
@@ -70,6 +70,11 @@ check(Ownership.ownsAutoStore(returning), "Existing owner recognized")
 owns, failure = false, true
 check(not Ownership.ownsAutoStore(player(3)), "API failure grants nothing")
 failure = false
+local xpBuyer = player(5)
+check(not Ownership.ownsDoubleXP(xpBuyer), "XP pass starts unowned")
+market.PromptGamePassPurchaseFinished:Fire(xpBuyer, Passes.DoubleXP.Id, true)
+check(Ownership.ownsDoubleXP(xpBuyer) and xpBuyer.attributes.OwnsDoubleXP, "XP purchase grants immediately")
+check(not Ownership.ownsAutoStore(xpBuyer), "Passes have independent ownership")
 local catalog = { Fish = { Test = { AverageKg = 1, RarityDenominator = 10,
  Shapes = { Normal = { "##" } } } }, Mutations = { Normal = {} } }
 local layouts = { TestBoat = { Hold = { "#", "#", "#" }, StarterParts = {
@@ -91,6 +96,9 @@ local function catch(who)
  return Angler.recordCatch(who, "Test", "Normal", 1, 10, "Normal", {})
 end
 local nonOwner = player(4)
+profile = { Angler = Data.decode(nil) }
+catch(xpBuyer)
+check(profile.Angler.Stats.TotalXP == 200, "XP pass doubles catch XP")
 for _, scenario in {
  { buyer, true, true, true }, { nonOwner, true, true, false },
  { buyer, false, true, false }, { buyer, true, false, false },

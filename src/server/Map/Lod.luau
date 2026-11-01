@@ -43,7 +43,7 @@ local function tileKeys(part: BasePart, originX: number, originZ: number, callba
 end
 
 local function tiled(island: Model): boolean
-	return island.Name == "Harbour Isle"
+	return island.Name == "Harbour Isle" or island:GetAttribute("LodRoot") == true
 end
 
 -- How many ground parts the client has to receive before an untiled shell gives way
@@ -253,14 +253,99 @@ local function tiledShell(model: Model, island: Model, parts: { BasePart })
 	countTiles(model, island)
 end
 
+-- A city reads from afar by its blocks, which a heightfield melts into lumps. So every model
+-- marked with a LodColor (a building, a ship) becomes one plain box, parts marked LodKeep (crane
+-- booms, tanks) are copied as they are, and so are the big flat parts (land, quays, streets),
+-- which keeps the real coastline. Tiles still follow the ground under them, as above.
+local BLOCK_GROUND = 60 -- loose parts at least this long are copied into the shell
+
+-- Whether the instance or a model above it (below Ground) carries the attribute
+local function marked(instance: Instance, ground: Instance, attribute: string): boolean
+	local current: Instance? = instance
+	while current and current ~= ground do
+		if current:GetAttribute(attribute) ~= nil then
+			return true
+		end
+		current = current.Parent
+	end
+	return false
+end
+
+local function boxed(part: BasePart, ground: Instance): boolean
+	return part.Parent ~= nil and marked(part.Parent, ground, "LodColor")
+end
+
+local function blockShell(model: Model, island: Model)
+	local ground = island:FindFirstChild("Ground")
+	local items: { BasePart } = {}
+	-- A whole city: yield now and then to stay inside the script timeout (the shell is unparented)
+	local resumed = os.clock()
+	for _, d in if ground then ground:GetDescendants() else {} do
+		if os.clock() - resumed > 0.05 then
+			task.wait()
+			resumed = os.clock()
+		end
+		-- LodSkip leaves out a part, or a whole model such as rooms below ground
+		if marked(d, ground :: Instance, "LodSkip") then
+			continue
+		elseif d:IsA("Model") then
+			local color = d:GetAttribute("LodColor")
+			if typeof(color) == "Color3" and d:FindFirstChildWhichIsA("BasePart", true) then
+				local frame, size = d:GetBoundingBox()
+				local box = Instance.new("Part")
+				box.Size = size
+				box.CFrame = frame
+				box.Color = color
+				box.Material = Enum.Material.SmoothPlastic
+				box.Anchored = true
+				table.insert(items, box)
+			end
+		elseif d:IsA("BasePart") and d.Transparency < 0.5 then
+			local size = d.Size
+			local long = math.max(size.X, size.Y, size.Z) >= BLOCK_GROUND
+			if d:GetAttribute("LodKeep") or (long and not boxed(d, ground :: Instance)) then
+				local copy = d:Clone()
+				copy:ClearAllChildren()
+				table.insert(items, copy)
+			end
+		end
+	end
+	if #items == 0 then
+		return
+	end
+	local minX, _, minZ = bounds(items)
+	local originX, originZ = math.floor(minX / TILE) * TILE, math.floor(minZ / TILE) * TILE
+	model:SetAttribute("TileSize", TILE)
+	model:SetAttribute("TileOriginX", originX)
+	model:SetAttribute("TileOriginZ", originZ)
+	local tiles: { [string]: Model } = {}
+	for _, item in items do
+		local p = item.Position
+		local key = math.floor((p.X - originX) / TILE) .. "," .. math.floor((p.Z - originZ) / TILE)
+		local tile = tiles[key]
+		if not tile then
+			tile = Instance.new("Model")
+			tile.Name = key
+			tile.Parent = model
+			tiles[key] = tile
+		end
+		item.Parent = tile
+	end
+	countTiles(model, island)
+end
+
 -- Built unparented: it only goes into the world once merged (see merge).
 local function shell(island: Model): Model
 	local model = Instance.new("Model")
 	model.Name = tostring(island:GetAttribute("LodId"))
+	model:SetAttribute("LodStamp", island:GetAttribute("LodStamp"))
 	-- Offshore slopes can be much wider than a small rock. Build its distant
 	-- silhouette from the visible island rather than its submerged footprint.
 	local parts = opaqueParts(island)
-	if #parts > 0 then
+	if island:GetAttribute("LodRoot") then
+		blockShell(model, island)
+		inert(model)
+	elseif #parts > 0 then
 		if tiled(island) then
 			tiledShell(model, island, parts)
 		else
@@ -329,7 +414,9 @@ local function mergeAll(container: Instance)
 	end
 end
 
--- Islands are the models directly inside each biome folder that have a Ground mesh.
+-- Islands are the models directly inside each biome folder that have a Ground mesh, then any
+-- mainland (the city) marked LodRoot directly in the map. Mainlands come last, so the ids
+-- handed out by index stay what they were for every island.
 local function islands(root: Instance): { Model }
 	local found = {}
 	for _, folder in root:GetChildren() do
@@ -339,6 +426,11 @@ local function islands(root: Instance): { Model }
 					table.insert(found, child)
 				end
 			end
+		end
+	end
+	for _, child in root:GetChildren() do
+		if child:IsA("Model") and child:GetAttribute("LodRoot") and child:FindFirstChild("Ground") then
+			table.insert(found, child)
 		end
 	end
 	return found
@@ -577,14 +669,29 @@ function Lod.build(root: Instance)
 	Lod.prepareStreaming(root)
 	local baked = root:FindFirstChild("Lod")
 	if baked then
+		local lastId = 0
+		for _, island in islands(root) do
+			lastId = math.max(lastId, tonumber(island:GetAttribute("LodId")) or 0)
+		end
+		for _, child in baked:GetChildren() do
+			lastId = math.max(lastId, tonumber(child.Name) or 0)
+		end
 		-- Maps baked before the home island's shell came in tiles get a tiled one; the old
-		-- single shell vanished at the island's first ground part and left the rest missing
+		-- single shell vanished at the island's first ground part and left the rest missing.
+		-- A mainland added or rebuilt since the bake (the city) gets a fresh shell too.
 		for _, island in islands(root) do
 			local id = island:GetAttribute("LodId")
+			local mainland = island:GetAttribute("LodRoot") == true
+			if id == nil and mainland then
+				lastId += 1
+				id = lastId
+				island:SetAttribute("LodId", id)
+			end
 			local old = if id ~= nil then baked:FindFirstChild(tostring(id)) else nil
-			if id ~= nil and tiled(island) and not (old and old:GetAttribute("TileSize")) then
-				-- This runs on every server start until a map with the tiled shell is saved
-				print("[Lod] Rebuilding the untiled " .. island.Name .. " shell; save the map to skip this")
+			local stale = mainland and (not old or old:GetAttribute("LodStamp") ~= island:GetAttribute("LodStamp"))
+			if id ~= nil and (stale or (tiled(island) and not (old and old:GetAttribute("TileSize")))) then
+				-- This runs on every server start until a map with the current shell is saved
+				print("[Lod] Rebuilding the " .. island.Name .. " shell; save the map to skip this")
 				local replacement = shell(island)
 				mergeShell(replacement)
 				if old then

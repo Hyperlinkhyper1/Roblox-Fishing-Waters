@@ -25,6 +25,7 @@ vector.__sub = function(a, b)
   return { Magnitude = math.sqrt(x*x + y*y) }
 end
 local Vector2 = { new = function(x, y) return setmetatable({ X = x, Y = y }, vector) end }
+local Vector3 = { new = function(x, y, z) return { X = x, Y = y, Z = z } end }
 local UDim2 = { new = function(...) return {...} end, fromScale = function(...) return {...} end }
 local Enum = {
   Material = {}, EasingStyle = { Sine = "Sine", Linear = "Linear" }, Font = { Garamond = "Garamond", GothamBold = "GothamBold" },
@@ -150,12 +151,22 @@ underwaterFog()
 move(3700, 5, 300)
 surfaceFog()
 assert(rgbEqual(Terrain.WaterColor, Biomes.Volcanic.look.waterColor), "Crossing biomes underwater must restore the new biome")
-move(Biomes.MapHalfSize + 20, -8, 0, 0.6)
+move(Biomes.MapHalfSize + 20, -8, Biomes.MapHalfSize + 20, 0.6)
+underwaterFog()
+move(Biomes.OceanMax + 20, -8, Biomes.MapHalfSize + 20, 0.6)
 surfaceFog()
 assert(Terrain.WaterTransparency == 0.3, "Below sea level outside the ocean is not underwater")
 move(0, Biomes.SeaFloor - 5, 0, 0.6)
 surfaceFog()
 assert(Terrain.WaterTransparency == 0.3, "Below the sea floor is not underwater")
+local pocket = Biomes.DryPockets[1]
+move((pocket.min.X + pocket.max.X) / 2, -20, (pocket.min.Z + pocket.max.Z) / 2, 0.6)
+surfaceFog()
+assert(Terrain.WaterTransparency == 0.3, "The city's metro station is a dry pocket below sea level")
+move(pocket.min.X - 20, -8, pocket.min.Z - 20, 0.6)
+underwaterFog()
+move(pocket.min.X - 20, 5, pocket.min.Z - 20)
+surfaceFog()
 workspace.CurrentCamera = nil
 render(1/60)
 workspace.CurrentCamera = { CFrame = { Position = { X = 0, Y = -8, Z = 0 } } }

@@ -8,7 +8,7 @@ local DrydockInterior = require(script.Parent.DrydockInterior)
 local Rowboat = require(script.Parent.Parent.Rowboat)
 
 local Drydock = {}
-local LAYOUT_VERSION = 15
+local LAYOUT_VERSION = 16
 local rgb = Color3.fromRGB
 local M = Enum.Material
 local STEEL = rgb(47, 58, 64)
@@ -255,6 +255,8 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 			PatrolBoatPreview = Vector3.new(0, 2.1, 54),
 			RacingSpeedboatPreview = Vector3.new(0, 2.1, 54),
 			TrawlerPreview = Vector3.new(0, 2.1, 54),
+			TugboatPreview = Vector3.new(0, 2.1, 54),
+			HovercraftPreview = Vector3.new(0, 2.1, 54),
 			SlipwayTop = Vector3.new(0, 2.1, 54),
 			LaunchWater = Vector3.new(0, -frame.Position.Y, 54),
 		}
@@ -266,6 +268,8 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 				elseif name == "PatrolBoatPreview" then "PatrolBoatDisplayOrigin"
 				elseif name == "RacingSpeedboatPreview" then "RacingSpeedboatDisplayOrigin"
 				elseif name == "TrawlerPreview" then "TrawlerDisplayOrigin"
+				elseif name == "TugboatPreview" then "TugboatDisplayOrigin"
+				elseif name == "HovercraftPreview" then "HovercraftDisplayOrigin"
 				else name,
 			Vector3.new(1, 1, 1),
 			position.X,
@@ -343,8 +347,10 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	local existing = plaza:FindFirstChild("Drydock")
 	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == LAYOUT_VERSION then
 		-- Saved version-15 shops share this waterline origin; add the new hull without rebuilding the lift.
-		if existing:GetAttribute("TrawlerPreviewFrame") == nil then
-			existing:SetAttribute("TrawlerPreviewFrame", existing:GetAttribute("FishingBoatPreviewFrame"))
+		for _, attribute in { "TrawlerPreviewFrame", "TugboatPreviewFrame", "HovercraftPreviewFrame" } do
+			if existing:GetAttribute(attribute) == nil then
+				existing:SetAttribute(attribute, existing:GetAttribute("FishingBoatPreviewFrame"))
+			end
 		end
 		for _, item in existing:GetDescendants() do
 			if item:IsA("Model") and item:FindFirstChild("CoolerLid") then
@@ -369,7 +375,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	shop.Name = "Drydock"
 	shop:SetAttribute("LayoutVersion", LAYOUT_VERSION)
 	shop:SetAttribute("BoatId", "Rowboat")
-	shop:SetAttribute("Price", 500)
+	shop:SetAttribute("Price", 0)
 	local frame = plazaFrame * CFrame.new(0, 0, 82)
 	shop:SetAttribute("InteriorFrame", frame * CFrame.new(0, 8, 0))
 	shop:SetAttribute("InteriorSize", Vector3.new(40, 16, 36))
@@ -549,7 +555,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	local price = part("BoatPrices", Vector3.new(6.5, 2.5, 0.08), 12, 3.3, -5.06, STEEL)
 	boardText(
 		price,
-		"ROWBOAT  $500\nFISHER'S BOAT  $2500\nBLUEWATER  $6500\nRACING SPEEDBOAT  $12500\nPATROL CRUISER  $25000",
+		"ROWBOAT  FREE\nFISHER'S BOAT  $2500\nBLUEWATER  $6500\nRACING SPEEDBOAT  $12500\nPATROL CRUISER  $25000",
 		YELLOW
 	)
 	local npc = Shipwright.build(at(12, 2, -0.5))

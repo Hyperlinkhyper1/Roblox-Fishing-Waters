@@ -21,10 +21,11 @@ function Reveal.play(
 	skinId: string,
 	onReward: () -> (),
 	onFinished: () -> (),
-	makeReward: (() -> Model)?
+	makeReward: (() -> Model)?,
+	rewardScaleOverride: number?
 ): (() -> ())?
 	local crate = stand and stand.Parent
-	local lid = crate and (crate:FindFirstChild("RodCrateLid") or crate:FindFirstChild("BobberCrateLid"))
+	local lid = crate and (crate:FindFirstChild("RodCrateLid") or crate:FindFirstChild("BobberCrateLid") or crate:FindFirstChild("SpearCrateLid"))
 	local origin = crate and crate:GetAttribute("CrateFrame")
 	local hinge = crate and crate:GetAttribute("LidHinge")
 	local camera = workspace.CurrentCamera
@@ -65,7 +66,7 @@ function Reveal.play(
 		prompts = ProximityPromptService.Enabled,
 	}
 	local reward: Model
-	local rewardScale = if makeReward then 5 else 1
+	local rewardScale = rewardScaleOverride or (if makeReward then 5 else 1)
 	if makeReward then
 		reward = makeReward()
 	else

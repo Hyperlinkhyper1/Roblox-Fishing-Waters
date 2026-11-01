@@ -33,8 +33,7 @@ local function isUnderwater(character: Model): boolean
 	end
 
 	local position = part.Position
-	return math.abs(position.X) < Biomes.MapHalfSize
-		and math.abs(position.Z) < Biomes.MapHalfSize
+	return Biomes.inOceanBounds(position)
 		and position.Y > Biomes.SeaFloor
 		and position.Y < Biomes.WaterLevel
 end

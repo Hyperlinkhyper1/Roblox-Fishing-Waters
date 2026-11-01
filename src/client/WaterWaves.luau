@@ -347,8 +347,7 @@ function WaterWaves.start()
 		local probes = MAX_RIBBON_PROBES
 		local visible = cameraPosition.Y > Biomes.WaterLevel - 0.5
 			and cameraPosition.Y < Biomes.WaterLevel + 180
-			and math.abs(cameraPosition.X) < Biomes.MapHalfSize
-			and math.abs(cameraPosition.Z) < Biomes.MapHalfSize
+			and Biomes.inOceanBounds(cameraPosition)
 		for _, ribbon in ribbons do
 			local center = across * (acrossOrigin + ribbon.column * CELL)
 				+ direction * (alongOrigin + ribbon.row * CELL)

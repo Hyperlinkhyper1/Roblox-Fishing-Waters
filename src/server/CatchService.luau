@@ -11,12 +11,14 @@ local BoatService = require(script.Parent.BoatService)
 local BoatData = require(script.Parent.BoatData)
 local BackpackCatalog = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
+local CatchConditions = require(ReplicatedStorage.Shared.CatchConditions)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
+local Seasons = require(ReplicatedStorage.Shared.Seasons)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local CatchService = {}
@@ -130,7 +132,12 @@ local function cast(player: Player, target: any)
 		if casts[player] ~= state then
 			return
 		end
-		local pool = Catalog.Pools[if Weather.inLake(state.target) then Catalog.DefaultPool else "OpenSea"]
+		local pool = FishCatch.inSeason(
+			Catalog.Pools[if Weather.inLake(state.target) then Catalog.DefaultPool else "OpenSea"],
+			Catalog.Fish,
+			(Seasons.current()),
+			CatchConditions.at(state.target)
+		)
 		local function rng()
 			return random:NextNumber()
 		end
@@ -161,10 +168,11 @@ local function award(player: Player, roll)
 	local saved = false
 	local autoStored = false
 	local destination
+	local count
 	for attempt = 1, 4 do
 		local traits = roll.Traits
 		local message
-		saved, message, autoStored, destination =
+		saved, message, autoStored, destination, count =
 			AnglerService.recordCatch(player, roll.FishId, traits.Mutation, roll.Kg, roll.Value, roll.Size, traits)
 		if saved or player.Parent ~= Players then
 			break
@@ -183,6 +191,7 @@ local function award(player: Player, roll)
 		AutoStored = autoStored,
 		BackpackStored = saved and destination == "Backpack",
 		Stored = saved and destination == "Hand",
+		Count = count,
 	})
 end
 

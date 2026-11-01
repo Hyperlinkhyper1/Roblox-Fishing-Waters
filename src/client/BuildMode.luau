@@ -15,6 +15,7 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
+local BaseGrid = require(ReplicatedStorage.Shared.BaseGrid)
 local FurniturePreview = require(script.Parent.FurniturePreview)
 local Freecam = require(script.Parent.Freecam)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
@@ -24,7 +25,7 @@ local rgb = Color3.fromRGB
 local FITS = rgb(84, 192, 92)
 local BLOCKED = rgb(226, 72, 60)
 local ROOM = rgb(96, 200, 120)
-local HOME_DISTANCE = 80
+local HOME_DISTANCE = 110
 -- Everything above the doorway lintels: roof, gables, ceiling ties and pendant lamps.
 local ROOF_HEIGHT = 8.4
 local FLOOR_Y = 0.16
@@ -40,8 +41,6 @@ local HEIGHTS = {
 	DiningTable = 4.3,
 	WeatherRadar = 4.4,
 }
--- The Restaurant's dining room extends the floor behind the house to this z.
-local DINING_BACK = -30
 local CAMERA_PITCH = math.rad(55)
 local TURN_SPEED = math.rad(90)
 local TURN_RESPONSE = 12
@@ -49,7 +48,7 @@ local TURN_KEYS = {
 	[Enum.KeyCode.Q] = -1,
 	[Enum.KeyCode.E] = 1,
 }
-local PAN_LIMIT = Vector2.new(30, 24)
+local PAN_LIMIT = Vector2.new(38, 100)
 local PAN_KEYS = {
 	[Enum.KeyCode.W] = Vector2.new(0, -1),
 	[Enum.KeyCode.Up] = Vector2.new(0, -1),
@@ -355,13 +354,11 @@ function BuildMode.start()
 			local item = Furniture.Items[held.ItemId]
 			hint.Text = if spot and spot.Reason
 				then spot.Reason
-				else string.format(
-					"Click the %s to place your %s.",
-					Furniture.RoomNames[item.Room],
-					string.lower(item.Name)
-				)
+				else string.format("Place your %s: %s.", string.lower(item.Name), Furniture.roomNames(held.ItemId))
 		elseif selected and state and state.Placed[selected] then
 			hint.Text = Furniture.Items[state.Placed[selected].ItemId].Name .. " selected. Move it or pick it up."
+		elseif state and state.PendingWallMigration then
+			hint.Text = "Some furniture needs room near the new walls. Move or pick up furniture to make space."
 		else
 			hint.Text = "Choose furniture to place, or click placed furniture. Buy more at Harbour Home on the plaza."
 		end
@@ -434,12 +431,14 @@ function BuildMode.start()
 		local item = Furniture.Items[held.ItemId]
 		-- Yard items sit on the quay deck, a step below the house floor.
 		local floor = Furniture.floor(held.ItemId)
-		plate(model, Furniture.Rooms[item.Room], floor + 0.05, ROOM, 0.75).Name = "AllowedRoom"
-		for _, area in Furniture.Blocked do
-			local room = Furniture.Rooms[item.Room]
-			-- Only show the keep-clear zones inside the room being furnished.
-			if area[1] < room[3] and area[3] > room[1] and area[2] < room[4] and area[4] > room[2] then
-				plate(model, area, floor + 0.07, BLOCKED, 0.8).Name = "KeepClear"
+		for _, roomId in Furniture.allowedRooms(held.ItemId) do
+			local room = Furniture.Rooms[roomId]
+			plate(model, room, floor + 0.05, ROOM, 0.75).Name = "AllowedRoom"
+			for _, area in Furniture.Blocked do
+				-- Only show keep-clear zones in the allowed rooms.
+				if area[1] < room[3] and area[3] > room[1] and area[2] < room[4] and area[4] > room[2] then
+					plate(model, area, floor + 0.07, BLOCKED, 0.8).Name = "KeepClear"
+				end
 			end
 		end
 		local height = HEIGHTS[held.ItemId] or 3
@@ -524,8 +523,7 @@ function BuildMode.start()
 		if not point then
 			return nil
 		end
-		return math.round(point.X / Furniture.GRID) * Furniture.GRID,
-			math.round(point.Z / Furniture.GRID) * Furniture.GRID
+		return BaseGrid.snap(point.X), BaseGrid.snap(point.Z)
 	end
 	local function aim(position: Vector2)
 		if not held or not state then
@@ -670,26 +668,114 @@ function BuildMode.start()
 	local function showGrid()
 		local folder = make("Folder", workspace, { Name = "BuildGrid" })
 		grid = folder
-		local back = if state and state.Unlocked and state.Unlocked.Restaurant then DINING_BACK else -15
-		for x = -23, 23, Furniture.GRID do
-			local major = x % 2 == 0
-			plate(
-				folder,
-				{ x - 0.012, if x <= -5.5 then back else -15, x + 0.012, 15 },
-				FLOOR_Y + 0.13,
-				rgb(235, 245, 255),
-				if major then 0.3 else 0.65
-			)
+		-- Draw the cell boundaries, not the centers used to snap furniture.
+		local halfWidth, halfLength = BaseGrid.HALF_WIDTH, BaseGrid.HALF_LENGTH
+		for column = 0, BaseGrid.COLUMNS do
+			local x = -halfWidth + column * BaseGrid.CELL_SIZE
+			plate(folder, { x - 0.012, -halfLength, x + 0.012, halfLength }, FLOOR_Y + 0.13, rgb(235, 245, 255), 0.3)
 		end
-		for z = back, 15, Furniture.GRID do
-			local major = z % 2 == 0
-			plate(
-				folder,
-				{ -23, z - 0.012, if z < -15 then -5.5 else 23, z + 0.012 },
-				FLOOR_Y + 0.13,
-				rgb(235, 245, 255),
-				if major then 0.3 else 0.65
-			)
+		for row = 0, BaseGrid.ROWS do
+			local z = -halfLength + row * BaseGrid.CELL_SIZE
+			plate(folder, { -halfWidth, z - 0.012, halfWidth, z + 0.012 }, FLOOR_Y + 0.13, rgb(235, 245, 255), 0.3)
+		end
+		-- Project the same grid onto the actual walking surfaces outside. Include
+		-- only structural floors, ramps and decks: furniture, boats and roofs do
+		-- not turn into grid surfaces, and gaps between piers remain empty.
+		local base = house and house.Parent
+		if not base then return end
+		local surfaces = {}
+		local surfaceNames = {
+			DiningFloor = true, RearLanding = true, RearStep = true,
+			EntranceStep = true, FrontApproachStep = true,
+			-- The shop building across the street.
+			ShopFloor = true, ShopEntranceStep = true, ShopForecourt = true,
+		}
+		for _, part in base:GetDescendants() do
+			if part:IsA("BasePart") and part.CanQuery and (
+				surfaceNames[part.Name]
+				or (part.Name == "DeckSurface" and part.Parent and (part.Parent.Name == "Dock" or part.Parent.Name == "DockLink"))
+				or ((part.Name == "DockRamp" or part.Name == "QuayLanding") and part:FindFirstAncestor("DockAccess"))
+				or (part.Parent == base and part.Size.X >= 45 and part.Size.Z >= 40)
+				or (part.Name == "Step" and part.Parent and part.Parent.Name == "BeachStairs")
+			) then
+				table.insert(surfaces, part)
+			end
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = surfaces
+		params.RespectCanCollide = true
+		local up = houseFrame.UpVector
+		local samples = {}
+		local function sample(x: number, z: number): Vector3?
+			local key = string.format("%.3f:%.3f", x, z)
+			if samples[key] ~= nil then return samples[key] or nil end
+			local origin = houseFrame:PointToWorldSpace(Vector3.new(x, 0.8, z))
+			local hit = workspace:Raycast(origin, up * -8, params)
+			if hit and hit.Normal:Dot(up) >= 0.7 and hit.Material ~= Enum.Material.Water then
+				local point = hit.Position + up * 0.13
+				samples[key] = point
+				return point
+			end
+			samples[key] = false
+			return nil
+		end
+		local function line(x1: number, z1: number, x2: number, z2: number, depth: number)
+			-- The house already has its own uninterrupted overlay. Five samples
+			-- also prevent a line from spanning water or a sudden height change.
+			local mx, mz = (x1 + x2) / 2, (z1 + z2) / 2
+			if math.abs(mx) < halfWidth and math.abs(mz) < halfLength then return end
+			local points, count = {}, 0
+			for index = 0, 4 do
+				local t = index / 4
+				local point = sample(x1 + (x2 - x1) * t, z1 + (z2 - z1) * t)
+				points[index + 1] = point
+				if point then count += 1 end
+			end
+			if count == 0 then return end
+			local first, last = points[1], points[5]
+			local continuous = count == 5
+			if continuous then
+				for index = 2, 4 do
+					if (points[index] - first:Lerp(last, (index - 1) / 4)).Magnitude > 0.15 then
+						continuous = false
+						break
+					end
+				end
+			end
+			if not continuous then
+				-- Clip edges and steps to smaller pieces, instead of connecting a
+				-- line across a water gap or floating it above a stair tread.
+				if depth < 3 then
+					line(x1, z1, mx, mz, depth + 1)
+					line(mx, mz, x2, z2, depth + 1)
+				end
+				return
+			end
+			local length = (last - first).Magnitude
+			if length < 0.01 then return end
+			make("Part", folder, {
+				Name = "GroundGridLine", Anchored = true, CanCollide = false,
+				CanQuery = false, CanTouch = false, CastShadow = false,
+				Material = Enum.Material.SmoothPlastic, Color = rgb(235, 245, 255), Transparency = 0.3,
+				Size = Vector3.new(0.024, 0.08, length),
+				CFrame = CFrame.lookAt((first + last) / 2, last, up),
+			})
+		end
+		local size = BaseGrid.CELL_SIZE
+		for column = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN + 1 do
+			local x = -halfWidth + (column - 1) * size
+			for row = BaseGrid.BASE_MIN_ROW, BaseGrid.BASE_MAX_ROW do
+				local z = -halfLength + (row - 1) * size
+				line(x, z, x, z + size, 0)
+			end
+		end
+		for row = BaseGrid.BASE_MIN_ROW, BaseGrid.BASE_MAX_ROW + 1 do
+			local z = -halfLength + (row - 1) * size
+			for column = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN do
+				local x = -halfWidth + (column - 1) * size
+				line(x, z, x + size, z, 0)
+			end
 		end
 	end
 

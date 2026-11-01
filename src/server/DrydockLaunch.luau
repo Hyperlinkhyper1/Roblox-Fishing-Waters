@@ -7,6 +7,8 @@ local Speedboat = require(script.Parent.Speedboat)
 local RacingSpeedboat = require(script.Parent.RacingSpeedboat)
 local PatrolBoat = require(script.Parent.PatrolBoat)
 local Trawler = require(script.Parent.Trawler)
+local Tugboat = require(script.Parent.Tugboat)
+local Hovercraft = require(script.Parent.Hovercraft)
 
 local DrydockLaunch = {}
 -- A purchase first raises the underwater cradle into the basin, then lowers the new hull.
@@ -21,6 +23,7 @@ local boats = {
 		-- Full stern and boarding ladder need the same headwall clearance as the cruiser.
 		launchOffset = CFrame.new(0, 0, -10.5),
 	},
+	Tugboat = { previewName = "TugboatPreview", frameAttribute = "TugboatPreviewFrame", builder = Tugboat },
 	RacingSpeedboat = {
 		previewName = "RacingSpeedboatPreview",
 		frameAttribute = "RacingSpeedboatPreviewFrame",
@@ -33,6 +36,7 @@ local boats = {
 		builder = FishingBoat,
 	},
 	Speedboat = { previewName = "SpeedboatPreview", frameAttribute = "SpeedboatPreviewFrame", builder = Speedboat },
+	Hovercraft = { previewName = "HovercraftPreview", frameAttribute = "HovercraftPreviewFrame", builder = Hovercraft },
 	PatrolBoat = {
 		previewName = "PatrolBoatPreview",
 		frameAttribute = "PatrolBoatPreviewFrame",

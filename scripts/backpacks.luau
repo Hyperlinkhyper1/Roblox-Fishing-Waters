@@ -520,13 +520,39 @@ do
 		"Freezer prompt stocks unlocked backpack fish without a hand fish"
 	)
 	check(refreshes == 1 and string.find(message, "1 fish"), "Stocking refreshes the freezer and reports its count")
+	profile.Angler = catch(withTwo, 3)
+	stock(player, freezer, prompt)
+	check(profile.Angler.Hand and profile.Angler.Hand.CaughtAt == 3 and #profile.Angler.Backpack == 1,
+		"An unequipped hotbar fish stays while unlocked backpack fish are stocked")
+	profile.Angler = catch(withTwo, 3)
+	local tool = Instance.new("Tool")
+	tool:SetAttribute("CargoFish", "Test|2|3")
+	tool.Parent = character
+	stock(player, freezer, prompt)
+	check(profile.Angler.Hand == nil and #profile.Angler.Freezer == 2 and #profile.Angler.Backpack == 1,
+		"An equipped fish and unlocked backpack fish stock together")
+	tool:Destroy()
+	profile.Angler = locked
+	stock(player, freezer, prompt)
+	check(#profile.Angler.Backpack == 1 and string.find(message, "No unlocked"),
+		"Locked fish remain in the backpack with a useful message")
+	profile.Angler = fullFreezer
+	stock(player, freezer, prompt)
+	check(#profile.Angler.Backpack == 2 and string.find(message, "full"),
+		"A full freezer preserves backpack fish and reports the problem")
+	profile.Angler = withTwo
+	failSave = true
+	stock(player, freezer, prompt)
+	check(#profile.Angler.Backpack == 2 and message == "Save failed", "A failed save preserves backpack fish")
+	failSave = false
+	local refreshesBeforeDenial = refreshes
 	owner = nil
 	stock(player, freezer, prompt)
-	check(refreshes == 1 and #profile.Angler.Backpack == 1, "Non-owners cannot stock a freezer")
+	check(refreshes == refreshesBeforeDenial and #profile.Angler.Backpack == 2, "Non-owners cannot stock a freezer")
 	owner = player
 	allowed = false
 	stock(player, freezer, prompt)
-	check(refreshes == 1, "Distant players cannot stock a freezer")
+	check(refreshes == refreshesBeforeDenial, "Distant players cannot stock a freezer")
 	profile.Angler = previous
 end
 
@@ -635,6 +661,9 @@ local cargoUpdate = ReplicatedStorage.Cargo.Update
 cargoUpdate.OnClientEvent = event()
 Catalog.Rarities = {}
 BoatCatalog.TestBoat.Name = "Test boat"
+local Font = { new = function(...)
+	return { ... }
+end }
 local ClientCargo = (function()
 	-- CLIENT_CARGO_SOURCE --
 end)()

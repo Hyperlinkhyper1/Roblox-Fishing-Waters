@@ -171,7 +171,7 @@ groundParams.IgnoreWater = true
 groundParams.RespectCanCollide = true
 local tips = {
 	"Your starter rod is already in your inventory. Equip it to start fishing.",
-	"Your dock is your own little corner of Gullhaven.",
+	"New anglers can launch their starter rowboat from the boat stand at their dock.",
 	"Take a boat out and find a new stretch of shoreline.",
 }
 

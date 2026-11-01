@@ -8,8 +8,12 @@ local Props = require(script.Parent.Props)
 local SeabedLife = require(script.Parent.SeabedLife)
 
 local SeabedDetails = {}
-local VERSION = 2
+local VERSION = 3
 local TAU = math.pi * 2
+-- Every cell of this grid over the whole floor gets a patch, so no stretch is bare.
+-- Patches are copies of a few prebuilt ones per style; halve CELL for 4x the parts.
+local CELL = 64
+local PATCH_TEMPLATES = 16
 local M = Enum.Material
 local rgb = Color3.fromRGB
 
@@ -152,6 +156,19 @@ local function coral(parent: Model, ground: Vector3, rng: Random, colors: { Colo
 	end
 end
 
+-- Decoration is scenery only: nothing collides with it, and it streams whole.
+local function settle(patch: Model)
+	for _, part in patch:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+			part.CanTouch = false
+			part.CanQuery = false
+			part.CastShadow = false
+		end
+	end
+	patch.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+end
+
 local function garden(parent: Instance, hit: RaycastResult, style: Style, rng: Random, params: RaycastParams)
 	local patch = model("SeabedGarden", parent)
 	local ground = hit.Position
@@ -199,15 +216,48 @@ local function garden(parent: Instance, hit: RaycastResult, style: Style, rng: R
 			end
 		end
 	end
-	for _, part in patch:GetDescendants() do
-		if part:IsA("BasePart") then
-			part.CanCollide = false
-			part.CanTouch = false
-			part.CanQuery = false
-			part.CastShadow = false
+	settle(patch)
+end
+
+-- One cheap piece of floor life. Kelp is left out: its height depends on the depth.
+local function tuft(parent: Model, ground: Vector3, style: Style, rng: Random)
+	local kind = rng:NextNumber()
+	if style.coral and kind < 0.3 then
+		local pick = rng:NextNumber()
+		if pick < 0.35 then
+			SeabedLife.fan(parent, ground, rng, style.coral)
+		elseif pick < 0.6 then
+			SeabedLife.sponges(parent, ground, rng, style.coral)
+		else
+			coral(parent, ground, rng, style.coral)
 		end
+	elseif kind < 0.3 + 0.45 * style.vegetation then
+		if rng:NextNumber() < 0.6 then
+			SeabedLife.grass(parent, ground, rng, style.weed)
+		else
+			seaweed(parent, ground, rng, style.weed)
+		end
+	elseif kind < 0.88 then
+		pebbles(parent, ground, rng, style.stone)
+	elseif kind < 0.95 then
+		SeabedLife.shells(parent, ground, Vector3.yAxis, rng)
+	else
+		SeabedLife.starfish(parent, ground, Vector3.yAxis, rng)
 	end
-	patch.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+end
+
+-- Built flat around the origin, so a copy can be turned and tilted onto any ground.
+local function patchTemplate(style: Style, rng: Random): Model
+	local patch = Instance.new("Model")
+	patch.Name = "SeabedPatch"
+	for index = 1, rng:NextInteger(1, 2) do
+		local angle = rng:NextNumber(0, TAU)
+		local distance = if index == 1 then 0 else rng:NextNumber(3, 8)
+		tuft(patch, Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance), style, rng)
+	end
+	settle(patch)
+	patch.WorldPivot = CFrame.new()
+	return patch
 end
 
 -- Dress swimming coves and island aprons more densely than the deep sea.
@@ -332,6 +382,75 @@ local function scatter(
 			task.wait()
 		end
 	end
+	return placed
+end
+
+local function cellKey(x: number, z: number): number
+	return math.floor(x / CELL) * 100003 + math.floor(z / CELL)
+end
+
+-- Fill every grid cell the gardens left bare with a copy of a prebuilt patch, seated on
+-- the sampled ground. Islands and steep slopes simply fail the sample and stay clear.
+local function carpet(details: Folder, params: RaycastParams, seed: number, occupied: { Vector2 })
+	local rng = Random.new(seed)
+	local taken: { [number]: boolean } = {}
+	for _, position in occupied do
+		taken[cellKey(position.X, position.Y)] = true
+	end
+	local pools: { [Style]: { Model } } = {}
+	local folders: { [Biomes.Biome]: Folder } = {}
+	local half = Biomes.MapHalfSize
+	local count = 0
+	for x = -half, half - CELL, CELL do
+		for z = -half, half - CELL, CELL do
+			if taken[cellKey(x + CELL / 2, z + CELL / 2)] then
+				continue
+			end
+			local hit: RaycastResult?
+			for _ = 1, 2 do
+				hit = sample(params, x + rng:NextNumber(4, CELL - 4), z + rng:NextNumber(4, CELL - 4))
+				if hit then
+					break
+				end
+			end
+			if not hit then
+				continue
+			end
+			local biome = Biomes.at(hit.Position)
+			local style = if biome == Biomes.OpenSea then STYLES.open else STYLES[biome.id]
+			local pool = pools[style]
+			if not pool then
+				pool = {}
+				for _ = 1, PATCH_TEMPLATES do
+					table.insert(pool, patchTemplate(style, rng))
+				end
+				pools[style] = pool
+			end
+			local folder = folders[biome]
+			if not folder then
+				folder = Instance.new("Folder")
+				folder.Name = "Floor"
+				folder.Parent = details:FindFirstChild(biome.name) or details
+				folders[biome] = folder
+			end
+			local normal = hit.Normal
+			local right = normal:Cross(Vector3.zAxis).Unit
+			local frame = CFrame.fromMatrix(hit.Position, right, normal, right:Cross(normal))
+			local patch = pool[rng:NextInteger(1, #pool)]:Clone()
+			patch:PivotTo(frame * CFrame.Angles(0, rng:NextNumber(0, TAU), 0))
+			patch.Parent = folder
+			count += 1
+			if count % 50 == 0 then
+				task.wait()
+			end
+		end
+		task.wait()
+	end
+	for _, pool in pools do
+		for _, template in pool do
+			template:Destroy()
+		end
+	end
 end
 
 function SeabedDetails.ensure(root: Instance)
@@ -368,17 +487,22 @@ function SeabedDetails.ensure(root: Instance)
 	params.FilterDescendantsInstances = surfaces
 	params.IgnoreWater = true
 
+	local gardens: { Vector2 } = {}
 	for index, biome in Biomes.list do
 		local folder = Instance.new("Folder")
 		folder.Name = biome.name
 		folder.Parent = details
 		local occupied = shoreGardens(folder, biome, STYLES[biome.id], surfaces, params, Biomes.Seed + 700 + index)
+		-- scatter appends its own gardens to `occupied`
 		scatter(folder, biome, STYLES[biome.id], params, Biomes.Seed + 600 + index, occupied)
+		table.move(occupied, 1, #occupied, #gardens + 1, gardens)
 	end
 	local open = Instance.new("Folder")
 	open.Name = Biomes.OpenSea.name
 	open.Parent = details
-	scatter(open, Biomes.OpenSea, STYLES.open, params, Biomes.Seed + 606)
+	local scattered = scatter(open, Biomes.OpenSea, STYLES.open, params, Biomes.Seed + 606)
+	table.move(scattered, 1, #scattered, #gardens + 1, gardens)
+	carpet(details, params, Biomes.Seed + 800, gardens)
 	details:SetAttribute("Version", VERSION)
 end
 

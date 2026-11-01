@@ -1,7 +1,7 @@
 -- The hooked-fish panel: a needle sweeps one of two arc gauges and every Pull
 -- inside the green zone reels the fish closer to the surface. Rarer and heavier
 -- fish sweep faster, shrink and drift the zone, and pull back harder. The same
--- panel shows the landed catch.
+-- panel shows short messages; CatchPopup shows the landed catch.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -9,7 +9,6 @@ local UserInputService = game:GetService("UserInputService")
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
-local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 local FishingAudio = require(script.Parent.FishingAudio)
 
 local Reel = {}
@@ -590,50 +589,11 @@ local function holdResult(self, seconds: number)
 	end)
 end
 
-function Reel:showCatch(payload)
-	if self.state then
-		return
-	end
-	local fish = Catalog.Fish[payload.FishId]
-	local rarity = fish and Catalog.Rarities[fish.Rarity]
-	FishModels.show(self.trophy, payload.FishId, nil, payload)
-	local mutation = FishMutations.label(payload.Mutation, payload.NeonColor)
-	self.resultTitle.Text =
-		string.upper((if mutation ~= "" then mutation .. " " else "") .. (if fish then fish.Name else payload.FishId))
-	self.rarityBadge.Visible = rarity ~= nil
-	if rarity then
-		self.rarityBadge.BackgroundColor3 = rarity.Color
-		self.rarityLabel.Text = string.upper(rarity.Name)
-	end
-	self.sizeBadge.Visible = payload.Size == "Huge" or payload.Size == "Big"
-	self.sizeBadge.BackgroundColor3 = if payload.Size == "Huge" then rgb(255, 196, 70) else rgb(220, 220, 214)
-	self.sizeLabel.Text = if payload.Size == "Huge" then "HUGE!" else "BIG"
-	self.weight.Text = FishCatch.formatKg(payload.Kg)
-	local multiplier = FishMutations.multiplier(payload.Mutation, payload.Corruptions)
-	self.worth.Text = "Worth $"
-		.. tostring(payload.Value)
-		.. (if multiplier > 1 then string.format("  (×%g mutation)", multiplier) else "")
-	self.footer.Text = if not payload.Saved
-		then "Your catch couldn't be saved. Please try again."
-		elseif payload.AutoStored then "Auto Store placed your catch in your boat's hold."
-		elseif payload.BackpackStored then "Your hands were full, so your catch was packed into your backpack."
-		elseif payload.Stored then "Added to your hotbar. Stow it in your backpack, boat's hold or freezer."
-		else "Your hands were full and this catch wouldn't fit in your backpack, so you released it. It still counts in your bestiary."
-	holdResult(self, 5)
-	local spin = resultId
-	local camera = self.trophy.CurrentCamera
-	if camera then
-		task.spawn(function()
-			local focus, distance = camera:GetAttribute("Focus"), camera:GetAttribute("Distance")
-			local look = (camera.CFrame.Position - focus).Unit
-			local started = os.clock()
-			while resultId == spin and self.showingResult and camera.Parent do
-				local angle = math.sin((os.clock() - started) * 0.9) * 0.5
-				camera.CFrame = CFrame.lookAt(focus + CFrame.Angles(0, angle, 0) * look * distance, focus)
-				RunService.RenderStepped:Wait()
-			end
-		end)
-	end
+-- Clears the reeling message once the catch popup takes over.
+function Reel:dismiss()
+	resultId += 1
+	self.showingResult = false
+	self:refreshVisibility()
 end
 
 function Reel:showMessage(title: string, message: string)

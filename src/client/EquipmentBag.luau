@@ -5,6 +5,8 @@ local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local FishingRod = require(ReplicatedStorage.Shared.FishingRod)
 local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
+local SpearSkins = require(ReplicatedStorage.Shared.SpearSkins)
+local Spears = require(ReplicatedStorage.Shared.Spears)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local FishingBobber = require(ReplicatedStorage.Shared.FishingBobber)
 
@@ -196,6 +198,32 @@ local function bobberPreview(parent, skinId)
 		local aspect = math.max(0.3, view.AbsoluteSize.X / math.max(1, view.AbsoluteSize.Y))
 		local distance = math.max(size.Y, size.X / aspect) * 0.65 / math.tan(math.rad(16))
 		camera.CFrame = CFrame.lookAt(center.Position + Vector3.new(0, 0.08, distance), center.Position)
+	end
+	view:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+	fit()
+end
+
+local function spearPreview(parent, skinId, wear)
+	local view = make("ViewportFrame", parent, {
+		Name = "SpearPreview", Position = UDim2.fromOffset(6, 4), Size = UDim2.new(1, -12, 0, 82),
+		Ambient = Color3.fromRGB(165, 170, 175), LightColor = Color3.fromRGB(255, 241, 216),
+		LightDirection = Vector3.new(-1, -1, -2),
+	})
+	local world = make("WorldModel", view, {})
+	local model = make("Model", world, {})
+	local spear = Spears.build(skinId, wear)
+	for _, part in spear:GetDescendants() do
+		if part:IsA("BasePart") then part.Anchored = true end
+	end
+	spear.Parent = model
+	local center, size = model:GetBoundingBox()
+	model:PivotTo(CFrame.Angles(0, math.rad(-12), math.rad(-75)) * center:Inverse() * model:GetPivot())
+	local camera = make("Camera", view, { FieldOfView = 30 })
+	view.CurrentCamera = camera
+	local function fit()
+		local aspect = math.max(0.3, view.AbsoluteSize.X / math.max(1, view.AbsoluteSize.Y))
+		local distance = math.max(size.Y * 0.65 / aspect, size.Z) / math.tan(math.rad(15))
+		camera.CFrame = CFrame.lookAt(Vector3.new(0, 0, distance), Vector3.zero)
 	end
 	view:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
 	fit()
@@ -575,6 +603,43 @@ function Bag.show(parent, profile, player, narrow)
 				child:Destroy()
 			end
 		end
+		if state.Category == "Spears" then
+			local copies = {}
+			for _, copy in profile.SpearSkinCopies or {} do
+				local skin = SpearSkins.Skins[copy.SkinId]
+				if skin and string.find(string.lower(skin.Name .. " " .. copy.Serial), string.lower(state.ItemQuery), 1, true) then
+					table.insert(copies, copy)
+				end
+			end
+			table.sort(copies, function(a, b)
+				local aName, bName = SpearSkins.Skins[a.SkinId].Name, SpearSkins.Skins[b.SkinId].Name
+				if aName == bName then return a.Serial < b.Serial end
+				return if state.Reverse then aName > bName else aName < bName
+			end)
+			for index, copy in copies do
+				local skin = SpearSkins.Skins[copy.SkinId]
+				local selected = player:GetAttribute("SpearSkin") == copy.SkinId and player:GetAttribute("SpearSkinSerial") == copy.Serial
+				local tile = panel(itemBody, "Spear:" .. copy.SkinId .. ":" .. copy.Serial, UDim2.new(), UDim2.new(1, -7, 0, 228))
+				tile.LayoutOrder = index
+				outline(tile, if selected then mint else edge)
+				spearPreview(tile, copy.SkinId, copy.Wear)
+				label(tile, skin.Name, 17, { Position = UDim2.fromOffset(8, 84), Size = UDim2.new(1, -16, 0, 27), TextXAlignment = Enum.TextXAlignment.Center })
+				label(tile, skin.Rarity .. " · " .. SpearSkins.wearState(copy.Wear) .. string.format("\nSerial #%06d", copy.Serial), 14,
+					{ Position = UDim2.fromOffset(8, 111), Size = UDim2.new(1, -16, 0, 35), TextColor3 = grey })
+				label(tile, table.concat(SpearSkins.perks(copy.SkinId, copy.Wear), " · "), 14,
+					{ Position = UDim2.fromOffset(8, 149), Size = UDim2.new(1, -16, 0, 29), TextColor3 = grey })
+				action(tile, "EquipSpearSkin", if selected then "[Selected · Remove]" else "[Use skin]", UDim2.fromOffset(8, 186), UDim2.new(1, -16, 0, 32), function()
+					if player:GetAttribute("BoatDataStatus") == "Ready" then
+						ReplicatedStorage.Fishing.Request:FireServer("EquipSpearSkin", if selected then "" else { SkinId = copy.SkinId, Serial = copy.Serial })
+					end
+				end, selected)
+			end
+			if #copies == 0 then
+				empty(itemBody, if state.ItemQuery ~= "" then "No matching spear skins" else "No spear skins yet",
+					if state.ItemQuery ~= "" then "Try another search." else "Open the $350 Spear Case in Tide & Tackle.")
+			end
+			return
+		end
 		if state.Category == "Bobbers" then
 			local ids = {}
 			for id, count in profile.BobberSkins or {} do
@@ -713,7 +778,7 @@ function Bag.show(parent, profile, player, narrow)
 		fillItems()
 	end)
 	-- Boats retain access to the previously listed owned vessels.
-	for index, category in { "Bobbers", "Baits", "Lanterns", "Accessories", "Boats" } do
+	for index, category in { "Spears", "Bobbers", "Baits", "Lanterns", "Accessories", "Boats" } do
 		tabs[category] = action(
 			rail,
 			category .. "Category",

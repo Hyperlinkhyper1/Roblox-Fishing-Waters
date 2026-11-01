@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 18 200 200" width="200" height="200" role="img" aria-label="Simply Voxelworks">
+  <title>Simply Voxelworks</title>
+  <defs>
+    <linearGradient id="mL" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#4FD889"/><stop offset="1" stop-color="#178A47"/></linearGradient>
+    <linearGradient id="mR" x1="1" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#FFB054"/><stop offset="1" stop-color="#E2660F"/></linearGradient>
+    <linearGradient id="mT" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9BF0B4"/><stop offset="1" stop-color="#FFC56B"/></linearGradient>
+  </defs>
+  <path d="M35.22,94.79 Q35.22,85.79 43.01,90.29 L87.71,116.1 Q95.5,120.6 95.5,129.6 L95.5,181.21 Q95.5,190.21 87.71,185.71 L43.01,159.9 Q35.22,155.4 35.22,146.4 Z" fill="url(#mL)"/>
+  <path d="M104.5,129.6 Q104.5,120.6 112.29,116.1 L156.99,90.29 Q164.78,85.79 164.78,94.79 L164.78,146.4 Q164.78,155.4 156.99,159.9 L112.29,185.71 Q104.5,190.21 104.5,181.21 Z" fill="url(#mR)"/>
+  <path d="M92.21,47.7 Q100,43.2 107.79,47.7 L152.49,73.5 Q160.28,78 152.49,82.5 L107.79,108.3 Q100,112.8 92.21,108.3 L47.51,82.5 Q39.72,78 47.51,73.5 Z" fill="url(#mT)"/>
+</svg>

@@ -229,6 +229,8 @@ local netted = assert(
 )
 check(netted.Stats.TotalCaught == 1, "A net catch counts in lifetime catches")
 check(netted.Stats.TotalXP == netSpecies.Trout.CatchXP, "A net catch awards species XP")
+local boostedNet = assert(AnglerData.netCatch(freshNet, "Trawler", BoatCatalog.Trawler, netRoll, 1000, netSpecies, netMutations, true))
+check(boostedNet.Stats.TotalXP == netSpecies.Trout.CatchXP * 2, "XP pass doubles trawler XP")
 check(netted.Stats.CatchStreak == 1 and netted.Stats.HighestCatchStreak == 1, "A net catch extends the streak")
 check(netted.Catches.Trout.Count == 1 and netted.Catches.Trout.BiggestKg == 1.2, "A net catch fills the bestiary")
 check(netted.Findings.Largest.FishId == "Trout", "A net catch can set a finding")

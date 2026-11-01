@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-120 -120 240 240" width="240" height="240" role="img" aria-label="Simply Voxelworks">
+  <title>Simply Voxelworks</title>
+  <defs><linearGradient id="g3a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9155FF"/><stop offset="1" stop-color="#4F78FF"/></linearGradient><linearGradient id="g3b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#B9A8FF"/><stop offset="1" stop-color="#22D3EE"/></linearGradient></defs>
+  <polygon points="0,0 26.13,-104.79 31.52,-18.94" fill="url(#g3a)"/>
+  <polygon points="0,0 -18.94,-31.52 26.13,-104.79" fill="url(#g3b)"/>
+  <polygon points="0,0 104.79,26.13 18.94,31.52" fill="url(#g3a)"/>
+  <polygon points="0,0 31.52,-18.94 104.79,26.13" fill="url(#g3b)"/>
+  <polygon points="0,0 -26.13,104.79 -31.52,18.94" fill="url(#g3a)"/>
+  <polygon points="0,0 18.94,31.52 -26.13,104.79" fill="url(#g3b)"/>
+  <polygon points="0,0 -104.79,-26.13 -18.94,-31.52" fill="url(#g3a)"/>
+  <polygon points="0,0 -31.52,18.94 -104.79,-26.13" fill="url(#g3b)"/>
+</svg>
