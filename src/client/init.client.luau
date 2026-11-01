@@ -40,6 +40,7 @@ local modules = {
 	"PlayerMenu",
 	"WorldMap",
 	"Tutorial",
+	"HalloweenParty",
 	"RodPhysics",
 	"RowingAnimation",
 	"ShoreWaves",

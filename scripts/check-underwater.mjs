@@ -53,12 +53,13 @@ Lighting.objects.BiomeColorGrading = grading
 Terrain.objects.Clouds = clouds
 local camera = { CFrame = { Position = { X = 0, Y = 20, Z = 0 } } }
 local workspace = { Terrain = Terrain, CurrentCamera = camera }
-function workspace:GetServerTimeNow() return 1000 end
-local attributes = { WeatherEpoch = 1000 }
+-- 10:00 on the shared calendar
+function workspace:GetServerTimeNow() return 1767226200 end
+local attributes = { WeatherEpoch = 1767226200 }
 function workspace:GetAttribute(name) return attributes[name] end
 local weather = { rain = 0, storm = 0, cloudCover = 0 }
 local Weather = { getState = function(time)
-  assert(time == 1000, "Atmosphere must use the synchronized weather clock")
+  assert(time == 1767226200, "Atmosphere must use the synchronized weather clock")
   return weather
 end, supercellCover = function() return 0 end }
 local task = { delay = function() end }
@@ -188,7 +189,7 @@ assert(math.abs(Lighting.Brightness - (2 - 0.24 * 0.95)) < 0.00001,
 assert(lightningGrading.Brightness == 0.37,
   "Biome/weather grading must leave the separate lightning grading effect untouched")
 print("PASS 10-metre underwater fog, atmosphere/fog restoration, all biomes, rapid transitions, surface margin, ocean bounds, camera replacement and weather transitions")
-assert(Lighting.ClockTime == DayNight.START_HOUR, "Clients run the shared clock")
+assert(Lighting.ClockTime == 10, "Clients run the shared clock")
 weather = { rain = 0, storm = 0, cloudCover = 0 }
 move(0, 5, 0, 0.6)
 local dayAmbient, dayBrightness, dayFog = Lighting.OutdoorAmbient, Lighting.Brightness, atmosphere.Color

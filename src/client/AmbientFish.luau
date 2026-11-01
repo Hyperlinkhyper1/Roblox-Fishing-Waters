@@ -41,7 +41,8 @@ local function between(range: NumberRange, rng: Random): number
 end
 
 local function swims(species): boolean
-	if species.DropOnly or not species.Pools or species.Requires then
+	-- Limited species may be switched off on the dashboard, so they never swim past.
+	if species.DropOnly or not species.Pools or species.Requires or species.Rarity == "Limited" then
 		return false
 	end
 	for _, pattern in GROUNDED do

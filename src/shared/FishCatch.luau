@@ -117,12 +117,36 @@ function FishCatch.seasonLabel(fish): string
 	return if #labels > 0 then text .. " (" .. table.concat(labels, ", ") .. ")" else text
 end
 
+-- Limited species never join the weighted draw. Each one the admin dashboard
+-- has switched on bites with its own flat chance per catch (0..1, by species
+-- id; DashboardService fills this); one that is off or missing never bites.
+FishCatch.limited = {} :: { [string]: number }
+
 function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?): string
 	local bias = math.clamp(luck or 0, 0, 0.9)
+	local regular = pool.Fish
+	for _, id in pool.Fish do
+		if species[id].Rarity == "Limited" then
+			regular = {}
+			break
+		end
+	end
+	if regular ~= pool.Fish then
+		for _, id in pool.Fish do
+			if species[id].Rarity ~= "Limited" then
+				table.insert(regular, id)
+			else
+				local chance = FishCatch.limited[id]
+				if type(chance) == "number" and chance > 0 and rng() < chance then
+					return id
+				end
+			end
+		end
+	end
 	local pick = rng()
 	if pool.Junk and #pool.Junk > 0 then
 		-- Out of season, junk is all that bites.
-		local junkChance = if #pool.Fish == 0 then 1 else FishCatch.JUNK_CHANCE
+		local junkChance = if #regular == 0 then 1 else FishCatch.JUNK_CHANCE
 		if pick < junkChance then
 			return pool.Junk[math.floor(pick / junkChance * #pool.Junk) + 1]
 		end
@@ -130,17 +154,18 @@ function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?):
 		pick = (pick - FishCatch.JUNK_CHANCE) / (1 - FishCatch.JUNK_CHANCE)
 	end
 	local total = 0
-	for _, id in pool.Fish do
+	for _, id in regular do
 		total += weight(species[id], bias)
 	end
 	pick *= total
-	for _, id in pool.Fish do
+	for _, id in regular do
 		pick -= weight(species[id], bias)
 		if pick < 0 then
 			return id
 		end
 	end
-	return pool.Fish[#pool.Fish]
+	-- A junk-free pool of nothing but Limited species still has to land something.
+	return regular[#regular] or pool.Fish[#pool.Fish]
 end
 
 -- Most fish cluster around the species average; a few are big and a rare few
@@ -234,6 +259,10 @@ local titles = {
 	Rare = "CHURNING WATER",
 	Epic = "VIOLENT WATER",
 	Legendary = "RAGING WATER",
+	Mythical = "SEETHING WATER",
+	Exotic = "SHIMMERING WATER",
+	Divine = "RADIANT WATER",
+	Limited = "UNHEARD-OF WATER",
 }
 function FishCatch.title(fish): string
 	return titles[fish.Rarity] or "DISTURBED WATER"

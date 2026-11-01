@@ -900,6 +900,7 @@ local ASTRAL_GLOW = rgb(170, 70, 255)
 -- The client cycles the hue of every part carrying a RainbowHue attribute.
 FishModels.RAINBOW_TAG = "RainbowFish"
 FishModels.VOID_TAG = "VoidTouchedFish"
+FishModels.GLITCH_TAG = "GlitchFish"
 
 -- A builder over an already built, unscaled fish, so corruptions can reuse the
 -- surface helpers. Body sections are the axis-aligned ellipsoids.
@@ -1169,6 +1170,44 @@ local function voidAura(model: Model)
 	model:AddTag(FishModels.VOID_TAG)
 end
 
+-- Add petals as fish geometry so they follow the fish through tools and displays.
+local function flowers(model: Model)
+ local core = bodyCore(model)
+ if not core then return end
+ local b = newBuilder("flowers", 23)
+ b.model = model
+ local center, size = core.Position / SCALE, core.Size / SCALE
+ for _, side in { -1, 1 } do
+  for _, x in { -0.2, 0.16 } do
+   local origin = center + Vector3.new(size.X * x, size.Y * 0.15, side * size.Z * 0.49)
+   local radius = math.max(0.018, size.X * 0.045)
+   for petal = 1, 5 do
+    local angle = petal * math.pi * 2 / 5
+    b:ellipsoid("FlowerPetal", CFrame.new(origin + Vector3.new(math.cos(angle) * radius, math.sin(angle) * radius, 0)), Vector3.new(radius, radius, radius * 0.45), rgb(255, 224, 241))
+   end
+   b:ellipsoid("FlowerCenter", CFrame.new(origin + Vector3.new(0, 0, side * radius * 0.3)), Vector3.one * radius * 0.7, rgb(255, 221, 55))
+  end
+ end
+end
+
+local function mutationParticles(model: Model, name: string, color: Color3, texture: string, rate: number)
+ local core = bodyCore(model)
+ if not core then return end
+ local emitter = Instance.new("ParticleEmitter")
+ emitter.Name = name
+ emitter.Texture = texture
+ emitter.Color = ColorSequence.new(color)
+ emitter.LightEmission = 0.8
+ emitter.Lifetime = NumberRange.new(0.6, 1.4)
+ emitter.Speed = NumberRange.new(0.5, 2)
+ emitter.SpreadAngle = Vector2.new(180, 180)
+ emitter.Rotation = NumberRange.new(0, 360)
+ emitter.RotSpeed = NumberRange.new(-90, 90)
+ emitter.Rate = rate
+ emitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.12), NumberSequenceKeypoint.new(1, 0) })
+ emitter.Parent = core
+end
+
 -- Paints a freshly created, unscaled fish with a record's mutations.
 function FishModels.mutate(model: Model, traits)
 	local set = FishMutations.parts(traits and traits.Mutation)
@@ -1197,6 +1236,11 @@ function FishModels.mutate(model: Model, traits)
 	local neon = traits.NeonColor and FishMutations.NeonColors[traits.NeonColor]
 	local glow = if set.Astral then ASTRAL_GLOW elseif neon then rgb(neon[1], neon[2], neon[3]) else rgb(255, 255, 255)
 	local lit = set.Neon or set.Astral
+ local specialColor = if set.Ascended then rgb(255, 235, 35)
+  elseif set.Floral then rgb(157, 233, 54) elseif set.Snowy then rgb(213, 240, 255)
+  elseif set.JackOFish or set.JacksPet then rgb(255, 123, 20)
+  elseif set.ZeusStruck then rgb(255, 244, 28) elseif set.Nightmare then rgb(12, 25, 70)
+  elseif set.Obsidian then rgb(81, 35, 135) elseif set.Tryhard then rgb(80, 245, 255) else nil
 	local low, size = bounds(model)
 	for _, item in model:GetDescendants() do
 		if not item:IsA("BasePart") or UNPAINTED[item.Name] then
@@ -1205,7 +1249,20 @@ function FishModels.mutate(model: Model, traits)
 		-- Hue runs snout to tail.
 		local hue = (1 - (item.Position.X / SCALE - low.X) / math.max(size.X, 0.01)) * 0.85
 		local shade = luminance(item.Color)
-		if lit and GLOWING[item.Name] then
+		if specialColor then
+   local accent = GLOWING[item.Name] or item.Name == "Marking"
+   if set.Ascended then item.Color = if accent then specialColor else rgb(255, 255, 239)
+   elseif set.Snowy then item.Color = if accent then specialColor else rgb(250, 253, 255)
+   elseif set.Floral then item.Color = if accent then specialColor else item.Color:Lerp(specialColor, 0.4)
+   elseif set.JackOFish or set.JacksPet then item.Color = if accent then rgb(20, 14, 18) else specialColor
+   else item.Color = specialColor:Lerp(Color3.new(0, 0, 0), if accent then 0.45 else 0.15) end
+   if set.Ascended or set.ZeusStruck or (set.JacksPet and accent) then item.Material = Enum.Material.Neon end
+   if set.Obsidian then item.Material = Enum.Material.Glass item.Transparency = 0.25 item.Reflectance = 0.12 end
+   if set.Tryhard then
+    item:SetAttribute("GlitchBaseColor", item.Color)
+    item:SetAttribute("GlitchBaseTransparency", item.Transparency)
+   end
+  elseif lit and GLOWING[item.Name] then
 			item.Material = Enum.Material.Neon
 			if set.Rainbow then
 				rainbow(item, hue, 0.85, 1)
@@ -1226,9 +1283,13 @@ function FishModels.mutate(model: Model, traits)
 	if set.Astral then
 		aurora(model)
 	end
-	if set.Windy then
-		windswept(model)
-	end
+	if set.Windy or set.Gusty then windswept(model) end
+ if set.Floral then flowers(model) end
+ if set.Snowy then mutationParticles(model, "Snowflakes", rgb(221, 244, 255), "rbxasset://textures/particles/sparkles_main.dds", 12) end
+ if set.ZeusStruck then mutationParticles(model, "Lightning", rgb(255, 245, 65), "rbxasset://textures/particles/sparkles_main.dds", 25) end
+ if set.JacksPet then mutationParticles(model, "JackEmbers", rgb(255, 135, 20), "rbxasset://textures/particles/sparkles_main.dds", 14) end
+ if set.Ascended then mutationParticles(model, "AscendedGlow", rgb(255, 245, 155), "rbxasset://textures/particles/sparkles_main.dds", 16) end
+ if set.Tryhard then model:AddTag(FishModels.GLITCH_TAG) end
 	measure(model)
 end
 

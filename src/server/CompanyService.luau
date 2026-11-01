@@ -22,9 +22,9 @@ local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local CatchConditions = require(ReplicatedStorage.Shared.CatchConditions)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
+local MutationContext = require(ReplicatedStorage.Shared.MutationContext)
 local Paths = require(ReplicatedStorage.Shared.Paths)
 local Seasons = require(ReplicatedStorage.Shared.Seasons)
-local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local CompanyService = {}
 local BASE_TAG = "PlayerBase"
@@ -280,7 +280,7 @@ local function landFish(crew, owner: Player)
 		DayNight.isNight(DayNight.clockTime()),
 		rng,
 		nil,
-		Weather.mutationContext(position)
+		MutationContext.at(position, owner)
 	)
 	roll.Traits = traits
 	roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)

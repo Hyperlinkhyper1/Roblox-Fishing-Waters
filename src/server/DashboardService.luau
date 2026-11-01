@@ -1,6 +1,7 @@
 -- Reports this server's players and weather to the luma admin dashboard
 -- (sync.luma-app.cc/admin, Fishing Waters project) and applies what the
--- operator set there: a weather override and gamepass grants. Game servers
+-- operator set there: a weather override, gamepass grants and which Limited
+-- fish bite (and how often). Game servers
 -- can't be called into, so both ride back on the heartbeat's response.
 -- Needs Allow HTTP Requests and the LumaDashboardKey secret; without them it
 -- warns once and stays off.
@@ -9,6 +10,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
+local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
+local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local Passes = require(ReplicatedStorage.Shared.Gamepasses)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local GamepassService = require(script.Parent.GamepassService)
@@ -175,6 +178,17 @@ local function apply(reply)
 	end
 	if type(reply.grants) == "table" then
 		GamepassService.setDashboardGrants(reply.grants)
+	end
+	-- Limited species the operator switched on, as percent chance per catch.
+	-- Every reply carries the full list, so one left out is switched off.
+	if type(reply.limitedFish) == "table" then
+		table.clear(FishCatch.limited)
+		for id, percent in reply.limitedFish do
+			local fish = Catalog.Fish[id]
+			if fish and fish.Rarity == "Limited" and type(percent) == "number" and percent > 0 then
+				FishCatch.limited[id] = math.min(percent, 100) / 100
+			end
+		end
 	end
 end
 

@@ -1696,13 +1696,13 @@ check(
 	"XP can advance across several levels"
 )
 check(
-	menuPlayer:GetAttribute("Level") == 3
-		and menuPlayer:GetAttribute("LevelXP") == 1500
-		and menuPlayer:GetAttribute("LevelXPRequired") == 3000,
+	menuPlayer:GetAttribute("Level") == 4
+		and menuPlayer:GetAttribute("LevelXP") == 860
+		and menuPlayer:GetAttribute("LevelXPRequired") == 1728,
 	"Level bar and saved-profile leaderboard share progressive XP thresholds"
 )
 check(
-	menuPlayer:FindFirstChild("leaderstats") == menuStats and menuStats:FindFirstChild("Level").Value == 3,
+	menuPlayer:FindFirstChild("leaderstats") == menuStats and menuStats:FindFirstChild("Level").Value == 4,
 	"Saved XP immediately updates the primary player-list ranking stat"
 )
 

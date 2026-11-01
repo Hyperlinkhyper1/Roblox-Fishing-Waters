@@ -28,6 +28,19 @@ local function painted(model: Model): { BasePart }
 	return list
 end
 
+local glitchParts: { [Model]: { BasePart } } = setmetatable({}, { __mode = "k" }) :: any
+local function paintedGlitch(model: Model): { BasePart }
+ local list = glitchParts[model]
+ if not list then
+  list = {}
+  for _, item in model:GetDescendants() do
+   if item:IsA("BasePart") and item:GetAttribute("GlitchBaseColor") then table.insert(list, item) end
+  end
+  glitchParts[model] = list
+ end
+ return list
+end
+
 local function animateVoid(model: Model, time: number)
 	local aura = voids[model]
 	if not aura then
@@ -101,6 +114,16 @@ function MutationEffects.start()
 				end
 			end
 		end
+  for _, model in CollectionService:GetTagged(FishModels.GLITCH_TAG) do
+   if model:IsA("Model") then
+    local tick = math.floor(os.clock() * 13)
+    for index, item in paintedGlitch(model) do
+     local phase = (tick + index * 7) % 11
+     item.Color = if phase < 2 then Color3.fromRGB(255, 30, 180) elseif phase == 2 then Color3.new(1, 1, 1) else item:GetAttribute("GlitchBaseColor")
+     item.Transparency = if phase == 3 then 0.55 else item:GetAttribute("GlitchBaseTransparency")
+    end
+   end
+  end
 		for _, model in CollectionService:GetTagged(FishModels.VOID_TAG) do
 			if model:IsA("Model") then
 				animateVoid(model, os.clock())

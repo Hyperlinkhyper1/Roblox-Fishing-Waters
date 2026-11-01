@@ -1,20 +1,44 @@
--- The season follows the same server clock as the time of day, so every client
--- agrees on it without any replication. A fresh server always opens in spring.
-local DayNight = require(script.Parent.DayNight)
+-- The season follows the in-game calendar's months (meteorological seasons: spring is March to
+-- May), so every server and client agrees on it without any replication.
+local Calendar = require(script.Parent.Calendar)
 
 local Seasons = {}
 
 Seasons.ORDER = { "Spring", "Summer", "Autumn", "Winter" }
--- In-game days per season: three 24-minute days, a full year in under five hours.
-Seasons.DAYS_PER_SEASON = 3
-Seasons.SECONDS_PER_SEASON = Seasons.DAYS_PER_SEASON * 24 * DayNight.SECONDS_PER_HOUR
+-- The season of each month, January first.
+Seasons.OF_MONTH = {
+	"Winter",
+	"Winter",
+	"Spring",
+	"Spring",
+	"Spring",
+	"Summer",
+	"Summer",
+	"Summer",
+	"Autumn",
+	"Autumn",
+	"Autumn",
+	"Winter",
+}
 
--- Season name and day within it (1-based) after `elapsed` seconds since the epoch.
+-- Season name and day within it (1-based) on a calendar date.
+function Seasons.of(date: Calendar.Date): (string, number)
+	local season = Seasons.OF_MONTH[date.Month]
+	local day, month = date.Day, date.Month
+	while true do
+		local previous = if month == 1 then 12 else month - 1
+		if Seasons.OF_MONTH[previous] ~= season then
+			break
+		end
+		month = previous
+		day += Calendar.DAYS_IN_MONTH[month]
+	end
+	return season, day
+end
+
+-- Season name and day within it after `elapsed` in-game seconds since the epoch.
 function Seasons.at(elapsed: number): (string, number)
-	local seasons = math.floor(math.max(0, elapsed) / Seasons.SECONDS_PER_SEASON)
-	local within = math.max(0, elapsed) - seasons * Seasons.SECONDS_PER_SEASON
-	local day = math.floor(within / (24 * DayNight.SECONDS_PER_HOUR)) + 1
-	return Seasons.ORDER[seasons % #Seasons.ORDER + 1], day
+	return Seasons.of(Calendar.at(elapsed))
 end
 
 -- The current season. A SeasonOverride attribute on workspace pins it (admin command, Studio previews).
@@ -23,8 +47,7 @@ function Seasons.current(serverTime: number?): (string, number)
 	if type(override) == "string" and table.find(Seasons.ORDER, override) then
 		return override, 1
 	end
-	local time = serverTime or workspace:GetServerTimeNow()
-	return Seasons.at(time - (workspace:GetAttribute("WeatherEpoch") or time))
+	return Seasons.of(Calendar.now(serverTime))
 end
 
 return Seasons

@@ -444,6 +444,29 @@ local function setFromCommand(player: Player, message: string)
 		notify(player, "Usage: /set season <spring|summer|autumn|winter|auto>.")
 		return
 	end
+	if subject == "date" then
+		local Calendar = require(ReplicatedStorage.Shared.Calendar)
+		local argument = normalized:match("^/set%s+date%s+(.-)%s*$") or ""
+		if argument == "auto" then
+			workspace:SetAttribute("CalendarOffset", nil)
+			notify(player, "The date follows the shared calendar again: " .. Calendar.format(Calendar.now()) .. ".")
+			return
+		end
+		local month, day, hour = Calendar.parse(argument)
+		if not month then
+			notify(player, "Usage: /set date <month-day> [hh:mm], e.g. /set date 10-31 23:50, or /set date auto.")
+			return
+		end
+		-- Shift the calendar so it reads that moment now, then let it run on from there.
+		workspace:SetAttribute("CalendarOffset", nil)
+		local today = Calendar.now()
+		local target = Calendar.elapsedAt(today.Year, month, day :: number, hour or today.Hour)
+		workspace:SetAttribute("CalendarOffset", target - Calendar.elapsedAt(today.Year, today.Month, today.Day, today.Hour))
+		local date = Calendar.now()
+		local clock = date.Hour
+		notify(player, string.format("Date set to %s, %02d:%02d.", Calendar.format(date), math.floor(clock), math.floor(clock % 1 * 60)))
+		return
+	end
 	if subject ~= "weather" then
 		BoatService.setCashFromCommand(player, message)
 		return

@@ -11,6 +11,7 @@ local Paths = require(ReplicatedStorage.Shared.Paths)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Seasons = require(ReplicatedStorage.Shared.Seasons)
+local Calendar = require(ReplicatedStorage.Shared.Calendar)
 local DrydockCamera = require(script.Parent.DrydockCamera)
 local BoatPreview = require(script.Parent.BoatPreview)
 local BoatCamera = require(script.Parent.BoatCamera)
@@ -210,15 +211,16 @@ function Boating.start()
 		for _, part in moonParts do
 			part.Visible = night
 		end
-		local season, day = Seasons.current()
+		local season = Seasons.current()
 		local winter = season == "Winter"
 		leaf.Visible, stem.Visible = not winter, not winter
 		for _, part in flake do
 			part.Visible = winter
 		end
 		local hour = math.floor(clock)
-		clockText.Text = string.format("%02d:%02d", hour, math.floor((clock - hour) * 60))
-		seasonText.Text = string.format("%s %d", season, day)
+		clockText.Text =
+			string.format("%s · %02d:%02d", Calendar.format(Calendar.now(), true), hour, math.floor((clock - hour) * 60))
+		seasonText.Text = season
 	end
 	refreshClock()
 	-- Native shapes keep the small HUD icon independent of image downloads.

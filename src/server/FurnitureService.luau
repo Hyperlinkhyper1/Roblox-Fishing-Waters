@@ -684,7 +684,17 @@ function FurnitureService.start()
 			return { Ok = false, Message = "Profile still loading." }
 		end
 		if action == "Get" then
-			local available = { Common = 0, Uncommon = 0, Rare = 0, Epic = 0, Legendary = 0 }
+			local available = {
+				Common = 0,
+				Uncommon = 0,
+				Rare = 0,
+				Epic = 0,
+				Legendary = 0,
+				Mythical = 0,
+				Exotic = 0,
+				Divine = 0,
+				Limited = 0,
+			}
 			for _, list in { profile.Angler.Freezer, profile.Angler.Storage } do
 				for _, fish in list do
 					local species = Catalog.Fish[fish.FishId]

@@ -1,11 +1,12 @@
 -- One server clock drives the time of day on every client and the night-only
--- catch rules on the server. It shares the weather's epoch, so a fresh server
--- always opens in the morning.
+-- catch rules on the server. It runs off one fixed epoch rather than each server's
+-- start, so every server shares the same hour and the same calendar date (Calendar).
 local DayNight = {}
 
 -- One in-game hour per real minute: a full day takes 24 minutes.
 DayNight.SECONDS_PER_HOUR = 60
-DayNight.START_HOUR = 10
+-- In-game midnight on 1 January of year 1: 2026-01-01 00:00 UTC.
+DayNight.EPOCH = 1767225600
 -- Night, for catch rules, runs from NIGHT_START to NIGHT_END.
 DayNight.NIGHT_START = 18
 DayNight.NIGHT_END = 6
@@ -18,9 +19,16 @@ local function smoothstep(t: number): number
 	return t * t * (3 - 2 * t)
 end
 
--- Clock hour (0-24) after `elapsed` seconds since the epoch.
+-- In-game seconds since the epoch. A CalendarOffset attribute on workspace shifts the whole
+-- calendar (the admin /set date command), and the clock keeps running from there.
+function DayNight.elapsed(serverTime: number?): number
+	local offset = workspace:GetAttribute("CalendarOffset")
+	return (serverTime or workspace:GetServerTimeNow()) - DayNight.EPOCH + (if type(offset) == "number" then offset else 0)
+end
+
+-- Clock hour (0-24) after `elapsed` seconds since the epoch, which fell at midnight.
 function DayNight.clockAt(elapsed: number): number
-	return (DayNight.START_HOUR + math.max(0, elapsed) / DayNight.SECONDS_PER_HOUR) % 24
+	return (elapsed / DayNight.SECONDS_PER_HOUR) % 24
 end
 
 -- The current clock hour. A ClockOverride attribute on workspace pins it (Studio previews).
@@ -29,8 +37,7 @@ function DayNight.clockTime(serverTime: number?): number
 	if type(override) == "number" then
 		return override % 24
 	end
-	local time = serverTime or workspace:GetServerTimeNow()
-	return DayNight.clockAt(time - (workspace:GetAttribute("WeatherEpoch") or time))
+	return DayNight.clockAt(DayNight.elapsed(serverTime))
 end
 
 function DayNight.isNight(clock: number): boolean

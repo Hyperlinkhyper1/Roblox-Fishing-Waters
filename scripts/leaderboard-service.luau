@@ -81,8 +81,9 @@ local Players = {
 }
 local records, storeRequests, writes, reads = {}, 0, 0, 0
 local storePrefix = if mode == "studio" then "AnglerBoards_Studio_v1_" else "AnglerBoards_v1_"
--- Simulate a score saved using the former flat curve.
+-- Simulate scores saved using both former curves.
 records[storePrefix .. "Level:AllTime"] = { ["101"] = 99 }
+records[storePrefix .. "Level_Progressive_v2:AllTime"] = { ["101"] = 99 }
 local failWrite, failRead = false, false
 local DataStoreService = {}
 function DataStoreService:GetOrderedDataStore(name, scope)
@@ -180,7 +181,7 @@ for _, definition in Boards.Definitions do
 	local rows = Service.readBoard(definition, Data.weekStart(now))
 	check(#rows == 1 and rows[1].Name == "FirstAngler", "Each ranking reads saved progress")
 	if definition.Id == "Level" then
-		check(rows[1].Score == 2, "Old flat-curve indexes cannot retain inflated level rankings")
+		check(rows[1].Score == 2, "Old curve indexes cannot retain inflated level rankings")
 	end
 end
 local afterWrites = writes

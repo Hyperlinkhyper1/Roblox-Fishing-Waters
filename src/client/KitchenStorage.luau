@@ -15,7 +15,7 @@ local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme")
 local KitchenStorage = {}
 local started = false
 
-local RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary" }
+local RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical", "Exotic", "Divine", "Limited" }
 local CAPACITY = Furniture.KITCHEN_STORAGE_CAPACITY
 
 local function make(class: string, parent: Instance?, props: { [string]: any }): any

@@ -15,11 +15,11 @@ local CatchConditions = require(ReplicatedStorage.Shared.CatchConditions)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
+local MutationContext = require(ReplicatedStorage.Shared.MutationContext)
 local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Seasons = require(ReplicatedStorage.Shared.Seasons)
-local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local CatchService = {}
 local MAX_CAST_DISTANCE = 64
@@ -149,7 +149,7 @@ local function cast(player: Player, target: any)
 			night,
 			rng,
 			state.boosts,
-			Weather.mutationContext(state.target)
+			MutationContext.at(state.target, player)
 		)
 		roll.Traits = traits
 		roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)

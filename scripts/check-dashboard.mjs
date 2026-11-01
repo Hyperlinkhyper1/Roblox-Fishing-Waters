@@ -15,6 +15,8 @@ const dashboard = (await read('src/server/DashboardService.luau'))
   .replace('require(ReplicatedStorage.Shared.Gamepasses)', 'Passes')
   .replace('require(ReplicatedStorage.Shared.Weather)', 'Weather')
   .replace('require(ReplicatedStorage.Shared.Biomes)', 'Biomes')
+  .replace('require(ReplicatedStorage.Shared.AnglerCatalog)', 'Catalog')
+  .replace('require(ReplicatedStorage.Shared.FishCatch)', 'FishCatch')
   .replace('require(script.Parent.GamepassService)', 'Ownership');
 
 const program = `
@@ -56,6 +58,8 @@ end
 function game:BindToClose(fn) table.insert(closeHandlers, fn) end
 local attributes = { WeatherEpoch = 1000, WeatherSeed = 77 }
 local Biomes = { WaterLevel = 0 }
+local Catalog = { Fish = { Comet = { Rarity = "Limited" }, Carp = { Rarity = "Common" } } }
+local FishCatch = { limited = {} }
 local Vector3 = { new = function(x, y, z) return { X = x, Y = y, Z = z } end }
 local workspace = { GetServerTimeNow = function() return 1500 end,
  GetAttribute = function(_, key) return attributes[key] end,
@@ -184,6 +188,18 @@ check(buyer.attributes.OwnsAutoStore == true, "Grant reaches a player who just j
 reply = { grants = {} }
 step(15)
 check(Ownership.ownsAutoStore(buyer) and buyer.attributes.OwnsAutoStore == true, "Revoking keeps a real purchase")
+
+-- Limited fish: the reply lists the ones switched on, as percent per catch.
+reply = { limitedFish = { Comet = 2.5, Carp = 50, Ghost = 10 } }
+step(15)
+check(FishCatch.limited.Comet == 0.025, "A switched-on Limited fish gets its chance")
+check(FishCatch.limited.Carp == nil and FishCatch.limited.Ghost == nil, "Only known Limited species can be switched on")
+reply = {}
+step(15)
+check(FishCatch.limited.Comet == 0.025, "A reply without the list keeps the current Limited fish")
+reply = { limitedFish = {} }
+step(15)
+check(next(FishCatch.limited) == nil, "An empty list switches every Limited fish off")
 
 -- Failures are throttled, and closing tells the dashboard right away.
 reply = "fail"

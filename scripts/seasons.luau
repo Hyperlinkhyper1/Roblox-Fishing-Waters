@@ -16,8 +16,8 @@ local function read(path: string): string
 	return source
 end
 
-local attributes: { [string]: any } = { WeatherEpoch = 1000 }
-local now = 1000
+local attributes: { [string]: any } = {}
+local now = 0
 local workspace = {
 	GetAttribute = function(_, name)
 		return attributes[name]
@@ -28,27 +28,39 @@ local workspace = {
 }
 local env = setmetatable({ workspace = workspace }, { __index = _G })
 local DayNight = luau.load(luau.compile(read("src/shared/DayNight.luau")), "DayNight", env)()
-local seasonsSource = read("src/shared/Seasons.luau"):gsub("require%(script%.Parent%.DayNight%)", "DAYNIGHT")
 env.DAYNIGHT = DayNight
+local calendarSource = read("src/shared/Calendar.luau"):gsub("require%(script%.Parent%.DayNight%)", "DAYNIGHT")
+local Calendar = luau.load(luau.compile(calendarSource), "Calendar", env)()
+env.CALENDAR = Calendar
+local seasonsSource = read("src/shared/Seasons.luau"):gsub("require%(script%.Parent%.Calendar%)", "CALENDAR")
 local Seasons = luau.load(luau.compile(seasonsSource), "Seasons", env)()
 
+-- Seasons follow the calendar's months; every server reads the same date off the fixed epoch.
+local function at(month: number, day: number, hour: number?)
+	now = DayNight.EPOCH + Calendar.elapsedAt(3, month, day, hour or 12)
+end
+at(1, 1, 0)
 local season, day = Seasons.current()
-check(season == "Spring" and day == 1, "A fresh server opens on spring day 1")
-local dayLength = 24 * DayNight.SECONDS_PER_HOUR
-now = 1000 + dayLength * 2 + 10
+check(season == "Winter" and day == 32, "1 January is the 32nd day of winter")
+at(3, 1)
 season, day = Seasons.current()
-check(season == "Spring" and day == 3, "The third day is still spring")
+check(season == "Spring" and day == 1, "Spring starts on 1 March")
+at(5, 31)
+season, day = Seasons.current()
+check(season == "Spring" and day == 92, "Spring runs to the end of May")
 local order = {}
-for index = 0, 4 do
-	now = 1000 + Seasons.SECONDS_PER_SEASON * index + 1
+for _, month in { 3, 6, 9, 12, 1 } do
+	at(month, 1)
 	table.insert(order, (Seasons.current()))
 end
-check(table.concat(order, ",") == "Spring,Summer,Autumn,Winter,Spring", "Seasons cycle in order and wrap to spring")
-check(Seasons.SECONDS_PER_SEASON == Seasons.DAYS_PER_SEASON * dayLength, "A season lasts whole in-game days")
+check(table.concat(order, ",") == "Spring,Summer,Autumn,Winter,Winter", "Seasons follow the months and wrap through the new year")
+at(10, 31, 23.5)
+check((Seasons.current()) == "Autumn", "Halloween is in autumn")
 attributes.SeasonOverride = "Winter"
 check((Seasons.current()) == "Winter", "The override pins the season")
 attributes.SeasonOverride = "Monsoon"
-check((Seasons.current()) == "Spring", "An unknown override is ignored")
+check((Seasons.current()) == "Autumn", "An unknown override is ignored")
+attributes.SeasonOverride = nil
 
 -- Foliage tints, against a tiny Color3 mock.
 local Color3 = {}

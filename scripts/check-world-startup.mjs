@@ -350,7 +350,7 @@ local modules = {Biomes=Biomes}
 local script = {ServerUpdates="ServerUpdates", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
   BoatService="BoatService", FishingService="FishingService", WeatherService="WeatherService",
   AnglerService="AnglerService", LeaderboardService="LeaderboardService"}
-for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "RestaurantService", "CompanyService", "TutorialService", "OxygenService", "DashboardService"} do
+for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "RestaurantService", "CompanyService", "TutorialService", "HalloweenService", "OxygenService", "DashboardService"} do
   script[name] = name
   modules[name] = {start=function() record(name) end}
 end

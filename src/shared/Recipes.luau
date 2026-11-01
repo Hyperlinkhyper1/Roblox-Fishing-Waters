@@ -4,7 +4,18 @@
 local Recipes = {}
 
 -- Same order as AnglerCatalog.Rarities (kept here so this module stays pure).
-Recipes.RarityOrder = { Junk = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 }
+Recipes.RarityOrder = {
+	Junk = 0,
+	Common = 1,
+	Uncommon = 2,
+	Rare = 3,
+	Epic = 4,
+	Legendary = 5,
+	Mythical = 6,
+	Exotic = 7,
+	Divine = 8,
+	Limited = 9,
+}
 -- Diners in the restaurant pay this much more than shop customers.
 Recipes.RESTAURANT_MARKUP = 1.5
 

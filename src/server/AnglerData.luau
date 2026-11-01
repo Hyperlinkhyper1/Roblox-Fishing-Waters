@@ -41,6 +41,7 @@ end
 -- Base reward for unconfigured species and migration of old catch totals.
 Data.XP_PER_CATCH = 100
 Data.XP_LEVEL_STEP = 1000
+Data.XP_LEVEL_GROWTH = 0.2
 Data.WEEK_SECONDS = 7 * 24 * 60 * 60
 -- Catches land in the angler's hand, which holds one fish; with full hands,
 -- gameplay packs the next catch into the backpack when it fits. From the hand,
@@ -69,17 +70,19 @@ function Data.weekStart(now)
 	return math.floor((now + 3 * 86400) / Data.WEEK_SECONDS) * Data.WEEK_SECONDS - 3 * 86400
 end
 
--- Advancing from level L costs L * 1000 XP: 1000, 2000, 3000, ...
+-- Level-up costs grow by 20%: 1000, 1200, 1440, ... XP. Round the
+-- cumulative threshold so that saved XP and displayed progress stay integral.
 function Data.xpForLevel(level)
-	return Data.XP_LEVEL_STEP * ((level - 1) * level / 2)
+	return math.floor(Data.XP_LEVEL_STEP * ((1 + Data.XP_LEVEL_GROWTH) ^ (level - 1) - 1) / Data.XP_LEVEL_GROWTH + 0.5)
 end
 
 function Data.level(xp)
-	local level = math.floor((1 + math.sqrt(1 + 8 * xp / Data.XP_LEVEL_STEP)) / 2)
-	-- Keep exact thresholds correct if the square root rounds at large totals.
-	if xp < Data.xpForLevel(level) then
+	local level = math.max(1, math.floor(1 + math.log(1 + xp * Data.XP_LEVEL_GROWTH / Data.XP_LEVEL_STEP) / math.log(1 + Data.XP_LEVEL_GROWTH)))
+	-- Correct logarithm and threshold rounding at exact level boundaries.
+	while level > 1 and xp < Data.xpForLevel(level) do
 		level -= 1
-	elseif xp >= Data.xpForLevel(level + 1) then
+	end
+	while xp >= Data.xpForLevel(level + 1) do
 		level += 1
 	end
 	return level
@@ -87,7 +90,8 @@ end
 
 function Data.levelProgress(xp)
 	local level = Data.level(xp)
-	return level, xp - Data.xpForLevel(level), level * Data.XP_LEVEL_STEP
+	local threshold = Data.xpForLevel(level)
+	return level, xp - threshold, Data.xpForLevel(level + 1) - threshold
 end
 Data.DefaultSettings =
 	{ Shadows = true, WeatherEffects = true, MasterVolume = 100, MusicVolume = 100, EffectsVolume = 100 }
@@ -1420,12 +1424,13 @@ function Data.scores(raw, now)
 		start
 end
 Data.KITCHEN_STORAGE_CAPACITY = 8
+local KITCHEN_RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical", "Exotic", "Divine", "Limited" }
 
 function Data.setKitchenStorageTargets(raw, targets)
 	local data = Data.decode(raw)
 	local total = 0
 	local clean = {}
-	for _, rarity in { "Common", "Uncommon", "Rare", "Epic", "Legendary" } do
+	for _, rarity in KITCHEN_RARITIES do
 		local count = tonumber(targets and targets[rarity]) or 0
 		count = math.max(0, math.floor(count))
 		clean[rarity] = count
@@ -1467,7 +1472,7 @@ function Data.neededKitchenStorage(data, catalogFish)
 	local needed = {}
 	local totalCurrent = #(data.KitchenStorage.Fish or {})
 	local totalRoom = math.max(0, Data.KITCHEN_STORAGE_CAPACITY - totalCurrent)
-	for _, rarity in { "Common", "Uncommon", "Rare", "Epic", "Legendary" } do
+	for _, rarity in KITCHEN_RARITIES do
 		local target = targets[rarity] or 0
 		local have = current[rarity] or 0
 		if target > have and totalRoom > 0 then

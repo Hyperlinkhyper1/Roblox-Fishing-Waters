@@ -15,6 +15,9 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local BoatUpgrades = require(ReplicatedStorage.Shared.BoatUpgrades)
 local CatchConditions = require(ReplicatedStorage.Shared.CatchConditions)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
+local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
+local MutationContext = require(ReplicatedStorage.Shared.MutationContext)
+local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Seasons = require(ReplicatedStorage.Shared.Seasons)
 local TrawlerNet = require(ReplicatedStorage.Shared.TrawlerNet)
 
@@ -263,6 +266,11 @@ local function catchFish(player: Player, boatId: string, model: Model)
 	if not roll then
 		return
 	end
+ local traits = FishMutations.roll(AnglerCatalog.Fish[roll.FishId], DayNight.isNight(DayNight.clockTime()), function()
+  return random:NextNumber()
+ end, nil, MutationContext.at(root.Position, player))
+ roll.Traits = traits
+ roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)
 	local doubleXP = GamepassService.ownsDoubleXP(player)
 	local caught = false
 	local ok = BoatService.updateProgress(player, function(current)

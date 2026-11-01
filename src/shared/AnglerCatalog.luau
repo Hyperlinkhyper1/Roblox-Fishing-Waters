@@ -13,6 +13,12 @@ Catalog.Rarities = {
 	Rare = { Name = "Rare", Order = 3, Color = Color3.fromRGB(82, 163, 229), Difficulty = 0.48, XP = 200 },
 	Epic = { Name = "Epic", Order = 4, Color = Color3.fromRGB(176, 108, 230), Difficulty = 0.66, XP = 400 },
 	Legendary = { Name = "Legendary", Order = 5, Color = Color3.fromRGB(240, 176, 64), Difficulty = 0.72, XP = 800 },
+	Mythical = { Name = "Mythical", Order = 6, Color = Color3.fromRGB(232, 62, 92), Difficulty = 0.78, XP = 1600 },
+	Exotic = { Name = "Exotic", Order = 7, Color = Color3.fromRGB(52, 222, 196), Difficulty = 0.84, XP = 3200 },
+	Divine = { Name = "Divine", Order = 8, Color = Color3.fromRGB(255, 242, 178), Difficulty = 0.9, XP = 6400 },
+	-- Limited species skip the weighted draw: they only bite while the admin
+	-- dashboard has them switched on, at the chance set there (FishCatch.limited).
+	Limited = { Name = "Limited", Order = 9, Color = Color3.fromRGB(255, 84, 214), Difficulty = 0.8, XP = 2500 },
 }
 
 -- Junk uses the same carrying, cargo and selling path as other catches.
@@ -180,6 +186,17 @@ for key, entry in Catalog.Mutations do
 end
 for key, entry in windy do
 	Catalog.Mutations[key] = entry
+end
+-- Special finishes and their event variants are valid saved catch keys.
+for _, special in {
+ { "Ascended", "Ascended", 10000 }, { "Floral", "Floral", 200 }, { "Snowy", "Snowy", 200 },
+ { "Tryhard", "Tryhard", 10000 }, { "JackOFish", "Jack O' Fish", 20 }, { "JacksPet", "Jack's Pet", 500 },
+ { "ZeusStruck", "Zeus Struck", 150 }, { "Nightmare", "Nightmare", 30 }, { "Obsidian", "Obsidian", 30 }, { "Gusty", "Gusty", 100 },
+} do
+ Catalog.Mutations[special[1]] = { Name = special[2], RarityMultiplier = special[3] }
+ for _, prefix in { { "Windy+", "Windy " }, { "Corrupted+", "Corrupted " }, { "Corrupted+VoidTouched+", "Corrupted Void Touched " } } do
+  Catalog.Mutations[prefix[1] .. special[1]] = { Name = prefix[2] .. special[2], RarityMultiplier = 1, EventOnly = true }
+ end
 end
 Catalog.Equipment = {
 	StarterRod = {

@@ -73,6 +73,7 @@ local ok, failure = xpcall(function()
 		require(script.RestaurantService).start()
 		require(script.CompanyService).start()
 		require(script.TutorialService).start()
+		require(script.HalloweenService).start()
 
 		require(script.LeaderboardService).start(root)
 		BaseService.start()

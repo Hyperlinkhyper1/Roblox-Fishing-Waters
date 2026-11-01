@@ -66,7 +66,7 @@ for key in Catalog.Mutations do
 	listed += 1
 end
 local eventKeys = FishMutations.eventKeys()
-check(listed == #keys + #eventKeys + 1, "Catalog lists every natural and event key plus Normal")
+check(listed == #keys + #eventKeys + 1 + 4 * 10, "Catalog lists ordinary and special mutation keys")
 for _, key in keys do
 	local entry = Catalog.Mutations[key]
 	check(entry ~= nil, key .. " is in the catalog")
@@ -93,6 +93,28 @@ for _, night in { false, true } do
 	end
 	check(math.abs(total - FishMutations.CHANCE) < 1e-12, "Mutation chances add up to the base chance")
 end
+
+-- Conditional special rolls, multipliers and event combinations.
+for name, spec in FishMutations.Specials do
+ check(near(FishMutations.multiplier(name), spec.Multiplier), name .. " multiplier")
+ check(Catalog.Mutations[name] ~= nil, name .. " is catalogued")
+ for _, prefix in { "Windy+", "Corrupted+", "Corrupted+VoidTouched+" } do
+  check(Catalog.Mutations[prefix .. name] ~= nil, name .. " event variant is catalogued")
+ end
+end
+local function sequence(values)
+ local i = 0
+ return function() i += 1 return values[i] or 0.99 end
+end
+local specialFish = { Rarity = "Common" }
+check(FishMutations.roll(specialFish, false, sequence({0.99, 0.01}), nil, {halloween = true}).Mutation == "JackOFish", "Halloween jack roll")
+check(FishMutations.roll(specialFish, false, sequence({0.99, 0.051}), nil, {halloween = true}).Mutation == "JacksPet", "Halloween rare pet roll")
+check(FishMutations.roll(specialFish, false, sequence({0.99, 0.99, 0}), nil, {season = "Spring"}).Mutation == "Floral", "Floral requires spring")
+check(FishMutations.roll(specialFish, false, sequence({0.99, 0.99, 0}), nil, {season = "Winter"}).Mutation == "Snowy", "Snowy requires winter")
+check(FishMutations.roll(specialFish, false, sequence({0.99, 0.99, 0}), nil, {level = 50}).Mutation == "Tryhard", "Tryhard requires level 50")
+check(FishMutations.roll(specialFish, false, sequence({0.99, 0.99, 0}), nil, {supercell = true}).Mutation == "ZeusStruck", "Zeus requires a supercell")
+check(FishMutations.roll(specialFish, true, sequence({0.99, 0.99, 0}), nil, {}).Mutation == "Nightmare", "Nightmare requires night")
+check(FishMutations.roll(specialFish, false, sequence({0.99, 0.99, 0}), nil, {volcanic = true}).Mutation == "Obsidian", "Obsidian requires volcanic waters")
 
 -- Rolled odds.
 local trout = Catalog.Fish.Trout

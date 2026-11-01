@@ -49,20 +49,20 @@ local previousCost = 0
 for level = 1, 100 do
 	local threshold, nextThreshold = Data.xpForLevel(level), Data.xpForLevel(level + 1)
 	local cost = nextThreshold - threshold
-	check(cost > previousCost and cost == level * 1000, "Every successive level costs more XP")
+	check(cost > previousCost and math.abs(cost - 1000 * 1.2 ^ (level - 1)) <= 1, "Level costs grow exponentially")
 	check(Data.level(threshold) == level and Data.level(nextThreshold - 1) == level, "Exact progressive boundaries")
 	check(Data.level(nextThreshold) == level + 1, "Reaching the next threshold levels up")
 	previousCost = cost
 end
-check(Data.level(2000) == 2 and Data.level(3000) == 3 and Data.level(6000) == 4, "Cumulative XP curve")
+check(Data.level(2000) == 2 and Data.level(2200) == 3 and Data.level(3640) == 4, "Cumulative XP curve")
 local level, progressXP, requiredXP = Data.levelProgress(4500)
 check(
-	level == 3 and progressXP == 1500 and requiredXP == 3000,
+	level == 4 and progressXP == 860 and requiredXP == 1728,
 	"Level bar uses current-level progress and growing requirement"
 )
 local savedXP = Data.decode({ Stats = { TotalXP = 4500 } })
-check(savedXP.Stats.TotalXP == 4500 and Data.scores(savedXP, monday).Level == 3, "Curve changes preserve earned XP")
-for _, levelAtLimit in { 100000, 1000000, 4000000 } do
+check(savedXP.Stats.TotalXP == 4500 and Data.scores(savedXP, monday).Level == 4, "Curve changes preserve earned XP")
+for _, levelAtLimit in { 120, 140, 150 } do
 	local threshold = Data.xpForLevel(levelAtLimit)
 	check(
 		Data.level(threshold - 1) == levelAtLimit - 1 and Data.level(threshold) == levelAtLimit,

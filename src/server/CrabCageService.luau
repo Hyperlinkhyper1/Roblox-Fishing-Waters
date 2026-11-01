@@ -22,7 +22,7 @@ local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
-local Weather = require(ReplicatedStorage.Shared.Weather)
+local MutationContext = require(ReplicatedStorage.Shared.MutationContext)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local CrabCageService = {}
@@ -494,7 +494,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 			DayNight.isNight(DayNight.clockTime()),
 			rng,
 			{ mutation = CrabCages.MUTATION_BONUS },
-			Weather.mutationContext(anchor.Position)
+			MutationContext.at(anchor.Position, player)
 		)
 		roll.Value = FishMutations.value(roll.Value, roll.Traits.Mutation, roll.Traits.Corruptions)
 	end

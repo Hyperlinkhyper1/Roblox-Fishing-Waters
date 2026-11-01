@@ -20,9 +20,9 @@ end
 local function ordered(id, week)
 	local key = indexKey(id, week)
 	if not stores[key] then
-		-- Old level indexes used the flat XP curve and retained higher values
-		-- through max writes. Rebuild this index from saved XP on the new curve.
-		local name = if id == "Level" then "Level_Progressive_v2" else id
+		-- Max writes retain old level scores, so rebuild from saved XP whenever
+		-- the progression curve changes.
+		local name = if id == "Level" then "Level_Exponential_v3" else id
 		stores[key] = DataStoreService:GetOrderedDataStore(prefix .. name, tostring(week or "AllTime"))
 	end
 	return stores[key]

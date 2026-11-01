@@ -4,6 +4,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
 local Passes = require(ReplicatedStorage.Shared.Gamepasses)
 local GamepassService = require(script.Parent.GamepassService)
+local Calendar = require(ReplicatedStorage.Shared.Calendar)
+local DayNight = require(ReplicatedStorage.Shared.DayNight)
 
 local Service = {}
 local started = false
@@ -13,10 +15,13 @@ local help = table.concat({
 	"/commands - show this list",
 	"/gamepass list - list gamepasses",
 	"/gamepass get <gamepass name> - enable a pass for this server session",
+	"/event list - list events",
+	"/event spawn <event> - start an event for the rest of the in-game day",
 	"/set cash <amount> - set your cash",
 	"/set weather list - list weather types",
 	"/set weather <type> - change the weather",
 	"/set season <spring|summer|autumn|winter|auto> - pin the season or let it follow the clock",
+	"/set date <month-day> [hh:mm] - jump the in-game calendar there (e.g. 10-31 23:50), or auto",
 	"/tp city - teleport to the city",
 	"/tp models - teleport to the full-size scale models",
 	"/fly - toggle flight (WASD, Space up, Ctrl down)",
@@ -48,6 +53,24 @@ function Service.start(reply)
 
 	register("CommandsCommand", "/commands", function(player)
 		reply(player, help)
+	end)
+	register("EventCommand", "/event", function(player, message)
+		if message:match("^/event%s+list%s*$") then
+			reply(player, "Events: Halloween.")
+			return
+		end
+		local requested = message:match("^/event%s+spawn%s+(%S+)%s*$")
+		if requested == "halloween" then
+			local now = workspace:GetServerTimeNow()
+			local date = Calendar.now(now)
+			workspace:SetAttribute("HalloweenEventDay", (date.Year - 1) * Calendar.DAYS_PER_YEAR + date.DayOfYear)
+			workspace:SetAttribute("HalloweenEventEnds", now + (24 - date.Hour) * DayNight.SECONDS_PER_HOUR)
+			reply(player, "Halloween is active in this server for the rest of the in-game day.")
+		elseif requested then
+			reply(player, "Unknown event. Use /event list for available events.")
+		else
+			reply(player, "Usage: /event list or /event spawn <event>.")
+		end
 	end)
 	register("FlyCommand", "/fly", function(player, message)
 		if message:match("^/fly%s*$") then

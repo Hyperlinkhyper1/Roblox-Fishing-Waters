@@ -25,6 +25,36 @@ local function rng()
 	return state / 2147483647
 end
 
+-- New tiers sit above Legendary in this order; Limited bites only when switched on.
+for index, tier in { "Legendary", "Mythical", "Exotic", "Divine", "Limited" } do
+	check(Catalog.Rarities[tier] and Catalog.Rarities[tier].Order == 4 + index, tier .. " is tier " .. 4 + index)
+end
+do
+	local species = {
+		Carp = { Rarity = "Common", RarityDenominator = 1 },
+		Comet = { Rarity = "Limited", RarityDenominator = 1 },
+	}
+	local limitedPool = { Fish = { "Carp", "Comet" }, Junk = { "Boot" } }
+	local function count(chance)
+		FishCatch.limited = { Comet = chance }
+		local hits = 0
+		for _ = 1, 20000 do
+			if FishCatch.pickSpecies(limitedPool, species, rng) == "Comet" then
+				hits += 1
+			end
+		end
+		return hits / 20000
+	end
+	check(count(nil) == 0, "A Limited fish that is switched off never bites")
+	check(count(0) == 0, "A Limited fish with no chance never bites")
+	local rate = count(0.1)
+	check(rate > 0.09 and rate < 0.11, "A Limited fish bites at its dashboard chance (" .. rate .. ")")
+	check(count(1) == 1, "A 100% Limited fish bites every cast")
+	FishCatch.limited = {}
+	local only = { Fish = { "Comet" }, Junk = { "Boot" } }
+	check(FishCatch.pickSpecies(only, species, rng) == "Boot", "A pool of only switched-off Limited fish lands junk")
+end
+
 local pool = Catalog.Pools[Catalog.DefaultPool]
 for _, id in { "Trout", "Stingray", "Pike", "Sunfish", "MidnightCarp", "Crimsonfish", "Glacierfish" } do
 	check(table.find(pool.Fish, id), "Main lake lists " .. id)

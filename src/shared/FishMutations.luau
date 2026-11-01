@@ -22,7 +22,15 @@ FishMutations.WINDY_CHANCE = 1 / 3
 FishMutations.WINDY_BONUS = 0.5
 
 -- Display and key order.
-FishMutations.Order = { "Corrupted", "VoidTouched", "Windy", "Astral", "Rainbow", "Neon", "Albino" }
+FishMutations.Order = { "Corrupted", "VoidTouched", "Windy", "Ascended", "Floral", "Snowy", "Tryhard", "JackOFish", "JacksPet", "ZeusStruck", "Nightmare", "Obsidian", "Gusty", "Astral", "Rainbow", "Neon", "Albino" }
+
+FishMutations.Specials = {
+ Ascended = { Chance = 1 / 10000, Multiplier = 12 }, Floral = { Chance = 1 / 200, Multiplier = 5 },
+ Snowy = { Chance = 1 / 200, Multiplier = 5 }, Tryhard = { Chance = 1 / 10000, Multiplier = 10 },
+ JackOFish = { Chance = 0.05, Multiplier = 2.5 }, JacksPet = { Chance = 1 / 500, Multiplier = 15 },
+ ZeusStruck = { Chance = 1 / 150, Multiplier = 5 }, Nightmare = { Chance = 1 / 30, Multiplier = 1.5 },
+ Obsidian = { Chance = 1 / 30, Multiplier = 2 }, Gusty = { Chance = 1 / 100, Multiplier = 2 },
+}
 
 -- Every colour outcome with its share of the non-Astral mutation chance and the
 -- worth it adds (1 = +100%).
@@ -99,6 +107,9 @@ end
 function FishMutations.multiplier(key: string?, corruptions: { string }?): number
 	local set = FishMutations.parts(key)
 	local bonus = colourBonus(set)
+ for name, spec in FishMutations.Specials do
+  if set[name] then bonus += spec.Multiplier - 1 end
+ end
 	if set.VoidTouched then
 		bonus += FishMutations.VOID_TOUCHED_BONUS
 	end
@@ -174,8 +185,36 @@ function FishMutations.roll(fish, night: boolean, rng: () -> number, bonus: any?
 		return { Mutation = "Normal" }
 	end
 	local windy = event ~= nil and event.windy == true and rng() < FishMutations.WINDY_CHANCE
-	local key = "Normal"
-	if pick >= FishMutations.CHANCE + extra + extraAstral then
+	-- Special finishes replace ordinary colours, while event traits still stack.
+ local special
+ if event then
+  if event.halloween then
+   local halloween = rng()
+   if halloween < FishMutations.Specials.JackOFish.Chance then special = "JackOFish"
+   elseif halloween < FishMutations.Specials.JackOFish.Chance + FishMutations.Specials.JacksPet.Chance then special = "JacksPet" end
+  end
+  if not special then
+   for _, candidate in { "Ascended", "Floral", "Snowy", "Tryhard", "ZeusStruck", "Nightmare", "Obsidian", "Gusty" } do
+    local eligible = candidate == "Ascended" or candidate == "Gusty"
+     or (candidate == "Floral" and event.season == "Spring")
+     or (candidate == "Snowy" and event.season == "Winter")
+     or (candidate == "Tryhard" and (event.level or 0) >= 50)
+     or (candidate == "ZeusStruck" and event.supercell)
+     or (candidate == "Nightmare" and night)
+     or (candidate == "Obsidian" and event.volcanic)
+    if eligible and rng() < FishMutations.Specials[candidate].Chance then special = candidate break end
+   end
+  end
+ end
+ if special then
+  local set = { [special] = true }
+  if windy then set.Windy = true end
+  if event.corrupted or event.voidTouched then set.Corrupted = true end
+  if event.voidTouched then set.VoidTouched = true end
+  return { Mutation = FishMutations.key(set), Corruptions = if set.Corrupted then rollCorruptions(rng) else nil }
+ end
+ local key = "Normal"
+ if pick >= FishMutations.CHANCE + extra + extraAstral then
 		if not windy and (not event or not (event.corrupted or event.voidTouched)) then
 			return { Mutation = "Normal" }
 		end
@@ -261,6 +300,9 @@ function FishMutations.label(key: string?, neonColor: string?): string
 				if name == "Neon" and neonColor
 					then neonColor .. " Neon"
 					elseif name == "VoidTouched" then "Void Touched"
+     elseif name == "JackOFish" then "Jack O' Fish"
+     elseif name == "JacksPet" then "Jack's Pet"
+     elseif name == "ZeusStruck" then "Zeus Struck"
 					else name
 			)
 		end

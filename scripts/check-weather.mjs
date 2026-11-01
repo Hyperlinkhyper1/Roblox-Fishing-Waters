@@ -361,13 +361,14 @@ end
 print('PASS single authoritative forecast, replicated state and global wind')
 
 attributes.WeatherOverride = nil
-close(DayNight.clockTime(attributes.WeatherEpoch), DayNight.START_HOUR)
-now = attributes.WeatherEpoch + (22 - DayNight.START_HOUR) * DayNight.SECONDS_PER_HOUR
+close(DayNight.clockTime(DayNight.EPOCH + 10 * DayNight.SECONDS_PER_HOUR), 10)
+now = DayNight.EPOCH + 22 * DayNight.SECONDS_PER_HOUR
 callbacks[1](1)
 close(Lighting.ClockTime, 22)
 assert(DayNight.isNight(Lighting.ClockTime) and DayNight.darkness(Lighting.ClockTime) == 1, 'Late evening is full night')
-now = attributes.WeatherEpoch + 24 * DayNight.SECONDS_PER_HOUR
-close(DayNight.clockTime(now), DayNight.START_HOUR)
+now = DayNight.EPOCH + 34 * DayNight.SECONDS_PER_HOUR
+close(DayNight.clockTime(now), 10)
+close(DayNight.clockTime(attributes.WeatherEpoch + 7), DayNight.clockTime(attributes.WeatherEpoch + 7 + 1e6 * 24 * DayNight.SECONDS_PER_HOUR))
 assert(not DayNight.isNight(13) and DayNight.darkness(13) == 0, 'Afternoon is full day')
 assert(DayNight.isNight(18) and DayNight.isNight(5.9) and not DayNight.isNight(6), 'Night runs 18:00 to 06:00')
 local last = DayNight.darkness(0)
@@ -380,7 +381,7 @@ end
 attributes.ClockOverride = 23
 close(DayNight.clockTime(now), 23)
 attributes.ClockOverride = nil
-print('PASS day/night clock: shared epoch, night window, smooth twilight and Studio override')
+print('PASS day/night clock: fixed shared epoch, night window, smooth twilight and Studio override')
 `;
 const temporary = mkdtempSync(join(tmpdir(), 'fishing-weather-'));
 try {
