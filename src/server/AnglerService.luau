@@ -205,24 +205,24 @@ function Service.start()
 				message = if recipeId then "Chef recipe updated." else "Chef paused."
 			end
 		elseif action == "BuyShopUpgrade" then
-			if key ~= "SocialMediaAdvertisement" then
+			if key ~= "SocialMediaAdvertisement" and key ~= "Baskets" then
 				return { Ok = false, Message = "Choose a valid shop upgrade." }
 			end
-			local upgrade = ShopUpgrades.SocialMediaAdvertisement
-			if ShopUpgrades.hasAdvertisement(profile.Angler) then
+			local upgrade = ShopUpgrades[key]
+			if (profile.Angler.Upgrades[key] or 0) >= 1 then
 				return { Ok = false, Message = "You already own this upgrade." }
 			elseif profile.Cash < upgrade.Price then
 				return { Ok = false, Message = "You need $" .. upgrade.Price .. " for this upgrade." }
 			end
 			ok, message = BoatService.updateProgress(player, function(current)
-				assert(not ShopUpgrades.hasAdvertisement(current.Angler), "Upgrade already owned")
+				assert((current.Angler.Upgrades[key] or 0) < 1, "Upgrade already owned")
 				assert(current.Cash >= upgrade.Price, "Not enough cash for this upgrade")
 				current.Cash -= upgrade.Price
 				current.Angler.Stats.CoinsSpent += upgrade.Price
-				current.Angler.Upgrades.SocialMediaAdvertisement = 1
+				current.Angler.Upgrades[key] = 1
 			end)
 			if ok then
-				message = "Social Media Advertisement unlocked! Customers will arrive more often."
+				message = if key == "Baskets" then "Baskets unlocked! Customers can buy up to 3 items." else "Social Media Advertisement unlocked! Customers will arrive more often."
 			end
 		elseif action == "UpgradePorter" then
 			local upgrade = if type(key) == "string" then StaffCatalog.PorterUpgrades[key] else nil

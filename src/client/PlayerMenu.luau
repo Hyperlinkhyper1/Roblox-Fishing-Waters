@@ -1496,14 +1496,14 @@ function Menu.start()
 				end
 			end
 			local stats = profile.Angler.Stats
+			local discovered = 0
+			for _, entry in profile.Angler.Catches do
+				if entry.Count > 0 then
+					discovered += 1
+				end
+			end
 			local entries
 			if journalTab == "Stats" then
-				local discovered = 0
-				for _, entry in profile.Angler.Catches do
-					if entry.Count > 0 then
-						discovered += 1
-					end
-				end
 				entries = {
 					{ "Astral Anomalies Activated", stats.AstralAnomaliesActivated },
 					{
@@ -1533,15 +1533,19 @@ function Menu.start()
 					{ "Deaths", stats.Deaths },
 				}
 			else
-				local function goal(target)
-					return if stats.TotalCaught >= target
-						then "Complete"
-						else commas(stats.TotalCaught) .. " / " .. commas(target)
+				local function goal(name, objective, progress, target)
+					local status = if progress >= target then "Complete" else commas(progress) .. " / " .. commas(target)
+					return { name, status, { { objective, "" } } }
 				end
 				entries = {
-					{ "First Catch", goal(1) },
-					{ "Getting the Hang of It", goal(10) },
-					{ "Seasoned Angler", goal(100) },
+					goal("First Catch", "Catch 1 fish", stats.TotalCaught, 1),
+					goal("Getting the Hang of It", "Catch 10 fish", stats.TotalCaught, 10),
+					goal("Seasoned Angler", "Catch 100 fish", stats.TotalCaught, 100),
+					goal("Curious Angler", "Discover 5 species", discovered, 5),
+					goal("Fish Merchant", "Sell 10 fish", stats.FishSold, 10),
+					goal("Making a Living", "Earn 1,000 coins", stats.CoinsEarned, 1000),
+					goal("Crab Collector", "Open 10 crab cages", stats.CrabCagesOpened, 10),
+					goal("Home Cook", "Cook 10 meals", stats.FoodCooked, 10),
 				}
 			end
 
@@ -2669,34 +2673,38 @@ function Menu.start()
 				})
 			end
 		elseif homeTab == "Upgrades" then
-			local upgrade = ShopUpgrades.SocialMediaAdvertisement
-			local owned = ShopUpgrades.hasAdvertisement(profile.Angler)
-			local enabled = not owned and profile.Cash >= upgrade.Price
-			line(upgrade.Name, 18, cream, 36)
-			line(upgrade.Description, 14, muted, 48)
-			line("Two customers every 35 seconds, spaced apart.", 14, muted, 36)
-			order += 1
-			local buy = button(
-				body,
-				if owned
-					then "Owned"
-					elseif not enabled then "$" .. commas(upgrade.Price - profile.Cash) .. " more needed"
-					else "Buy · $" .. commas(upgrade.Price),
-				function()
-					if enabled then
-						request("BuyShopUpgrade", "SocialMediaAdvertisement")
-					end
-				end,
-				{
-					Name = "BuySocialMediaAdvertisement",
-					LayoutOrder = order,
-					Size = UDim2.new(1, -16, 0, 44),
-					TextSize = 14,
-					Active = enabled,
-					Selectable = enabled,
-				}
-			)
-			Theme.glassButton(buy, if enabled then "Selected" else "Disabled")
+			for _, upgradeId in { "SocialMediaAdvertisement", "Baskets" } do
+				local upgrade = ShopUpgrades[upgradeId]
+				local owned = (profile.Angler.Upgrades[upgradeId] or 0) >= 1
+				local enabled = not owned and profile.Cash >= upgrade.Price
+				line(upgrade.Name, 18, cream, 36)
+				line(upgrade.Description, 14, muted, 48)
+				if upgradeId == "SocialMediaAdvertisement" then
+					line("Two customers every 35 seconds, spaced apart.", 14, muted, 36)
+				end
+				order += 1
+				local buy = button(
+					body,
+					if owned
+						then "Owned"
+						elseif not enabled then "$" .. commas(upgrade.Price - profile.Cash) .. " more needed"
+						else "Buy · $" .. commas(upgrade.Price),
+					function()
+						if enabled then
+							request("BuyShopUpgrade", upgradeId)
+						end
+					end,
+					{
+						Name = "Buy" .. upgradeId,
+						LayoutOrder = order,
+						Size = UDim2.new(1, -16, 0, 44),
+						TextSize = 14,
+						Active = enabled,
+						Selectable = enabled,
+					}
+				)
+				Theme.glassButton(buy, if enabled then "Selected" else "Disabled")
+			end
 		else
 			order += 1
 			local placeholder = make("Frame", body, {

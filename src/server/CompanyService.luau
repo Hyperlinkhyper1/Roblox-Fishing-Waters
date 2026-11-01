@@ -266,7 +266,7 @@ end
 local function landFish(crew, owner: Player)
 	local position = crew.frame.Position
 	local pool = FishCatch.inSeason(
-		Catalog.Pools[if Weather.inLake(position) then Catalog.DefaultPool else "OpenSea"],
+		Catalog.poolAt(CatchConditions.area(position)),
 		Catalog.Fish,
 		(Seasons.current()),
 		CatchConditions.at(position)

@@ -5,6 +5,7 @@
 -- X = +0.5, tail at -0.5, back towards +Y) and are scaled to studs on creation.
 local FishModels = {}
 local FishMutations = require(script.Parent.FishMutations)
+local FishSpecies = require(script.Parent.FishSpecies)
 
 local SCALE = 4 -- studs per fish length
 local FIN = 0.004
@@ -367,59 +368,32 @@ function Builder:edgeFin(
 	return points
 end
 
+-- Solid crescent (lunate) tail of fast pelagic fish: two sickle lobes with a
+-- convex leading edge and a concave trailing edge meeting at the tail stalk.
+function Builder:lunateTail(span: number, color: Color3, transparency: number?, lower: number?)
+	local stalk = self:top(-0.36)
+	local function bezier(p0: Vector2, p1: Vector2, p2: Vector2, t: number): Vector2
+		return p0 * (1 - t) ^ 2 + p1 * 2 * t * (1 - t) + p2 * t * t
+	end
+	for _, sign in { 1, -1 } do
+		local reach = span * (if sign < 0 then lower or 1 else 1)
+		local tip = v2(-0.5, sign * reach)
+		local lead0, lead1 = v2(-0.345, sign * stalk * 0.85), v2(-0.385, sign * reach * 0.72)
+		local trail0, trail1 = v2(-0.39, 0), v2(-0.415, sign * reach * 0.48)
+		local previousLead, previousTrail = lead0, trail0
+		for step = 1, 4 do
+			local t = step / 4
+			local lead, trail = bezier(lead0, lead1, tip, t), bezier(trail0, trail1, tip, t)
+			self:fin({ previousLead, lead, trail, previousTrail }, color, transparency)
+			previousLead, previousTrail = lead, trail
+		end
+	end
+	self:fin({ v2(-0.345, stalk * 0.85), v2(-0.39, 0), v2(-0.345, -stalk * 0.85) }, color, transparency)
+end
+
+-- Species builders live with their data in Shared.Fish (see Shared.FishSpecies);
+-- below are the body-family helpers several of them share, handed over as `kit`.
 local builders = {}
-
--- Shark rewards are individual parts, built locally like the other catch models.
-function builders.SharkMeat(b)
-	b:ellipsoid("Meat", CFrame.new(), Vector3.new(0.55, 0.27, 0.18), rgb(198, 112, 112))
-	b:ellipsoid("Cut", CFrame.new(0.01, 0.01, 0.088), Vector3.new(0.43, 0.19, 0.012), rgb(236, 164, 154))
-end
-
-function builders.SharkFin(b)
-	b:fin({ v2(-0.36, -0.16), v2(0.30, -0.16), v2(0.05, 0.38), v2(-0.08, 0.16) }, rgb(103, 121, 128))
-end
-
-function builders.SharkTail(b)
-	b:ellipsoid("TailBase", CFrame.new(0.19, 0, 0), Vector3.new(0.35, 0.13, 0.13), rgb(130, 145, 151))
-	b:fin({ v2(0.12, 0), v2(-0.40, 0.40), v2(-0.23, 0.06), v2(-0.38, -0.27) }, rgb(103, 121, 128))
-end
-
-function builders.SharkHead(b)
-	b:ellipsoid("Head", CFrame.new(), Vector3.new(0.65, 0.28, 0.25), rgb(136, 151, 156))
-	b:ellipsoid("Belly", CFrame.new(0, -0.07, 0), Vector3.new(0.59, 0.13, 0.23), rgb(214, 216, 210))
-	for _, side in { -1, 1 } do
-		b:ellipsoid("Eye", CFrame.new(0.18, 0.04, side * 0.116), Vector3.new(0.035, 0.035, 0.015), rgb(20, 24, 26))
-	end
-end
-
-function builders.GreatWhiteTooth(b)
-	b:fin({ v2(-0.26, -0.25), v2(0.26, -0.25), v2(0.04, 0.40) }, rgb(239, 235, 211))
-	b:ellipsoid("Root", CFrame.new(0, -0.24, 0), Vector3.new(0.53, 0.11, 0.10), rgb(203, 190, 161))
-end
-
-function builders.Trout(b)
-	local colors = { back = rgb(78, 90, 54), side = rgb(184, 188, 160), belly = rgb(240, 236, 224) }
-	local fin = rgb(150, 142, 108)
-	b:fishBody(0.21, 0.12, colors)
-	b:edgeFin(0.07, -0.08, { 0.08, 0.075, 0.06, 0.04 }, fin)
-	b:ellipsoid("AdiposeFin", CFrame.new(-0.25, b:top(-0.25) + 0.004, 0), Vector3.new(0.045, 0.028, 0.012), fin)
-	b:edgeFin(-0.12, -0.23, { 0.06, 0.05, 0.035 }, fin, true)
-	b:edgeFin(0.02, -0.07, { 0.05, 0.045 }, fin, true)
-	b:forkTail(0.11, 0.045, fin)
-	b:pectoral(0.2, -0.05, 0.1, 0.035, fin)
-	for x = 0.26, -0.3, -0.028 do
-		b:marks(x, -0.004, 0.055, 0.04 * (1 - math.abs(x) * 0.9), rgb(222, 128, 132))
-	end
-	b:marks(0.28, -0.02, 0.09, 0.08, rgb(216, 132, 128))
-	b:speckle(46, v2(-0.33, 0.33), v2(-0.01, 0.11), v2(0.011, 0.018), rgb(32, 32, 26))
-	for _ = 1, 9 do
-		b:finSpot(b.random(-0.47, -0.37), b.random(-0.09, 0.09), 0.012, rgb(40, 40, 32))
-	end
-	for _ = 1, 4 do
-		b:finSpot(b.random(-0.06, 0.04), b:top(0) + b.random(0.01, 0.05), 0.011, rgb(40, 40, 32))
-	end
-	b:face(0.37, 0.02, 0.045, rgb(204, 172, 96), rgb(120, 112, 96))
-end
 
 -- Deep-bodied carp with scale rows, barbels and fleshy lips; `p` is the palette.
 local function carp(b, p)
@@ -463,173 +437,10 @@ local function carp(b, p)
 	b:face(0.37, 0.01, 0.036, p.iris, p.line)
 end
 
-function builders.Carp(b)
-	carp(b, {
-		colors = { back = rgb(86, 68, 36), side = rgb(192, 146, 64), belly = rgb(234, 208, 148) },
-		fin = rgb(176, 104, 60),
-		scale = rgb(164, 118, 48),
-		scaleAlt = rgb(176, 130, 54),
-		barbel = rgb(170, 120, 70),
-		lips = rgb(198, 150, 92),
-		iris = rgb(214, 172, 64),
-		line = rgb(130, 96, 44),
-	})
-end
-
-function builders.BlueMackerel(b)
-	local colors = { back = rgb(32, 92, 118), side = rgb(158, 182, 192), belly = rgb(238, 240, 240) }
-	local fin = rgb(72, 94, 104)
-	b:fishBody(0.17, 0.11, colors, 0.03)
-	local spines = b:edgeFin(0.11, -0.01, { 0.07, 0.065, 0.05, 0.035 }, fin, false, 0.1)
-	b:rays(spines[1], { spines[4], spines[5], spines[6] }, rgb(40, 56, 64))
-	b:edgeFin(-0.08, -0.14, { 0.04, 0.03 }, fin)
-	b:edgeFin(-0.08, -0.14, { 0.04, 0.03 }, fin, true)
-	for index = 0, 4 do
-		local x = -0.17 - index * 0.028
-		for _, below in { false, true } do
-			local edge = if below then b:bottom(x) else b:top(x)
-			local sign = if below then -1 else 1
-			b:fin({
-				v2(x + 0.008, edge - sign * 0.004),
-				v2(x - 0.012, edge + sign * 0.02),
-				v2(x - 0.014, edge - sign * 0.004),
-			}, rgb(196, 184, 96))
-		end
-	end
-	b:forkTail(0.13, 0.085, fin)
-	b:pectoral(0.21, -0.02, 0.09, 0.03, fin)
-	for x = 0.21, -0.3, -0.04 do
-		local top = b:top(x)
-		b:stroke({ v2(x, top * 0.88), v2(x - 0.022, top * 0.52), v2(x + 0.004, top * 0.18) }, 0.007, rgb(16, 36, 50))
-	end
-	for x = 0.16, -0.26, -0.05 do
-		b:marks(x, -0.03 + math.sin(x * 40) * 0.006, 0.012, 0.012, rgb(112, 126, 136))
-	end
-	b:face(0.375, 0.015, 0.052, rgb(196, 204, 196), rgb(90, 108, 118))
-end
-
-function builders.Cod(b)
-	local colors = { back = rgb(102, 94, 60), side = rgb(158, 148, 104), belly = rgb(232, 226, 202) }
-	local fin = rgb(122, 112, 78)
-	b:fishBody(0.22, 0.15, colors, 0.08)
-	b:edgeFin(0.15, 0.04, { 0.05, 0.065, 0.05 }, fin)
-	b:edgeFin(0.0, -0.12, { 0.045, 0.055, 0.045 }, fin)
-	b:edgeFin(-0.16, -0.27, { 0.04, 0.045, 0.03 }, fin)
-	b:edgeFin(-0.03, -0.14, { 0.04, 0.05, 0.04 }, fin, true)
-	b:edgeFin(-0.17, -0.27, { 0.04, 0.04, 0.03 }, fin, true)
-	b:forkTail(0.09, 0.012, fin)
-	b:pectoral(0.21, -0.03, 0.09, 0.04, fin)
-	b:speckle(60, v2(-0.33, 0.36), v2(-0.04, 0.12), v2(0.014, 0.03), rgb(92, 80, 50))
-	b:stroke({ v2(0.26, 0.04), v2(0.12, 0.05), v2(-0.06, 0.03), v2(-0.32, 0.005) }, 0.009, rgb(226, 220, 196))
-	b:limb(
-		Vector3.new(0.43, b:bottom(0.43) + 0.005, 0),
-		Vector3.new(0.41, b:bottom(0.43) - 0.05, 0),
-		0.009,
-		rgb(150, 136, 96),
-		"Barbel"
-	)
-	b:face(0.36, 0.02, 0.042, rgb(190, 176, 120), rgb(110, 100, 70))
-end
-
-function builders.Bluegill(b)
-	local colors = { back = rgb(58, 76, 58), side = rgb(112, 124, 86), belly = rgb(224, 150, 60) }
-	local fin = rgb(82, 92, 70)
-	b:fishBody(0.42, 0.13, colors, 0.1)
-	local dorsal =
-		b:edgeFin(0.13, -0.24, { 0.07, 0.05, 0.075, 0.05, 0.075, 0.055, 0.08, 0.1, 0.11, 0.09 }, fin, false, 0.08)
-	b:rays(dorsal[1], { dorsal[4], dorsal[6], dorsal[8], dorsal[10] }, rgb(46, 52, 42))
-	b:edgeFin(-0.05, -0.24, { 0.06, 0.08, 0.09, 0.07 }, fin, true, 0.08)
-	b:edgeFin(0.08, -0.02, { 0.07, 0.06 }, fin, true)
-	b:forkTail(0.15, 0.03, fin, 0.05)
-	b:pectoral(0.2, -0.04, 0.15, 0.04, rgb(150, 140, 96), 0.15)
-	for _, x in { 0.15, 0.07, -0.01, -0.09, -0.17, -0.24 } do
-		b:stroke({ v2(x + 0.01, b:top(x) - 0.02), v2(x - 0.01, -0.06) }, 0.03, rgb(86, 98, 68))
-	end
-	b:stroke({ v2(0.43, -0.02), v2(0.33, -0.05) }, 0.012, rgb(88, 110, 156))
-	b:stroke({ v2(0.43, -0.05), v2(0.34, -0.09) }, 0.012, rgb(88, 110, 156))
-	b:marks(0.235, 0.035, 0.065, 0.055, rgb(18, 18, 22))
-	b:face(0.38, 0.05, 0.05, rgb(46, 40, 36), rgb(70, 80, 56))
-end
-
-function builders.Angelfish(b)
-	local colors = { back = rgb(196, 186, 146), side = rgb(216, 216, 206), belly = rgb(238, 238, 232) }
-	local fin = rgb(206, 206, 196)
-	b:fishBody(0.5, 0.07, colors, 0.12)
-	b:fin({ v2(0.16, 0.2), v2(-0.02, 0.42), v2(-0.36, 0.66), v2(-0.26, 0.26), v2(-0.24, 0.1) }, fin, 0.2)
-	b:fin({ v2(0.1, -0.2), v2(-0.04, -0.42), v2(-0.36, -0.66), v2(-0.26, -0.26), v2(-0.24, -0.1) }, fin, 0.2)
-	b:roundTail(0.13, fin, 0.2)
-	for _, side in { 1, -1 } do
-		b:limb(
-			Vector3.new(0.14, -0.2, side * 0.02),
-			Vector3.new(0.0, -0.66, side * 0.03),
-			0.008,
-			rgb(226, 224, 214),
-			"Filament"
-		)
-	end
-	for _, tip in { v2(-0.6, 0.22), v2(-0.6, -0.22) } do
-		b:limb(Vector3.new(-0.46, tip.Y * 0.5, 0), Vector3.new(tip.X, tip.Y, 0), 0.006, fin, "Filament")
-	end
-	local dark = rgb(26, 26, 30)
-	b:stroke({ v2(0.33, b:top(0.33) - 0.01), v2(0.33, b:bottom(0.33) + 0.01) }, 0.045, dark)
-	b:stroke({ v2(0.1, b:top(0.1) - 0.01), v2(0.08, b:bottom(0.08) + 0.01) }, 0.055, dark)
-	b:stroke({ v2(-0.15, b:top(-0.15) - 0.01), v2(-0.17, b:bottom(-0.17) + 0.01) }, 0.045, dark)
-	b:rays(v2(0.09, 0.22), { v2(-0.12, 0.5) }, dark)
-	b:rays(v2(0.07, -0.22), { v2(-0.12, -0.5) }, dark)
-	b:rays(v2(-0.15, 0.17), { v2(-0.3, 0.55) }, dark)
-	b:rays(v2(-0.17, -0.17), { v2(-0.3, -0.55) }, dark)
-	b:pectoral(0.2, -0.02, 0.09, 0.03, fin, 0.3)
-	b:face(0.37, 0.06, 0.05, rgb(196, 70, 54), rgb(170, 170, 160))
-end
-
-function builders.ArrowSquid(b)
-	local colors = { back = rgb(176, 94, 84), side = rgb(206, 134, 120), belly = rgb(236, 206, 194) }
-	b:layered("Mantle", Vector3.new(0.17, 0, 0), Vector3.new(0.6, 0.15, 0.15), colors)
-	b:layered("MantleTip", Vector3.new(0.42, 0, 0), Vector3.new(0.2, 0.075, 0.075), colors)
-	b:body("Head", Vector3.new(-0.15, 0, 0), Vector3.new(0.14, 0.11, 0.12), colors.side)
-	b:ellipsoid("Collar", CFrame.new(-0.11, 0, 0), Vector3.new(0.06, 0.13, 0.135), colors.back)
-	local finColor = rgb(214, 152, 136)
-	for _, side in { 1, -1 } do
-		b:fin(
-			{ Vector3.new(0.53, 0, 0), Vector3.new(0.33, 0, side * 0.14), Vector3.new(0.25, 0, side * 0.02) },
-			finColor,
-			0.12
-		)
-	end
-	b:speckle(70, v2(-0.08, 0.5), v2(-0.07, 0.075), v2(0.007, 0.016), rgb(128, 52, 46))
-	b:stroke({ v2(0.48, 0.02), v2(0.0, 0.07) }, 0.006, rgb(150, 70, 62))
-	b:eye(-0.15, 0.008, 0.07, rgb(172, 192, 204))
-	local armColor = rgb(212, 142, 128)
-	for index = 0, 7 do
-		local angle = index / 8 * math.pi * 2
-		local spread = Vector3.new(0, math.cos(angle), math.sin(angle))
-		local root = Vector3.new(-0.2, 0, 0) + spread * 0.035
-		local middle = Vector3.new(-0.34, -0.01, 0) + spread * 0.055
-		local tip = Vector3.new(-0.47 + math.abs(math.sin(angle)) * 0.03, -0.03, 0) + spread * 0.045
-		b:limb(root, middle, 0.028, armColor, "Arm")
-		b:limb(middle, tip, 0.017, armColor, "Arm")
-		for step = 1, 3 do
-			local sucker = root:Lerp(middle, step / 4) - spread * 0.012
-			b:ellipsoid("Sucker", CFrame.new(sucker), Vector3.one * 0.008, rgb(238, 210, 196))
-		end
-	end
-	for _, side in { 1, -1 } do
-		local root, middle = Vector3.new(-0.2, -0.01, side * 0.015), Vector3.new(-0.42, -0.05, side * 0.04)
-		local club = Vector3.new(-0.62, -0.03, side * 0.05)
-		b:limb(root, middle, 0.012, armColor, "Tentacle")
-		b:limb(middle, club, 0.01, armColor, "Tentacle")
-		b:ellipsoid(
-			"TentacleClub",
-			CFrame.lookAt(club, club + Vector3.xAxis),
-			Vector3.new(0.022, 0.026, 0.07),
-			armColor
-		)
-	end
-	b.model:SetAttribute("ViewDirection", Vector3.new(0.1, 0.65, 1))
-end
-
-function builders.GreyEel(b)
-	local back, side, belly = rgb(84, 88, 92), rgb(128, 132, 134), rgb(208, 206, 192)
+-- Smooth eel tube along a gently waving spine with continuous dorsal and anal
+-- fin ribbons meeting at the pointed tail; `p` is the palette.
+local function eel(b, p)
+	local back, side, belly = p.back, p.side, p.belly
 	local count = 18
 	local spine = {}
 	for index = 0, count do
@@ -647,18 +458,20 @@ function builders.GreyEel(b)
 		local up = (Vector3.yAxis - direction * direction.Y).Unit
 		local middle = (a + c) / 2
 		local frame = CFrame.fromMatrix(middle, direction, up)
-		local length, h = (c - a).Magnitude * 1.9, radius(t)
+		-- Long overlap keeps the waists between sections shallow, so the body
+		-- reads as one smooth tube instead of a chain of beads.
+		local length, h = (c - a).Magnitude * (if index <= 2 then 2 else 3.4), radius(t)
 		b:ellipsoid("Body", frame, Vector3.new(length, h * 2, h * 1.7), side)
 		b:ellipsoid("BodyBack", frame + up * h * 0.14, Vector3.new(length * 0.98, h * 1.7, h * 1.72), back)
 		b:ellipsoid("BodyBelly", frame - up * h * 0.16, Vector3.new(length * 0.97, h * 1.6, h * 1.71), belly)
-		if t > 0.22 then
+		if t > (p.dorsalFrom or 0.22) then
 			table.insert(finTop, { middle + up * h * 0.75, middle + up * (h + 0.03 * (1 - t * 0.4)) })
 		end
 		if t > 0.42 then
 			table.insert(finBottom, { middle - up * h * 0.75, middle - up * (h + 0.026 * (1 - t * 0.4)) })
 		end
 	end
-	local finColor = rgb(110, 112, 108)
+	local finColor = p.fin
 	for _, ribbon in { finTop, finBottom } do
 		for index = 1, #ribbon - 1 do
 			local a, c = ribbon[index], ribbon[index + 1]
@@ -668,11 +481,13 @@ function builders.GreyEel(b)
 		b:fin({ last[1], last[2], spine[#spine] - Vector3.new(0.02, 0, 0) }, finColor, 0.15)
 	end
 	local headY = spine[1].Y
-	b:body("Head", Vector3.new(0.44, headY, 0), Vector3.new(0.14, 0.11, 0.094), side)
-	b:body("HeadBack", Vector3.new(0.44, headY + 0.012, 0), Vector3.new(0.135, 0.095, 0.096), back)
-	b:eye(0.475, headY + 0.016, 0.026, rgb(150, 150, 120))
+	-- Head no wider than the body, tapering to a pointed snout.
+	b:body("Head", Vector3.new(0.43, headY, 0), Vector3.new(0.17, 0.1, 0.088), side)
+	b:body("HeadBack", Vector3.new(0.43, headY + 0.012, 0), Vector3.new(0.165, 0.085, 0.09), back)
+	b:body("Snout", Vector3.new(0.5, headY - 0.004, 0), Vector3.new(0.08, 0.05, 0.052), back)
+	b:eye(0.475, headY + 0.016, p.eyeSize or 0.026, p.iris)
 	b:stroke({ v2(0.51, headY - 0.008), v2(0.455, headY - 0.022) }, 0.007, rgb(30, 30, 30))
-	b:marks(0.385, headY - 0.005, 0.012, 0.03, rgb(54, 56, 58))
+	b:marks(0.385, headY - 0.005, 0.012, 0.03, back:Lerp(rgb(0, 0, 0), 0.35))
 	b:pectoral(0.38, headY - 0.01, 0.05, 0.03, finColor, 0.1)
 end
 
@@ -736,353 +551,12 @@ local function flatfish(b, p)
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.15, 0.3, 1))
 end
 
-function builders.GulfFlounder(b)
-	flatfish(b, {
-		top = rgb(124, 98, 66),
-		under = rgb(238, 236, 228),
-		fin = rgb(142, 114, 80),
-		ray = rgb(100, 80, 56),
-		light = rgb(156, 128, 90),
-		dark = rgb(92, 70, 46),
-		ocelli = { v2(-0.02, 0.11), v2(-0.02, -0.11), v2(-0.2, 0) },
-		ring = rgb(204, 182, 142),
-		center = rgb(36, 28, 22),
-		iris = rgb(206, 176, 90),
-		mouth = rgb(60, 44, 30),
-	})
-end
-
-function builders.Stingray(b)
-	local top, darker, under = rgb(104, 88, 70), rgb(88, 74, 58), rgb(234, 232, 224)
-	local half = {
-		v2(0.46, 0),
-		v2(0.42, 0.08),
-		v2(0.34, 0.18),
-		v2(0.24, 0.27),
-		v2(0.14, 0.31),
-		v2(0.04, 0.3),
-		v2(-0.06, 0.24),
-		v2(-0.13, 0.15),
-		v2(-0.17, 0.07),
-		v2(-0.18, 0),
-	}
-	local center = Vector3.new(0.12, 0, 0)
-	for _, sign in { 1, -1 } do
-		for index = 1, #half - 1 do
-			local a, c = half[index], half[index + 1]
-			b:triangle(center, Vector3.new(a.X, 0, a.Y * sign), Vector3.new(c.X, 0, c.Y * sign), top)
-		end
-	end
-	local domes = {
-		{ Vector3.new(0.13, 0, 0), Vector3.new(0.56, 0.03, 0.54), top },
-		{ Vector3.new(0.13, 0.008, 0), Vector3.new(0.46, 0.07, 0.3), top },
-		{ Vector3.new(0.07, 0.022, 0), Vector3.new(0.32, 0.05, 0.1), darker },
-	}
-	for _, dome in domes do
-		b:ellipsoid("Disc", CFrame.new(dome[1]), dome[2], dome[3])
-	end
-	b:ellipsoid("Underside", CFrame.new(0.13, -0.008, 0), Vector3.new(0.56, 0.026, 0.54), under)
-	local function height(x: number, z: number): number
-		local best = 0.002
-		for _, dome in domes do
-			local h = dome[2] / 2
-			local dx, dz = (x - dome[1].X) / h.X, (z - dome[1].Z) / h.Z
-			local remaining = 1 - dx * dx - dz * dz
-			if remaining > 0 then
-				best = math.max(best, dome[1].Y + h.Y * math.sqrt(remaining))
-			end
-		end
-		return best
-	end
-	for _ = 1, 54 do
-		local x, z = b.random(-0.12, 0.4), b.random(-0.27, 0.27)
-		local reach = 0.3 * (1 - math.abs(x - 0.12) / 0.4)
-		if math.abs(z) < reach then
-			local size = b.random(0.012, 0.032)
-			b:ellipsoid(
-				"Spot",
-				CFrame.new(x, height(x, z) + 0.002, z),
-				Vector3.new(size, 0.004, size),
-				if b.random(0, 1) > 0.35 then rgb(170, 152, 118) else rgb(66, 54, 42)
-			)
-		end
-	end
-	for _, sign in { 1, -1 } do
-		b:ellipsoid(
-			"Eye",
-			CFrame.new(0.3, height(0.3, 0.055 * sign) + 0.008, 0.055 * sign),
-			Vector3.new(0.035, 0.028, 0.028),
-			rgb(36, 32, 28)
-		)
-		b:ellipsoid(
-			"EyeGlint",
-			CFrame.new(0.305, height(0.3, 0.055 * sign) + 0.022, 0.05 * sign),
-			Vector3.one * 0.008,
-			rgb(255, 255, 255)
-		)
-		b:ellipsoid(
-			"Spiracle",
-			CFrame.new(0.255, height(0.255, 0.06 * sign) + 0.002, 0.06 * sign),
-			Vector3.new(0.03, 0.006, 0.018),
-			rgb(48, 40, 32)
-		)
-		b:ellipsoid("PelvicFin", CFrame.new(-0.19, 0.004, 0.045 * sign), Vector3.new(0.08, 0.016, 0.05), top)
-	end
-	local previous = Vector3.new(-0.16, 0.01, 0)
-	for index = 1, 7 do
-		local t = index / 7
-		local point = Vector3.new(-0.16 - t * 0.46, 0.01 + t * 0.01, math.sin(t * math.pi) * 0.03)
-		b:limb(previous, point, 0.04 * (1 - t) + 0.006, darker, "Tail")
-		previous = point
-	end
-	b:limb(Vector3.new(-0.3, 0.03, 0.016), Vector3.new(-0.38, 0.036, 0.024), 0.008, rgb(214, 204, 182), "Barb")
-	b.model:SetAttribute("ViewDirection", Vector3.new(0.35, 1, 0.55))
-end
-
-function builders.Clownfish(b)
-	local colors = { back = rgb(222, 92, 20), side = rgb(240, 122, 32), belly = rgb(246, 158, 72) }
-	local fin = rgb(236, 112, 30)
-	local white, edge = rgb(250, 250, 246), rgb(22, 18, 16)
-	b:fishBody(0.36, 0.14, colors, 0.06)
-	b:edgeFin(0.12, -0.26, { 0.06, 0.07, 0.06, 0.08, 0.09, 0.08 }, fin)
-	b:edgeFin(-0.06, -0.24, { 0.06, 0.08, 0.06 }, fin, true)
-	b:edgeFin(0.08, 0, { 0.07, 0.05 }, fin, true)
-	b:roundTail(0.13, fin)
-	b:pectoral(0.18, -0.04, 0.11, 0.05, fin)
-	-- White bands with thin black borders.
-	for _, x in { 0.2, -0.02, -0.3 } do
-		local width = if x < -0.2 then 0.03 else 0.045
-		b:stroke({ v2(x, b:top(x) - 0.008), v2(x - 0.01, b:bottom(x) + 0.008) }, width, white)
-		for _, offset in { -1, 1 } do
-			local bx = x + offset * (width / 2 + 0.008)
-			b:stroke({ v2(bx, b:top(bx) - 0.008), v2(bx - 0.01, b:bottom(bx) + 0.008) }, 0.009, edge)
-		end
-	end
-	b:face(0.38, 0.04, 0.05, rgb(232, 120, 40), edge)
-end
-
-function builders.Sardine(b)
-	local colors = { back = rgb(40, 96, 112), side = rgb(176, 192, 196), belly = rgb(240, 242, 242) }
-	local fin = rgb(150, 164, 166)
-	b:fishBody(0.18, 0.1, colors, 0.04)
-	b:edgeFin(0.06, -0.05, { 0.06, 0.05, 0.03 }, fin, false, 0.15)
-	b:edgeFin(-0.14, -0.22, { 0.03, 0.02 }, fin, true, 0.15)
-	b:edgeFin(0, -0.05, { 0.03 }, fin, true, 0.15)
-	b:forkTail(0.12, 0.08, fin, 0.1)
-	b:pectoral(0.21, -0.04, 0.07, 0.025, fin, 0.15)
-	b:stroke({ v2(0.26, 0.02), v2(-0.3, 0.01) }, 0.008, rgb(120, 150, 160))
-	for x = 0.18, -0.2, -0.065 do
-		b:marks(x, 0.035, 0.016, 0.016, rgb(26, 40, 48))
-	end
-	b:face(0.37, 0.015, 0.05, rgb(210, 214, 210), rgb(110, 130, 136))
-end
-
-function builders.Anchovy(b)
-	local colors = { back = rgb(70, 112, 104), side = rgb(196, 204, 196), belly = rgb(236, 238, 232) }
-	local fin = rgb(176, 184, 176)
-	b:fishBody(0.15, 0.09, colors, 0.02)
-	b:edgeFin(0.04, -0.06, { 0.05, 0.04, 0.025 }, fin, false, 0.25)
-	b:edgeFin(-0.06, -0.2, { 0.025, 0.025, 0.02 }, fin, true, 0.25)
-	b:forkTail(0.11, 0.08, fin, 0.2)
-	b:pectoral(0.22, -0.035, 0.06, 0.02, fin, 0.25)
-	b:stroke({ v2(0.24, 0), v2(-0.32, 0) }, 0.016, rgb(214, 224, 228))
-	-- Rounded snout overhanging a long jaw.
-	b:ellipsoid("Snout", CFrame.new(0.47, 0.012, 0), Vector3.new(0.07, 0.05, 0.05), colors.back)
-	b:face(0.39, 0.015, 0.058, rgb(200, 206, 200), rgb(130, 140, 134))
-	b:stroke({ v2(0.46, -0.012), v2(0.34, -0.028) }, 0.006, rgb(40, 40, 36))
-end
-
-function builders.Catfish(b)
-	local colors = { back = rgb(70, 74, 78), side = rgb(130, 132, 128), belly = rgb(226, 222, 210) }
-	local fin, whisker = rgb(96, 98, 98), rgb(60, 60, 62)
-	b:fishBody(0.2, 0.18, colors, 0.12)
-	local dorsal = b:edgeFin(0.14, 0.03, { 0.1, 0.07, 0.04 }, fin, false, 0.05)
-	b:rays(dorsal[1], { dorsal[3] }, rgb(52, 54, 56))
-	b:ellipsoid("AdiposeFin", CFrame.new(-0.22, b:top(-0.22) + 0.006, 0), Vector3.new(0.09, 0.03, 0.012), fin)
-	b:edgeFin(-0.04, -0.3, { 0.04, 0.05, 0.05, 0.045, 0.04 }, fin, true)
-	b:edgeFin(0.06, 0, { 0.04 }, fin, true)
-	b:forkTail(0.11, 0.05, fin)
-	b:pectoral(0.24, -0.06, 0.11, 0.035, fin)
-	for _, side in { 1, -1 } do
-		local bend = Vector3.new(0.36, -0.06, side * 0.14)
-		b:limb(Vector3.new(0.46, -0.01, side * 0.035), bend, 0.009, whisker, "Barbel")
-		b:limb(bend, Vector3.new(0.22, -0.12, side * 0.17), 0.006, whisker, "Barbel")
-		for _, z in { 0.015, 0.04 } do
-			local chin = b:bottom(0.44)
-			b:limb(
-				Vector3.new(0.44, chin + 0.006, side * z),
-				Vector3.new(0.41, chin - 0.05, side * z * 1.6),
-				0.006,
-				rgb(200, 196, 186),
-				"Barbel"
-			)
-		end
-	end
-	b:face(0.4, 0.02, 0.03, rgb(150, 140, 100), rgb(90, 92, 92))
-end
-
-function builders.Pufferfish(b)
-	local colors = { back = rgb(150, 132, 76), side = rgb(196, 180, 120), belly = rgb(240, 236, 214) }
-	local fin = rgb(190, 170, 110)
-	b:layered("Body", Vector3.new(0.06, 0, 0), Vector3.new(0.74, 0.58, 0.54), colors)
-	b:layered("TailStalk", Vector3.new(-0.3, 0, 0), Vector3.new(0.18, 0.12, 0.1), colors)
-	b:edgeFin(-0.2, -0.27, { 0.06, 0.05 }, fin, false, 0.2)
-	b:edgeFin(-0.2, -0.27, { 0.06, 0.05 }, fin, true, 0.2)
-	b:roundTail(0.11, fin, 0.15)
-	b:pectoral(0.18, 0, 0.08, 0.06, fin, 0.25)
-	b:speckle(40, v2(-0.25, 0.38), v2(0, 0.26), v2(0.016, 0.03), rgb(70, 60, 36))
-	-- Inflated: short spines stand out all over the body.
-	for _ = 1, 60 do
-		local x, y = b.random(-0.24, 0.36), b.random(-0.25, 0.25)
-		local side = if b.random(0, 1) > 0.5 then 1 else -1
-		local position, normal = b:surface(x, y, side)
-		if position and normal then
-			b:limb(position - normal * 0.004, position + normal * 0.04, 0.007, rgb(226, 218, 186), "Spine")
-		end
-	end
-	b:ellipsoid("Beak", CFrame.new(0.43, -0.04, 0), Vector3.new(0.05, 0.05, 0.07), rgb(232, 226, 200))
-	b:face(0.3, 0.07, 0.085, rgb(64, 140, 120), rgb(160, 144, 90))
-end
-
-function builders.YellowfinTuna(b)
-	local colors = { back = rgb(24, 40, 82), side = rgb(150, 160, 176), belly = rgb(232, 234, 236) }
-	local fin, yellow = rgb(40, 52, 84), rgb(242, 196, 40)
-	b:fishBody(0.27, 0.2, colors, 0.03)
-	b:edgeFin(0.14, 0.02, { 0.08, 0.06, 0.03 }, fin, false, 0.05)
-	-- Long yellow sickle fins, the species' trademark.
-	b:fin({ v2(0, b:top(0) - 0.008), v2(-0.14, b:top(0) + 0.22), v2(-0.09, b:top(-0.09) - 0.008) }, yellow)
-	b:fin(
-		{ v2(-0.02, b:bottom(-0.02) + 0.008), v2(-0.16, b:bottom(-0.02) - 0.2), v2(-0.1, b:bottom(-0.1) + 0.008) },
-		yellow
-	)
-	for index = 0, 5 do
-		local x = -0.15 - index * 0.03
-		for _, below in { false, true } do
-			local edge = if below then b:bottom(x) else b:top(x)
-			local sign = if below then -1 else 1
-			b:fin({
-				v2(x + 0.008, edge - sign * 0.004),
-				v2(x - 0.012, edge + sign * 0.022),
-				v2(x - 0.014, edge - sign * 0.004),
-			}, yellow)
-		end
-	end
-	b:forkTail(0.24, 0.18, fin)
-	b:pectoral(0.21, 0.01, 0.2, 0.03, fin)
-	b:stroke({ v2(0.28, 0.035), v2(0, 0.04), v2(-0.28, 0.012) }, 0.018, yellow)
-	for x = 0.1, -0.24, -0.05 do
-		b:stroke({ v2(x, -0.03), v2(x - 0.01, b:bottom(x) * 0.7) }, 0.006, rgb(200, 206, 214))
-	end
-	b:face(0.37, 0.03, 0.05, rgb(180, 170, 120), rgb(70, 80, 100))
-end
-
-function builders.Sailfish(b)
-	local colors = { back = rgb(28, 50, 96), side = rgb(110, 140, 176), belly = rgb(226, 230, 234) }
-	local fin, sail = rgb(34, 56, 104), rgb(40, 72, 150)
-	b:fishBody(0.16, 0.1, colors, 0.02)
-	local base = b:edgeFin(0.24, -0.16, { 0.2, 0.3, 0.33, 0.32, 0.28, 0.24, 0.18, 0.1 }, sail, false, 0.12)
-	for index = 3, #base - 1 do
-		local tip = base[index]
-		local root = v2(tip.X, b:top(tip.X))
-		b:rays(root, { tip }, rgb(24, 40, 90))
-		b:finSpot(tip.X + 0.02, root.Y + (tip.Y - root.Y) * b.random(0.3, 0.7), 0.024, rgb(18, 26, 56))
-	end
-	b:edgeFin(-0.18, -0.25, { 0.04, 0.03 }, fin)
-	b:edgeFin(-0.06, -0.2, { 0.08, 0.05, 0.03 }, fin, true)
-	for _, side in { 1, -1 } do
-		local belly = b:bottom(0.18)
-		b:limb(
-			Vector3.new(0.18, belly + 0.005, side * 0.01),
-			Vector3.new(-0.06, belly - 0.12, side * 0.02),
-			0.007,
-			fin,
-			"Filament"
-		)
-	end
-	b:forkTail(0.2, 0.16, fin)
-	b:pectoral(0.22, -0.03, 0.12, 0.025, fin)
-	for x = 0.16, -0.26, -0.05 do
-		b:stroke({ v2(x, b:top(x) * 0.8), v2(x - 0.01, 0) }, 0.008, rgb(150, 190, 226))
-	end
-	b:limb(Vector3.new(0.44, 0.005, 0), Vector3.new(0.82, 0, 0), 0.022, colors.back, "Bill")
-	b:face(0.36, 0.02, 0.045, rgb(170, 180, 190), rgb(60, 80, 120))
-end
-
-function builders.Swordfish(b)
-	local colors = { back = rgb(54, 46, 66), side = rgb(126, 118, 132), belly = rgb(214, 208, 204) }
-	local fin = rgb(60, 52, 70)
-	b:fishBody(0.2, 0.16, colors, 0.02)
-	local crest = b:top(0.12)
-	b:fin({ v2(0.24, b:top(0.24) - 0.008), v2(0.08, crest + 0.2), v2(0.1, crest + 0.04), v2(0.12, crest - 0.008) }, fin)
-	local keel = b:bottom(0)
-	b:fin(
-		{ v2(0.04, keel + 0.008), v2(-0.08, keel - 0.12), v2(-0.06, keel - 0.03), v2(-0.04, b:bottom(-0.04) + 0.008) },
-		fin
-	)
-	b:edgeFin(-0.24, -0.29, { 0.03 }, fin)
-	b:edgeFin(-0.24, -0.29, { 0.03 }, fin, true)
-	b:ellipsoid("Keel", CFrame.new(-0.33, 0, 0), Vector3.new(0.08, 0.03, b:top(-0.33) * 1.4), colors.back)
-	b:forkTail(0.22, 0.17, fin)
-	b:pectoral(0.22, -0.05, 0.14, 0.03, fin)
-	-- The flat sword is about a third of the fish's whole length.
-	b:ellipsoid("Sword", CFrame.new(0.72, 0.005, 0), Vector3.new(0.58, 0.028, 0.055), rgb(40, 34, 46))
-	b:face(0.36, 0.025, 0.065, rgb(60, 70, 90), rgb(80, 70, 90))
-end
-
-function builders.Yellowshark(b)
-	local colors = { back = rgb(196, 150, 32), side = rgb(232, 196, 70), belly = rgb(246, 238, 210) }
-	local fin = rgb(204, 160, 40)
-	b:fishBody(0.2, 0.19, colors, 0)
-	b:layered("Snout", Vector3.new(0.43, 0.01, 0), Vector3.new(0.16, 0.1, 0.13), colors)
-	b:fin({
-		v2(0.12, b:top(0.12) - 0.008),
-		v2(0, b:top(0) + 0.17),
-		v2(-0.03, b:top(0) + 0.15),
-		v2(-0.04, b:top(-0.04) - 0.008),
-	}, fin)
-	b:edgeFin(-0.22, -0.28, { 0.04, 0.025 }, fin)
-	b:edgeFin(-0.2, -0.26, { 0.035, 0.02 }, fin, true)
-	b:edgeFin(-0.04, -0.1, { 0.04, 0.03 }, fin, true)
-	b:pectoral(0.18, -0.06, 0.2, 0.06, fin)
-	-- Shark tail: the upper lobe reaches much further than the lower one.
-	local stalk = b:top(-0.36)
-	local upper, lower = v2(-0.34, stalk * 0.9), v2(-0.34, -stalk * 0.9)
-	b:fin({ upper, v2(-0.6, 0.26), v2(-0.56, 0.2), v2(-0.42, 0), lower }, fin)
-	b:fin({ lower, v2(-0.44, 0), v2(-0.52, -0.15) }, fin)
-	b:speckle(24, v2(-0.3, 0.3), v2(0.02, 0.09), v2(0.015, 0.03), rgb(176, 128, 24))
-	for index = 0, 4 do
-		local x = 0.27 - index * 0.028
-		b:stroke({ v2(x, 0.035), v2(x - 0.008, -0.04) }, 0.007, rgb(150, 110, 24))
-	end
-	b:stroke({ v2(0.43, -0.035), v2(0.38, -0.055), v2(0.32, -0.06) }, 0.008, rgb(60, 40, 20))
-	b:eye(0.4, 0.03, 0.03, rgb(20, 20, 20))
-end
-
--- Long ambush predator: dorsal and anal fins set far back, flat duck-bill snout.
-function builders.Pike(b)
-	local colors = { back = rgb(58, 78, 44), side = rgb(118, 140, 82), belly = rgb(226, 228, 196) }
-	local fin = rgb(132, 110, 62)
-	b:fishBody(0.15, 0.1, colors, 0.02)
-	b:layered("Snout", Vector3.new(0.45, -0.006, 0), Vector3.new(0.2, 0.065, 0.08), colors)
-	b:edgeFin(-0.12, -0.25, { 0.06, 0.07, 0.06, 0.04 }, fin)
-	b:edgeFin(-0.14, -0.26, { 0.05, 0.06, 0.04 }, fin, true)
-	b:edgeFin(0.02, -0.04, { 0.04 }, fin, true)
-	b:forkTail(0.11, 0.04, fin)
-	b:pectoral(0.25, -0.03, 0.08, 0.025, fin)
-	b:speckle(44, v2(-0.3, 0.3), v2(-0.04, 0.06), v2(0.014, 0.026), rgb(206, 214, 150))
-	for _ = 1, 10 do
-		b:finSpot(b.random(-0.47, -0.37), b.random(-0.09, 0.09), 0.014, rgb(60, 50, 30))
-	end
-	b:stroke({ v2(0.54, -0.014), v2(0.4, -0.03) }, 0.007, rgb(36, 34, 26))
-	b:face(0.35, 0.02, 0.04, rgb(214, 186, 80), rgb(80, 96, 56))
-end
-
 -- Sturgeons share a bony-plated body, a shark-like upper tail lobe and barbels
 -- under a pointed snout; `p` is the palette and p.snout the snout size.
 local function sturgeon(b, p)
 	local colors, fin, scute = p.colors, p.fin, p.scute
 	b:fishBody(0.16, 0.14, colors, 0.04)
-	b:layered("Snout", Vector3.new(0.46, -0.018, 0), p.snout, colors)
+	b:layered("Snout", p.snoutAt or Vector3.new(0.46, -0.018, 0), p.snout, colors)
 	b:edgeFin(-0.16, -0.26, { 0.05, 0.06, 0.04 }, fin)
 	b:edgeFin(-0.14, -0.24, { 0.04, 0.05, 0.03 }, fin, true)
 	b:edgeFin(0.02, -0.05, { 0.035 }, fin, true)
@@ -1094,63 +568,26 @@ local function sturgeon(b, p)
 	if p.filament then
 		b:limb(Vector3.new(-0.56, 0.15, 0), Vector3.new(-0.74, 0.2, 0), 0.006, fin, "Filament")
 	end
-	for x = 0.26, -0.3, -0.05 do
-		b:ellipsoid("GrowthRidge", CFrame.new(x, b:top(x) + 0.004, 0), Vector3.new(0.03, 0.018, 0.02), scute)
+	for x = 0.21, -0.3, -0.05 do
+		b:ellipsoid("GrowthRidge", CFrame.new(x, b:top(x) + 0.002, 0), Vector3.new(0.03, 0.014, 0.02), scute)
 		b:marks(x, b:top(x) * 0.45, 0.026, 0.02, scute)
 		b:marks(x, b:bottom(x) * 0.4, 0.022, 0.016, scute)
 	end
 	if p.stripe then
 		b:stroke({ v2(0.3, 0.012), v2(0, 0.01), v2(-0.32, 0) }, 0.008, p.stripe)
 	end
-	local chin = b:bottom(0.46)
-	for _, z in { -0.02, -0.007, 0.007, 0.02 } do
-		b:limb(Vector3.new(0.46, chin + 0.004, z), Vector3.new(0.45, chin - 0.035, z * 1.3), 0.006, scute, "Barbel")
+	local barbelX = p.barbelX or 0.46
+	local chin = b:bottom(barbelX)
+	for _, z in { -0.022, -0.008, 0.008, 0.022 } do
+		b:limb(
+			Vector3.new(barbelX, chin + 0.004, z),
+			Vector3.new(barbelX - 0.012, chin - 0.05, z * 1.3),
+			0.008,
+			scute,
+			"Barbel"
+		)
 	end
 	b:eye(0.36, 0.02, 0.026, p.iris)
-end
-
-function builders.GreenSturgeon(b)
-	sturgeon(b, {
-		colors = { back = rgb(62, 82, 52), side = rgb(124, 140, 100), belly = rgb(222, 224, 200) },
-		fin = rgb(84, 98, 70),
-		scute = rgb(196, 200, 172),
-		snout = Vector3.new(0.2, 0.07, 0.09),
-		stripe = rgb(96, 132, 72),
-		iris = rgb(150, 150, 110),
-	})
-end
-
-function builders.ShovelnoseSturgeon(b)
-	sturgeon(b, {
-		colors = { back = rgb(128, 106, 72), side = rgb(178, 158, 120), belly = rgb(236, 230, 212) },
-		fin = rgb(140, 118, 84),
-		scute = rgb(212, 200, 170),
-		-- The flat, wide shovel snout gives the species its name.
-		snout = Vector3.new(0.22, 0.04, 0.13),
-		filament = true,
-		iris = rgb(160, 140, 96),
-	})
-end
-
--- Deep-bodied cichlid with faint bars and a red-edged tail.
-function builders.Tilapia(b)
-	local colors = { back = rgb(70, 84, 76), side = rgb(140, 152, 140), belly = rgb(222, 222, 210) }
-	local fin = rgb(104, 112, 104)
-	b:fishBody(0.36, 0.13, colors, 0.08)
-	local dorsal = b:edgeFin(0.14, -0.24, { 0.05, 0.06, 0.06, 0.06, 0.06, 0.07, 0.09, 0.1, 0.08 }, fin, false, 0.08)
-	b:rays(dorsal[1], { dorsal[3], dorsal[5], dorsal[7], dorsal[9] }, rgb(60, 66, 60))
-	b:edgeFin(-0.06, -0.24, { 0.06, 0.08, 0.07 }, fin, true, 0.08)
-	b:edgeFin(0.08, -0.02, { 0.06, 0.05 }, fin, true)
-	b:roundTail(0.13, fin, 0.05)
-	b:stroke({ v2(-0.47, 0.12), v2(-0.5, 0), v2(-0.47, -0.12) }, 0.012, rgb(196, 70, 60))
-	b:pectoral(0.2, -0.04, 0.12, 0.04, fin, 0.15)
-	for _, x in { 0.14, 0.05, -0.04, -0.13, -0.22 } do
-		b:stroke({ v2(x + 0.01, b:top(x) - 0.02), v2(x - 0.01, -0.07) }, 0.026, rgb(104, 116, 106))
-	end
-	for _ = 1, 12 do
-		b:finSpot(b.random(-0.2, 0.1), b:top(-0.05) + b.random(0.01, 0.06), 0.01, rgb(220, 220, 214))
-	end
-	b:face(0.38, 0.05, 0.048, rgb(196, 132, 70), rgb(84, 96, 88))
 end
 
 -- Trout-family body: adipose fin, spotted flank and an optional coloured band.
@@ -1167,7 +604,8 @@ local function trout(b, p)
 		for x = 0.27, -0.31, -0.026 do
 			b:marks(x, -0.002, 0.05, 0.05 * (1 - math.abs(x) * 0.9), p.band)
 		end
-		b:marks(0.28, -0.02, 0.1, 0.085, p.band)
+		-- The band narrows onto the gill cover rather than ending in a disc.
+		b:marks(0.29, -0.008, 0.085, 0.045, p.band)
 	end
 	if p.vermiculate then
 		-- Tiger trout: worm-like squiggles instead of round spots.
@@ -1185,368 +623,6 @@ local function trout(b, p)
 		end
 	end
 	b:face(0.37, 0.02, 0.045, p.iris, p.line)
-end
-
-function builders.RainbowTrout(b)
-	trout(b, {
-		colors = { back = rgb(70, 96, 70), side = rgb(196, 200, 176), belly = rgb(244, 240, 230) },
-		fin = rgb(156, 150, 120),
-		band = rgb(226, 112, 140),
-		spots = 70,
-		spot = rgb(28, 30, 24),
-		iris = rgb(210, 180, 100),
-		line = rgb(110, 116, 96),
-	})
-end
-
-function builders.TigerTrout(b)
-	trout(b, {
-		colors = { back = rgb(110, 92, 50), side = rgb(206, 176, 104), belly = rgb(240, 226, 186) },
-		fin = rgb(196, 140, 72),
-		vermiculate = true,
-		spot = rgb(60, 46, 24),
-		iris = rgb(220, 176, 80),
-		line = rgb(130, 106, 60),
-	})
-end
-
--- Golden dorado: a river predator in gold with rows of dark dashes and a red tail.
-function builders.Dorado(b)
-	local colors = { back = rgb(176, 128, 30), side = rgb(232, 182, 54), belly = rgb(246, 226, 160) }
-	local fin = rgb(224, 150, 50)
-	b:fishBody(0.24, 0.14, colors, 0.05)
-	b:edgeFin(0.08, -0.1, { 0.07, 0.07, 0.06, 0.045 }, fin)
-	b:ellipsoid("AdiposeFin", CFrame.new(-0.24, b:top(-0.24) + 0.004, 0), Vector3.new(0.05, 0.03, 0.012), fin)
-	b:edgeFin(-0.12, -0.23, { 0.06, 0.05, 0.035 }, fin, true)
-	b:edgeFin(0.03, -0.06, { 0.05, 0.04 }, fin, true)
-	b:forkTail(0.14, 0.06, rgb(214, 72, 44))
-	b:stroke({ v2(-0.36, 0), v2(-0.48, 0) }, 0.014, rgb(40, 30, 20))
-	b:pectoral(0.2, -0.05, 0.1, 0.035, fin)
-	for row = 0, 5 do
-		local y = -0.07 + row * 0.03
-		for x = 0.22 - (row % 2) * 0.02, -0.3, -0.04 do
-			if y < b:top(x) - 0.012 and y > b:bottom(x) + 0.012 then
-				b:marks(x, y, 0.018, 0.008, rgb(96, 64, 20))
-			end
-		end
-	end
-	b:face(0.37, 0.025, 0.044, rgb(220, 150, 50), rgb(150, 100, 30))
-end
-
--- Ocean sunfish: a tall disc with long dorsal and anal fins and a frilled
--- clavus where other fish have a tail.
-function builders.Sunfish(b)
-	local colors = { back = rgb(96, 104, 112), side = rgb(156, 164, 170), belly = rgb(222, 224, 222) }
-	local fin = rgb(110, 118, 126)
-	b:layered("Body", Vector3.new(0.05, 0, 0), Vector3.new(0.7, 0.62, 0.16), colors)
-	b:layered("Head", Vector3.new(0.3, -0.02, 0), Vector3.new(0.26, 0.4, 0.14), colors)
-	local top, bottom = b:top(-0.1), b:bottom(-0.1)
-	b:fin({
-		v2(-0.06, b:top(-0.06) - 0.01),
-		v2(-0.18, top + 0.36),
-		v2(-0.25, top + 0.3),
-		v2(-0.24, b:top(-0.24) - 0.01),
-	}, fin)
-	b:fin({
-		v2(-0.06, b:bottom(-0.06) + 0.01),
-		v2(-0.18, bottom - 0.34),
-		v2(-0.25, bottom - 0.28),
-		v2(-0.24, b:bottom(-0.24) + 0.01),
-	}, fin)
-	local clavus = { v2(-0.24, 0) }
-	for index = 0, 8 do
-		local angle = math.rad(100 + index * 160 / 8)
-		local wobble = if index % 2 == 0 then 1 else 0.86
-		table.insert(clavus, v2(-0.27 + math.cos(angle) * 0.1 * wobble, math.sin(angle) * 0.28 * wobble))
-	end
-	b:fin(clavus, fin)
-	b:pectoral(0.18, 0.02, 0.07, 0.05, fin)
-	b:speckle(34, v2(-0.2, 0.3), v2(-0.25, 0.25), v2(0.02, 0.05), rgb(196, 200, 202))
-	b:ellipsoid("Lips", CFrame.new(0.43, -0.02, 0), Vector3.new(0.04, 0.05, 0.05), colors.side)
-	b:face(0.34, 0.06, 0.05, rgb(70, 76, 80), fin)
-	b.model:SetAttribute("ViewDirection", Vector3.new(0.1, 0.1, 1))
-end
-
--- Big-headed, big-mouthed bottom dweller mottled in browns and greens.
-function builders.Lingcod(b)
-	local colors = { back = rgb(86, 82, 58), side = rgb(140, 130, 96), belly = rgb(224, 218, 196) }
-	local fin = rgb(110, 100, 70)
-	b:fishBody(0.2, 0.14, colors, 0.06)
-	b:layered("Jaw", Vector3.new(0.36, -0.03, 0), Vector3.new(0.26, 0.15, 0.13), colors)
-	local spines = b:edgeFin(0.18, 0.02, { 0.05, 0.06, 0.06, 0.05 }, fin, false, 0.05)
-	b:rays(spines[1], { spines[3], spines[5] }, rgb(70, 64, 44))
-	b:edgeFin(0.0, -0.26, { 0.06, 0.06, 0.055, 0.05, 0.04 }, fin)
-	b:edgeFin(-0.02, -0.26, { 0.05, 0.055, 0.05, 0.04 }, fin, true)
-	b:roundTail(0.11, fin)
-	b:pectoral(0.21, -0.05, 0.13, 0.05, fin)
-	for _ = 1, 50 do
-		local x, y = b.random(-0.32, 0.36), b.random(-0.06, 0.1)
-		local size = b.random(0.02, 0.045)
-		if y < b:top(x) - size and y > b:bottom(x) + size then
-			b:marks(x, y, size, size * 0.8, if b.random(0, 1) > 0.5 then rgb(64, 60, 40) else rgb(160, 150, 90))
-		end
-	end
-	b:stroke({ v2(0.5, -0.03), v2(0.32, -0.07) }, 0.009, rgb(40, 34, 26))
-	b:face(0.38, 0.03, 0.042, rgb(200, 180, 90), rgb(90, 86, 60))
-end
-
--- Olive-gold perch with dark saddles, a spiny then soft dorsal and big glassy eyes.
-function builders.Walleye(b)
-	local colors = { back = rgb(96, 92, 46), side = rgb(186, 170, 92), belly = rgb(236, 230, 200) }
-	local fin = rgb(150, 136, 80)
-	b:fishBody(0.2, 0.12, colors, 0.04)
-	local spines = b:edgeFin(0.15, 0.0, { 0.07, 0.08, 0.075, 0.06, 0.04 }, fin, false, 0.08)
-	b:rays(spines[1], { spines[3], spines[4], spines[5], spines[6] }, rgb(70, 64, 36))
-	b:finSpot(0.02, b:top(0.02) + 0.02, 0.022, rgb(30, 28, 20))
-	b:edgeFin(-0.04, -0.2, { 0.06, 0.06, 0.05, 0.035 }, fin)
-	b:edgeFin(-0.1, -0.22, { 0.05, 0.045, 0.03 }, fin, true)
-	b:edgeFin(0.04, -0.04, { 0.04 }, fin, true)
-	b:forkTail(0.12, 0.05, fin)
-	-- The white tip on the lower tail lobe is the walleye's field mark.
-	b:fin({ v2(-0.46, -0.07), v2(-0.5, -0.12), v2(-0.44, -0.1) }, rgb(240, 240, 232))
-	b:pectoral(0.2, -0.04, 0.09, 0.03, fin)
-	for _, x in { 0.18, 0.06, -0.06, -0.18 } do
-		b:stroke({ v2(x, b:top(x) - 0.01), v2(x - 0.02, 0.0) }, 0.04, rgb(80, 74, 36))
-	end
-	b:face(0.36, 0.025, 0.06, rgb(214, 214, 196), rgb(110, 104, 56))
-end
-
-function builders.MidnightCarp(b)
-	carp(b, {
-		colors = { back = rgb(18, 20, 40), side = rgb(40, 46, 86), belly = rgb(96, 104, 150) },
-		fin = rgb(30, 36, 76),
-		scale = rgb(70, 92, 170),
-		scaleAlt = rgb(48, 58, 112),
-		barbel = rgb(60, 66, 110),
-		lips = rgb(70, 76, 120),
-		iris = rgb(190, 220, 255),
-		line = rgb(60, 70, 120),
-	})
-end
-
--- Rosy goatfish with a steep head, a yellow stripe and two long chin barbels.
-function builders.RedMullet(b)
-	local colors = { back = rgb(176, 70, 66), side = rgb(222, 120, 110), belly = rgb(246, 214, 200) }
-	local fin = rgb(220, 150, 130)
-	b:fishBody(0.22, 0.12, colors, 0.12)
-	b:edgeFin(0.13, 0.01, { 0.07, 0.065, 0.045 }, fin, false, 0.1)
-	b:edgeFin(-0.08, -0.18, { 0.05, 0.04 }, fin, false, 0.1)
-	b:edgeFin(-0.08, -0.18, { 0.045, 0.035 }, fin, true, 0.1)
-	b:forkTail(0.12, 0.07, fin, 0.05)
-	b:pectoral(0.21, -0.04, 0.09, 0.03, fin, 0.1)
-	b:stroke({ v2(0.3, 0.0), v2(0, -0.004), v2(-0.3, -0.004) }, 0.012, rgb(236, 196, 80))
-	local chin = b:bottom(0.42)
-	for _, side in { 1, -1 } do
-		b:limb(
-			Vector3.new(0.43, chin + 0.006, side * 0.012),
-			Vector3.new(0.33, chin - 0.04, side * 0.02),
-			0.008,
-			rgb(246, 220, 190),
-			"Barbel"
-		)
-	end
-	b:face(0.36, 0.04, 0.05, rgb(220, 150, 90), rgb(176, 90, 80))
-end
-
--- Deep red reef snapper with a sloped head, spiny dorsal and red eye.
-function builders.RedSnapper(b)
-	local colors = { back = rgb(176, 46, 46), side = rgb(222, 88, 80), belly = rgb(244, 184, 176) }
-	local fin = rgb(206, 70, 66)
-	b:fishBody(0.3, 0.13, colors, 0.1)
-	local dorsal = b:edgeFin(0.16, -0.22, { 0.06, 0.08, 0.08, 0.075, 0.07, 0.065, 0.07, 0.08, 0.07 }, fin, false, 0.05)
-	b:rays(dorsal[1], { dorsal[3], dorsal[5], dorsal[7] }, rgb(140, 36, 36))
-	b:edgeFin(-0.08, -0.22, { 0.07, 0.08, 0.06 }, fin, true)
-	b:edgeFin(0.06, -0.02, { 0.06, 0.05 }, fin, true)
-	b:forkTail(0.15, 0.06, fin)
-	b:pectoral(0.2, -0.03, 0.14, 0.035, fin)
-	for y = -0.06, 0.08, 0.035 do
-		b:stroke({ v2(0.28, y + 0.01), v2(-0.3, y) }, 0.005, rgb(234, 120, 110))
-	end
-	b:face(0.37, 0.05, 0.048, rgb(206, 40, 40), rgb(150, 40, 40))
-end
-
-function builders.Flounder(b)
-	flatfish(b, {
-		top = rgb(118, 108, 84),
-		under = rgb(240, 238, 230),
-		fin = rgb(132, 120, 94),
-		ray = rgb(90, 82, 62),
-		light = rgb(214, 120, 54),
-		dark = rgb(80, 72, 54),
-		iris = rgb(200, 180, 110),
-		mouth = rgb(60, 50, 36),
-	})
-end
-
-function builders.Halibut(b)
-	flatfish(b, {
-		top = rgb(70, 66, 50),
-		under = rgb(244, 244, 238),
-		fin = rgb(80, 76, 58),
-		ray = rgb(52, 50, 38),
-		light = rgb(100, 96, 74),
-		dark = rgb(46, 44, 34),
-		iris = rgb(170, 160, 120),
-		mouth = rgb(36, 34, 26),
-	})
-end
-
--- Slim silver schooling fish with a blue-green back.
-function builders.Herring(b)
-	local colors = { back = rgb(46, 84, 110), side = rgb(186, 198, 206), belly = rgb(244, 246, 248) }
-	local fin = rgb(160, 172, 180)
-	b:fishBody(0.19, 0.1, colors, 0.03)
-	b:edgeFin(0.05, -0.06, { 0.065, 0.055, 0.03 }, fin, false, 0.15)
-	b:edgeFin(-0.12, -0.22, { 0.03, 0.025 }, fin, true, 0.15)
-	b:edgeFin(0.0, -0.05, { 0.03 }, fin, true, 0.15)
-	b:forkTail(0.13, 0.09, fin, 0.1)
-	b:pectoral(0.21, -0.04, 0.07, 0.025, fin, 0.15)
-	b:stroke({ v2(0.26, 0.03), v2(-0.3, 0.015) }, 0.01, rgb(140, 176, 196))
-	for x = 0.2, -0.24, -0.04 do
-		b:stroke({ v2(x, b:bottom(x) * 0.3), v2(x - 0.01, b:bottom(x) * 0.8) }, 0.004, rgb(220, 226, 232))
-	end
-	b:face(0.37, 0.018, 0.054, rgb(220, 224, 220), rgb(120, 140, 150))
-end
-
--- A soft yellow sausage studded with papillae, tube feet underneath and a
--- ring of feeding tentacles at the front. No eyes.
-function builders.YellowSeaCucumber(b)
-	local colors = { back = rgb(208, 160, 36), side = rgb(234, 196, 64), belly = rgb(244, 222, 140) }
-	b:layered("Body", Vector3.new(0, 0, 0), Vector3.new(0.88, 0.2, 0.22), colors)
-	b:layered("Front", Vector3.new(0.38, 0, 0), Vector3.new(0.18, 0.16, 0.17), colors)
-	b:layered("Rear", Vector3.new(-0.38, 0, 0), Vector3.new(0.16, 0.14, 0.15), colors)
-	for _ = 1, 46 do
-		local x, y = b.random(-0.4, 0.4), b.random(-0.02, 0.09)
-		local side = if b.random(0, 1) > 0.5 then 1 else -1
-		local position, normal = b:surface(x, y, side)
-		if position and normal then
-			b:limb(position - normal * 0.006, position + normal * b.random(0.02, 0.04), 0.016, rgb(246, 210, 90), "Spine")
-		end
-	end
-	for x = -0.36, 0.36, 0.045 do
-		for _, z in { -0.05, 0.05 } do
-			b:ellipsoid("TubeFoot", CFrame.new(x, b:bottom(x) + 0.004, z), Vector3.new(0.018, 0.02, 0.018), rgb(250, 236, 180))
-		end
-	end
-	for index = 0, 9 do
-		local angle = index / 10 * math.pi * 2
-		local spread = Vector3.new(0, math.cos(angle), math.sin(angle))
-		local root = Vector3.new(0.46, 0, 0) + spread * 0.04
-		local tip = Vector3.new(0.54, 0, 0) + spread * 0.08
-		b:limb(root, tip, 0.012, rgb(250, 226, 130), "Filament")
-	end
-end
-
--- Long-finned tuna: dark blue back and pectorals that reach past the second dorsal.
-function builders.Albacore(b)
-	local colors = { back = rgb(20, 32, 66), side = rgb(140, 152, 172), belly = rgb(236, 238, 240) }
-	local fin = rgb(32, 44, 76)
-	b:fishBody(0.26, 0.19, colors, 0.03)
-	b:edgeFin(0.14, 0.02, { 0.08, 0.06, 0.03 }, fin, false, 0.05)
-	b:fin({ v2(-0.01, b:top(-0.01) - 0.008), v2(-0.1, b:top(-0.01) + 0.1), v2(-0.08, b:top(-0.08) - 0.008) }, fin)
-	b:fin({
-		v2(-0.03, b:bottom(-0.03) + 0.008),
-		v2(-0.12, b:bottom(-0.03) - 0.09),
-		v2(-0.09, b:bottom(-0.09) + 0.008),
-	}, fin)
-	for index = 0, 5 do
-		local x = -0.15 - index * 0.03
-		for _, below in { false, true } do
-			local edge = if below then b:bottom(x) else b:top(x)
-			local sign = if below then -1 else 1
-			b:fin({
-				v2(x + 0.008, edge - sign * 0.004),
-				v2(x - 0.012, edge + sign * 0.02),
-				v2(x - 0.014, edge - sign * 0.004),
-			}, rgb(120, 116, 80))
-		end
-	end
-	b:forkTail(0.23, 0.17, fin)
-	b:stroke({ v2(-0.5, 0.23), v2(-0.36, 0), v2(-0.5, -0.23) }, 0.008, rgb(236, 238, 240))
-	-- Very long pectoral fins are the albacore's trademark.
-	b:pectoral(0.21, 0.01, 0.34, 0.035, fin)
-	b:stroke({ v2(0.28, 0.03), v2(0, 0.035), v2(-0.28, 0.01) }, 0.012, rgb(100, 130, 180))
-	b:face(0.37, 0.03, 0.05, rgb(170, 170, 150), rgb(60, 70, 100))
-end
-
--- Crimson beach fish with gold-edged, flowing fins.
-function builders.Crimsonfish(b)
-	local colors = { back = rgb(120, 16, 30), side = rgb(196, 30, 46), belly = rgb(236, 120, 110) }
-	local fin, gold = rgb(176, 26, 40), rgb(240, 190, 70)
-	b:fishBody(0.24, 0.12, colors, 0.05)
-	local dorsal = b:edgeFin(0.14, -0.2, { 0.09, 0.11, 0.12, 0.12, 0.11, 0.09, 0.06 }, fin, false, 0.1)
-	b:stroke({ dorsal[3], dorsal[4], dorsal[5], dorsal[6], dorsal[7], dorsal[8] }, 0.01, gold)
-	local anal = b:edgeFin(-0.06, -0.22, { 0.07, 0.09, 0.08, 0.05 }, fin, true, 0.1)
-	b:stroke({ anal[3], anal[4], anal[5], anal[6] }, 0.01, gold)
-	b:edgeFin(0.06, -0.01, { 0.06, 0.05 }, fin, true, 0.1)
-	b:forkTail(0.17, 0.08, fin, 0.08)
-	b:stroke({ v2(-0.5, 0.17), v2(-0.42, 0.08) }, 0.01, gold)
-	b:stroke({ v2(-0.5, -0.17), v2(-0.42, -0.08) }, 0.01, gold)
-	b:pectoral(0.2, -0.04, 0.13, 0.04, rgb(226, 90, 80), 0.2)
-	b:speckle(26, v2(-0.28, 0.3), v2(-0.04, 0.08), v2(0.01, 0.018), rgb(250, 170, 150))
-	b:face(0.37, 0.03, 0.05, gold, rgb(140, 20, 34))
-end
-
--- Pale ice-blue legend with frost crystals along its back.
-function builders.Glacierfish(b)
-	local colors = { back = rgb(120, 176, 214), side = rgb(196, 226, 244), belly = rgb(244, 250, 255) }
-	local fin, frost = rgb(160, 210, 236), rgb(236, 248, 255)
-	b:fishBody(0.26, 0.15, colors, 0.04)
-	b:edgeFin(0.14, -0.18, { 0.08, 0.1, 0.1, 0.09, 0.07, 0.05 }, fin, false, 0.25)
-	b:edgeFin(-0.06, -0.22, { 0.06, 0.07, 0.05 }, fin, true, 0.25)
-	b:edgeFin(0.06, -0.02, { 0.05, 0.04 }, fin, true, 0.25)
-	b:forkTail(0.17, 0.07, fin, 0.25)
-	b:pectoral(0.2, -0.04, 0.13, 0.04, fin, 0.3)
-	for x = 0.26, -0.28, -0.045 do
-		local top = b:top(x)
-		local height = 0.03 + 0.03 * math.cos(x * 4)
-		b:limb(Vector3.new(x, top - 0.004, 0), Vector3.new(x - 0.012, top + height, 0), 0.016, frost, "Spine")
-	end
-	for _ = 1, 30 do
-		local x, y = b.random(-0.3, 0.32), b.random(-0.08, 0.1)
-		local size = b.random(0.015, 0.03)
-		if y < b:top(x) - size and y > b:bottom(x) + size then
-			b:marks(x, y, size, size * 0.5, frost, v2(1, b.random(-1, 1)))
-		end
-	end
-	b:stroke({ v2(0.28, 0.02), v2(0, 0.025), v2(-0.3, 0.005) }, 0.01, rgb(90, 150, 200))
-	b:face(0.37, 0.03, 0.05, rgb(140, 220, 255), rgb(120, 170, 210))
-end
-
-function builders.Seaweed(b)
-	local stem, holdfast = rgb(62, 83, 31), rgb(74, 65, 30)
-	local colors = { rgb(58, 103, 39), rgb(77, 124, 43), rgb(47, 91, 36), rgb(93, 132, 48), rgb(64, 114, 42) }
-	local root = Vector3.new(-0.46, -0.08, 0)
-	b:ellipsoid("Holdfast", CFrame.new(root), Vector3.new(0.13, 0.1, 0.13), holdfast)
-	-- Five tapered ribbons curl away from a shared stem, with raised midribs.
-	for frond = 1, 5 do
-		local spread = (frond - 3) * 0.12
-		local length = 0.82 + (if frond % 2 == 0 then 0.1 else 0)
-		local previousLeft, previousRight, previousCenter
-		for segment = 0, 6 do
-			local t = segment / 6
-			local center = root
-				+ Vector3.new(
-					length * t,
-					spread * t + math.sin(t * math.pi * 2 + frond) * 0.045 * t,
-					(frond - 3) * 0.025 * t + math.sin(t * math.pi * 2.5 + frond) * 0.065 * t
-				)
-			local width = 0.009 + math.sin(t * math.pi) * 0.055
-			local across = Vector3.new(0, width, math.sin(t * math.pi + frond) * width * 0.45)
-			local left, right = center - across, center + across
-			if previousCenter then
-				for _, points in { { previousLeft, previousRight, right }, { previousLeft, right, left } } do
-					local first, second = b:triangle(points[1], points[2], points[3], colors[frond])
-					for _, part in { first, second } do
-						part.Name = "SeaweedFrond"
-					end
-				end
-				b:limb(previousCenter, center, 0.009, stem, "Midrib")
-			end
-			previousLeft, previousRight, previousCenter = left, right, center
-		end
-	end
-	b.model:SetAttribute("ViewDirection", Vector3.new(0.25, 0.4, 1))
 end
 
 local function mussel(b, shell, edge)
@@ -1574,233 +650,34 @@ local function mussel(b, shell, edge)
 	end
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.2, 0.4, 1))
 end
-function builders.BlueMussel(b) mussel(b, rgb(34, 52, 76), rgb(95, 122, 151)) end
-function builders.GreenMussel(b) mussel(b, rgb(45, 100, 67), rgb(134, 175, 104)) end
-function builders.GoldenMussel(b) mussel(b, rgb(157, 110, 35), rgb(233, 196, 107)) end
-function builders.Kelp(b) builders.Seaweed(b) end
-function builders.SeaLettuce(b)
-	builders.Seaweed(b)
-	for _, piece in b.model:GetDescendants() do
-		if piece:IsA("BasePart") then piece.Color = piece.Color:Lerp(rgb(108, 181, 67), 0.55) end
-	end
-end
-
-function builders.WoodenBranch(b)
-	local bark = { rgb(83, 55, 33), rgb(112, 77, 45), rgb(94, 62, 36), rgb(68, 46, 30), rgb(101, 68, 40) }
-	local wood, freshWood, split = rgb(180, 138, 82), rgb(207, 166, 105), rgb(48, 33, 23)
-	local function face(a, c, d, color, name)
-		local first, second = b:triangle(a, c, d, color)
-		for _, part in { first, second } do
-			part.Name = name
-			part.Material = Enum.Material.Wood
-		end
-	end
-
-	-- Shared five-sided rings keep each bend joined while tapering the branch.
-	-- Uneven ring radii and staggered end vertices make flat, chipped wood faces.
-	local facets = 5
-	local widths = { 1, 0.88, 1.06, 0.91, 0.97 }
-	local chips = { 0.2, -0.12, 0.08, -0.23, 0.14 }
-	local function branch(points, radii, roll, isTrunk)
-		local axis = (points[#points] - points[1]).Unit
-		local side = axis:Cross(Vector3.yAxis).Unit
-		local up = side:Cross(axis).Unit
-		local rings = {}
-		for index, center in points do
-			local ring = {}
-			for corner = 1, facets do
-				local angle = (corner - 1) * math.pi * 2 / facets + roll
-				local radial = up * math.cos(angle) + side * math.sin(angle)
-				local chip = if index == 1 or index == #points then chips[corner] * radii[index] else 0
-				ring[corner] = center + radial * radii[index] * widths[corner] + axis * chip
-			end
-			table.insert(rings, ring)
-		end
-		for index = 1, #rings - 1 do
-			local a, c = rings[index], rings[index + 1]
-			for corner = 1, facets do
-				local nextCorner = corner % facets + 1
-				local color = bark[corner]
-				face(a[corner], c[corner], c[nextCorner], color, "BarkFacet")
-				face(a[corner], c[nextCorner], a[nextCorner], color, "BarkFacet")
-				if isTrunk then
-					-- Tapered cracks sit on the actual sloping bark faces, on all sides.
-					local normal = (a[corner] - points[index] + a[nextCorner] - points[index]).Unit
-					local start = a[corner]:Lerp(a[nextCorner], 0.36):Lerp(c[corner]:Lerp(c[nextCorner], 0.36), 0.16)
-					local finish = a[corner]:Lerp(a[nextCorner], 0.44):Lerp(c[corner]:Lerp(c[nextCorner], 0.44), 0.87)
-					local across = (a[nextCorner] - a[corner]).Unit * 0.003
-					local lift = normal * 0.003
-					face(start - across + lift, start + across + lift, finish + lift, split, "BarkSplit")
+-- One flexible algal sheet from `root` along `heading`. `profile(t)` gives the
+-- half-width along the blade; `ruffle` alternates the margin for a wavy edge.
+local function algaBlade(b, root: Vector3, heading: Vector3, length: number, profile, color: Color3, ruffle: number, phase: number)
+	heading = heading.Unit
+	local across = heading:Cross(Vector3.zAxis).Unit
+	local segments = 7
+	local previousLeft, previousRight
+	for segment = 0, segments do
+		local t = segment / segments
+		local center = root
+			+ heading * length * t
+			+ across * math.sin(t * math.pi * 2 + phase) * 0.03 * t
+			+ Vector3.zAxis * math.sin(t * math.pi * 2.5 + phase) * 0.05 * t
+		local width = profile(t) * (1 + (if segment % 2 == 0 then ruffle else -ruffle))
+		local offset = across * width + Vector3.zAxis * math.sin(t * math.pi + phase) * width * 0.4
+		local left, right = center - offset, center + offset
+		if previousLeft then
+			for _, points in { { previousLeft, previousRight, right }, { previousLeft, right, left } } do
+				local first, second = b:triangle(points[1], points[2], points[3], color)
+				for _, part in { first, second } do
+					if part then
+						part.Name = "SeaweedFrond"
+					end
 				end
 			end
 		end
-		for _, index in { 1, #rings } do
-			for corner = 1, facets do
-				local color = if corner % 2 == 0 then freshWood else wood
-				face(points[index], rings[index][corner], rings[index][corner % facets + 1], color, "ExposedWood")
-			end
-		end
-		return rings, axis
+		previousLeft, previousRight = left, right
 	end
-
-	local points = {
-		Vector3.new(-0.5, -0.04, 0),
-		Vector3.new(-0.18, 0.018, 0.012),
-		Vector3.new(0.14, -0.012, -0.006),
-		Vector3.new(0.48, 0.065, -0.028),
-	}
-	local rings, axis = branch(points, { 0.065, 0.055, 0.041, 0.026 }, 0.23, true)
-	branch(
-		{ points[2], Vector3.new(-0.09, 0.19, 0.025), Vector3.new(0.015, 0.31, 0.045) },
-		{ 0.033, 0.023, 0.009 },
-		0.7,
-		false
-	)
-	branch({ points[3], Vector3.new(0.29, -0.205, 0.07) }, { 0.025, 0.011 }, -0.25, false)
-
-	-- A pair of solid triangular splinters extends the snapped thick end.
-	for _, corner in { 1, 3 } do
-		local ring = rings[1]
-		local a, c = ring[corner], ring[corner % facets + 1]
-		local root = points[1]:Lerp((a + c) / 2, 0.6)
-		local tip = a:Lerp(c, 0.3) - axis * (if corner == 1 then 0.07 else 0.042)
-		face(a, c, tip, bark[corner], "BrokenBark")
-		face(a, root, tip, wood, "WoodSplinter")
-		face(c, tip, root, freshWood, "WoodSplinter")
-	end
-	b.model:SetAttribute("ViewDirection", Vector3.new(0.35, 0.5, 1))
-end
-
-function builders.LeatherBoot(b)
-	local leather, trim = rgb(119, 76, 49), rgb(88, 54, 35)
-	local rubber, welt, thread = rgb(37, 32, 29), rgb(78, 54, 38), rgb(167, 131, 91)
-	local lace, brass = rgb(57, 43, 33), rgb(155, 120, 66)
-	local function cylinder(name, center, height, length, width, color)
-		local part = b:part(
-			name,
-			"Part",
-			Vector3.new(height, length, width),
-			CFrame.new(center) * CFrame.Angles(0, 0, math.pi / 2),
-			color
-		)
-		part.Shape = Enum.PartType.Cylinder
-		return part
-	end
-	-- Straight sides meet round end caps tangentially, keeping the sole flat
-	-- underneath without the old square toe and sharp heel corners.
-	local function roundedSole(name, center, length, width, height, radius, color)
-		local straight = length - radius * 2
-		b:part(name, "Part", Vector3.new(straight, height, width), CFrame.new(center), color)
-		for _, side in { -1, 1 } do
-			cylinder(name, center + Vector3.new(side * straight / 2, 0, 0), height, radius * 2, width, color)
-		end
-	end
-	roundedSole("Sole", Vector3.new(0.025, -0.282, 0), 0.86, 0.366, 0.063, 0.17, rubber)
-	roundedSole("Welt", Vector3.new(0.025, -0.241, 0), 0.872, 0.378, 0.023, 0.176, welt)
-	roundedSole("Heel", Vector3.new(-0.245, -0.326, 0), 0.285, 0.326, 0.04, 0.1, rubber)
-	roundedSole("LowerLeather", Vector3.new(0.025, -0.216, 0), 0.817, 0.332, 0.045, 0.16, leather)
-
-	-- One long vamp gives the toe a continuous curve. The ankle overlaps the
-	-- round shaft below the laces, so it reads as shaped leather rather than balls.
-	b:ellipsoid("Foot", CFrame.new(0.025, -0.143, 0), Vector3.new(0.828, 0.286, 0.352), leather)
-	b:ellipsoid("Ankle", CFrame.new(-0.205, -0.069, 0), Vector3.new(0.342, 0.36, 0.322), leather)
-	cylinder("Shaft", Vector3.new(-0.215, 0.108, 0), 0.356, 0.31, 0.31, leather)
-	b:ellipsoid(
-		"Quarter",
-		CFrame.new(-0.1, 0.065, 0) * CFrame.Angles(0, 0, 0.32),
-		Vector3.new(0.34, 0.43, 0.32),
-		leather
-	)
-	b:ellipsoid("HeelCounter", CFrame.new(-0.322, -0.135, 0), Vector3.new(0.148, 0.206, 0.306), trim)
-	b:ellipsoid("Tongue", CFrame.new(0.035, 0.103, 0) * CFrame.Angles(0, 0, 0.4), Vector3.new(0.13, 0.386, 0.18), trim)
-	for _, side in { -1, 1 } do
-		b:ellipsoid(
-			"LaceFacing",
-			CFrame.new(0.061, 0.102, side * 0.065) * CFrame.Angles(0, 0, 0.42),
-			Vector3.new(0.083, 0.35, 0.043),
-			leather
-		)
-	end
-
-	-- A recessed dark oval beneath a rolled leather rim suggests a lined opening.
-	cylinder("Opening", Vector3.new(-0.215, 0.287, 0), 0.006, 0.281, 0.281, rgb(29, 22, 19))
-	local segments = 32
-	for index = 0, segments - 1 do
-		local a, c = index * math.pi * 2 / segments, (index + 1) * math.pi * 2 / segments
-		local start = Vector3.new(-0.215 + math.cos(a) * 0.149, 0.304, math.sin(a) * 0.149)
-		local finish = Vector3.new(-0.215 + math.cos(c) * 0.149, 0.304, math.sin(c) * 0.149)
-		b:ellipsoid(
-			"RolledCuff",
-			CFrame.lookAt((start + finish) / 2, finish) * CFrame.Angles(0, math.pi / 2, 0),
-			Vector3.new((finish - start).Magnitude + 0.055, 0.036, 0.036),
-			trim
-		)
-	end
-
-	-- Brass eyelets and lifted crisscross laces follow the sloping tongue.
-	local normal = Vector3.new(1, 0.42, 0).Unit
-	local rows = {}
-	for index = 0, 4 do
-		local y = -0.015 + index * 0.058
-		local x = 0.142 - index * 0.026
-		rows[index + 1] = Vector3.new(x, y, 0)
-		for _, side in { -1, 1 } do
-			local position = Vector3.new(x, y, side * 0.065)
-			local frame = CFrame.lookAt(position, position + normal)
-			b:ellipsoid("Eyelet", frame, Vector3.new(0.027, 0.027, 0.009), brass)
-			b:ellipsoid("EyeletInset", frame + normal * 0.004, Vector3.new(0.013, 0.013, 0.005), lace)
-		end
-	end
-	for index = 1, #rows - 1 do
-		for _, side in { -1, 1 } do
-			local a = rows[index] + Vector3.new(0, 0, side * 0.065) + normal * 0.009
-			local c = rows[index + 1] - Vector3.new(0, 0, side * 0.065) + normal * 0.009
-			local middle = (a + c) / 2 + normal * (if side == 1 then 0.012 else 0.021)
-			b:limb(a, middle, 0.01, lace, "Lace")
-			b:limb(middle, c, 0.01, lace, "Lace")
-		end
-	end
-	local knot = rows[#rows] + normal * 0.019
-	b:ellipsoid("LaceKnot", CFrame.new(knot), Vector3.new(0.027, 0.021, 0.029), lace)
-	for _, side in { -1, 1 } do
-		local tip = knot + Vector3.new(0.022, -0.063, side * 0.049)
-		b:limb(knot, tip, 0.009, lace, "LaceEnd")
-	end
-
-	-- Small separate stitches follow the curved welt, including the round toe.
-	local straight, radius = 0.52, 0.17
-	local perimeter = straight * 2 + math.pi * radius * 2
-	local function stitchPoint(distance)
-		if distance < straight then
-			return Vector3.new(-0.235 + distance, -0.226, 0.174)
-		elseif distance < straight + math.pi * radius then
-			local angle = math.pi / 2 - (distance - straight) / radius
-			return Vector3.new(0.285 + math.cos(angle) * 0.166, -0.226, math.sin(angle) * 0.174)
-		elseif distance < straight * 2 + math.pi * radius then
-			return Vector3.new(0.285 - (distance - straight - math.pi * radius), -0.226, -0.174)
-		end
-		local angle = -math.pi / 2 - (distance - straight * 2 - math.pi * radius) / radius
-		return Vector3.new(-0.235 + math.cos(angle) * 0.166, -0.226, math.sin(angle) * 0.174)
-	end
-	for index = 0, 27 do
-		local distance = index * perimeter / 28
-		b:limb(stitchPoint(distance), stitchPoint(distance + 0.014), 0.005, thread, "WeltStitch")
-	end
-	-- The pull tab and restrained toe wear keep the found-boot character.
-	b:limb(Vector3.new(-0.36, 0.235, -0.026), Vector3.new(-0.386, 0.345, -0.026), 0.022, trim, "PullTab")
-	b:limb(Vector3.new(-0.386, 0.345, -0.026), Vector3.new(-0.386, 0.345, 0.026), 0.022, trim, "PullTab")
-	b:limb(Vector3.new(-0.386, 0.345, 0.026), Vector3.new(-0.36, 0.235, 0.026), 0.022, trim, "PullTab")
-	for index = 0, 2 do
-		local x, z = 0.315 + index * 0.018, 0.065 - index * 0.018
-		local y = -0.143 + 0.143 * math.sqrt(1 - ((x - 0.025) / 0.414) ^ 2 - (z / 0.176) ^ 2)
-		b:ellipsoid(
-			"ToeScuff",
-			CFrame.new(x, y + 0.001, z) * CFrame.Angles(0, 0, -0.4),
-			Vector3.new(0.026, 0.003, 0.008),
-			rgb(149, 107, 72)
-		)
-	end
-	b.model:SetAttribute("ViewDirection", Vector3.new(0.85, 0.55, 1))
 end
 
 -- Crabs face +X like the fish: eyes and claws at the front, legs splayed out to
@@ -1954,71 +831,27 @@ local function crab(b, look)
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.9, 0.85, 0.35))
 end
 
-function builders.ShoreCrab(b)
-	crab(b, {
-		shell = rgb(92, 112, 58),
-		dark = rgb(70, 86, 44),
-		belly = rgb(214, 170, 86),
-		clawColor = rgb(104, 118, 62),
-		legColor = rgb(112, 124, 66),
-		carapace = Vector3.new(0.42, 0.14, 0.52),
-		teeth = 5,
-		claw = 1,
-		legs = {
-			lean = { 0.55, 0.15, -0.25, -0.7 },
-			thigh = 0.17,
-			shin = 0.16,
-			lift = 0.06,
-			drop = 0.17,
-			width = 0.034,
-		},
-		spots = { count = 30, size = Vector2.new(0.012, 0.03), color = rgb(150, 138, 72) },
-	})
-end
-
-function builders.BlueCrab(b)
-	crab(b, {
-		shell = rgb(96, 122, 112),
-		dark = rgb(70, 96, 92),
-		belly = rgb(236, 230, 214),
-		clawColor = rgb(66, 128, 196),
-		legColor = rgb(84, 142, 196),
-		tipColor = rgb(206, 70, 50),
-		carapace = Vector3.new(0.34, 0.12, 0.6),
-		teeth = 7,
-		lateral = 0.1,
-		claw = 1.05,
-		legs = {
-			lean = { 0.6, 0.2, -0.2, -0.95 },
-			thigh = 0.16,
-			shin = 0.16,
-			lift = 0.06,
-			drop = 0.15,
-			width = 0.032,
-			paddle = true,
-		},
-		spots = { count = 14, size = Vector2.new(0.01, 0.022), color = rgb(122, 146, 128) },
-	})
-end
-
-function builders.KingCrab(b)
-	local spine = rgb(226, 132, 104)
-	crab(b, {
-		shell = rgb(176, 52, 40),
-		dark = rgb(144, 38, 32),
-		belly = rgb(238, 214, 190),
-		clawColor = rgb(188, 64, 46),
-		legColor = rgb(186, 62, 46),
-		tipColor = rgb(84, 34, 28),
-		carapace = Vector3.new(0.38, 0.17, 0.42),
-		teeth = 3,
-		claw = 1.15,
-		offhand = 0.78,
-		armSpines = true,
-		spineColor = spine,
-		legs = { lean = { 0.45, -0.05, -0.55 }, thigh = 0.25, shin = 0.25, lift = 0.1, drop = 0.24, width = 0.044 },
-		knobs = { count = 46, size = Vector2.new(0.014, 0.024), color = spine },
-	})
+local kit = {
+	rgb = rgb,
+	v2 = v2,
+	SCALE = SCALE,
+	FIN = FIN,
+	carp = carp,
+	eel = eel,
+	flatfish = flatfish,
+	sturgeon = sturgeon,
+	trout = trout,
+	mussel = mussel,
+	algaBlade = algaBlade,
+	crab = crab,
+}
+for id, fish in FishSpecies do
+	local build = fish.Build
+	if build then
+		builders[id] = function(b)
+			build(b, kit)
+		end
+	end
 end
 
 -- World-axis bounds, so framing never depends on which part came first.

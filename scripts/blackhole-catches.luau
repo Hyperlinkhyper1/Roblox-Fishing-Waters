@@ -122,6 +122,9 @@ local dependencies = {
 	AnglerCatalog = {
 		DefaultPool = "Lake",
 		Pools = { Lake = { Name = "Lake" } },
+		poolAt = function()
+			return { Name = "Lake" }
+		end,
 		Fish = { Trout = { Rarity = "Common", Name = "Trout" } },
 		Rarities = {},
 		Mutations = {},
@@ -145,6 +148,9 @@ local dependencies = {
 	CatchConditions = {
 		at = function()
 			return { Rain = false, Night = false, Beach = false }
+		end,
+		area = function()
+			return "lake"
 		end,
 	},
 	DayNight = {

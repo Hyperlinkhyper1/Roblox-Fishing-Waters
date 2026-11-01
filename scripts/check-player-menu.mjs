@@ -1,4 +1,5 @@
 import { freezerRuntime, injectFreezer } from './freezer-test-runtime.mjs';
+import { inlineFishSpecies } from './fish-species.mjs';
 // Execute actual menu/service code with recording UI/remotes. No Studio rendering claims.
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -132,6 +133,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
   ]) {
     let source = await readFile(join(root, file), 'utf8');
     if (marker === 'DATA') source = injectFreezer(source);
+    if (marker === 'CATALOG') source = inlineFishSpecies(source, root);
     source = source.replace(/require\(ReplicatedStorage.Shared.AnglerCatalog\)/g, 'Catalog')
       .replace(/require\(ReplicatedStorage.Shared.BackpackCatalog\)/g, `(function() ${await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8')} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.Gamepasses\)/g, `(function() ${await readFile(join(root, 'src/shared/Gamepasses.luau'), 'utf8')} end)()`)

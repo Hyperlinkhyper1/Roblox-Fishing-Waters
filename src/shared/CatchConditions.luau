@@ -1,5 +1,7 @@
--- What holds at a fishing spot right now, for species with a Requires key in
--- AnglerCatalog. The server passes the result to FishCatch.inSeason.
+-- What holds at a fishing spot right now (weather, time of day, terrain), for species with Requires keys in
+-- Shared.Fish, and which area (pool) the spot is in. The server passes `at` to FishCatch.inSeason
+-- and `area` to AnglerCatalog.poolAt.
+local Biomes = require(script.Parent.Biomes)
 local DayNight = require(script.Parent.DayNight)
 local Weather = require(script.Parent.Weather)
 
@@ -7,6 +9,8 @@ local CatchConditions = {}
 
 -- Light rain and heavier (Weather.getState's LightRain threshold) count as rain.
 CatchConditions.RAIN = 0.06
+-- Storm strength where Weather.getState starts calling a spot "Storm".
+CatchConditions.STORM = 0.38
 -- A beach is sand terrain this close below the water at or around the spot.
 CatchConditions.BEACH_DEPTH = 10
 CatchConditions.BEACH_REACH = 12
@@ -36,11 +40,23 @@ local function sandyShallow(position: Vector3): boolean
 end
 
 function CatchConditions.at(position: Vector3, serverTime: number?): { [string]: boolean }
+	local weather = Weather.getState(serverTime, position)
+	local rain = weather.rain > CatchConditions.RAIN
+	local night = DayNight.isNight(DayNight.clockTime(serverTime))
 	return {
-		Rain = Weather.getState(serverTime, position).rain > CatchConditions.RAIN,
-		Night = DayNight.isNight(DayNight.clockTime(serverTime)),
+		Rain = rain,
+		Clear = not rain and weather.storm < CatchConditions.STORM,
+		-- A supercell overhead counts as a storm too.
+		Storm = weather.storm > CatchConditions.STORM or weather.kind == "Supercell",
+		Night = night,
+		Day = not night,
 		Beach = sandyShallow(position),
 	}
+end
+
+-- "lake" inside the main island's sheltered bay, otherwise the Shared.Biomes id there.
+function CatchConditions.area(position: Vector3): string
+	return if Weather.inLake(position) then "lake" else Biomes.at(position).id
 end
 
 return CatchConditions

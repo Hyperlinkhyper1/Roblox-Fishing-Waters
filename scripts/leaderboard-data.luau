@@ -2,12 +2,13 @@ local Data = require("../src/server/AnglerData")
 local BoatData = require("../src/server/BoatData")
 local fs = require("@lute/fs")
 local luau = require("@lute/luau")
+local FishSpecies = require("./fish-species")
 local catalogFile = fs.open("src/shared/AnglerCatalog.luau", "r")
-local catalogSource = fs.read(catalogFile)
+local catalogSource = FishSpecies.inline(fs.read(catalogFile))
 fs.close(catalogFile)
-local Catalog = luau.load(luau.compile(catalogSource), "AnglerCatalog", {
+local Catalog = luau.load(luau.compile(catalogSource), "AnglerCatalog", FishSpecies.env({
 	Color3 = { fromRGB = function(...) return { ... } end },
-})()
+}))()
 local checks = 0
 local function check(value, message)
 	checks += 1

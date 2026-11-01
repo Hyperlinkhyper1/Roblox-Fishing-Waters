@@ -1,11 +1,13 @@
 // Real fish builders and packing rules under the existing geometry doubles.
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { inlineFishSpecies } from './fish-species.mjs';
 const read = async p => (await readFile(new URL('../' + p, import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 export async function freezerRuntime() {
   const primitives = (await read('scripts/harbour-geometry.luau')).split('local CFrame = {}')[0];
   const mocks = (await read('scripts/drydock-geometry.luau')).split('local function loadLowPoly()')[0].replace('-- SHARED_PRIMITIVES --', () => primitives);
   const mutations = await read('src/shared/FishMutations.luau');
-  const fish = (await read('src/shared/FishModels.luau')).replace('require(script.Parent.FishMutations)', 'FishMutations');
+  const fish = inlineFishSpecies(await read('src/shared/FishModels.luau'), fileURLToPath(new URL('..', import.meta.url))).replace('require(script.Parent.FishMutations)', 'FishMutations');
   const packing = await read('src/shared/FreezerPacking.luau');
   return 'local freezerTestPacking, freezerTestModels = (function()\n' + mocks + `
 local originalTypeof = typeof

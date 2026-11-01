@@ -7,15 +7,16 @@ local Data = require("../src/server/AnglerData")
 local CrabCages = require("../src/shared/CrabCages")
 local FishCatch = require("../src/shared/FishCatch")
 local FishMutations = require("../src/shared/FishMutations")
+local FishSpecies = require("./fish-species")
 local file = fs.open("src/shared/AnglerCatalog.luau", "r")
-local source = fs.read(file)
+local source = FishSpecies.inline(fs.read(file))
 fs.close(file)
 local Color3 = {
 	fromRGB = function(...)
 		return { ... }
 	end,
 }
-local Catalog = luau.load(luau.compile(source), "AnglerCatalog", { Color3 = Color3 })()
+local Catalog = luau.load(luau.compile(source), "AnglerCatalog", FishSpecies.env({ Color3 = Color3 }))()
 
 local checks = 0
 local function check(value, message)

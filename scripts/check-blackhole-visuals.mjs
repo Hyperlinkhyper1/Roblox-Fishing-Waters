@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { inlineFishSpecies } from './fish-species.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFileSync(join(root, file), 'utf8');
@@ -12,7 +13,7 @@ const mocks = read('scripts/drydock-geometry.luau').split('local function loadLo
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
 const world = read('src/client/BlackHoleWeather.luau')
   .replace('require(ReplicatedStorage.Shared.Weather)', 'Weather');
-const fish = read('src/shared/FishModels.luau')
+const fish = inlineFishSpecies(read('src/shared/FishModels.luau'), root)
   .replace('require(script.Parent.FishMutations)', 'FishMutations');
 const effects = read('src/client/MutationEffects.luau')
   .replace('require(ReplicatedStorage.Shared.FishModels)', 'FishModels');

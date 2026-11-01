@@ -17,7 +17,6 @@ local CatchConditions = require(ReplicatedStorage.Shared.CatchConditions)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local Seasons = require(ReplicatedStorage.Shared.Seasons)
 local TrawlerNet = require(ReplicatedStorage.Shared.TrawlerNet)
-local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local TrawlerNetService = {}
 local started = false
@@ -253,7 +252,7 @@ local function catchFish(player: Player, boatId: string, model: Model)
 		return
 	end
 	local pool = FishCatch.inSeason(
-		AnglerCatalog.Pools[if Weather.inLake(root.Position) then AnglerCatalog.DefaultPool else "OpenSea"],
+		AnglerCatalog.poolAt(CatchConditions.area(root.Position)),
 		AnglerCatalog.Fish,
 		(Seasons.current()),
 		CatchConditions.at(root.Position)

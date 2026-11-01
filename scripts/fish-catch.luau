@@ -2,8 +2,9 @@
 local fs = require("@lute/fs")
 local luau = require("@lute/luau")
 local FishCatch = require("../src/shared/FishCatch")
+local FishSpecies = require("./fish-species")
 local file = fs.open("src/shared/AnglerCatalog.luau", "r")
-local source = fs.read(file)
+local source = FishSpecies.inline(fs.read(file))
 fs.close(file)
 -- The catalog only needs Color3 for rarity colours.
 local Color3 = {
@@ -11,7 +12,7 @@ local Color3 = {
 		return { ... }
 	end,
 }
-local Catalog = luau.load(luau.compile(source), "AnglerCatalog", { Color3 = Color3 })()
+local Catalog = luau.load(luau.compile(source), "AnglerCatalog", FishSpecies.env({ Color3 = Color3 }))()
 
 local checks = 0
 local function check(value, message)
@@ -129,7 +130,7 @@ check(seaAverage > lakeAverage * 1.5, "Sea catches are worth clearly more on ave
 
 -- Seasons: every pool fish lists its seasons in calendar order; junk bites all year.
 local ORDER = { "Spring", "Summer", "Autumn", "Winter" }
-local all = { Rain = true, Night = true, Beach = true }
+local all = { Rain = true, Clear = true, Storm = true, Night = true, Beach = true }
 for _, catchPool in Catalog.Pools do
 	for _, id in catchPool.Fish do
 		local list = Catalog.Fish[id].Seasons
@@ -187,6 +188,65 @@ check(bites("Summer", { Beach = true }).Crimsonfish, "Crimsonfish bite at beache
 check(bites("Autumn", { Night = true }).MidnightCarp, "Midnight carp bite at night")
 check(not bites("Summer", { Night = true }).MidnightCarp, "Midnight carp still keep their seasons")
 
+-- Weather: clear-sky, rain and storm species follow the sky at the spot.
+conditional = { Fish = { "Dorado", "Sunfish", "Catfish", "Yellowshark", "Lingcod", "Trout" } }
+local clear = bites("Summer", { Clear = true })
+check(clear.Dorado and clear.Sunfish and clear.Trout, "Clear skies bring dorado and sunfish")
+check(not clear.Catfish and not clear.Yellowshark, "Rain and storm fish stay away under clear skies")
+local stormy = bites("Summer", { Rain = true, Storm = true })
+check(stormy.Yellowshark and stormy.Catfish and not stormy.Dorado, "Storms bring the yellowshark, not dorado")
+check(bites("Winter", { Storm = true }).Lingcod, "Lingcod bite in winter storms")
+check(not bites("Winter", { Clear = true }).Lingcod, "Lingcod need a storm")
+for id, entry in Catalog.Fish do
+	for _, key in entry.Requires or {} do
+		check(table.find({ "Rain", "Clear", "Storm", "Night", "Day", "Beach" }, key), id .. " requires a known condition")
+	end
+end
+
+-- Several requirements must all hold; a single key string still works.
+conditional = { Fish = { "Both", "Single" } }
+local custom = {
+	Both = { Requires = { "Rain", "Night" } },
+	Single = { Requires = "Day" },
+}
+local function bitesCustom(conditions)
+	local found = {}
+	for _, id in FishCatch.inSeason(conditional, custom, "Summer", conditions).Fish do
+		found[id] = true
+	end
+	return found
+end
+check(bitesCustom({ Rain = true, Night = true }).Both, "Rain + night species bite when both hold")
+check(not bitesCustom({ Rain = true }).Both, "Rain + night species wait for nightfall")
+check(bitesCustom({ Day = true }).Single and not bitesCustom({ Night = true }).Single, "Single-key Requires still filter")
+check(not bitesCustom(nil).Both, "Species with requirements never bite without conditions")
+check(
+	FishCatch.seasonLabel({ Seasons = { "Summer" }, Requires = { "Rain", "Night" } }) == "Summer (rain, night)",
+	"Several requirements read as one list"
+)
+
+-- Areas: the bay is the lake, biomes get their own pools that keep every
+-- open sea species, and anywhere unknown fishes like the open sea.
+check(Catalog.poolAt("lake") == pool, "The bay fishes the main lake")
+check(Catalog.poolAt("open") == sea and Catalog.poolAt(nil) == sea, "Open water fishes the open sea")
+for _, area in { "normal", "swamp", "tropical", "volcanic", "ice" } do
+	local biome = Catalog.poolAt(area)
+	check(biome ~= sea and biome.Inherits == "OpenSea", area .. " has its own pool")
+	for _, id in sea.Fish do
+		check(table.find(biome.Fish, id), area .. " keeps open sea species: " .. id)
+	end
+	for _, id in biome.Own do
+		check(table.find(biome.Fish, id), area .. " lists its own species: " .. id)
+	end
+end
+for name, catchPool in Catalog.Pools do
+	local seen = {}
+	for _, id in catchPool.Fish do
+		check(not seen[id], name .. " lists each species once: " .. id)
+		seen[id] = true
+	end
+end
+
 -- Bestiary labels read each season list as one range.
 for id, label in
 	{
@@ -198,6 +258,8 @@ for id, label in
 		Flounder = "All year",
 		Tilapia = "Summer–Autumn (rain)",
 		Crimsonfish = "Summer (beach)",
+		Dorado = "Summer (clear skies)",
+		Yellowshark = "Summer (storm)",
 		ShoreCrab = "All year",
 	}
 do

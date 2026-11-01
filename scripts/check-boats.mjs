@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { inlineFishSpecies } from './fish-species.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lute = process.env.LUTE || 'lute';
@@ -38,7 +39,7 @@ try {
         if self.emptyResult then return nil end`)
       + (await readFile(join(root, 'scripts/mussel-nets.luau'), 'utf8'))
         .replace('-- GRID_SOURCE --', await readFile(join(root, 'src/shared/Cargo.luau'), 'utf8'))
-        .replace('-- CATALOG_SOURCE --', await readFile(join(root, 'src/shared/AnglerCatalog.luau'), 'utf8'))
+        .replace('-- CATALOG_SOURCE --', inlineFishSpecies(await readFile(join(root, 'src/shared/AnglerCatalog.luau'), 'utf8'), root))
         .replace('-- BACKPACK_SOURCE --', await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8'))
         .replace('-- ANGLER_SOURCE --', anglerData.replace(/local Cargo\r?\n/, 'local Cargo = Grid\n'))
         .replace('-- NET_RULES_SOURCE --', await readFile(join(root, 'src/shared/MusselNets.luau'), 'utf8'))
@@ -58,7 +59,7 @@ try {
         if self.emptyResult then return nil end`)
       + (await readFile(join(root, 'scripts/crab-cage-persistence.luau'), 'utf8'))
         .replace('-- GRID_SOURCE --', await readFile(join(root, 'src/shared/Cargo.luau'), 'utf8'))
-        .replace('-- CATALOG_SOURCE --', await readFile(join(root, 'src/shared/AnglerCatalog.luau'), 'utf8'))
+        .replace('-- CATALOG_SOURCE --', inlineFishSpecies(await readFile(join(root, 'src/shared/AnglerCatalog.luau'), 'utf8'), root))
         .replace('-- BACKPACK_SOURCE --', await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8'))
         .replace('-- ANGLER_SOURCE --', anglerData.replace(/local Cargo\r?\n/, 'local Cargo = Grid\n'))
         .replace('-- CRAB_RULES_SOURCE --', await readFile(join(root, 'src/shared/CrabCages.luau'), 'utf8'))

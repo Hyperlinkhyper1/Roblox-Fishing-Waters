@@ -832,13 +832,26 @@ for _, width in { 1020, 362 } do
 	)
 end
 card.AbsoluteSize = Vector2.new(1020, 600)
+profile.Angler.Stats.FishSold = 9
 open("Journal")
 check(
-	contains("Fish caught") and contains("Highest value") and contains("Relative largest"),
+	contains("Fish Caught") and contains("Highest Value") and contains("Relative Largest"),
 	"Journal stats and findings render"
 )
 clickText("Achievements")
-check(contains("First catch") and contains("Complete"), "Achievements derive from saved catches")
+check(contains("First Catch") and contains("Complete"), "Achievements derive from saved catches")
+local journalSearch = content:FindFirstChild("JournalSearch", true)
+journalSearch.Text = "Fish Merchant"
+check(contains("Sell 10 fish") and contains("9 / 10"), "Achievement shows its objective and saved progress")
+profile.Angler.Stats.FishSold = 10
+open("Journal")
+open("Journal")
+journalSearch = content:FindFirstChild("JournalSearch", true)
+journalSearch.Text = "Fish Merchant"
+check(contains("Sell 10 fish") and contains("Complete"), "Achievement completes at the saved stat threshold")
+journalSearch.Text = "crab cages"
+check(contains("Crab Collector") and contains("0 / 10"), "Achievement objectives are searchable")
+journalSearch.Text = ""
 check(
 	card.BookChrome:FindFirstChild("BestiaryBookmarkTab") == nil
 		and card.BookChrome:FindFirstChild("JournalBookmarkTab") == nil,

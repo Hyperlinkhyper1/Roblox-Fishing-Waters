@@ -1,8 +1,7 @@
 -- Shop customers. Owners carry fish individually to their base freezers; a customer
--- wearing a random Roblox avatar walks in, takes one frozen fish to a register
--- and waits until the owner serves them. Each register (the built-in counter plus
--- any bought ones) serves one customer at a time. The sale is a single profile
--- update, so a fish can never be sold twice or paid for without leaving the freezer.
+-- wearing a random Roblox avatar takes displayed fish or dishes to a register
+-- and waits until served. Each register serves one customer at a time. A sale
+-- commits the whole basket in one profile update.
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -100,8 +99,10 @@ local function frozenCount(shop, owner: Player?): number
 	local profile = owner and BoatService.getProfile(owner)
 	local count = if profile then #profile.Angler.Freezer else 0
 	for _, customer in shop.customers do
-		if customer.taken and not customer.food then
-			count -= 1
+		for _, item in customer.items do
+			if item.taken and not item.food then
+				count -= 1
+			end
 		end
 	end
 	return math.max(0, count)
@@ -287,10 +288,12 @@ local function refreshDisplay(shop)
 	local frames = freezerFrames(shop, profile)
 	local takenKeys, taken = {}, {}
 	for _, customer in shop.customers do
-		if customer.taken and not customer.food then
-			local key = recordKey(customer.record)
-			table.insert(takenKeys, key)
-			taken[key] = (taken[key] or 0) + 1
+		for _, item in customer.items do
+			if item.taken and not item.food then
+				local key = recordKey(item.record)
+				table.insert(takenKeys, key)
+				taken[key] = (taken[key] or 0) + 1
+			end
 		end
 	end
 	table.sort(takenKeys)
@@ -349,7 +352,7 @@ local function setAnchored(model: Model, anchored: boolean)
 	end
 end
 
-local function carry(customer, fish: Model, stackIndex: number?)
+local function carry(customer, fish: Model, stackIndex: number?, heldItem)
 	local hand = customer.model:FindFirstChild("RightHand") :: BasePart?
 	if not hand then
 		return
@@ -360,19 +363,20 @@ local function carry(customer, fish: Model, stackIndex: number?)
 	fish.Parent = customer.model
 	local grip = Instance.new("WeldConstraint")
 	grip.Name, grip.Part0, grip.Part1, grip.Parent = "FishGrip", hand, fish.PrimaryPart, hand
-	customer.grip = grip
+	local gripOwner = heldItem or customer
+	gripOwner.grip = grip
 end
 
-local function takeFromFreezer(shop, customer): Model?
+local function takeFromFreezer(shop, customer, heldItem, stackIndex): Model?
 	if not customer.model:FindFirstChild("RightHand") then
 		return nil
 	end
 	for _, item in shop.displayFish or {} do
-		if recordKey(item.record) == recordKey(customer.record) and item.model.Parent == shop.display then
+		if recordKey(item.record) == recordKey(heldItem.record) and item.model.Parent == shop.display then
 			-- Move the actual displayed fish before rebuilding its former container.
 			local fish = item.model
-			carry(customer, fish)
-			customer.fish, customer.taken = fish, true
+			carry(customer, fish, stackIndex, heldItem)
+			heldItem.fish, heldItem.taken = fish, true
 			refreshDisplay(shop)
 			return fish
 		end
@@ -380,10 +384,10 @@ local function takeFromFreezer(shop, customer): Model?
 	return nil
 end
 
-local function putOnCounter(customer, fish: Model, frame: CFrame, turn: CFrame?)
-	if customer.grip then
-		customer.grip:Destroy()
-		customer.grip = nil
+local function putOnCounter(item, fish: Model, frame: CFrame, turn: CFrame?)
+	if item.grip then
+		item.grip:Destroy()
+		item.grip = nil
 	end
 	-- Lying on its side along the counter edge, resting on the desk top. Dishes stay flat.
 	setAnchored(fish, true)
@@ -440,10 +444,12 @@ local function refreshFoodDisplay(shop)
 	local taken = {}
 	local keys = { tostring(owner and owner.UserId) }
 	for _, customer in shop.customers do
-		if customer.taken and customer.food then
-			local key = dishKey(customer.record)
-			taken[key] = (taken[key] or 0) + 1
-			table.insert(keys, "taken " .. key)
+		for _, item in customer.items do
+			if item.taken and item.food then
+				local key = dishKey(item.record)
+				taken[key] = (taken[key] or 0) + 1
+				table.insert(keys, "taken " .. key)
+			end
 		end
 	end
 	for _, frame in frames do
@@ -481,15 +487,15 @@ local function refreshFoodDisplay(shop)
 	display.Parent = shop.freezerPrompt.Parent.Parent
 end
 
-local function takeFood(shop, customer): Model?
+local function takeFood(shop, customer, heldItem, stackIndex): Model?
 	if not customer.model:FindFirstChild("RightHand") then
 		return nil
 	end
 	for _, item in shop.displayFood or {} do
-		if dishKey(item.record) == dishKey(customer.record) and item.model.Parent == shop.foodDisplay then
+		if dishKey(item.record) == dishKey(heldItem.record) and item.model.Parent == shop.foodDisplay then
 			local dish = item.model
-			carry(customer, dish)
-			customer.fish, customer.taken = dish, true
+			carry(customer, dish, stackIndex, heldItem)
+			heldItem.fish, heldItem.taken = dish, true
 			refreshFoodDisplay(shop)
 			return dish
 		end
@@ -579,8 +585,10 @@ local function finish(shop, customer)
 	if customer.prompt then
 		customers[customer.prompt] = nil
 	end
-	if customer.counterFish then
-		customer.counterFish:Destroy()
+	for _, item in customer.items do
+		if item.counterFish then
+			item.counterFish:Destroy()
+		end
 	end
 	if customer.model then
 		customer.model:Destroy()
@@ -609,7 +617,6 @@ local function visit(shop, customer)
 	local function at(x: number, z: number): Vector3
 		return (frame * CFrame.new(x, 0.16, z)).Position
 	end
-	local freezerFrame = customer.freezer
 	local deskFrame = customer.register
 	local counterTop = deskFrame * CFrame.new(0.2 * ShopDesk.WIDTH, ShopDesk.HEIGHT, -ShopDesk.DEPTH / 4)
 
@@ -627,11 +634,9 @@ local function visit(shop, customer)
 	customer.humanoid = customer.model:FindFirstChildOfClass("Humanoid")
 	customer.root = customer.model:FindFirstChild("HumanoidRootPart")
 	local clearance = NpcNavigation.clearance(customer) + 0.4
-	local shelfDepth = if customer.food then Kitchen.CASE_DEPTH else FishFreezer.DEPTH
-	local freezerSpot = (freezerFrame * CFrame.new(0, 0, shelfDepth / 2 + clearance)).Position
 	local counterSpot = (deskFrame * CFrame.new(0.15 * ShopDesk.WIDTH, 0, -ShopDesk.DEPTH / 2 - clearance)).Position
-	local name = describeFish(customer.record)
-	bubble(customer, if customer.food then "Looking for a meal…" else "Looking for fish…")
+	local name = if #customer.items == 1 then describeFish(customer.items[1].record) else tostring(#customer.items) .. " items"
+	bubble(customer, "Looking for something to buy…")
 	customer.humanoid.Died:Once(function()
 		customer.active = false
 	end)
@@ -649,19 +654,18 @@ local function visit(shop, customer)
 			end
 			return walk(customer, target, allowed)
 		end
-		if not going(freezerSpot) then
-			return false
+		for index, item in customer.items do
+			local freezerFrame = item.freezer
+			local shelfDepth = if item.food then Kitchen.CASE_DEPTH else FishFreezer.DEPTH
+			local freezerSpot = (freezerFrame * CFrame.new(0, 0, shelfDepth / 2 + clearance)).Position
+			if not going(freezerSpot) then return false end
+			face(customer, freezerFrame.Position)
+			task.wait(1.2)
+			if not customer.active or customer.leaving then return false end
+			local fish = if item.food then takeFood(shop, customer, item, index - 1) else takeFromFreezer(shop, customer, item, index - 1)
+			if not fish then return false end
 		end
-		face(customer, freezerFrame.Position)
-		task.wait(1.2)
-		if not customer.active or customer.leaving then
-			return false
-		end
-		local fish = if customer.food then takeFood(shop, customer) else takeFromFreezer(shop, customer)
-		if not fish then
-			return false
-		end
-		bubble(customer, (if customer.food then "I'll take the " else "I'd like this ") .. name)
+		bubble(customer, "I'll take " .. name)
 		if not going(at(0, SHOP_AISLE_Z)) then
 			return false
 		end
@@ -683,15 +687,18 @@ local function visit(shop, customer)
 		if not customer.active or customer.leaving then
 			return false
 		end
-		putOnCounter(customer, fish, counterTop, if customer.food then CFrame.identity else nil)
-		customer.counterFish, customer.fish = fish, nil
-		local price = math.max(1, math.floor(customer.record.Value))
+		local price = 0
+		for index, item in customer.items do
+			putOnCounter(item, item.fish, counterTop * CFrame.new((index - 1) * 1.5, 0, 0), if item.food then CFrame.identity else nil)
+			item.counterFish, item.fish = item.fish, nil
+			price += math.max(1, math.floor(item.record.Value))
+		end
 		bubble(customer, string.format("%s — $%d", name, price))
 		local prompt = ownerPrompt(customer.root, "SellToCustomerPrompt", "Sell for $" .. price, name)
 		prompt:SetAttribute("OwnerUserId", base:GetAttribute("OwnerUserId"))
 		customer.prompt = prompt
 		customers[prompt] = customer
-		notify(ownerOf(base), "A customer is waiting at your register for a " .. name .. ".")
+		notify(ownerOf(base), "A customer is waiting at your register for " .. name .. ".")
 		local deadline = os.clock() + WAIT_SECONDS
 		while customer.active and not customer.leaving and os.clock() < deadline do
 			task.wait(0.25)
@@ -704,20 +711,24 @@ local function visit(shop, customer)
 		return
 	end
 	leave(customer)
-	if customer.sold and customer.counterFish then
-		-- Paid for; take the fish home.
-		carry(customer, customer.counterFish)
-		customer.counterFish = nil
-		bubble(customer, "Thank you!")
-	else
-		-- Unsold fish stays in the owner's freezer; only the display copy goes.
-		for _, key in { "fish", "counterFish" } do
-			if customer[key] then
-				customer[key]:Destroy()
-				customer[key] = nil
+	if customer.sold then
+		for index, item in customer.items do
+			if item.counterFish then
+				carry(customer, item.counterFish, index - 1, item)
+				item.counterFish = nil
 			end
 		end
-		customer.taken = false
+		bubble(customer, "Thank you!")
+	else
+		for _, item in customer.items do
+			for _, key in { "fish", "counterFish" } do
+				if item[key] then
+					item[key]:Destroy()
+					item[key] = nil
+				end
+			end
+			item.taken = false
+		end
 		refreshShelves(shop)
 		bubble(customer, "Never mind…")
 	end
@@ -753,16 +764,22 @@ local function sell(player: Player, customer, worker)
 	end
 	customer.selling = true
 	local price = 0
-	-- Dishes come off the kitchen pass; fish out of the freezer.
+	-- Commit all items together or leave every item in stock.
 	local function pay(angler)
-		if customer.food then
-			return AnglerData.sellDish(angler, customer.record, 1, "FoodSold")
+		local total = 0
+		for _, item in customer.items do
+			local data, paid
+			if item.food then
+				data, paid = AnglerData.sellDish(angler, item.record, 1, "FoodSold")
+			else
+				data, paid = AnglerData.sellFrozen(angler, item.record)
+			end
+			if not data then return nil, 0 end
+			angler, total = data, total + paid
 		end
-		return AnglerData.sellFrozen(angler, customer.record)
+		return angler, total
 	end
-	local gone = if customer.food
-		then "That dish is no longer on your kitchen pass."
-		else "That fish is no longer in your freezer."
+	local gone = "An item is no longer available."
 	local ok, message = BoatService.updateProgress(player, function(profile)
 		assert(authorized(profile), "This customer can no longer be served.")
 		local data, paid = pay(profile.Angler)
@@ -774,13 +791,10 @@ local function sell(player: Player, customer, worker)
 	customer.selling = false
 	if ok then
 		customer.sold = true
-		customer.taken = false
-		refreshDisplay(shop)
-		if customer.food then
-			refreshFoodDisplay(shop)
-		end
+		for _, item in customer.items do item.taken = false end
+		refreshShelves(shop)
 		leave(customer)
-		notify(player, string.format("Sold %s for $%d.", describeFish(customer.record), price))
+		notify(player, string.format("Sold %d item(s) for $%d.", #customer.items, price))
 		return
 	end
 	local profile = BoatService.getProfile(player)
@@ -1414,9 +1428,11 @@ local function takeFrozenFish(player: Player, shop, prompt: ProximityPrompt)
 	end
 	local claimed = {}
 	for _, customer in shop.customers do
-		if not customer.food then
-			local key = recordKey(customer.record)
-			claimed[key] = (claimed[key] or 0) + 1
+		for _, item in customer.items do
+			if not item.food then
+				local key = recordKey(item.record)
+				claimed[key] = (claimed[key] or 0) + 1
+			end
 		end
 	end
 	local choice
@@ -1469,8 +1485,12 @@ local function arrive(shop)
 		if not advertised or (other.active and not other.leaving) then
 			registerLoads[other.registerKey] = (registerLoads[other.registerKey] or 0) + 1
 		end
-		local key = if other.food then "food " .. dishKey(other.record) else recordKey(other.record)
-		claimed[key] = (claimed[key] or 0) + 1
+		for _, item in other.items do
+			if not item.taken then
+				local key = if item.food then "food " .. dishKey(item.record) else recordKey(item.record)
+				claimed[key] = (claimed[key] or 0) + 1
+			end
+		end
 	end
 	local register, lowestLoad = nil, if advertised then 2 else 1
 	for _, frame in registers do
@@ -1497,12 +1517,15 @@ local function arrive(shop)
 	if #choices == 0 then
 		return
 	end
-	local choice = choices[random:NextInteger(1, #choices)]
+	local items = {}
+	local count = if ShopUpgrades.hasBaskets(profile.Angler) then math.min(3, #choices) else 1
+	for _ = 1, count do
+		local choice = table.remove(choices, random:NextInteger(1, #choices))
+		table.insert(items, { record = choice.record, freezer = choice.freezer, food = choice.food })
+	end
 	local customer = {
 		shop = shop,
-		record = choice.record,
-		freezer = choice.freezer,
-		food = choice.food,
+		items = items,
 		register = register,
 		registerKey = tostring(register.Position),
 		active = true,

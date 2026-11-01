@@ -19,10 +19,10 @@ local sizing = luau.load(luau.compile("local FishModels = {}\n" .. string.sub(mo
 	.. "\nreturn FishModels"), "catch-size")()
 local length = sizing.catchLength
 local heldLength = sizing.heldLength
-local catalog = luau.load(luau.compile(read("src/shared/AnglerCatalog.luau")), "catalog", {
+local FishSpecies = require("./fish-species")
+local catalog = luau.load(luau.compile(FishSpecies.inline(read("src/shared/AnglerCatalog.luau"))), "catalog", FishSpecies.env({
 	Color3 = { fromRGB = function(...) return { ... } end },
-	string = string,
-})()
+}))()
 local checks = 0
 local function check(ok, message)
 	checks += 1

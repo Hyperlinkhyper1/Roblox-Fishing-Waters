@@ -29,9 +29,26 @@ local function weight(fish, luck: number): number
 	return (1 / fish.RarityDenominator) ^ (1 - luck)
 end
 
+-- True when every Requires key holds in `conditions` (Shared.CatchConditions.at).
+-- Requires is a list of keys (a single key string still works); without
+-- conditions a species with requirements never bites.
+local function conditionsHold(requires, conditions: { [string]: boolean }?): boolean
+	if requires == nil then
+		return true
+	end
+	if conditions == nil then
+		return false
+	end
+	for _, key in if type(requires) == "string" then { requires } else requires do
+		if conditions[key] ~= true then
+			return false
+		end
+	end
+	return true
+end
+
 -- A copy of `pool` holding only the fish that bite in `season`. Species
--- without Seasons bite all year. A species with Requires also needs that key
--- set in `conditions` (Shared.CatchConditions.at); without conditions it never bites.
+-- without Seasons bite all year; species with Requires also need those conditions.
 function FishCatch.inSeason(pool, species, season: string, conditions: { [string]: boolean }?)
 	local fish = {}
 	for _, id in pool.Fish or {} do
@@ -39,7 +56,7 @@ function FishCatch.inSeason(pool, species, season: string, conditions: { [string
 		if
 			entry
 			and (entry.Seasons == nil or table.find(entry.Seasons, season) ~= nil)
-			and (entry.Requires == nil or (conditions ~= nil and conditions[entry.Requires] == true))
+			and conditionsHold(entry.Requires, conditions)
 		then
 			table.insert(fish, id)
 		end
@@ -50,9 +67,10 @@ function FishCatch.inSeason(pool, species, season: string, conditions: { [string
 end
 
 local SEASON_ORDER = { "Spring", "Summer", "Autumn", "Winter" }
-local requirementLabels = { Rain = "rain", Night = "night", Beach = "beach" }
+local requirementLabels =
+	{ Rain = "rain", Clear = "clear skies", Storm = "storm", Night = "night", Day = "daytime", Beach = "beach" }
 
--- Short bestiary text such as "Summer", "Autumn–Spring" or "Summer (rain)".
+-- Short bestiary text such as "Summer", "Autumn–Spring" or "Summer (rain, night)".
 -- Season lists are one unbroken run of the year, so they read as a range.
 function FishCatch.seasonLabel(fish): string
 	local list = fish.Seasons
@@ -71,8 +89,12 @@ function FishCatch.seasonLabel(fish): string
 		local last = SEASON_ORDER[(start + #list - 2) % #SEASON_ORDER + 1]
 		text = if #list == 1 then first else first .. "–" .. last
 	end
-	local requirement = fish.Requires and requirementLabels[fish.Requires]
-	return if requirement then text .. " (" .. requirement .. ")" else text
+	local labels = {}
+	local requires = fish.Requires
+	for _, key in if type(requires) == "string" then { requires } else requires or {} do
+		table.insert(labels, requirementLabels[key] or string.lower(key))
+	end
+	return if #labels > 0 then text .. " (" .. table.concat(labels, ", ") .. ")" else text
 end
 
 function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?): string

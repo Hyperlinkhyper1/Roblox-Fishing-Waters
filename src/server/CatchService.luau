@@ -133,7 +133,7 @@ local function cast(player: Player, target: any)
 			return
 		end
 		local pool = FishCatch.inSeason(
-			Catalog.Pools[if Weather.inLake(state.target) then Catalog.DefaultPool else "OpenSea"],
+			Catalog.poolAt(CatchConditions.area(state.target)),
 			Catalog.Fish,
 			(Seasons.current()),
 			CatchConditions.at(state.target)

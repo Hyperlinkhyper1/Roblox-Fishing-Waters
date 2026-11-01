@@ -45,7 +45,7 @@ profile.Angler.Upgrades.SocialMediaAdvertisement = 1
 arrive(shop)
 assert(#shop.customers == 2 and shop.nextArrival == 118, 'Advertisement adds a queued arrival and 18-second interval')
 local first, second = shop.customers[1], shop.customers[2]
-assert(first.record ~= second.record, 'Queued customers reserve distinct stock')
+assert(first.items[1].record ~= second.items[1].record, 'Queued customers reserve distinct stock')
 assert(waitingForRegister(shop, second) and not waitingForRegister(shop, first), 'Second customer waits for the first')
 arrive(shop)
 assert(#shop.customers == 2, 'Queue does not grow beyond two per register')
@@ -56,6 +56,12 @@ arrive(shop)
 assert(#shop.customers == 3 and shop.nextArrival == 135, 'Following interval is 17 seconds')
 second.active = false
 assert(not waitingForRegister(shop, shop.customers[3]), 'Queue advances when the prior customer is inactive')
+profile.Angler.Upgrades.Baskets = 1
+local basketShop = { base = {}, frame = {}, registers = { register }, customers = {}, displayFish = shop.displayFish }
+arrive(basketShop)
+assert(#basketShop.customers[1].items == 3, 'Baskets reserve up to three displayed items')
+arrive(basketShop)
+assert(#basketShop.customers == 1, 'Reserved basket stock cannot be selected twice')
 print('Shop arrivals: base timing, 35-second cadence, stock reservations and register queue passed.')
 `;
 const folder = await mkdtemp(join(tmpdir(), 'shop-arrivals-'));

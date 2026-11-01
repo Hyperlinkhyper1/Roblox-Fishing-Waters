@@ -3,6 +3,8 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { inlineFishSpecies } from './fish-species.mjs';
 
 const read = path => readFile(new URL('../' + path, import.meta.url), 'utf8');
 const [cargo, boats, catalog, source] = await Promise.all([
@@ -16,7 +18,7 @@ const program = `
 local Color3 = { fromRGB = function(...) return {...} end }
 local Grid = (function() ${cargo} end)()
 local Boats = (function() ${boats} end)()
-local Catalog = (function() ${catalog} end)()
+local Catalog = (function() ${inlineFishSpecies(catalog, fileURLToPath(new URL('..', import.meta.url)))} end)()
 local Data = (function() ${data} end)()
 local spec = Boats.PatrolBoat
 local _, width, height = Grid.cells(spec.Hold)
