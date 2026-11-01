@@ -15,89 +15,103 @@ return {
 	},
 	Build = function(b, kit)
 		local rgb = kit.rgb
-		local rubber = rgb(54, 54, 58)
-		local rubberDark = rgb(36, 36, 40)
-		local steel = rgb(134, 138, 144)
-		local steelDark = rgb(64, 66, 72)
-		local recess = rgb(40, 42, 46)
-		local rust = rgb(116, 78, 46)
-		local algae = rgb(76, 98, 64)
-		local zAxis = Vector3.zAxis
-		local outerR, tube, halfWidth = 0.345, 0.082, 0.128
-		local centerR = outerR - tube
-		local segments = 16
-		local arc = 2 * math.pi * centerR / segments
-		-- Rubber ring: a few long overlapping bands, so the outline stays a
-		-- clean circle instead of a chain of beads.
-		for index = 0, segments - 1 do
-			local angle = index / segments * math.pi * 2
-			local radial = Vector3.new(math.cos(angle), math.sin(angle), 0)
-			local tangent = Vector3.new(-math.sin(angle), math.cos(angle), 0)
-			b:ellipsoid(
-				"Tire",
-				CFrame.fromMatrix(radial * centerR, tangent, radial, zAxis),
-				Vector3.new(arc * 2.4, tube * 2, halfWidth * 2),
-				rubber
+		local rubber = rgb(45, 46, 49)
+		local sidewall = rgb(53, 54, 57)
+		local groove = rgb(27, 28, 30)
+		local steel = rgb(126, 130, 133)
+		local steelLight = rgb(156, 158, 157)
+		local recess = rgb(60, 63, 64)
+		local rust = rgb(112, 76, 49)
+
+		-- Cylinders run along local X; turn them to face the wheel's Z axis.
+		local function disc(name, z, diameter, width, color)
+			local part = b:part(
+				name,
+				"Part",
+				Vector3.new(width, diameter, diameter),
+				CFrame.new(0, 0, z) * CFrame.Angles(0, math.pi / 2, 0),
+				color
 			)
+			part.Shape = Enum.PartType.Cylinder
+			return part
 		end
-		-- Tread blocks sitting flush in the hollows between sections.
-		for index = 0, segments / 2 - 1 do
-			local angle = (index * 2 + 0.5) / segments * math.pi * 2
-			local radial = Vector3.new(math.cos(angle), math.sin(angle), 0)
-			local tangent = Vector3.new(-math.sin(angle), math.cos(angle), 0)
-			b:ellipsoid(
-				"TreadBlock",
-				CFrame.fromMatrix(radial * (outerR - 0.014), tangent, radial, zAxis),
-				Vector3.new(arc * 1.5, 0.042, halfWidth * 1.04),
-				rubberDark
-			)
-		end
-		-- Dark drum filling the hub: the open gaps between spokes look straight
-		-- through to it, the way a real wheel reads.
-		b:ellipsoid("RimDrum", CFrame.new(0, 0, 0), Vector3.new(0.39, 0.39, 0.22), recess)
-		local spokes = 10
-		for _, side in { 1, -1 } do
-			for index = 0, spokes - 1 do
-				local angle = index / spokes * math.pi * 2
+
+		-- A continuous tread and narrower sidewalls make a solid, round tire.
+		disc("Tread", 0, 0.69, 0.21, rubber)
+		disc("Shoulders", 0, 0.65, 0.256, sidewall)
+		for _, side in { -1, 1 } do
+			-- Layered discs leave narrow concentric rings around the recessed rim.
+			disc("SidewallRing", side * 0.129, 0.59, 0.003, groove)
+			disc("SidewallInset", side * 0.131, 0.565, 0.003, rubber)
+			disc("Bead", side * 0.133, 0.465, 0.004, groove)
+			disc("RimLip", side * 0.136, 0.427, 0.008, steelLight)
+			disc("RimRecess", side * 0.141, 0.382, 0.004, recess)
+
+			for index = 0, 7 do
+				local angle = index * math.pi * 2 / 8
 				local radial = Vector3.new(math.cos(angle), math.sin(angle), 0)
-				local z = side * 0.066
-				b:limb(
-					Vector3.new(radial.X * 0.045, radial.Y * 0.045, z),
-					Vector3.new(radial.X * 0.198, radial.Y * 0.198, z),
-					0.028,
-					steel,
-					"Spoke"
+				local tangent = Vector3.new(-math.sin(angle), math.cos(angle), 0)
+				b:part(
+					"Spoke",
+					"Part",
+					Vector3.new(0.047, 0.137, 0.008),
+					CFrame.fromMatrix(radial * 0.109 + Vector3.new(0, 0, side * 0.145), tangent, radial, Vector3.zAxis),
+					steel
 				)
 			end
-			b:ellipsoid("Hub", CFrame.new(0, 0, side * 0.066), Vector3.new(0.13, 0.13, 0.055), steel)
-			b:ellipsoid("HubCap", CFrame.new(0, 0, side * 0.085), Vector3.new(0.055, 0.055, 0.04), steelDark)
+			disc("Hub", side * 0.15, 0.112, 0.014, steelLight)
+			disc("HubCap", side * 0.158, 0.051, 0.004, recess)
+			for index = 0, 4 do
+				local angle = index * math.pi * 2 / 5
+				local position = Vector3.new(math.cos(angle) * 0.042, math.sin(angle) * 0.042, side * 0.159)
+				local bolt = b:part(
+					"LugNut",
+					"Part",
+					Vector3.new(0.005, 0.012, 0.012),
+					CFrame.new(position) * CFrame.Angles(0, math.pi / 2, 0),
+					recess
+				)
+				bolt.Shape = Enum.PartType.Cylinder
+			end
 		end
-		b:limb(Vector3.new(0.051, -0.191, 0.07), Vector3.new(0.06, -0.218, 0.098), 0.016, steelDark, "ValveStem")
-		-- A little rust on the rim and weed on the tread.
-		for _ = 1, 3 do
-			local angle = b.random(0, math.pi * 2)
+
+		-- Shallow angled cuts break up the tread without adding rounded bumps.
+		local segments = 28
+		for index = 0, segments - 1 do
+			local angle = index * math.pi * 2 / segments
 			local radial = Vector3.new(math.cos(angle), math.sin(angle), 0)
 			local tangent = Vector3.new(-math.sin(angle), math.cos(angle), 0)
-			b:ellipsoid(
+			for _, side in { -1, 1 } do
+				local frame = CFrame.fromMatrix(
+					radial * 0.345 + Vector3.new(0, 0, side * 0.051),
+					tangent,
+					radial,
+					Vector3.zAxis
+				)
+				b:part(
+					"TreadGroove",
+					"Part",
+					Vector3.new(0.009, 0.003, 0.089),
+					frame * CFrame.Angles(0, side * 0.28, 0),
+					groove
+				)
+			end
+		end
+
+		-- A valve and restrained corrosion give the found wheel some history.
+		b:limb(Vector3.new(0.075, -0.17, 0.148), Vector3.new(0.084, -0.192, 0.158), 0.012, groove, "ValveStem")
+		for index = 0, 2 do
+			local angle = 0.7 + index * 1.9
+			local position = Vector3.new(math.cos(angle) * 0.18, math.sin(angle) * 0.18, 0.142)
+			local patch = b:part(
 				"Rust",
-				CFrame.fromMatrix(radial * 0.145 + Vector3.new(0, 0, b.random(0.03, 0.075)), tangent, radial, zAxis),
-				Vector3.new(b.random(0.03, 0.055), b.random(0.02, 0.04), 0.012),
+				"Part",
+				Vector3.new(0.002, 0.025, 0.025),
+				CFrame.new(position) * CFrame.Angles(0, math.pi / 2, 0),
 				rust,
-				0.1
+				0.15
 			)
-		end
-		for _ = 1, 4 do
-			local angle = b.random(0, math.pi * 2)
-			local radial = Vector3.new(math.cos(angle), math.sin(angle), 0)
-			local tangent = Vector3.new(-math.sin(angle), math.cos(angle), 0)
-			local size = b.random(0.05, 0.1)
-			b:ellipsoid(
-				"Algae",
-				CFrame.fromMatrix(radial * (outerR - 0.006), tangent, radial, zAxis),
-				Vector3.new(size, 0.024, size * 0.7),
-				algae,
-				0.1
-			)
+			patch.Shape = Enum.PartType.Cylinder
 		end
 		b.model:SetAttribute("ViewDirection", Vector3.new(0.2, 0.5, 1))
 	end,

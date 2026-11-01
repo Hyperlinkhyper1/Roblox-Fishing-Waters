@@ -17,6 +17,7 @@ local BiomeAtmosphere = {}
 
 local WEATHER_BLEND = TweenInfo.new(0.65, Enum.EasingStyle.Linear)
 local DIVE_BLEND = TweenInfo.new(0.3, Enum.EasingStyle.Sine)
+local SATURATION_REDUCTION = 0.1
 local UNDERWATER_BLUE = Color3.fromRGB(65, 150, 210)
 local UNDERWATER_FOG_COLOR = Color3.fromRGB(32, 96, 128)
 local UNDERWATER_VISIBILITY = 10 / 0.28 -- 10 metres in Roblox studs
@@ -25,9 +26,13 @@ local UNDERWATER_VISIBILITY = 10 / 0.28 -- 10 metres in Roblox studs
 local UNDERWATER_TRANSPARENCY = 0.01
 local FADE = TweenInfo.new(1.5, Enum.EasingStyle.Sine)
 local LEAVE_MARGIN = 1.1 -- stay in a biome until this far past its edge, so the title doesn't flicker
--- Deep-night targets each biome's look blends toward.
-local NIGHT_FOG = Color3.fromRGB(28, 36, 60)
-local NIGHT_DECAY = Color3.fromRGB(16, 20, 38)
+-- Deep-night targets each biome's look blends toward. The fog matches the night
+-- sky so the horizon doesn't glow as a pale band, and distant islands fade into darkness.
+local NIGHT_FOG = Color3.fromRGB(18, 24, 42)
+local NIGHT_DECAY = Color3.fromRGB(8, 11, 24)
+-- Dusk and dawn warm the far haze, with a glow on the sun's side.
+local TWILIGHT_FOG = Color3.fromRGB(226, 156, 124)
+local TWILIGHT_DECAY = Color3.fromRGB(118, 70, 78)
 local NIGHT_TINT = Color3.fromRGB(188, 204, 255)
 local NIGHT_CLOUDS = Color3.fromRGB(38, 44, 64)
 local NIGHT_AMBIENT = Color3.fromRGB(44, 54, 86)
@@ -143,7 +148,7 @@ function BiomeAtmosphere.start()
 			blend(grading, {
 				TintColor = Color3.fromRGB(177, 108, 233),
 				Brightness = if underwater then -0.04 else -0.12,
-				Saturation = -0.2,
+				Saturation = -0.2 - SATURATION_REDUCTION,
 				Contrast = 0.16,
 			})
 			blend(clouds, { Cover = 1, Density = 0.9, Color = Color3.fromRGB(31, 7, 48) })
@@ -166,17 +171,25 @@ function BiomeAtmosphere.start()
 			WaterTransparency = if underwater then UNDERWATER_TRANSPARENCY else 0.3,
 		})
 		if not underwater then
+			-- Peaks halfway through dusk/dawn; clouds hide the sunset.
+			local twilight = 4 * night * (1 - night) * (1 - overcast)
+			-- Under a night cloud deck the fog lifts toward the clouds instead of a black wall.
+			local nightFog = NIGHT_FOG:Lerp(NIGHT_CLOUDS, overcast * 0.6)
 			blend(atmosphere, {
 				Offset = Biomes.DistanceFogOffset,
 				Color = look.atmosphereColor
 					:Lerp(Color3.fromRGB(112, 125, 142), rain * 0.65)
-					:Lerp(NIGHT_FOG, night * 0.8),
+					:Lerp(TWILIGHT_FOG, twilight * 0.45)
+					:Lerp(nightFog, night),
 				Decay = look.atmosphereDecay
 					:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5)
-					:Lerp(NIGHT_DECAY, night * 0.8),
-				Density = math.min(0.5, look.density + rain * 0.13),
-				Haze = (look.haze + rain * 1.8) * (1 - night * 0.5 * (1 - overcast)),
-				Glare = look.glare * (1 - rain) * (1 - night),
+					:Lerp(TWILIGHT_DECAY, twilight * 0.5)
+					:Lerp(NIGHT_DECAY, night),
+				-- A touch thicker at night so far scenery dissolves into the dark.
+				Density = math.min(0.5, look.density + rain * 0.13 + night * 0.06),
+				-- Thin haze on clear nights; a bright haze layer reads as a glowing horizon.
+				Haze = (look.haze + rain * 1.8) * (1 - night * 0.7 * (1 - overcast)),
+				Glare = (look.glare * (1 - night) + twilight * 0.5) * (1 - rain),
 			})
 		end
 		blend(grading, {
@@ -187,7 +200,8 @@ function BiomeAtmosphere.start()
 					:Lerp(Color3.fromRGB(176, 214, 188), cell * 0.45)
 					:Lerp(NIGHT_TINT, night * 0.6),
 			Brightness = if underwater then 0.06 else 0,
-			Saturation = if underwater then 0.05 else look.saturation - rain * 0.12 - night * 0.15,
+			Saturation = (if underwater then 0.05 else look.saturation - rain * 0.12 - night * 0.15)
+				- SATURATION_REDUCTION,
 			Contrast = if underwater then 0 else look.contrast + storm * 0.04,
 		})
 		blend(clouds, {

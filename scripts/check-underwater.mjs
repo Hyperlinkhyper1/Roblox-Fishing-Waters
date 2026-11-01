@@ -146,9 +146,9 @@ for _, biome in Biomes.list do
   assert(atmosphere.Density == biome.look.density, "Biome haze must return")
 end
 move(0, -8, 0, 0.6)
-move(3700, -8, 300, 0.6)
+move(Biomes.Volcanic.center.X, -8, Biomes.Volcanic.center.Y, 0.6)
 underwaterFog()
-move(3700, 5, 300)
+move(Biomes.Volcanic.center.X, 5, Biomes.Volcanic.center.Y)
 surfaceFog()
 assert(rgbEqual(Terrain.WaterColor, Biomes.Volcanic.look.waterColor), "Crossing biomes underwater must restore the new biome")
 move(Biomes.MapHalfSize + 20, -8, Biomes.MapHalfSize + 20, 0.6)
@@ -227,7 +227,7 @@ assert(Lighting.Brightness == 0.45 and grading.Brightness < 0,
   'Black-hole weather darkens daylight throughout every biome')
 assert(Terrain.WaterColor.B > Terrain.WaterColor.R and Terrain.WaterColor.R > Terrain.WaterColor.G,
   'Black-hole weather turns the ocean purple')
-move(3700, -8, 300, 0.6)
+move(Biomes.Volcanic.center.X, -8, Biomes.Volcanic.center.Y, 0.6)
 assert(atmosphere.Parent == nil and math.abs(Lighting.FogEnd - 10 / 0.28) < 0.00001,
   'Black-hole weather preserves short underwater visibility')
 assert(Terrain.WaterColor.R > Terrain.WaterColor.G, 'The void palette reaches underwater biomes')

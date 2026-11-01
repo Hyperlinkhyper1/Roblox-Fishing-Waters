@@ -29,9 +29,13 @@ local function weight(fish, luck: number): number
 	return (1 / fish.RarityDenominator) ^ (1 - luck)
 end
 
--- True when every Requires key holds in `conditions` (Shared.CatchConditions.at).
--- Requires is a list of keys (a single key string still works); without
--- conditions a species with requirements never bites.
+-- Weather keys in Requires are alternatives: any one of them holding will do.
+FishCatch.WEATHER = { Rain = true, Clear = true, Storm = true, Supercell = true, BlackHole = true }
+
+-- True when the Requires keys hold in `conditions` (Shared.CatchConditions.at):
+-- at least one listed weather key, and every other key. Requires is a list of
+-- keys (a single key string still works); without conditions a species with
+-- requirements never bites.
 local function conditionsHold(requires, conditions: { [string]: boolean }?): boolean
 	if requires == nil then
 		return true
@@ -39,12 +43,16 @@ local function conditionsHold(requires, conditions: { [string]: boolean }?): boo
 	if conditions == nil then
 		return false
 	end
+	local wantsWeather, weatherHolds = false, false
 	for _, key in if type(requires) == "string" then { requires } else requires do
-		if conditions[key] ~= true then
+		if FishCatch.WEATHER[key] then
+			wantsWeather = true
+			weatherHolds = weatherHolds or conditions[key] == true
+		elseif conditions[key] ~= true then
 			return false
 		end
 	end
-	return true
+	return weatherHolds or not wantsWeather
 end
 
 -- A copy of `pool` holding only the fish that bite in `season`. Species
@@ -67,8 +75,16 @@ function FishCatch.inSeason(pool, species, season: string, conditions: { [string
 end
 
 local SEASON_ORDER = { "Spring", "Summer", "Autumn", "Winter" }
-local requirementLabels =
-	{ Rain = "rain", Clear = "clear skies", Storm = "storm", Night = "night", Day = "daytime", Beach = "beach" }
+local requirementLabels = {
+	Rain = "rain",
+	Clear = "clear skies",
+	Storm = "storm",
+	Supercell = "supercell",
+	BlackHole = "black hole",
+	Night = "night",
+	Day = "daytime",
+	Beach = "beach",
+}
 
 -- Short bestiary text such as "Summer", "Autumn–Spring" or "Summer (rain, night)".
 -- Season lists are one unbroken run of the year, so they read as a range.
@@ -89,10 +105,14 @@ function FishCatch.seasonLabel(fish): string
 		local last = SEASON_ORDER[(start + #list - 2) % #SEASON_ORDER + 1]
 		text = if #list == 1 then first else first .. "–" .. last
 	end
-	local labels = {}
+	local weather, labels = {}, {}
 	local requires = fish.Requires
 	for _, key in if type(requires) == "string" then { requires } else requires or {} do
-		table.insert(labels, requirementLabels[key] or string.lower(key))
+		table.insert(if FishCatch.WEATHER[key] then weather else labels, requirementLabels[key] or string.lower(key))
+	end
+	-- Weather alternatives read as one label: "Summer (rain or storm, night)".
+	if #weather > 0 then
+		table.insert(labels, 1, table.concat(weather, " or "))
 	end
 	return if #labels > 0 then text .. " (" .. table.concat(labels, ", ") .. ")" else text
 end

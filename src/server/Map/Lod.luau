@@ -19,6 +19,7 @@ local UNDERWATER = -4 -- coast vertices sink to here so shores slope into the wa
 -- tiles the client swaps one at a time. Tiles follow the lattice lines, so their seams close.
 local TILE = 192
 local TILE_STEP = 48
+local REMOVALS_PER_FRAME = 32 -- avoid sending a baked shell's old parts to clients all at once
 
 type Sample = { position: Vector3, color: Color3?, material: Enum.Material? }
 
@@ -391,8 +392,14 @@ local function merge(model: Instance)
 	union.CanTouch = false
 	union.CastShadow = false
 	union.Parent = model
-	for _, part in parts do
+	local replicated = model:IsDescendantOf(workspace)
+	for index, part in parts do
 		part:Destroy()
+		-- Old baked shells can already be visible when this migration runs. Spread
+		-- their replicated removals across frames; new, unparented shells need no delay.
+		if replicated and index % REMOVALS_PER_FRAME == 0 and index < #parts then
+			task.wait()
+		end
 	end
 end
 

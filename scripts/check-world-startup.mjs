@@ -50,6 +50,14 @@ function methods:GetDescendants()
   end
   return found
 end
+function methods:IsDescendantOf(ancestor)
+  local node = self.Parent
+  while node do
+    if node == ancestor then return true end
+    node = node.Parent
+  end
+  return false
+end
 function methods:FindFirstChild(name)
   for _, child in self._children do if child.Name == name then return child end end
 end
@@ -175,6 +183,12 @@ print("Normal region: " .. checks .. " checks passed")
   const lod = (await readFile(join(root, 'src/server/Map/Lod.luau'), 'utf8'))
     .replace('require(script.Parent.LowPoly)', '{}');
   await run('lod', prelude + `
+local originalService = game.GetService
+local geometry = {UnionAsync=function() return {Instance.new("BasePart")} end}
+function game:GetService(name)
+  if name == "GeometryService" then return geometry end
+  return originalService(self, name)
+end
 function methods:AddTag(tag) self._tags = self._tags or {}; self._tags[tag] = true end
 function methods:HasTag(tag) return self._tags ~= nil and self._tags[tag] == true end
 function methods:AddPersistentPlayer(player)
@@ -202,7 +216,24 @@ harbour.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 local island = object("Model", "Distant Island", biome)
 object("Model", "Ground", island)
 local shells = object("Model", "Lod", map)
+local bakedShell = object("Model", "old-shell", shells)
+for i = 1, 70 do object("BasePart", "old-wedge", bakedShell) end
+local removed, removalYields = 0, {}
+local originalDestroy, originalWait = methods.Destroy, task.wait
+function methods:Destroy()
+  if self.Name == "old-wedge" then removed += 1 end
+  originalDestroy(self)
+end
+task.wait = function()
+  if removed > 0 and removed < 70 then table.insert(removalYields, removed) end
+  originalWait()
+end
 Lod.build(map)
+check(removed == 70 and #removalYields == 2 and removalYields[1] == 32 and removalYields[2] == 64,
+  "Replicated baked shell removals must be spread over frames")
+check(#bakedShell:GetChildren() == 1 and bakedShell:GetChildren()[1].Name == "Shell",
+  "The merged shell must remain after its old wedges are removed")
+task.wait = originalWait
 check(harbour.ModelStreamingMode == Enum.ModelStreamingMode.Default, "Even baked atomic harbour must stream nearby parts independently")
 check(island.ModelStreamingMode == Enum.ModelStreamingMode.Default, "Islands must stream in pieces, never as one frame-freezing atomic unit")
 check(map:FindFirstChild("Lod") == shells, "Existing baked shells must remain intact")

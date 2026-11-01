@@ -11,7 +11,8 @@
 --   Shapes (cargo footprint per size class, see Shared.Cargo),
 --   Pools?     AnglerCatalog.Pools keys it bites in; none for net, cage and drop items
 --   Seasons?   Shared.Seasons names in calendar order; nil bites all year
---   Requires?  Shared.CatchConditions keys that must all hold, e.g. { "Rain", "Night" }
+--   Requires?  Shared.CatchConditions keys, e.g. { "Rain", "Night" }. Weather keys (FishCatch.WEATHER)
+--              are alternatives, so { "Storm", "Supercell" } bites in either; every other key must hold
 --   DropOnly?  true for rewards that never bite (shark parts)
 --   Build?     function(b, kit) drawing the model with FishModels' Builder
 local FishSpecies = {}

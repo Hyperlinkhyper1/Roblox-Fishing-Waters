@@ -139,8 +139,8 @@ function Boating.start()
 
 	-- Day: a sun with rays. Night: a crescent built from overlapping dots, plus two stars.
 	local dayIcon = iconFrame("DayNightIcon", 1)
-	local sunColor = Color3.fromRGB(255, 214, 102)
-	local moonColor = Color3.fromRGB(236, 232, 214)
+	local sunColor = Color3.new(1, 1, 1)
+	local moonColor = sunColor
 	local sunParts = { iconPart(dayIcon, "Sun", 11, 10, 16, 16, sunColor) }
 	for index = 0, 7 do
 		local angle = index * 45
@@ -170,34 +170,36 @@ function Boating.start()
 	table.insert(moonParts, iconPart(dayIcon, "Star", 27, 7, 3, 3, moonColor))
 	table.insert(moonParts, iconPart(dayIcon, "Star", 31, 17, 2, 2, moonColor))
 
-	-- Season: a leaf coloured for spring, summer and autumn, a snowflake for winter.
+	-- Season: a leaf for spring, summer and autumn, a snowflake for winter.
 	local seasonIcon = iconFrame("SeasonIcon", 2)
-	local leaf = iconPart(seasonIcon, "Leaf", 12, 6, 14, 24, Color3.new())
+	local leaf = iconPart(seasonIcon, "Leaf", 12, 6, 14, 24, sunColor)
 	leaf.Rotation = 35
-	local stem = iconBar(seasonIcon, "Stem", 12, 29, 9, -55, Color3.fromRGB(110, 78, 46))
-	local vein = iconBar(seasonIcon, "Vein", 19, 18, 18, -55, Color3.new())
-	vein.Size = UDim2.fromOffset(18, 2)
-	vein.ZIndex = 3
-	local snowColor = Color3.fromRGB(226, 240, 255)
+	local stem = iconBar(seasonIcon, "Stem", 12, 29, 9, -55, sunColor)
+	local snowColor = sunColor
 	local flake = {}
 	for index = 0, 2 do
 		table.insert(flake, iconBar(seasonIcon, "Snowflake", 19, 18, 28, index * 60 + 90, snowColor))
 	end
 	table.insert(flake, iconPart(seasonIcon, "SnowflakeCore", 15, 14, 8, 8, snowColor))
-	local leafColors = {
-		Spring = { Color3.fromRGB(150, 218, 96), Color3.fromRGB(96, 160, 62) },
-		Summer = { Color3.fromRGB(62, 148, 70), Color3.fromRGB(34, 96, 44) },
-		Autumn = { Color3.fromRGB(232, 128, 44), Color3.fromRGB(160, 70, 30) },
-	}
-
-	local statusText =
-		label(statusRow, "", UDim2.new(), UDim2.fromOffset(120, 36), 15, Color3.fromRGB(247, 238, 216))
-	statusText.Name = "StatusText"
-	statusText.LayoutOrder = 4
-	statusText.Font = Enum.Font.GothamBold
-	statusText.TextWrapped = false
-	statusText.TextStrokeTransparency = 0.7
-	statusText.ZIndex = 2
+	local function hoverText(icon: Frame): TextLabel
+		local text = label(icon, "", UDim2.fromOffset(0, -28), UDim2.fromOffset(120, 24), 15, sunColor)
+		text.Name = "HoverText"
+		text.Font = Enum.Font.GothamBold
+		text.TextWrapped = false
+		text.TextStrokeTransparency = 0.7
+		text.ZIndex = 4
+		text.Visible = false
+		icon.MouseEnter:Connect(function()
+			text.Visible = true
+		end)
+		icon.MouseLeave:Connect(function()
+			text.Visible = false
+		end)
+		return text
+	end
+	local clockText = hoverText(dayIcon)
+	local seasonText = hoverText(seasonIcon)
+	local weatherText = hoverText(weatherIcon)
 
 	local function refreshClock()
 		local clock = DayNight.clockTime()
@@ -210,45 +212,39 @@ function Boating.start()
 		end
 		local season, day = Seasons.current()
 		local winter = season == "Winter"
-		leaf.Visible, stem.Visible, vein.Visible = not winter, not winter, not winter
+		leaf.Visible, stem.Visible = not winter, not winter
 		for _, part in flake do
 			part.Visible = winter
 		end
-		local colors = leafColors[season]
-		if colors then
-			leaf.BackgroundColor3, vein.BackgroundColor3 = colors[1], colors[2]
-		end
 		local hour = math.floor(clock)
-		statusText.Text = string.format(
-			"%s %d · %02d:%02d",
-			season,
-			day,
-			hour,
-			math.floor((clock - hour) * 60)
-		)
+		clockText.Text = string.format("%02d:%02d", hour, math.floor((clock - hour) * 60))
+		seasonText.Text = string.format("%s %d", season, day)
 	end
 	refreshClock()
 	-- Native shapes keep the small HUD icon independent of image downloads.
-	local cloudColor = Color3.fromRGB(234, 240, 247)
+	local cloudColor = sunColor
 	local clouds = {
 		weatherPart("CloudLeft", 2, 9, 17, 17, cloudColor),
 		weatherPart("CloudTop", 11, 2, 21, 24, cloudColor),
 		weatherPart("CloudRight", 24, 12, 14, 14, cloudColor),
 		weatherPart("CloudBase", 10, 17, 21, 9, cloudColor),
 	}
-	local voidRing = weatherPart("BlackHoleRing", 2, 1, 34, 34, Color3.fromRGB(177, 68, 255))
-	local voidCore = weatherPart("BlackHoleCore", 7, 6, 24, 24, Color3.new(0, 0, 0))
-	voidCore.ZIndex = 3
+	local voidRing = weatherPart("BlackHoleRing", 2, 1, 34, 34, sunColor)
+	voidRing.BackgroundTransparency = 1
+	local ringStroke = Instance.new("UIStroke")
+	ringStroke.Color = sunColor
+	ringStroke.Thickness = 4
+	ringStroke.Parent = voidRing
 	local drops = {}
 	for index = 1, 4 do
-		local drop = weatherPart("Rain" .. index, 5 + (index - 1) * 8, 28, 2, 7, Color3.fromRGB(137, 204, 255))
+		local drop = weatherPart("Rain" .. index, 5 + (index - 1) * 8, 28, 2, 7, sunColor)
 		drop.Rotation = 25
 		drops[index] = drop
 	end
 	-- A narrow funnel under the cloud marks a supercell.
-	local funnel = weatherPart("Funnel", 16, 24, 6, 12, Color3.fromRGB(150, 160, 156))
+	local funnel = weatherPart("Funnel", 16, 24, 6, 12, sunColor)
 	local lightning =
-		label(weatherIcon, "ϟ", UDim2.fromOffset(21, 17), UDim2.fromOffset(17, 22), 25, Color3.fromRGB(255, 219, 109))
+		label(weatherIcon, "ϟ", UDim2.fromOffset(21, 17), UDim2.fromOffset(17, 22), 25, sunColor)
 	lightning.Name = "Lightning"
 	lightning.ZIndex = 3
 	local currentWeather: string? = nil
@@ -262,10 +258,13 @@ function Boating.start()
 		local blackHole = kind == "BlackHole"
 		local supercell = kind == "Supercell"
 		weatherIcon.Visible = blackHole or supercell or kind == "LightRain" or kind == "Rain" or kind == "Storm"
-		voidRing.Visible, voidCore.Visible = blackHole, blackHole
+		voidRing.Visible = blackHole
+		weatherText.Text = kind:gsub("(%l)(%u)", "%1 %2")
+		if not weatherIcon.Visible then
+			weatherText.Visible = false
+		end
 		for _, cloud in clouds do
 			cloud.Visible = not blackHole
-			cloud.BackgroundColor3 = if supercell then Color3.fromRGB(112, 128, 122) else cloudColor
 		end
 		funnel.Visible = supercell
 		lightning.Visible = kind == "Storm" or supercell

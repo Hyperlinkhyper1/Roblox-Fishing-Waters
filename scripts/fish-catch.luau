@@ -199,7 +199,10 @@ check(bites("Winter", { Storm = true }).Lingcod, "Lingcod bite in winter storms"
 check(not bites("Winter", { Clear = true }).Lingcod, "Lingcod need a storm")
 for id, entry in Catalog.Fish do
 	for _, key in entry.Requires or {} do
-		check(table.find({ "Rain", "Clear", "Storm", "Night", "Day", "Beach" }, key), id .. " requires a known condition")
+		check(
+			table.find({ "Rain", "Clear", "Storm", "Supercell", "BlackHole", "Night", "Day", "Beach" }, key),
+			id .. " requires a known condition"
+		)
 	end
 end
 
@@ -223,6 +226,21 @@ check(not bitesCustom(nil).Both, "Species with requirements never bite without c
 check(
 	FishCatch.seasonLabel({ Seasons = { "Summer" }, Requires = { "Rain", "Night" } }) == "Summer (rain, night)",
 	"Several requirements read as one list"
+)
+
+-- Weather keys are alternatives: any listed weather will do, other keys still must hold.
+conditional = { Fish = { "Wild", "WildNight" } }
+custom = {
+	Wild = { Requires = { "Supercell", "BlackHole" } },
+	WildNight = { Requires = { "Storm", "BlackHole", "Night" } },
+}
+check(bitesCustom({ Supercell = true }).Wild and bitesCustom({ BlackHole = true }).Wild, "Any listed weather will do")
+check(not bitesCustom({ Storm = true, Rain = true }).Wild, "Unlisted weather keeps them away")
+check(bitesCustom({ BlackHole = true, Night = true }).WildNight, "A weather alternative plus night bites")
+check(not bitesCustom({ BlackHole = true, Day = true }).WildNight, "Non-weather keys still must hold")
+check(
+	FishCatch.seasonLabel({ Requires = { "Storm", "BlackHole", "Night" } }) == "All year (storm or black hole, night)",
+	"Weather alternatives read with or"
 )
 
 -- Areas: the bay is the lake, biomes get their own pools that keep every

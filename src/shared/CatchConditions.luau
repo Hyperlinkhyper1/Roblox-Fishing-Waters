@@ -48,6 +48,8 @@ function CatchConditions.at(position: Vector3, serverTime: number?): { [string]:
 		Clear = not rain and weather.storm < CatchConditions.STORM,
 		-- A supercell overhead counts as a storm too.
 		Storm = weather.storm > CatchConditions.STORM or weather.kind == "Supercell",
+		Supercell = weather.kind == "Supercell",
+		BlackHole = weather.kind == "BlackHole",
 		Night = night,
 		Day = not night,
 		Beach = sandyShallow(position),

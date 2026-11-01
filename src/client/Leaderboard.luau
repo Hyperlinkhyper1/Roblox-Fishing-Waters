@@ -15,7 +15,7 @@ local function label(parent, text, position, size, alignment)
 	item.Position = position
 	item.Size = size
 	item.Text = text
-	item.TextSize = 14
+	item.TextSize = 13
 	item.Font = Enum.Font.GothamMedium
 	item.TextColor3 = Color3.fromRGB(242, 242, 245)
 	item.TextXAlignment = alignment or Enum.TextXAlignment.Left
@@ -77,6 +77,7 @@ function Leaderboard.start()
 	toggle.Position = UDim2.new(1, -12, 0, 8)
 	toggle.Size = UDim2.fromOffset(100, 32)
 	toggle.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+	toggle.BackgroundTransparency = 0.4
 	toggle.BorderSizePixel = 0
 	toggle.Text = "Players"
 	toggle.TextColor3 = Color3.fromRGB(242, 242, 245)
@@ -89,13 +90,14 @@ function Leaderboard.start()
 	panel.Name = "PlayerList"
 	panel.AnchorPoint = Vector2.new(1, 0)
 	panel.Position = UDim2.new(1, -12, 0, 8)
-	panel.Size = UDim2.new(0.9, 0, 0.86, 0)
+	panel.Size = UDim2.new(0.9, 0, 0.55, 0)
 	panel.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+	panel.BackgroundTransparency = 0.4
 	panel.BorderSizePixel = 0
 	Theme.corner(panel, 8)
 	panel.Parent = gui
 	local constraint = Instance.new("UISizeConstraint")
-	constraint.MaxSize = Vector2.new(480, 670)
+	constraint.MaxSize = Vector2.new(320, 55)
 	constraint.Parent = panel
 
 	local close = Instance.new("TextButton")
@@ -161,6 +163,9 @@ function Leaderboard.start()
 		for player in entries do
 			table.insert(sorted, player)
 		end
+		-- Fit the current roster without leaving an empty panel, while keeping
+		-- longer lists scrollable and bounded by the viewport's height.
+		constraint.MaxSize = Vector2.new(320, math.min(300, 55 + #sorted * 32))
 		table.sort(sorted, function(a, b)
 			local aMoney = entries[a].moneyValue or -math.huge
 			local bMoney = entries[b].moneyValue or -math.huge
@@ -180,7 +185,7 @@ function Leaderboard.start()
 		end
 		local row = Instance.new("Frame")
 		row.Name = tostring(player.UserId)
-		row.Size = UDim2.new(1, 0, 0, 50)
+		row.Size = UDim2.new(1, 0, 0, 32)
 		row.BackgroundTransparency = 1
 		row.BorderSizePixel = 0
 		row.Parent = list
