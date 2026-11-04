@@ -11,6 +11,8 @@ try {
   const anglerData = await readFile(join(root, 'src/server/AnglerData.luau'), 'utf8');
   const catalog = await readFile(join(root, 'src/shared/BoatCatalog.luau'), 'utf8');
   const motion = await readFile(join(root, 'src/shared/BoatMotion.luau'), 'utf8');
+  // BoatDrive borrows Biomes, BoatMotion and Weather from BoatService's own locals.
+  const boatDrive = (await readFile(join(root, 'src/shared/BoatDrive.luau'), 'utf8')).replace(/^local \w+ = require\(script\.Parent\.\w+\)\r?\n/gm, '');
   const rodUpgrades = await readFile(join(root, 'src/shared/RodUpgrades.luau'), 'utf8');
   const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
   const spearSkins = await readFile(join(root, 'src/shared/SpearSkins.luau'), 'utf8');
@@ -48,6 +50,7 @@ try {
     .replace('require(ReplicatedStorage.Shared.BobberSkins)', () => `(function()\n${bobberSkins}\nend)()`)
     .replace('require(ReplicatedStorage.Shared.Biomes)', 'dependencies.Biomes')
     .replace('require(ReplicatedStorage.Shared.Weather)', 'dependencies.Weather')
+    .replace('require(ReplicatedStorage.Shared.BoatDrive)', () => `(function()\n${boatDrive}\nend)()`)
     .replace(/return BoatService\s*$/, 'return { start = BoatService.start, loadPlayer = loadPlayer }');
   const fixture = harness.slice(0, harness.indexOf('local shop = Instance.new("Model")'));
   for (const mode of ['unpublished', 'published', 'live', 'loading']) {

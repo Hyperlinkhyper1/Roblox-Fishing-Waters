@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Harbour = require(script.Parent.Harbour)
+local CompanyIslands = require(script.Parent.CompanyIslands)
 local Islands = require(script.Parent.Islands)
 local Props = require(script.Parent.Props)
 
@@ -305,6 +306,8 @@ function Regions.normal(ctx: Context, onHarbourReady: ((CFrame) -> ())?): CFrame
 	local rng = ctx.rng
 	local spawn = Harbour.build(ctx.folder, rng, ctx.biome.center)
 	table.insert(ctx.placed, { position = ctx.biome.center, radius = Harbour.FOOTPRINT })
+	CompanyIslands.reserve(ctx.placed)
+	CompanyIslands.ensure(ctx.folder.Parent)
 	-- The complete home island has collision, bases, both shops and launch docks.
 	-- Surrounding scenery must not hold up the player's first spawn.
 	if onHarbourReady then
@@ -332,10 +335,8 @@ function Regions.normal(ctx: Context, onHarbourReady: ((CFrame) -> ())?): CFrame
 			Props.boulder(isle.model, ground, rng, rng:NextNumber(3, 6), NORMAL.rock.cliff)
 		end)
 	end
-	for _, isle in archipelago(ctx, 8, { 28, 75 }, { 10, 34 }, { "plateau", "stack", "peak" }, NORMAL.land, nil, locate) do
-		forest(ctx, isle, 2, 10, 0.35)
-	end
-	archipelago(ctx, 14, { 6, 22 }, { 5, 28 }, { "stack", "peak" }, NORMAL.rock, { roughness = 0.5 }, locate)
+	-- Keep the substantial wooded islands; the former 22 little rocks and
+	-- islets leave room for company properties and clear shipping lanes.
 
 	return spawn
 end
@@ -565,6 +566,9 @@ function Regions.openSea(ctx: Context)
 	local limit = Biomes.MapHalfSize - 300
 
 	local function outsideBiomes(p: Vector2): boolean
+		-- Keep small stacks away from the company ring and its shipping lanes,
+		-- matching the nearby-scenery cleanup applied to older baked maps.
+		if (p - Biomes.Normal.center).Magnitude < 2300 then return false end
 		for _, biome in Biomes.list do
 			if (p - biome.center).Magnitude < biome.radius then
 				return false
@@ -575,7 +579,7 @@ function Regions.openSea(ctx: Context)
 
 	local stacks = 0
 	for _ = 1, 2000 do
-		if stacks >= 55 then
+		if stacks >= 28 then
 			break
 		end
 		local p = Vector2.new(rng:NextNumber(-limit, limit), rng:NextNumber(-limit, limit))

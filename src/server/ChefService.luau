@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local CompanyIslandAccess = require(script.Parent.CompanyIslandAccess)
 local CustomerService = require(script.Parent.CustomerService)
 local Kitchen = require(script.Parent.Map.Kitchen)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
@@ -47,7 +48,7 @@ local function stations(house, frame)
 			and type(z) == "number"
 			and type(r) == "number"
 		then
-			result[key] = Furniture.frame(frame, { X = x, Z = z, R = r })
+			result[key] = Furniture.frame(frame, { ItemId = model:GetAttribute("ItemId"), X = x, Z = z, R = r })
 		end
 	end
 	return result
@@ -103,7 +104,7 @@ local function ensureWorker(base, state, owner, role, position)
 				end
 			end
 			root.Anchored = true
-			model.Parent = base
+			model.Parent = if role == "CompanyChef" then (CompanyIslandAccess.get(owner) or base) else base
 			state.workers[role] = { model = model, humanoid = humanoid, root = root }
 		end)
 		state.spawning[role] = nil
@@ -222,7 +223,19 @@ local function processBase(base, state)
 		if ownerOf(base) ~= owner then
 			break
 		end
-		processRole(base, state, owner, role, frame, available)
+		local property = if role == "CompanyChef" then CompanyIslandAccess.get(owner) else nil
+		local worker = state.workers[role]
+		if worker then worker.model.Parent = property or base end
+		if property then
+			local companyStations = {}
+			for key, station in CompanyIslandAccess.stations(owner) do
+				companyStations[key] = station.frame
+			end
+			-- The company chef waits on the island plot between the benches the owner placed.
+			processRole(base, state, owner, role, property:GetAttribute("PlotFrame"), companyStations)
+		else
+			processRole(base, state, owner, role, frame, available)
+		end
 	end
 end
 

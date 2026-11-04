@@ -14,7 +14,7 @@ const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "rowboat-model-"));
 const target = path.join(temporary, "test.luau");
 try {
   fs.writeFileSync(target, harness.replace(marker, () => source).replace("-- BUOYANCY_SOURCE --", () => {
-    const service = fs.readFileSync(path.join(root, "src/server/BoatService.luau"), "utf8");
+    const service = fs.readFileSync(path.join(root, "src/shared/BoatDrive.luau"), "utf8");
     const start = service.indexOf("local normal = wave.normal");
     const end = service.indexOf("local direction = flatHeading.LookVector", start);
     if (start < 0 || end < 0) throw new Error("Buoyancy source markers changed");

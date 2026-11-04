@@ -10,8 +10,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local City = require(script.ModernCity)
+local CompanyIslands = require(script.CompanyIslands)
 local Lod = require(script.Lod)
 local Med = require(script.Mediterranean)
+local MetroStations = require(script.MetroStations)
+local PirateCove = require(script.PirateCove)
 local Props = require(script.Props)
 local Regions = require(script.Regions)
 local Seabed = require(script.Seabed)
@@ -22,6 +25,10 @@ local Map = {}
 
 local Terrain = workspace.Terrain
 local TILE = 1024
+
+function Map.ensureCompanyIslands(root: Instance)
+	CompanyIslands.ensure(root)
+end
 
 -- Extend the existing ocean only toward the distant southeast city. The
 -- original bounds still govern island generation, preserving its seeded layout.
@@ -46,6 +53,11 @@ local function fillCityOcean()
 	fill(Biomes.CityOceanStart, half, half, edge)
 end
 
+-- Pirate Cove is built apart from the seeded biomes (see Map/PirateCove), on generated and baked maps alike.
+function Map.ensurePirateCove(root: Instance)
+	PirateCove.build(root)
+end
+
 function Map.ensureCity(root: Instance)
 	local existing = root:FindFirstChild("Modern City")
 	if not (existing and existing:IsA("Model") and existing:GetAttribute("CityVersion") == City.VERSION) then
@@ -54,6 +66,7 @@ function Map.ensureCity(root: Instance)
 		end
 		City.build(root)
 	end
+	MetroStations.ensureCity(root:FindFirstChild("Modern City"))
 	-- The metro station sits below sea level, in a pocket cleared of water
 	for _, pocket in Biomes.DryPockets do
 		Terrain:FillBlock(CFrame.new((pocket.min + pocket.max) / 2), pocket.max - pocket.min, Enum.Material.Air)
@@ -90,8 +103,8 @@ local function setupEnvironment()
 	local look = Biomes.Normal.look
 
 	Terrain.WaterColor = look.waterColor
-	Terrain.WaterTransparency = 0.3
-	Terrain.WaterReflectance = 0.2
+	Terrain.WaterTransparency = Biomes.SurfaceWaterTransparency
+	Terrain.WaterReflectance = Biomes.WaterReflectance
 	Terrain.WaterWaveSize = 0.1
 	Terrain.WaterWaveSpeed = 8
 	Terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(34, 48, 56))
@@ -193,6 +206,7 @@ function Map.build(onHarbourReady: ((Folder) -> ())?, onStage: ((string, number)
 	Regions.volcanic(context(Biomes.Volcanic, 4))
 	Regions.ice(context(Biomes.Ice, 5))
 	Regions.openSea(context(Biomes.OpenSea, 6))
+	Map.ensurePirateCove(root)
 	Map.ensureCity(root)
 	SeabedDetails.ensure(root)
 	Lod.build(root)
@@ -215,6 +229,8 @@ function Map.prepareStreaming(root: Instance)
 	Med.ensurePergolas(root)
 	Med.ensureBalconies(root)
 	Props.ensureHouseCollision(root)
+	Props.ensureDecorationCollision(root)
+	Med.ensureBoatCollision(root)
 	Lod.prepareStreaming(root)
 	Lod.serve()
 end

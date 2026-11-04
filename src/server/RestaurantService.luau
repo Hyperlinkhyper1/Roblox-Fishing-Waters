@@ -78,6 +78,7 @@ local function freeSeats(restaurant): { { seat: Seat, table: CFrame } }
 			continue
 		end
 		local tableFrame = Furniture.frame(restaurant.frame, {
+			ItemId = "DiningTable",
 			X = model:GetAttribute("X"),
 			Z = model:GetAttribute("Z"),
 			R = model:GetAttribute("R"),

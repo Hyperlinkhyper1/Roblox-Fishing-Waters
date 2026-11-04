@@ -19,6 +19,7 @@ local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 local MutationContext = require(ReplicatedStorage.Shared.MutationContext)
+local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local MusselNetService = {}
@@ -418,7 +419,7 @@ end
 -- Keep a blocked harvest until it can be claimed; destroyed models drop out.
 local pendingRolls: { [Instance]: any } = setmetatable({}, { __mode = "k" }) :: any
 
-local function collect(player: Player, prompt: ProximityPrompt)
+local function collect(player: Player, prompt: ProximityPrompt, automatic: boolean?)
 	local anchor = prompt.Parent
 	local model = anchor and anchor.Parent
 	local base = baseOf(player)
@@ -434,7 +435,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 		return
 	end
 	local root = rootOf(player)
-	if not root or (root.Position - anchor.Position).Magnitude > prompt.MaxActivationDistance + 3 then
+	if not automatic and (not root or (root.Position - anchor.Position).Magnitude > prompt.MaxActivationDistance + 3) then
 		return
 	end
 	local x, z = model:GetAttribute("X"), model:GetAttribute("Z")
@@ -491,7 +492,8 @@ local function collect(player: Player, prompt: ProximityPrompt)
 				roll.Size,
 				roll.Traits,
 				layout,
-				doubleXP
+				doubleXP,
+				automatic
 			)
 			if destination == "Released" then
 				return nil
@@ -501,7 +503,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 		return angler, destinations
 	end
 	if not award(profile.Angler, backpack) then
-		notify(player, noRoom)
+		if not automatic then notify(player, noRoom) end
 		return
 	end
 	local soak = MusselNets.soak(rng)
@@ -509,6 +511,10 @@ local function collect(player: Player, prompt: ProximityPrompt)
 	local blocked = false
 	busy[player] = true
 	local ok, message = BoatService.updateProgress(player, function(current)
+		if automatic then
+			assert(current.Angler.Staff.Porter and StaffCatalog.workerLevel(current.Angler, "Porter") >= 3, "Porter unavailable")
+		end
+		assert(not MusselNets.collectProblem(current.Angler, x, z, now), "Harvest is no longer ready")
 		local layout = BackpackCatalog.Items[current.Angler.BackpackId] or BackpackCatalog.Items.Starter
 		local awarded
 		awarded, destinations = award(current.Angler, layout)
@@ -519,7 +525,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 	end)
 	busy[player] = nil
 	if not ok then
-		notify(player, if blocked then noRoom else message)
+		if not automatic then notify(player, if blocked then noRoom else message) end
 		return
 	end
 	pendingRolls[model] = nil
@@ -530,7 +536,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 	refreshPlayer(player)
 	local catch = ReplicatedStorage:FindFirstChild("Catch")
 	local reveal = catch and catch:FindFirstChild("Update")
-	if reveal and reveal:IsA("RemoteEvent") then
+	if not automatic and reveal and reveal:IsA("RemoteEvent") then
 		local roll = rolls[1]
 		reveal:FireClient(player, "Caught", {
 			FishId = roll.FishId,
@@ -550,7 +556,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 	for _, roll in rolls do
 		table.insert(names, Catalog.Fish[roll.FishId].Name)
 	end
-	notify(player, "Harvested: " .. table.concat(names, ", ") .. ".")
+	if not automatic then notify(player, "Harvested: " .. table.concat(names, ", ") .. ".") end
 	if left == 0 then
 		notify(player, "That was the net's last harvest. Buy another at Tide & Tackle.")
 	end
@@ -612,6 +618,84 @@ function MusselNetService.start()
 	for _, base in CollectionService:GetTagged(BASE_TAG) do
 		watchBase(base)
 	end
+	-- Harvest ready equipment while the owner has an active, upgraded porter.
+	task.spawn(function()
+		while true do
+			task.wait(5)
+			for _, player in Players:GetPlayers() do
+				local profile = BoatService.getProfile(player)
+				local base = baseOf(player)
+				if profile and base and not busy[player] and profile.Angler.Staff.Porter
+					and StaffCatalog.workerLevel(profile.Angler, "Porter") >= 3 then
+					for _, model in CollectionService:GetTagged(CAGE_TAG) do
+						if model:IsDescendantOf(base) then
+							local x, z = model:GetAttribute("X"), model:GetAttribute("Z")
+							local prompt = model:FindFirstChild(PROMPT_NAME, true)
+							if prompt and type(x) == "number" and type(z) == "number"
+								and not MusselNets.collectProblem(profile.Angler, x, z, os.time()) then
+								local ok, failure = pcall(collect, player, prompt, true)
+								if not ok then warn("[MusselNets] Porter harvest: " .. tostring(failure)) end
+								break
+							end
+						end
+					end
+				end
+			end
+		end
+	end)
+	-- A level 4 porter replaces worn-out equipment using a tools rack.
+	task.spawn(function()
+		while true do
+			task.wait(5)
+			for _, player in Players:GetPlayers() do
+				local profile = BoatService.getProfile(player)
+				local base = baseOf(player)
+				local dock = base and dockFrame(base)
+				if not profile or not dock or busy[player] or not profile.Angler.Staff.Porter
+					or StaffCatalog.workerLevel(profile.Angler, "Porter") < 4
+					or #profile.Angler.MusselNets.Placed >= MusselNets.MAX_PLACED then continue end
+				local rackIndex
+				for index, rack in profile.Angler.Furniture do
+					if rack.ItemId == "StorageRack" and rack.Mode == "Tools" and (rack.Nets or 0) > 0 then rackIndex = index break end
+				end
+				if not rackIndex then continue end
+				local candidate = table.clone(profile.Angler)
+				candidate.MusselNets = table.clone(profile.Angler.MusselNets)
+				candidate.MusselNets.Stock += 1
+				local ignore = {}
+				for _, other in Players:GetPlayers() do if other.Character then table.insert(ignore, other.Character) end end
+				local chosenX, chosenZ
+				for z = -38, 2, 5 do
+					for x = -22, 23, 5 do
+						if not MusselNets.placeProblem(candidate, x, z) then
+							local frame = cageFrame(dock, x, z)
+							local clear = true
+							for _, point in MusselNets.footprint(Props.MUSSEL_NET_SIZE) do
+								if not openWater(frame * point, ignore) then clear = false break end
+							end
+							if clear then chosenX, chosenZ = x, z break end
+						end
+					end
+					if chosenX then break end
+				end
+				if chosenX then
+					local now = os.time()
+					local soak = MusselNets.soak(function() return random:NextNumber() end)
+					busy[player] = true
+					local ok = BoatService.updateProgress(player, function(current)
+						local rack = current.Angler.Furniture[rackIndex]
+						assert(current.Angler.Staff.Porter and StaffCatalog.workerLevel(current.Angler, "Porter") >= 4, "Porter unavailable")
+						assert(rack and rack.ItemId == "StorageRack" and rack.Mode == "Tools" and (rack.Nets or 0) > 0, "Rack unavailable")
+						rack.Nets -= 1
+						current.Angler.MusselNets.Stock += 1
+						MusselNets.place(current.Angler, chosenX, chosenZ, now, soak)
+					end)
+					busy[player] = nil
+					if ok then refreshPlayer(player) end
+				end
+			end
+		end
+	end)
 	-- Countdowns tick once a second.
 	task.spawn(function()
 		while true do

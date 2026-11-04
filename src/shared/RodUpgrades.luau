@@ -4,13 +4,20 @@
 -- server's plausibility check always agree.
 local RodUpgrades = {}
 
-RodUpgrades.Order = { "Speed", "Strength", "Luck" }
+RodUpgrades.Order = { "Speed", "Handling", "Strength", "Luck" }
 RodUpgrades.Stats = {
 	Speed = {
 		Name = "Reel Speed",
 		Description = "Every hit in the reel fight pulls the fish in further.",
 		MaxLevel = 10,
 		BasePrice = 120,
+		Growth = 1.45,
+	},
+	Handling = {
+		Name = "Handling",
+		Description = "More progress per green hit means fewer hits to land a fish.",
+		MaxLevel = 10,
+		BasePrice = 160,
 		Growth = 1.45,
 	},
 	Strength = {
@@ -30,6 +37,7 @@ RodUpgrades.Stats = {
 }
 
 local REEL_PER_LEVEL = 0.07 -- +7% progress per hit
+local HANDLING_PER_LEVEL = 0.07 -- +7% progress per green hit
 local SIZE_PER_LEVEL = 0.15 -- +15% big and huge chance
 local LUCK_PER_LEVEL = 0.03 -- flattens the rarity curve
 
@@ -60,11 +68,12 @@ function RodUpgrades.level(levels: any, stat: string): number
 	return math.clamp(value, 0, spec.MaxLevel)
 end
 
-export type Boosts = { reel: number, size: number, luck: number }
+export type Boosts = { reel: number, handling: number, size: number, luck: number }
 
 function RodUpgrades.boosts(levels: any): Boosts
 	return {
 		reel = 1 + REEL_PER_LEVEL * RodUpgrades.level(levels, "Speed"),
+		handling = 1 + HANDLING_PER_LEVEL * RodUpgrades.level(levels, "Handling"),
 		size = 1 + SIZE_PER_LEVEL * RodUpgrades.level(levels, "Strength"),
 		luck = LUCK_PER_LEVEL * RodUpgrades.level(levels, "Luck"),
 	}
@@ -74,6 +83,8 @@ end
 function RodUpgrades.effect(stat: string, level: number): string
 	if stat == "Speed" then
 		return string.format("+%d%% reel per hit", math.floor(REEL_PER_LEVEL * level * 100 + 0.5))
+	elseif stat == "Handling" then
+		return string.format("+%d%% green hit progress", math.floor(HANDLING_PER_LEVEL * level * 100 + 0.5))
 	elseif stat == "Strength" then
 		return string.format("+%d%% big fish chance", math.floor(SIZE_PER_LEVEL * level * 100 + 0.5))
 	end

@@ -302,7 +302,9 @@ function Speedboat.build(frame: CFrame, anchored: boolean?): Model
 				beam("BowRail", railPoints[index - 1], point, 0.1, 0.1, METAL)
 			end
 		end
-		part("SternCushion", Vector3.new(2.15, 0.28, 1.6), CFrame.new(side * 1.6, 1.72, 8.5), BLUE)
+		-- Stop the cushion at the front face of the backrest. The previous
+		-- overlap left coincident blue faces along the seat's side edges.
+		part("SternCushion", Vector3.new(2.15, 0.28, 1.425), CFrame.new(side * 1.6, 1.72, 8.4125), BLUE)
 		part("SternBackrest", Vector3.new(2.15, 0.95, 0.25), CFrame.new(side * 1.6, 2.24, 9.25), WHITE)
 		local passenger = Instance.new("Seat")
 		passenger.Size = Vector3.new(2.15, 0.24, 1.6)
@@ -355,7 +357,7 @@ function Speedboat.build(frame: CFrame, anchored: boolean?): Model
 	for _, x in { -1.7, 1.7 } do
 		part("SternCleat", Vector3.new(0.65, 0.12, 0.18), CFrame.new(x, 2.44, 10.3), METAL)
 	end
-	local lampColor = Color3.fromRGB(239, 247, 255)
+	local lampColor = Color3.fromRGB(214, 206, 184)
 	for _, side in { -1, 1 } do
 		-- Low cockpit lamps light the deck without obstructing the helm or seats.
 		local deckLamp = part(
@@ -367,7 +369,7 @@ function Speedboat.build(frame: CFrame, anchored: boolean?): Model
 		)
 		local deckLight = Instance.new("PointLight")
 		deckLight.Name = "DeckLight"
-		deckLight.Color, deckLight.Range, deckLight.Brightness = lampColor, 16, 0.5
+		deckLight.Color, deckLight.Range, deckLight.Brightness = lampColor, 12, 0.3
 		deckLight.Shadows = false
 		deckLight.Parent = deckLamp
 
@@ -396,7 +398,7 @@ function Speedboat.build(frame: CFrame, anchored: boolean?): Model
 		local headlight = Instance.new("SpotLight")
 		headlight.Name = "Headlight"
 		headlight.Face = Enum.NormalId.Front
-		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 45, 1.2, 65
+		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 30, 0.45, 40
 		headlight.Shadows = false
 		headlight.Parent = lens
 	end

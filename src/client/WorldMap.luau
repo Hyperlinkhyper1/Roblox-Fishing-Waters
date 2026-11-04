@@ -254,8 +254,8 @@ function WorldMap.start()
 				center += project(point[1], point[2])
 			end
 			center /= #coast
-			if record.Name == "Modern City" then
-				label(holder, "Modern City", UDim2.fromScale(center.X - 0.09, center.Y - 0.06), UDim2.fromScale(0.18, 0.04), 14)
+			if record.Name == "Modern City" or record.Name == "Pirate Cove" or record:GetAttribute("ChartLabel") then
+				label(holder, record:GetAttribute("ChartLabel") or record.Name, UDim2.fromScale(center.X - 0.09, center.Y - 0.06), UDim2.fromScale(0.18, 0.04), 14)
 			end
 			for i, point in coast do
 				local nextPoint = coast[i % #coast + 1]

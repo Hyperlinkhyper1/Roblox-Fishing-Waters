@@ -1,5 +1,6 @@
 -- Build mode: at home, press B (or the Build button) for an angled building view
--- with the roof hidden. Pan with WASD / arrows or right-drag, hold Q / E to turn,
+-- with the roof hidden. On your company island it opens over the island's fenced
+-- plot instead (site "Company"), where the island's kit and decorations go. Pan with WASD / arrows or right-drag, hold Q / E to turn,
 -- and scroll to zoom.
 -- Pick bought furniture from the bottom bar, turn it
 -- with R and click a floor spot to place it; click placed furniture to move it or
@@ -16,7 +17,9 @@ local UserInputService = game:GetService("UserInputService")
 
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local BaseGrid = require(ReplicatedStorage.Shared.BaseGrid)
+local Building = require(ReplicatedStorage.Shared.BuildingCatalog)
 local FurniturePreview = require(script.Parent.FurniturePreview)
+local StructureEditor = require(script.Parent.StructureEditor)
 local Freecam = require(script.Parent.Freecam)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
@@ -26,6 +29,7 @@ local FITS = rgb(84, 192, 92)
 local BLOCKED = rgb(226, 72, 60)
 local ROOM = rgb(96, 200, 120)
 local HOME_DISTANCE = 110
+local COMPANY_DISTANCE = 150
 -- Everything above the doorway lintels: roof, gables, ceiling ties and pendant lamps.
 local ROOF_HEIGHT = 8.4
 local FLOOR_Y = 0.16
@@ -33,14 +37,19 @@ local HEIGHTS = {
 	Freezer = 4,
 	Register = 3,
 	StorageRack = 6.6,
-	FoodCase = 3.8,
-	GrillStation = 6.3,
-	Smoker = 7.5,
-	SushiBar = 6.3,
-	KitchenStorage = 4.2,
-	DiningTable = 4.3,
+	FoodCase = 4.3,
+	GrillStation = 7.6,
+	Smoker = 8.1,
+	SushiBar = 6.5,
+	KitchenStorage = 4.3,
+	DiningTable = 3.4,
 	WeatherRadar = 4.4,
+	CompanyPrep = 4.2,
+	CompanyDesk = 4.7,
 }
+-- The furniture cards: everything sold, then the company island kit.
+local ITEMS = table.clone(Furniture.Order)
+table.move(Furniture.KitOrder, 1, #Furniture.KitOrder, #ITEMS + 1, ITEMS)
 local CAMERA_PITCH = math.rad(55)
 local TURN_SPEED = math.rad(90)
 local TURN_RESPONSE = 12
@@ -90,13 +99,16 @@ function BuildMode.start()
 
 	local state = nil
 	local active = false
-	local house: Model? = nil
+	local house: Model? = nil -- the base house, or the company island on its plot
 	local houseFrame = CFrame.identity
+	local site: string? = nil -- nil at home, "Company" on the island plot
+	local floorY = FLOOR_Y
 	local hidden: { [BasePart]: number } = {}
 	local roofConnection: RBXScriptConnection? = nil
 	local frozen = nil
 	local held = nil -- { ItemId, From (item id or placed index), R }
 	local selected: number? = nil
+	local editingRack = false
 	local spot = nil -- { X, Z, Reason }
 	local pending = false
 	local saved = nil
@@ -114,6 +126,7 @@ function BuildMode.start()
 	local touch: InputObject? = nil
 	local touchStart = Vector2.zero
 	local touchDragged = false
+	local structures = nil
 
 	-- HUD
 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
@@ -139,7 +152,8 @@ function BuildMode.start()
 		Size = UDim2.new(1, -24, 0, 190),
 		Visible = false,
 	})
-	Theme.window(panel)
+	make("UISizeConstraint", panel, { MaxSize = Vector2.new(1020, 190) })
+	StructureEditor.stylePanel(panel)
 	local function label(parent: Instance, text: string, props: { [string]: any }): TextLabel
 		local item = make("TextLabel", parent, {
 			BackgroundTransparency = 1,
@@ -149,8 +163,10 @@ function BuildMode.start()
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextYAlignment = Enum.TextYAlignment.Top,
 		})
-		Theme.text(item, props.TextColor3)
+		local bottomMenu = item:IsDescendantOf(panel)
+		if bottomMenu then StructureEditor.styleLabel(item) else Theme.text(item, props.TextColor3) end
 		for key, value in props do
+			if bottomMenu and key == "TextColor3" and value == Theme.Colors.Muted then value = rgb(145, 142, 135) end
 			item[key] = value
 		end
 		return item
@@ -160,7 +176,7 @@ function BuildMode.start()
 		for key, value in props do
 			item[key] = value
 		end
-		Theme.button(item)
+		if item:IsDescendantOf(panel) then StructureEditor.styleButton(item) else Theme.glassButton(item) end
 		return item
 	end
 	local inventoryTitle = label(panel, "Unplaced furniture", {
@@ -200,7 +216,7 @@ function BuildMode.start()
 	local itemButtons = {}
 	local stockLabels = {}
 	local itemViews, previewStarted = {}, {}
-	for index, id in Furniture.Order do
+	for index, id in ITEMS do
 		local card = button(catalogue, "", {
 			Name = "Hold" .. id,
 			LayoutOrder = index,
@@ -259,6 +275,20 @@ function BuildMode.start()
 		LayoutOrder = 4,
 		Size = UDim2.fromOffset(90, 30),
 	})
+	local editRack = button(actions, "Edit rack", { Name = "EditRack", LayoutOrder = 0, Size = UDim2.fromOffset(110, 30) })
+	local rackEditor = make("Frame", gui, {
+		Name = "RackEditor", Active = true, AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -210), Size = UDim2.new(1, -24, 0, 164), Visible = false,
+	})
+	make("UISizeConstraint", rackEditor, { MaxSize = Vector2.new(520, 164) })
+	Theme.glassWindow(rackEditor)
+	label(rackEditor, "Edit storage rack", { Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 24), TextSize = 17 })
+	local rackStatus = label(rackEditor, "", { Position = UDim2.fromOffset(12, 35), Size = UDim2.new(1, -24, 0, 28), TextSize = 12, TextColor3 = Theme.Colors.Muted })
+	local rackMode = button(rackEditor, "Mode: Fish", { Name = "RackMode", Position = UDim2.fromOffset(12, 66), Size = UDim2.new(1, -24, 0, 32) })
+	local addCage = button(rackEditor, "+ Cage", { Name = "RackAddCage", Position = UDim2.new(0, 12, 0, 108), Size = UDim2.new(0.25, -15, 0, 36), TextSize = 12 })
+	local takeCage = button(rackEditor, "− Cage", { Name = "RackTakeCage", Position = UDim2.new(0.25, 4, 0, 108), Size = UDim2.new(0.25, -15, 0, 36), TextSize = 12 })
+	local addNet = button(rackEditor, "+ Net", { Name = "RackAddNet", Position = UDim2.new(0.5, -4, 0, 108), Size = UDim2.new(0.25, -15, 0, 36), TextSize = 12 })
+	local takeNet = button(rackEditor, "− Net", { Name = "RackTakeNet", Position = UDim2.new(0.75, -12, 0, 108), Size = UDim2.new(0.25, -15, 0, 36), TextSize = 12 })
 	local done = button(actions, "Done [B]", {
 		Name = "ExitBuildMode",
 		LayoutOrder = 5,
@@ -273,7 +303,7 @@ function BuildMode.start()
 		Visible = false,
 	})
 	make("UISizeConstraint", navigation, { MaxSize = Vector2.new(600, 54) })
-	Theme.window(navigation)
+	Theme.glassWindow(navigation)
 	label(
 		navigation,
 		if UserInputService.TouchEnabled
@@ -314,23 +344,56 @@ function BuildMode.start()
 		end
 		return nil, nil
 	end
-	local function atHome(): boolean
-		local _, frame = ownHouse()
+	-- The site build mode would open on here: (model, frame, site), nearest plot first.
+	local function currentSite(): (Model?, CFrame?, string?)
 		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-		return frame ~= nil and root ~= nil and (root.Position - frame.Position).Magnitude <= HOME_DISTANCE
+		if not root then
+			return nil, nil, nil
+		end
+		for _, island in CollectionService:GetTagged("CompanyIsland") do
+			local frame = island:GetAttribute("PlotFrame")
+			if
+				island:IsA("Model")
+				and island:GetAttribute("OwnerUserId") == player.UserId
+				and typeof(frame) == "CFrame"
+				and (root.Position - frame.Position).Magnitude <= COMPANY_DISTANCE
+			then
+				return island, frame, "Company"
+			end
+		end
+		local model, frame = ownHouse()
+		if model and frame and (root.Position - frame.Position).Magnitude <= HOME_DISTANCE then
+			return model, frame, nil
+		end
+		return nil, nil, nil
+	end
+	local function atHome(): boolean
+		local model = currentSite()
+		return model ~= nil
+	end
+	-- Placed furniture on the open site.
+	local function placed()
+		if not state then
+			return {}
+		end
+		return (if site == "Company" then state.CompanyPlaced else state.Placed) or {}
+	end
+	local function furnitureFolder(): Instance?
+		return house and house:FindFirstChild(if site == "Company" then "PlotFurniture" else "Furniture")
 	end
 
 	local function setButton(item: TextButton, text: string, enabled: boolean, chosen: boolean?)
 		item.Text = text
 		item.Active = enabled
-		Theme.button(item, if chosen then "Selected" elseif enabled then "Normal" else "Disabled")
+		local appearance = if chosen then "Selected" elseif enabled then "Normal" else "Disabled"
+		if item:IsDescendantOf(panel) then StructureEditor.styleButton(item, appearance) else Theme.glassButton(item, appearance) end
 	end
 	local function render()
 		local total = 0
-		for _, id in Furniture.Order do
+		for _, id in ITEMS do
 			local item = Furniture.Items[id]
-			local stock = if state then state.Stock[id] or 0 else 0
-			local full = state ~= nil and Furniture.count(state.Placed, id) >= item.MaxPlaced
+			local stock = if state and Furniture.allowedOn(id, site) then state.Stock[id] or 0 else 0
+			local full = state ~= nil and Furniture.count(placed(), id) >= item.MaxPlaced
 			total += stock
 			itemButtons[id].Visible = stock > 0
 			itemButtons[id].Selectable = stock > 0 and not full and not pending
@@ -343,22 +406,44 @@ function BuildMode.start()
 		end
 		inventoryTitle.Text = string.format("Unplaced furniture · %d", total)
 		emptyInventory.Visible = total == 0
-		emptyInventory.Text = if state
-			then "No unplaced furniture. Buy items at Harbour Home, or pick up furniture in your house."
-			else "Loading your furniture…"
+		emptyInventory.Text = if not state
+			then "Loading your furniture…"
+			elseif site == "Company"
+			then "Nothing to place here. Racks, kitchen storage, the radar and decorations from Harbour Home can go on your plot."
+			else "No unplaced furniture. Buy items at Harbour Home, or pick up furniture in your house."
 		setButton(rotate, "Rotate [R]", held ~= nil)
 		setButton(cancel, "Cancel [X]", held ~= nil or selected ~= nil)
 		setButton(move, "Move", selected ~= nil and held == nil and not pending)
 		setButton(pickUp, "Pick up", selected ~= nil and held == nil and not pending)
+		local rack = selected and placed()[selected]
+		local isRack = rack and rack.ItemId == "StorageRack" and held == nil
+		editRack.Visible = not not isRack
+		setButton(editRack, if editingRack then "Close editor" else "Edit rack", not pending)
+		rackEditor.Visible = active and not not isRack and editingRack
+		rackStatus.Text = if isRack and rack.Mode == "Tools"
+			then string.format("Stored: %d cages, %d nets / 12 · Carrying: %d cages, %d nets", rack.Cages or 0, rack.Nets or 0, state.CageStock or 0, state.NetStock or 0)
+			else "Fish storage · Switch mode to store cages and nets."
+		setButton(rackMode, if isRack and rack.Mode == "Tools" then "Mode: Tools" else "Mode: Fish", not pending)
+		for _, item in { addCage, takeCage, addNet, takeNet } do
+			item.Visible = not not (isRack and rack.Mode == "Tools")
+			setButton(item, item.Text, not pending)
+		end
 		if held then
 			local item = Furniture.Items[held.ItemId]
 			hint.Text = if spot and spot.Reason
 				then spot.Reason
-				else string.format("Place your %s: %s.", string.lower(item.Name), Furniture.roomNames(held.ItemId))
-		elseif selected and state and state.Placed[selected] then
-			hint.Text = Furniture.Items[state.Placed[selected].ItemId].Name .. " selected. Move it or pick it up."
+				else string.format("Place your %s: %s.", string.lower(item.Name), if site == "Company" then "inside the plot's fence" else Furniture.roomNames(held.ItemId))
+		elseif selected and placed()[selected] then
+			local entry = placed()[selected]
+			if entry.ItemId == "StorageRack" then
+				hint.Text = if entry.Mode == "Tools" then string.format("Tools rack: %d cages, %d nets / 12. Carrying: %d cages, %d nets. Level 4 porters place stored tools.", entry.Cages or 0, entry.Nets or 0, state.CageStock or 0, state.NetStock or 0) else "Storage rack selected. Click Edit rack to choose its mode."
+			else
+				hint.Text = Furniture.Items[entry.ItemId].Name .. " selected. Move it or pick it up."
+			end
 		elseif state and state.PendingWallMigration then
 			hint.Text = "Some furniture needs room near the new walls. Move or pick up furniture to make space."
+		elseif site == "Company" then
+			hint.Text = "Furnish your company plot: storage racks, prep benches, kitchen storage and your desk. Click placed furniture to move it."
 		else
 			hint.Text = "Choose furniture to place, or click placed furniture. Buy more at Harbour Home on the plaza."
 		end
@@ -384,8 +469,8 @@ function BuildMode.start()
 		end
 	end
 	local function placedModel(index: number): Model?
-		local entry = state and state.Placed[index]
-		local folder = house and house:FindFirstChild("Furniture")
+		local entry = placed()[index]
+		local folder = furnitureFolder()
 		if not entry or not folder then
 			return nil
 		end
@@ -402,6 +487,7 @@ function BuildMode.start()
 		return nil
 	end
 	local function choose(index: number?)
+		if selected ~= index then editingRack = false end
 		selected = index
 		setHighlight(if index then placedModel(index) else nil)
 		render()
@@ -430,8 +516,14 @@ function BuildMode.start()
 		local model = make("Model", nil, { Name = "FurniturePreview" })
 		local item = Furniture.Items[held.ItemId]
 		-- Yard items sit on the quay deck, a step below the house floor.
-		local floor = Furniture.floor(held.ItemId)
-		for _, roomId in Furniture.allowedRooms(held.ItemId) do
+		local floor = Furniture.floor(held.ItemId, site)
+		if site == "Company" then
+			plate(model, Furniture.PLOT, floor + 0.05, ROOM, 0.75).Name = "AllowedRoom"
+			for _, area in Furniture.PlotBlocked do
+				plate(model, area, floor + 0.07, BLOCKED, 0.8).Name = "KeepClear"
+			end
+		end
+		for _, roomId in if site == "Company" then {} else Furniture.allowedRooms(held.ItemId) do
 			local room = Furniture.Rooms[roomId]
 			plate(model, room, floor + 0.05, ROOM, 0.75).Name = "AllowedRoom"
 			for _, area in Furniture.Blocked do
@@ -452,6 +544,7 @@ function BuildMode.start()
 			Transparency = 0.35,
 			Size = Vector3.new(item.Width, height, item.Depth),
 		})
+		-- The grid cells the item fills, and the strips people stand in beside them.
 		make("Part", model, {
 			Name = "Access",
 			Anchored = true,
@@ -459,9 +552,21 @@ function BuildMode.start()
 			CanQuery = false,
 			CastShadow = false,
 			Material = Enum.Material.SmoothPlastic,
-			Transparency = 0.7,
-			Size = Vector3.new(item.Width, 0.1, item.Depth + item.Front + item.Back),
+			Transparency = 0.6,
+			Size = Vector3.new(1, 0.1, 1),
 		})
+		for index = 1, #Furniture.access(held.ItemId, 0, 0, 0) do
+			make("Part", model, {
+				Name = "Clearance" .. index,
+				Anchored = true,
+				CanCollide = false,
+				CanQuery = false,
+				CastShadow = false,
+				Material = Enum.Material.SmoothPlastic,
+				Transparency = 0.85,
+				Size = Vector3.new(1, 0.06, 1),
+			})
+		end
 		-- An arrow on the access side shows which way the item faces.
 		make("Part", model, {
 			Name = "FacingArrow",
@@ -481,7 +586,7 @@ function BuildMode.start()
 			return
 		end
 		local item = Furniture.Items[held.ItemId]
-		local frame = Furniture.frame(houseFrame, { ItemId = held.ItemId, X = spot.X, Z = spot.Z, R = held.R })
+		local frame = Furniture.frame(houseFrame, { ItemId = held.ItemId, X = spot.X, Z = spot.Z, R = held.R }, site)
 		local color = if spot.Reason then BLOCKED else FITS
 		local height = HEIGHTS[held.ItemId] or 3
 		local body = preview:FindFirstChild("Body") :: BasePart
@@ -489,7 +594,19 @@ function BuildMode.start()
 		local arrow = preview:FindFirstChild("FacingArrow") :: BasePart
 		body.Color, access.Color = color, color
 		body.CFrame = frame * CFrame.new(0, height / 2, 0)
-		access.CFrame = frame * CFrame.new(0, 0.12, (item.Front - item.Back) / 2)
+		local floor = Furniture.floor(held.ItemId, site)
+		local function lay(part: BasePart, area: { number }, y: number)
+			part.Size = Vector3.new(area[3] - area[1] - 0.1, part.Size.Y, area[4] - area[2] - 0.1)
+			part.CFrame = houseFrame * CFrame.new((area[1] + area[3]) / 2, floor + y, (area[2] + area[4]) / 2)
+		end
+		lay(access, Furniture.footprint(held.ItemId, spot.X, spot.Z, held.R) :: { number }, 0.12)
+		for index, strip in Furniture.access(held.ItemId, spot.X, spot.Z, held.R) do
+			local clearance = preview:FindFirstChild("Clearance" .. index) :: BasePart?
+			if clearance then
+				clearance.Color = color
+				lay(clearance, strip, 0.1)
+			end
+		end
 		arrow.CFrame = frame * CFrame.new(0, height + 0.2, item.Depth / 2)
 	end
 
@@ -506,7 +623,10 @@ function BuildMode.start()
 			return nil
 		end
 		local ray = camera:ScreenPointToRay(position.X, position.Y)
-		local floor = houseFrame * CFrame.new(0, FLOOR_Y, 0)
+		local elevation = if structures and structures:isActive() then structures:elevation() else 0
+		local pointerY = if structures and structures:isActive()
+			then Building.planeHeight(site, elevation / Building.LEVEL_HEIGHT) else floorY
+		local floor = houseFrame * CFrame.new(0, pointerY, 0)
 		local normal = houseFrame.UpVector
 		local denominator = ray.Direction:Dot(normal)
 		if math.abs(denominator) < 1e-4 then
@@ -523,6 +643,12 @@ function BuildMode.start()
 		if not point then
 			return nil
 		end
+		if held then
+			-- Snap the middle of the item's cells to the pointer, so a 1x2 item
+			-- covers the two cells nearest it rather than hanging off one end.
+			local area = Furniture.footprint(held.ItemId, 0, 0, held.R) :: { number }
+			return BaseGrid.snap(point.X - (area[1] + area[3]) / 2), BaseGrid.snap(point.Z - (area[2] + area[4]) / 2)
+		end
 		return BaseGrid.snap(point.X), BaseGrid.snap(point.Z)
 	end
 	local function aim(position: Vector2)
@@ -534,7 +660,7 @@ function BuildMode.start()
 			return
 		end
 		local skip = if type(held.From) == "number" then held.From else nil
-		spot = { X = x, Z = z, Reason = Furniture.check(state.Placed, held.ItemId, x, z, held.R, skip) }
+		spot = { X = x, Z = z, Reason = Furniture.check(placed(), held.ItemId, x, z, held.R, skip, site) }
 		updatePreview()
 		render()
 	end
@@ -579,7 +705,7 @@ function BuildMode.start()
 			return
 		end
 		local action = if type(held.From) == "number" then "Move" else "Place"
-		if send(action, held.From, spot.X, spot.Z, held.R) then
+		if send(action, held.From, spot.X, spot.Z, held.R, site) then
 			drop()
 			choose(nil)
 		end
@@ -587,7 +713,7 @@ function BuildMode.start()
 
 	local function clickFurniture(position: Vector2)
 		local camera = workspace.CurrentCamera
-		local folder = house and house:FindFirstChild("Furniture")
+		local folder = furnitureFolder()
 		if not camera or not folder or not state then
 			return
 		end
@@ -605,7 +731,7 @@ function BuildMode.start()
 			choose(nil)
 			return
 		end
-		for index, entry in state.Placed do
+		for index, entry in placed() do
 			if
 				model:GetAttribute("ItemId") == entry.ItemId
 				and model:GetAttribute("X") == entry.X
@@ -626,6 +752,10 @@ function BuildMode.start()
 		if folder and part:IsDescendantOf(folder) then
 			return
 		end
+		if site == "Company" then
+			local construction = house:FindFirstChild("BuildingPieces")
+			if not construction or not part:IsDescendantOf(construction) then return end
+		end
 		if houseFrame:PointToObjectSpace(part.Position).Y > ROOF_HEIGHT then
 			if hidden[part] == nil then
 				hidden[part] = part.LocalTransparencyModifier
@@ -634,7 +764,11 @@ function BuildMode.start()
 		end
 	end
 	local function hideRoof()
-		if not house then
+		if not house or (structures and structures:roofVisible()) then
+			return
+		end
+		-- On an island only constructed overhead pieces need hiding.
+		if site == "Company" and not house:FindFirstChild("BuildingPieces") then
 			return
 		end
 		if not roofConnection then
@@ -668,6 +802,39 @@ function BuildMode.start()
 	local function showGrid()
 		local folder = make("Folder", workspace, { Name = "BuildGrid" })
 		grid = folder
+		if structures and structures:isActive() then
+			local size = structures:gridSize()
+			local offset = Building.gridOffset(site)
+			local elevation = Building.planeHeight(site, structures:elevation() / Building.LEVEL_HEIGHT)
+			local function line(x: number, z: number, width: number, depth: number)
+				make("Part", folder, {
+					Name = "ConstructionGrid", Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false,
+					CastShadow = false, Size = Vector3.new(width, 0.025, depth),
+					CFrame = houseFrame * CFrame.new(x, elevation, z),
+					Color = rgb(184, 150, 222), Material = Enum.Material.SmoothPlastic, Transparency = 0.35,
+				})
+			end
+			for _, area in Building.Bounds[site or "Home"] do
+				for column = math.ceil((area[1] - offset) / size), math.floor((area[3] - offset) / size) do
+					line(column * size + offset, (area[2] + area[4]) / 2, 0.035, area[4] - area[2])
+				end
+				for row = math.ceil((area[2] - offset) / size), math.floor((area[4] - offset) / size) do
+					line((area[1] + area[3]) / 2, row * size + offset, area[3] - area[1], 0.035)
+				end
+			end
+			return
+		end
+		if site == "Company" then
+			-- Cell boundaries sit halfway between the snap points, clipped to the plot.
+			local area, half = Furniture.PLOT, BaseGrid.CELL_SIZE / 2
+			for x = area[1] + half, area[3], BaseGrid.CELL_SIZE do
+				plate(folder, { x - 0.02, area[2], x + 0.02, area[4] }, floorY + 0.13, rgb(235, 245, 255), 0.3)
+			end
+			for z = area[2] + half, area[4], BaseGrid.CELL_SIZE do
+				plate(folder, { area[1], z - 0.02, area[3], z + 0.02 }, floorY + 0.13, rgb(235, 245, 255), 0.3)
+			end
+			return
+		end
 		-- Draw the cell boundaries, not the centers used to snap furniture.
 		local halfWidth, halfLength = BaseGrid.HALF_WIDTH, BaseGrid.HALF_LENGTH
 		for column = 0, BaseGrid.COLUMNS do
@@ -780,9 +947,10 @@ function BuildMode.start()
 	end
 
 	local function panBy(delta: Vector2)
+		local limit = if site == "Company" then Vector2.new(60, 40) else PAN_LIMIT
 		pan = Vector2.new(
-			math.clamp(pan.X + delta.X, -PAN_LIMIT.X, PAN_LIMIT.X),
-			math.clamp(pan.Y + delta.Y, -PAN_LIMIT.Y, PAN_LIMIT.Y)
+			math.clamp(pan.X + delta.X, -limit.X, limit.X),
+			math.clamp(pan.Y + delta.Y, -limit.Y, limit.Y)
 		)
 	end
 	local function dragView(from: Vector2, to: Vector2)
@@ -867,6 +1035,21 @@ function BuildMode.start()
 		end)
 	end
 
+	local hotbarBefore: boolean? = nil
+	local function hideHotbar()
+		if hotbarBefore == nil then
+			local ok, enabled = pcall(StarterGui.GetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack)
+			hotbarBefore = if ok then enabled else true
+		end
+		pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, false)
+	end
+	local function restoreHotbar()
+		if hotbarBefore ~= nil then
+			pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, hotbarBefore)
+			hotbarBefore = nil
+		end
+	end
+
 	local function updateCamera(dt: number?)
 		local camera = workspace.CurrentCamera
 		if not camera then
@@ -905,9 +1088,11 @@ function BuildMode.start()
 		-- Fit the floor AND room walls in the viewport between the two toolbars.
 		-- Perspective depth matters here: the near corners need more room.
 		local distance = 18
-		for _, x in { -26, 26 } do
-			for _, z in { -18, 18 } do
-				for _, y in { 0, ROOF_HEIGHT } do
+		local fitHeight = if structures and structures:isActive() then 18 else ROOF_HEIGHT
+		local fitX, fitZ = if site == "Company" then 34 else 26, if site == "Company" then 24 else 18
+		for _, x in { -fitX, fitX } do
+			for _, z in { -fitZ, fitZ } do
+				for _, y in { 0, fitHeight } do
 					local point = orientation:PointToObjectSpace(Vector3.new(x, y, z))
 					distance = math.max(
 						distance,
@@ -931,7 +1116,8 @@ function BuildMode.start()
 				panBy(floorDirection * math.min(cameraDistance, 100) * 0.45 * step)
 			end
 		end
-		local center = houseFrame * Vector3.new(pan.X, FLOOR_Y, pan.Y)
+		local elevation = if structures and structures:isActive() then structures:elevation() else 0
+		local center = houseFrame * Vector3.new(pan.X, floorY + elevation, pan.Y)
 		local worldOrientation = houseFrame * orientation
 		local shift = ((top + bottom) / 2 - viewport.Y / 2) * cameraDistance / focal
 		local target = center + worldOrientation.UpVector * shift
@@ -942,17 +1128,20 @@ function BuildMode.start()
 		if held then
 			aim(if touch then Vector2.new(touch.Position.X, touch.Position.Y) else mousePosition())
 		end
+		if structures then
+			structures:step(if touch then Vector2.new(touch.Position.X, touch.Position.Y) else mousePosition())
+		end
 	end
 
 	local exit
 	local function enter()
 		if active or not atHome() then
 			if not active then
-				notice("Go home to your base to use build mode.")
+				notice("Go home to your base, or to your company island's plot, to use build mode.")
 			end
 			return
 		end
-		local model, frame = ownHouse()
+		local model, frame, where = currentSite()
 		local camera = workspace.CurrentCamera
 		if not camera or not model or not frame then
 			return
@@ -961,7 +1150,8 @@ function BuildMode.start()
 			return
 		end
 		Freecam.stop()
-		active, house, houseFrame = true, model, frame
+		active, house, houseFrame, site = true, model, frame, where
+		floorY = if where == "Company" then 0 else FLOOR_Y
 		clearNavigation()
 		pan, zoom, yaw = Vector2.zero, 1, 0
 		saved = {
@@ -976,6 +1166,7 @@ function BuildMode.start()
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 		UserInputService.MouseIconEnabled = true
 		controls(false)
+		hideHotbar()
 		ContextActionService:BindActionAtPriority(
 			"FurnitureBuildMovement",
 			cameraInput,
@@ -1006,6 +1197,7 @@ function BuildMode.start()
 		hideRoof()
 		showGrid()
 		panel.Visible, navigation.Visible, toggle.Visible = true, true, false
+		structures:enter(model, frame, where)
 		player:SetAttribute("BuildModeOpen", true)
 		updateCamera()
 		RunService:BindToRenderStep("FurnitureBuildCamera", Enum.RenderPriority.Camera.Value + 1, updateCamera)
@@ -1023,6 +1215,7 @@ function BuildMode.start()
 			return
 		end
 		active = false
+		structures:exit()
 		clearNavigation()
 		ContextActionService:UnbindAction("FurnitureBuildMovement")
 		drop()
@@ -1047,9 +1240,26 @@ function BuildMode.start()
 		UserInputService.MouseIconEnabled = true
 		releaseCharacter()
 		controls(true)
+		restoreHotbar()
 		panel.Visible, navigation.Visible = false, false
 		player:SetAttribute("BuildModeOpen", false)
 	end
+	structures = StructureEditor.new({
+		Gui = gui,
+		Notice = notice,
+		OnExit = function() exit() end,
+		OnModeChanged = function(enabled)
+			drop()
+			choose(nil)
+			editingRack, rackEditor.Visible = false, false
+			panel.Visible = active and not enabled
+			if structures and structures:roofVisible() then showRoof() else hideRoof() end
+			if active and structures then
+				if grid then grid:Destroy(); grid = nil end
+				showGrid()
+			end
+		end,
+	})
 
 	for id, item in itemButtons do
 		item.Activated:Connect(function()
@@ -1070,16 +1280,27 @@ function BuildMode.start()
 		choose(nil)
 	end)
 	move.Activated:Connect(function()
-		local entry = selected and state and state.Placed[selected]
+		local entry = selected and placed()[selected]
 		if entry and not pending then
 			hold(entry.ItemId, selected, entry.R)
 		end
 	end)
 	pickUp.Activated:Connect(function()
-		if selected and not pending and send("PickUp", selected) then
+		if selected and not pending and send("PickUp", selected, site) then
 			choose(nil)
 		end
 	end)
+	editRack.Activated:Connect(function()
+		if selected and not pending then
+			editingRack = not editingRack
+			render()
+		end
+	end)
+	for item, action in { [rackMode] = "Mode", [addCage] = "AddCage", [takeCage] = "TakeCage", [addNet] = "AddNet", [takeNet] = "TakeNet" } do
+		item.Activated:Connect(function()
+			if selected and not pending then send("EditRack", selected, action, site) end
+		end)
+	end
 	done.Activated:Connect(exit)
 	toggle.Activated:Connect(enter)
 	zoomIn.Activated:Connect(function()
@@ -1096,7 +1317,9 @@ function BuildMode.start()
 	GuiService.MenuOpened:Connect(clearNavigation)
 
 	local function clickWorld(position: Vector2)
-		if held then
+		if structures and structures:isActive() then
+			structures:click(position)
+		elseif held then
 			aim(position)
 			placeHeld()
 		else
@@ -1115,6 +1338,8 @@ function BuildMode.start()
 				enter()
 			end
 		elseif not active then
+			return
+		elseif structures and structures:key(input) then
 			return
 		elseif input.KeyCode == Enum.KeyCode.R and held then
 			held.R = (held.R + 1) % 4
@@ -1173,7 +1398,7 @@ function BuildMode.start()
 		if kind == "State" and type(payload) == "table" then
 			state = payload
 			if selected then
-				choose(if state.Placed[selected] then selected else nil)
+				choose(if placed()[selected] then selected else nil)
 			end
 			render()
 		end
@@ -1191,6 +1416,7 @@ function BuildMode.start()
 				if not home or not humanoid or humanoid.Health <= 0 then
 					exit()
 				else
+					hideHotbar()
 					hideRoof()
 					-- Furniture rebuilt by the server since the last check keeps its highlight.
 					if selected and highlight and not highlight.Parent then

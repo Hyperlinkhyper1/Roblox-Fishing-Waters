@@ -107,15 +107,18 @@ try {
     .replace(/require\(script\.(\w+)\)/g, 'dependencies.$1');
   await run('map', prelude + `
 local dependencies = {}
-dependencies.Props = {ensureHouseCollision=function() record("house-collision") end}
+dependencies.Props = {ensureHouseCollision=function() record("house-collision") end, ensureDecorationCollision=function() end}
 dependencies.Mediterranean = {
   ensureStoneWalls=function() record("stone-walls") end,
   ensurePergolas=function() record("pergolas") end,
   ensureBalconies=function() record("balconies") end,
+  ensureBoatCollision=function() end,
 }
 dependencies.Seabed = {shelf=function() record("shelf") end}
 dependencies.SeabedDetails = {ensure=function() record("seabed") end}
 dependencies.ModernCity = {VERSION=4, build=function() record("city") end}
+dependencies.PirateCove = {build=function() record("pirate-cove") end}
+dependencies.MetroStations = {ensureCity=function() record("city-metro") end}
 dependencies.Lod = {build=function() record("lod") end, prepareStreaming=function() record("streaming") end, serve=function() end}
 dependencies.Regions = {normal=function(ctx, ready)
   check(ctx.rng.seed == Biomes.Seed + 1, "Harbour must retain its seeded RNG")
@@ -154,6 +157,10 @@ print("Map startup: " .. checks .. " checks passed")
   await run('normal-region', prelude + `
 local Regions = {}
 local Harbour = {FOOTPRINT=820, build=function() record("harbour-built"); return "spawn" end}
+local CompanyIslands = {
+  reserve=function() record("reserve-company-islands") end,
+  ensure=function() record("company-islands") end,
+}
 local NORMAL = {land={}, rock={}}
 local function archipelago() record("archipelago"); return {} end
 local function forest() end
@@ -350,7 +357,7 @@ local modules = {Biomes=Biomes}
 local script = {ServerUpdates="ServerUpdates", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
   BoatService="BoatService", FishingService="FishingService", WeatherService="WeatherService",
   AnglerService="AnglerService", LeaderboardService="LeaderboardService"}
-for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "RestaurantService", "CompanyService", "TutorialService", "HalloweenService", "OxygenService", "DashboardService"} do
+for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "OxygenService", "DashboardService"} do
   script[name] = name
   modules[name] = {start=function() record(name) end}
 end
@@ -378,7 +385,7 @@ local function cosmetic(name)
   record(name)
 end
 modules.Harbour = {}
-for _, name in {"ensurePlazaPaving", "ensureBoating", "ensureFishing", "ensureBases"} do
+for _, name in {"ensurePlazaPaving", "ensureBoating", "ensureFishing", "ensureBases", "ensureMetro"} do
   modules.Harbour[name] = function()
     check(not Players.CharacterAutoLoads and not ready(), "Complete gameplay repairs before spawning: " .. name)
     record(name)
@@ -388,7 +395,9 @@ modules.Harbour.ensureSurf = function() cosmetic("surf") end
 modules.Mediterranean = {ensureBoats=function() cosmetic("decorative-boats") end}
 modules.Map = {
   prepareStreaming=function() check(not ready(), "Fix harbour streaming before readiness"); record("streaming") end,
+  ensureCompanyIslands=function() check(not ready(), "Install company islands before spawning"); record("company-islands") end,
   ensureCity=function() cosmetic("city") end,
+  ensurePirateCove=function() cosmetic("pirate-cove") end,
   ensureSeabedDetails=function() cosmetic("seabed") end,
   ensureLod=function() cosmetic("lod") end,
   ensureSignText=function() cosmetic("signs") end,
@@ -429,7 +438,7 @@ else
   if mode == "generated" then
     check(index("ensureBases") == math.huge and index("ensureBoating") == math.huge, "Fresh builders must avoid duplicate legacy repairs")
   else
-    for _, name in {"ensurePlazaPaving", "ensureBoating", "ensureFishing", "ensureBases"} do
+    for _, name in {"ensurePlazaPaving", "ensureBoating", "ensureFishing", "ensureBases", "ensureMetro"} do
       check(index(name) < index("BaseService"), "Retain required baked-map migration " .. name)
     end
   end
@@ -517,6 +526,86 @@ check(player:GetAttribute("FishingWatersSpawnReady") == true, "The replacement's
 print("Server spawn ${withBase ? 'base' : 'plaza'}: " .. checks .. " checks passed")
 `);
   }
+
+  await run('base-capacity', prelude + `
+local function signal()
+  local callbacks = {}
+  return {
+    Connect=function(_, callback) table.insert(callbacks, callback) end,
+    Fire=function(_, ...)
+      for _, callback in callbacks do callback(...) end
+    end,
+  }
+end
+task.spawn = function(callback, ...) callback(...) end
+local map = object("Folder", "Map", workspace)
+local fallback = object("SpawnLocation", "HarbourSpawn", map)
+local bases, tagged = {}, {}
+for id = 1, 15 do
+  local base = object("Model", "Base" .. id, map)
+  base:SetAttribute("BaseId", id)
+  base:SetAttribute("OwnerUserId", 0)
+  object("SpawnLocation", "SpawnPoint", base)
+  bases[id] = base
+  table.insert(tagged, 1, base)
+end
+local function player(id)
+  local item = object("Player", "Player" .. id)
+  item.UserId, item.DisplayName = 1000 + id, "Player " .. id
+  item.CharacterAdded = signal()
+  function item:GetAttributeChangedSignal() return signal() end
+  function item:LoadCharacter() self.loaded = true end
+  return item
+end
+local occupants = {}
+for id = 1, 15 do occupants[id] = player(id) end
+Players.PlayerAdded, Players.PlayerRemoving = signal(), signal()
+function Players:GetPlayers() return table.clone(occupants) end
+local CollectionService = {GetTagged=function() return table.clone(tagged) end}
+game.GetService = function(_, name)
+  return ({Players=Players, CollectionService=CollectionService})[name]
+end
+local Service = (function()
+${baseService}
+end)()
+Service.start()
+local claimed = {}
+for id, occupant in occupants do
+  local baseId = occupant:GetAttribute("BaseId")
+  check(baseId == id, "All 15 players must receive the next available base regardless of tag order")
+  check(not claimed[baseId], "Each player must receive a distinct base")
+  claimed[baseId] = true
+  check(bases[baseId]:GetAttribute("OwnerUserId") == occupant.UserId, "Base ownership must match its assigned player")
+  check(occupant.RespawnLocation == bases[baseId]:FindFirstChild("SpawnPoint"), "Each player must respawn at their own base")
+  check(occupant.loaded, "Players already in the lobby must receive a character")
+end
+check(Players.CharacterAutoLoads, "Enable normal respawns after assigning the lobby")
+local overflow = player(16)
+Players.PlayerAdded:Fire(overflow)
+check(overflow.RespawnLocation == fallback and overflow:GetAttribute("BaseId") == nil,
+  "A full lobby must use the plaza without taking another player's base")
+for id, occupant in occupants do
+  check(bases[id]:GetAttribute("OwnerUserId") == occupant.UserId, "Overflow joins must preserve every assigned base")
+end
+local releasedId = 8
+Players.PlayerRemoving:Fire(occupants[releasedId])
+check(bases[releasedId]:GetAttribute("OwnerUserId") == 0, "Leaving must free a claimed base")
+local replacement = player(17)
+Players.PlayerAdded:Fire(replacement)
+check(replacement:GetAttribute("BaseId") == releasedId, "The next join must reclaim the released slot")
+check(bases[releasedId]:GetAttribute("OwnerUserId") == replacement.UserId, "Reclaimed ownership must belong to the new player")
+check(replacement.RespawnLocation == bases[releasedId]:FindFirstChild("SpawnPoint"), "Reclaimed slots must supply the new player's respawn")
+for id, occupant in occupants do
+  if id ~= releasedId then
+    check(bases[id]:GetAttribute("OwnerUserId") == occupant.UserId, "Reclaiming one slot must preserve the other 14 owners")
+  end
+end
+local fullAgain = player(18)
+Players.PlayerAdded:Fire(fullAgain)
+check(fullAgain.RespawnLocation == fallback and fullAgain:GetAttribute("BaseId") == nil,
+  "Reclaimed capacity must leave the lobby full again")
+print("15-player base assignment: " .. checks .. " checks passed")
+`);
 } finally {
   if (dirname(temporary) !== resolve(tmpdir())) throw new Error('Unexpected temporary directory');
   await rm(temporary, {recursive: true, force: true});

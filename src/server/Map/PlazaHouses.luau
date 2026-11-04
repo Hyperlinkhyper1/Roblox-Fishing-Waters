@@ -9,7 +9,7 @@ local Props = require(script.Parent.Props)
 
 local PlazaHouses = {}
 
-local LAYOUT_VERSION = 1
+local LAYOUT_VERSION = 2
 local TAU = math.pi * 2
 local rgb = Color3.fromRGB
 local M = Enum.Material
@@ -534,7 +534,11 @@ function PlazaHouses.build(plaza: Model, pavingFrame: CFrame): Model
 	local groundY = center.Y - 0.8
 	for index, plot in plots() do
 		local x, z, facing, width, stories = plot[1], plot[2], plot[3], plot[4], plot[5]
-		local spec = PlazaHouses.spec(rng, width, DEPTH, stories)
+		-- Leave room for cornices and roof overhangs: adjacent roofs and plinths
+		-- previously occupied the same planes along the entire housing row.
+		local spec = PlazaHouses.spec(rng, width - 2.4, DEPTH, stories)
+		-- A recessed metro pavilion occupies the middle plot of the east row.
+		if index == 8 then continue end
 		local frame = CFrame.new(center.X, groundY, center.Z) * CFrame.new(x, 0, z) * CFrame.Angles(0, facing, 0)
 		-- Plots touch along the row, so test each one fractionally inside its own walls
 		local footprint = frame * CFrame.new(0, 20, 0)
@@ -569,6 +573,8 @@ end
 -- The current paving is 116 studs wide; older baked maps used 120. Its top centre anchors
 -- everything added to a saved square.
 function PlazaHouses.pavingFrame(plaza: Model): CFrame?
+	local saved = plaza:GetAttribute("PavingFrame")
+	if typeof(saved) == "CFrame" then return saved end
 	for _, slab in plaza:GetChildren() do
 		if
 			slab:IsA("BasePart")

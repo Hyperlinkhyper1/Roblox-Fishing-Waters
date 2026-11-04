@@ -8,7 +8,7 @@ local DECK = Color3.fromRGB(121, 125, 129)
 local DARK = Color3.fromRGB(43, 46, 50)
 local GLASS = Color3.fromRGB(63, 73, 80)
 local METAL = Color3.fromRGB(154, 158, 162)
-local LAMP = Color3.fromRGB(236, 238, 240)
+local LAMP = Color3.fromRGB(212, 208, 196)
 local PORT_LAMP = Color3.fromRGB(214, 48, 44)
 local STARBOARD_LAMP = Color3.fromRGB(52, 196, 92)
 local STROBE = Color3.fromRGB(46, 112, 235)
@@ -468,7 +468,7 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 	local searchlight = Instance.new("SpotLight")
 	searchlight.Name = "SearchlightBeam"
 	searchlight.Face = Enum.NormalId.Front
-	searchlight.Color, searchlight.Range, searchlight.Brightness, searchlight.Angle = LAMP, 45, 1.4, 65
+	searchlight.Color, searchlight.Range, searchlight.Brightness, searchlight.Angle = LAMP, 30, 0.45, 40
 	searchlight.Shadows = false
 	searchlight.Parent = lens
 	-- Radar mast near the back of the roof, with whip antennas at the corners.
@@ -581,7 +581,7 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 			part("DeckLightLens", Vector3.new(0.9, 0.14, 0.6), CFrame.new(0, 6.3, z), LAMP, Enum.Material.Neon)
 		local deckLight = Instance.new("PointLight")
 		deckLight.Name = "DeckLight"
-		deckLight.Color, deckLight.Range, deckLight.Brightness = LAMP, 20, 0.55
+		deckLight.Color, deckLight.Range, deckLight.Brightness = LAMP, 12, 0.3
 		deckLight.Shadows = false
 		deckLight.Parent = deckLamp
 	end
@@ -612,7 +612,7 @@ function PatrolBoat.build(frame: CFrame, anchored: boolean?): Model
 		local headlight = Instance.new("SpotLight")
 		headlight.Name = "Headlight"
 		headlight.Face = Enum.NormalId.Front
-		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = LAMP, 45, 1.2, 65
+		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = LAMP, 30, 0.45, 40
 		headlight.Shadows = false
 		headlight.Parent = bowLens
 	end

@@ -210,6 +210,7 @@ function Controller.start()
 	local storm: Storm? = nil
 	local funnels: { [number]: Funnel } = {}
 	local parts: { BasePart }, frames: { CFrame } = {}, {}
+	local elapsed = 1 / 30
 	local function clearStorm()
 		if storm then
 			storm.model:Destroy()
@@ -224,7 +225,12 @@ function Controller.start()
 			end
 		end
 	end
-	RunService.RenderStepped:Connect(function()
+	RunService.RenderStepped:Connect(function(dt: number)
+		elapsed += dt
+		if elapsed < 1 / 30 then
+			return
+		end
+		elapsed = 0
 		local now = workspace:GetServerTimeNow()
 		local cell = Weather.supercell(now)
 		local camera = workspace.CurrentCamera

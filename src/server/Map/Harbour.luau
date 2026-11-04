@@ -14,6 +14,7 @@ local BackpackShop = require(script.Parent.BackpackShop)
 local Islands = require(script.Parent.Islands)
 local LowPoly = require(script.Parent.LowPoly)
 local Med = require(script.Parent.Mediterranean)
+local MetroStations = require(script.Parent.MetroStations)
 local PlazaHouses = require(script.Parent.PlazaHouses)
 local Props = require(script.Parent.Props)
 local RodShop = require(script.Parent.RodShop)
@@ -26,8 +27,9 @@ local pick = Props.pick
 local M = Enum.Material
 local TAU = math.pi * 2
 
-local SCALE = 0.85 -- studs per sketch pixel
-local SKETCH_CENTER = Vector2.new(870, 1330) -- sketch pixel that lands on the biome center
+local SCALE = 1 -- studs per sketch pixel; room for fifteen waterfront plots
+local ORIGINAL_SCALE = 0.85
+local SKETCH_CENTER = Vector2.new(870, 1330) -- reference point of the original harbour sketch
 local CELL = 16 -- ground mesh resolution
 local SEABED_RUN = 128 -- continuous underwater descent from shore to the deep floor
 local GROUND_MARGIN = SEABED_RUN + CELL
@@ -40,8 +42,9 @@ local VILLAGE_BAND = 165 -- land closer than this to the bay stays flat; further
 local PLAZA_HALF = 60 -- the piazza is a square this far from its centre to each edge
 
 -- Roughly how far the island reaches from its center, for keeping other islands away.
-Harbour.FOOTPRINT = 820
+Harbour.FOOTPRINT = 1000
 Harbour.BASE_TAG = "PlayerBase"
+Harbour.LAYOUT_VERSION = 1
 
 -- Sea-facing coast, clockwise from the tip of the western arm round to the southern headland.
 -- The north and east shores bulge past the sketch so the piazza and the eastern bases
@@ -118,8 +121,16 @@ local BAY = {
 	{ 520, 1300 },
 }
 
--- The "n" shapes on the sketch, as points on the bay shore.
-local BASES = { { 668, 1030 }, { 1000, 950 }, { 1150, 1105 }, { 1360, 1330 }, { 1340, 1500 }, { 880, 1638 } }
+-- Keep the first six IDs and fill the unused waterfront, leaving the bathing
+-- beach, repair channel and western shipping entrance clear.
+local BASES = {
+	{ 668, 1030 }, { 1000, 950 }, { 1150, 1105 },
+	{ 1360, 1330 }, { 1340, 1500 }, { 880, 1638 },
+	{ 663, 1150 }, { 550, 1280 }, { 1070, 1065 },
+	{ 1290, 1182 }, { 450, 1553 }, { 600, 1580 },
+	{ 735, 1630 }, { 1040, 1640 }, { 1200, 1680 },
+}
+Harbour.BASE_COUNT = #BASES
 local LIGHTHOUSE = { 360, 1640 }
 -- The bathing beach round the head of the bay, between the first two bases.
 local BEACH = { { 660, 975 }, { 652, 905 }, { 685, 850 }, { 760, 820 }, { 870, 818 }, { 940, 852 }, { 985, 902 } }
@@ -292,7 +303,10 @@ end
 
 local function makeShape(center: Vector2): Shape
 	local function toWorld(p: { number }): Vector2
-		return center + (Vector2.new(p[1], p[2]) - SKETCH_CENTER) * SCALE
+		-- Grow around the plaza so shops, metro dry pockets and the public spawn
+		-- retain their world positions while the waterfront gains space.
+		local plaza = Vector2.new(PLAZA[1], PLAZA[2])
+		return center + (plaza - SKETCH_CENTER) * ORIGINAL_SCALE + (Vector2.new(p[1], p[2]) - plaza) * SCALE
 	end
 	local flats = { { position = toWorld(PLAZA), radius = PLAZA_HALF * 1.6 } }
 	local coast, bayShore = {}, { toWorld(OUTER[#OUTER]) }
@@ -1837,9 +1851,16 @@ function Harbour.chartCoast(center: Vector2): { { number } }
 	return coast
 end
 
+-- Close the bay's shore across its western mouth to outline the lake bottom.
+function Harbour.lakeOutline(center: Vector2): { Vector2 }
+	return makeShape(center).bayShore
+end
+
 function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	local island = Instance.new("Model")
 	island.Name = "Harbour Isle"
+	island:SetAttribute("HarbourLayoutVersion", Harbour.LAYOUT_VERSION)
+	island:SetAttribute("LayoutCenter", center)
 	island.Parent = parent
 
 	local shape = makeShape(center)
@@ -1963,8 +1984,9 @@ function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	PlazaHouses.build(village:FindFirstChild("Plaza") :: Model, CFrame.new(ground(plaza, 0.8)))
 	clearShopPlots(island)
 	buildBoats(shape, island, rng, baseShores)
-	Harbour.ensureBaseOneBoatClearance(island)
 	Harbour.ensureLaunchClearance(island)
+	Harbour.ensureBaseBoatClearance(island)
+	Harbour.ensureMetro(island)
 
 	-- Buoys marking the way into the bay
 	local mouthA, mouthB = shape.toWorld(OUTER[1]), shape.toWorld(OUTER[#OUTER])
@@ -1976,6 +1998,21 @@ function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	end
 
 	return CFrame.new(ground(plaza + Vector2.new(0, 34), 3.5))
+end
+
+-- Runs after legacy ground/shop repairs, before characters spawn on baked maps.
+function Harbour.ensureMetro(root: Instance)
+	local island = if root.Name == "Harbour Isle" then root else root:FindFirstChild("Harbour Isle", true)
+	local village = island and island:FindFirstChild("Village")
+	local plaza = village and village:FindFirstChild("Plaza")
+	if not island or not plaza then return end
+	local center = require(game:GetService("ReplicatedStorage").Shared.Biomes).Normal.center
+	local frame = CFrame.new(ground(makeShape(center).toWorld(PLAZA), 0.92))
+	-- Cutting the original paving slab must not lose the square's house anchor.
+	plaza:SetAttribute("PavingFrame", CFrame.new(frame.Position.X, LAND + 0.8, frame.Position.Z))
+	MetroStations.ensureHarbour(island, plaza, frame)
+	local pocket = require(game:GetService("ReplicatedStorage").Shared.Biomes).DryPockets[2]
+	workspace.Terrain:FillBlock(CFrame.new((pocket.min + pocket.max) / 2), pocket.max - pocket.min, M.Air)
 end
 
 -- Upgrade only the generated dock pieces, keeping claimed bases and their controls intact.
@@ -2021,10 +2058,9 @@ function Harbour.ensureDocks(root: Instance)
 	end
 end
 
--- Remove the red scenery boat and the remaining boat in front of base 1,
--- including on baked maps. Each removal has its own saved migration marker.
--- Run after generation so the shared RNG and all other scenery stay in place.
-function Harbour.ensureBaseOneBoatClearance(root: Instance)
+-- Keep every base's launch and water approach free of anchored scenery, including
+-- on baked maps. Move whole boats after generation without consuming its RNG.
+function Harbour.ensureBaseBoatClearance(root: Instance)
 	local islands = root:GetDescendants()
 	table.insert(islands, root)
 	for _, island in islands do
@@ -2032,49 +2068,78 @@ function Harbour.ensureBaseOneBoatClearance(root: Instance)
 			continue
 		end
 		local bases = island:FindFirstChild("Bases")
-		local base = bases and bases:FindFirstChild("Base1")
-		local frame = base and base:GetAttribute("BoatDockFrame")
 		local boats = island:FindFirstChild("Boats")
-		if typeof(frame) ~= "CFrame" or not boats then
+		if not bases or not boats then
 			continue
 		end
-		for _, marker in { "BaseOneRedBoatRemoved", "BaseOneFrontBoatRemoved" } do
-			if island:GetAttribute(marker) then
-				continue
+		local lanes = {}
+		for _, base in bases:GetChildren() do
+			local frame = base:GetAttribute("BoatDockFrame")
+			if typeof(frame) == "CFrame" then
+				-- BoatSpawn is 52 studs out; longer hulls move farther seaward.
+				-- Leave room beyond the largest hull for sailing off the berth.
+				table.insert(lanes, { frame = frame, width = 35, near = 20, far = -140 })
 			end
-			local nearest: Model? = nil
-			local distance = 220
-			for _, boat in boats:GetChildren() do
-				if not boat:IsA("Model") or boat.Name ~= "Boat" then
-					continue
+		end
+		for _, shop in island:GetDescendants() do
+			local launch = shop.Name == "Drydock" and shop:GetAttribute("LaunchWaterFrame")
+			if typeof(launch) == "CFrame" then
+				table.insert(lanes, { frame = launch, width = 45, near = 55, far = -70 })
+			end
+		end
+		local function blocksLane(position: Vector3, radius: number): boolean
+			for _, lane in lanes do
+				local p = lane.frame:PointToObjectSpace(position)
+				if math.abs(p.X) < lane.width + radius and p.Z > lane.far - radius and p.Z < lane.near + radius then
+					return true
 				end
-				local floor = boat:FindFirstChild("BoatFloor")
-				local red = false
-				for _, piece in boat:GetChildren() do
-					if piece:IsA("BasePart") then
-						red = red or piece.Color == BOATS[2]
-						-- Legacy baked boats have an unnamed floor.
-						if
-							not floor
-							and math.abs(piece.Size.Y - 0.4) < 0.001
-							and piece.Size.X >= 4.6
-							and piece.Size.X <= 5.6
-						then
-							floor = piece
+			end
+			return false
+		end
+		local scenery = {}
+		for _, boat in boats:GetChildren() do
+			if boat:IsA("Model") and boat.Name == "Boat" and boat:FindFirstChildWhichIsA("BasePart", true) then
+				local box, size = boat:GetBoundingBox()
+				table.insert(scenery, {
+					model = boat, position = box.Position,
+					radius = Vector2.new(size.X, size.Z).Magnitude / 2,
+				})
+			end
+		end
+		local center = island:GetAttribute("LayoutCenter")
+		if typeof(center) ~= "Vector2" then
+			center = require(game:GetService("ReplicatedStorage").Shared.Biomes).Normal.center
+		end
+		local shape = makeShape(center)
+		for _, boat in scenery do
+			if not blocksLane(boat.position, boat.radius) then continue end
+			local destination: Vector3? = nil
+			-- Search nearby water first, checking every berth and the drydock so
+			-- moving one obstruction never puts it in front of another base.
+			for ring = 1, 32 do
+				for step = 0, 23 do
+					local angle = step * TAU / 24
+					local candidate = boat.position + Vector3.new(math.cos(angle), 0, math.sin(angle)) * (ring * 24)
+					if blocksLane(candidate, boat.radius) then continue end
+					local flat = Vector2.new(candidate.X, candidate.Z)
+					if coastDistance(shape, flat) > -(boat.radius + 16) then continue end
+					local clear = true
+					for _, other in scenery do
+						local delta = candidate - other.position
+						if other ~= boat and Vector2.new(delta.X, delta.Z).Magnitude < boat.radius + other.radius + 12 then
+							clear = false
+							break
 						end
 					end
+					if clear then destination = candidate; break end
 				end
-				if (marker == "BaseOneFrontBoatRemoved" or red) and floor and floor:IsA("BasePart") then
-					local position = frame:PointToObjectSpace(floor.Position)
-					local separation = Vector2.new(position.X, position.Z).Magnitude
-					if position.Z < 0 and separation < distance then
-						nearest, distance = boat, separation
-					end
-				end
+				if destination then break end
 			end
-			if nearest then
-				nearest:Destroy()
-				island:SetAttribute(marker, true)
+			if destination then
+				boat.model:PivotTo(boat.model:GetPivot() + (destination - boat.position))
+				boat.position = destination
+			else
+				warn("[Harbour] Cannot find clear water for " .. boat.model:GetFullName())
 			end
 		end
 	end
@@ -2121,7 +2186,69 @@ function Harbour.ensureLaunchClearance(root: Instance)
 	end
 end
 
+-- Runs before BaseService starts, while baked scenery has no live occupants.
+-- Player furniture and progress are loaded afterwards onto the same base IDs.
+function Harbour.ensureCapacity(root: Instance)
+	local island = if root.Name == "Harbour Isle" then root else root:FindFirstChild("Harbour Isle", true)
+	if not island or not island:IsA("Model") then return end
+	local bases = island:FindFirstChild("Bases")
+	local current = island:GetAttribute("HarbourLayoutVersion") == Harbour.LAYOUT_VERSION
+		and bases and #bases:GetChildren() == Harbour.BASE_COUNT
+	if current then
+		for id = 1, Harbour.BASE_COUNT do
+			local base = bases:FindFirstChild("Base" .. id)
+			if not base or not base:IsA("Model") or base:GetAttribute("BaseId") ~= id then
+				current = false
+				break
+			end
+		end
+	end
+	local center = island:GetAttribute("LayoutCenter")
+	if typeof(center) ~= "Vector2" then
+		local shop = island:FindFirstChild("Drydock", true)
+		local footprint = shop and shop:FindFirstChild("ShopFootprint")
+		local plaza = footprint and Vector2.new(footprint.Position.X, footprint.Position.Z - 82)
+		center = if plaza then plaza - makeShape(Vector2.zero).toWorld(PLAZA) else Vector2.zero
+	end
+	local changed = false
+	if not current then
+		local parent = island.Parent
+		if not parent then return end
+		local settings = require(game:GetService("ReplicatedStorage").Shared.Biomes)
+		island:Destroy()
+		local spawnFrame = Harbour.build(parent, Random.new(settings.Seed + 1), center)
+		local spawn = root:FindFirstChild("HarbourSpawn")
+		if spawn and spawn:IsA("SpawnLocation") then spawn.CFrame = spawnFrame end
+		changed = true
+	end
+	if root:GetAttribute("HarbourRoomVersion") ~= Harbour.LAYOUT_VERSION then
+		local resumed = os.clock()
+		for _, scenery in root:GetDescendants() do
+			if os.clock() - resumed > 0.05 then task.wait(); resumed = os.clock() end
+			if not scenery:IsA("Model") or scenery.Name ~= "Island" then continue end
+			local radius = scenery:GetAttribute("Radius")
+			local groundMesh = scenery:FindFirstChild("Ground")
+			if type(radius) == "number" and groundMesh and groundMesh:IsA("Model") then
+				local bounds = groundMesh:GetBoundingBox()
+				local distance = (Vector2.new(bounds.X, bounds.Z) - center).Magnitude
+				if distance < Harbour.FOOTPRINT + radius * 1.35 + 80 or (radius <= 75 and distance < 2300) then
+					scenery:Destroy()
+					changed = true
+				end
+			end
+		end
+		root:SetAttribute("HarbourRoomVersion", Harbour.LAYOUT_VERSION)
+	end
+	if changed then
+		-- The old shells describe the removed shore and scenery. Rebuild them
+		-- through the existing deferred LOD repair after the harbour opens.
+		local shells = root:FindFirstChild("Lod")
+		if shells then shells:Destroy() end
+	end
+end
+
 function Harbour.ensureBoating(root: Instance)
+	Harbour.ensureCapacity(root)
 	for _, island in root:GetDescendants() do
 		if island:IsA("Model") and island.Name == "Harbour Isle" then
 			-- Saved maps may still contain the old coastal boulders.
@@ -2145,9 +2272,9 @@ function Harbour.ensureBoating(root: Instance)
 		end
 	end
 	Harbour.ensureDocks(root)
-	Harbour.ensureBaseOneBoatClearance(root)
 	Drydock.ensure(root)
 	Harbour.ensureLaunchClearance(root)
+	Harbour.ensureBaseBoatClearance(root)
 end
 
 -- Saved maps also receive the enterable tackle shop, its purchase counter and the furniture shop.

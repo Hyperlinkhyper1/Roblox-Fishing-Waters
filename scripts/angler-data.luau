@@ -35,6 +35,25 @@ check(
 	"Relative largest uses species average"
 )
 check(a.Catches.Trout.Count == 1 and a.Catches.Trout.BiggestKg == 3, "Never mutate previous saved records")
+check(c.Stats.TotalCaughtKg == 117 and c.Stats.PerfectCatches == 0, "All landed catches add weight without inventing perfect catches")
+local perfect = Data.recordCatch(c, "Trout", "Normal", 2.75, 20, 400, fish, mutations, nil, nil, nil, nil, nil, true)
+check(perfect.Stats.TotalCaughtKg == 119.75 and perfect.Stats.PerfectCatches == 1, "Perfect catches and fractional weight persist together")
+check(c.Stats.TotalCaughtKg == 117 and c.Stats.PerfectCatches == 0, "Catch stats must not mutate previous profiles")
+perfect.Paths.Baseline = table.clone(perfect.Stats)
+check(Data.decode(perfect).Paths.Baseline.TotalCaughtKg == 119.75, "Path baselines accept fractional catch weight")
+local oldStats = Data.decode(c)
+oldStats.Stats.TotalCaughtKg = nil
+oldStats.Stats.PerfectCatches = nil
+local upgradedStats = Data.decode(oldStats)
+check(upgradedStats.Stats.TotalCaught == 3 and upgradedStats.Catches.Trout.Count == 2, "New stats preserve historical catches")
+check(upgradedStats.Stats.TotalCaughtKg == 0 and upgradedStats.Stats.PerfectCatches == 0, "Unknown historical weight and quality start at zero")
+for _, key in { "TotalCaughtKg", "PerfectCatches" } do
+	for _, invalid in { -1, math.huge, 0 / 0, "1" } do
+		local malformed = Data.decode(c)
+		malformed.Stats[key] = invalid
+		check(not pcall(Data.decode, malformed), "Invalid catch statistics rejected")
+	end
+end
 c.Findings.HighestValue.Kg = 999
 check(c.Findings.Largest.Kg == 110, "Finding records must not alias one another")
 for _, kg in { -1, 0, math.huge, 0 / 0 } do
@@ -254,7 +273,7 @@ check(Data.placeFurniture(home, "StorageRack", 16, -12, 2) == nil, "Furniture ca
 home = assert(Data.placeFurniture(home, "StorageRack", 16, -6, 2))
 check(Data.storageCapacity(home) == 24, "Each rack holds twelve fish")
 local fp = Furniture.footprint("Register", 0, 0, 1)
-check(fp[3] - fp[1] == 3.05 + 4 and fp[4] - fp[2] == 7.5, "Quarter turns swap the footprint")
+check(fp[3] - fp[1] == 4.5 and fp[4] - fp[2] == 9, "Quarter turns swap the footprint")
 check(Data.placeFurniture(home, 1, -10, 6, 1) == nil, "Doorways stay clear")
 home = assert(Data.placeFurniture(home, 1, -10, 10, 1))
 check(home.Furniture[1].Z == 10 and #home.Furniture == 3, "Moving keeps one placed copy")

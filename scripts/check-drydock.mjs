@@ -18,6 +18,7 @@ const modules = {
   SHOPDESKGEOMETRY: 'src/server/Map/ShopDeskGeometry.luau',
   CASHREGISTERGEOMETRY: 'src/server/Map/CashRegisterGeometry.luau',
   SHOPDESK: 'src/server/Map/ShopDesk.luau',
+  BASEGRID: 'src/shared/BaseGrid.luau',
   BASEHOUSE: 'src/server/Map/BaseHouse.luau',
   MEDITERRANEAN: 'src/server/Map/Mediterranean.luau',
   BEACHDETAILS: 'src/server/Map/BeachDetails.luau',
@@ -53,16 +54,19 @@ const modules = {
 };
 try {
   let program = await readFile(join(root, 'scripts/drydock-geometry.luau'), 'utf8');
+  program = program.replace('false -- BASE_LAYOUT_ONLY --', process.argv.includes('--base-layout-only') ? 'true' : 'false');
   const primitives = (await readFile(join(root, 'scripts/harbour-geometry.luau'), 'utf8')).split('local CFrame = {}')[0];
   program = program.replace('-- SHARED_PRIMITIVES --', () => primitives);
   for (const [name, path] of Object.entries(modules)) {
     let source = await readFile(join(root, path), 'utf8');
     source = source.replace(/local (\w+) = require\(script\.Parent\.(?:Parent\.)?(\w+)\)/g, 'local $1 = dependencies.$2');
     source = source.replace(/local (\w+) = require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'local $1 = dependencies.$2');
+    source = source.replace(/local (\w+) = require\(game:GetService\("ReplicatedStorage"\)\.Shared\.(\w+)\)/g, 'local $1 = dependencies.$2');
     if (name === 'HARBOUR') {
       if (!/return Harbour\s*$/.test(source)) throw new Error('Harbour return hook changed');
       source = source.replace(/return Harbour\s*$/, `return {
-        makeShape = makeShape, coastDistance = coastDistance, heightAt = heightAt,
+        makeShape = makeShape, coastDistance = coastDistance, heightAt = heightAt, shoreAt = shoreAt,
+        BASES = BASES, BASE_COUNT = Harbour.BASE_COUNT,
         buildBase = buildBase, buildPlaza = buildPlaza, buildBeach = buildBeach,
         ensureBoating = Harbour.ensureBoating, ensureDocks = Harbour.ensureDocks,
       }`);

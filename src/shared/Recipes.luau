@@ -32,6 +32,11 @@ Recipes.BuiltIn = {
 	Prep1 = { Station = "Prep", X = -21.35, Z = -4.5, R = 1 },
 	Prep2 = { Station = "Prep", X = -21.35, Z = -11, R = 1 },
 }
+-- Separate saved keys let island benches and harbour benches cook independently.
+Recipes.CompanyBuiltIn = {
+	CompanyPrep1 = { Station = "Prep" },
+	CompanyPrep2 = { Station = "Prep" },
+}
 
 Recipes.Order = {
 	"FishFillet",
@@ -103,7 +108,7 @@ Recipes.Items = {
 
 -- The station type behind a station key: a built-in bench key or a furniture item id.
 function Recipes.stationOf(key: string): string?
-	local builtIn = Recipes.BuiltIn[key]
+	local builtIn = Recipes.BuiltIn[key] or Recipes.CompanyBuiltIn[key]
 	if builtIn then
 		return builtIn.Station
 	end

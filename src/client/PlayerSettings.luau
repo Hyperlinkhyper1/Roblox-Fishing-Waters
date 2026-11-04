@@ -2,10 +2,14 @@
 local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Settings = {}
 local started = false
 local master, music, effects
+local underwaterFilter: EqualizerSoundEffect
+local underwaterTween: Tween? = nil
+local underwater = false
 local performance, device, preset
 
 local function applyPerformance()
@@ -57,6 +61,12 @@ function Settings.start()
 	master = Instance.new("SoundGroup")
 	master.Name, master.Parent = "PlayerMaster", SoundService
 	master.Volume = 1
+	-- Attenuate the whole mix without fighting saved volumes or sounds whose
+	-- source volume changes every frame. Higher frequencies lose the most energy.
+	underwaterFilter = Instance.new("EqualizerSoundEffect")
+	underwaterFilter.Name = "UnderwaterMuffle"
+	underwaterFilter.LowGain, underwaterFilter.MidGain, underwaterFilter.HighGain = 0, 0, 0
+	underwaterFilter.Parent = master
 	music = Instance.new("SoundGroup")
 	music.Name, music.Parent = "PlayerMusic", master
 	music.Volume = 1
@@ -102,6 +112,8 @@ function Settings.start()
 		end
 	end
 	watch(SoundService)
+	-- Positional fishing splashes and gull calls live on Terrain attachments.
+	watch(workspace.Terrain)
 	watch(Players.LocalPlayer)
 	local function watchPlayer(other: Player)
 		other.CharacterAdded:Connect(watch)
@@ -124,6 +136,23 @@ function Settings.start()
 	for _, child in workspace:GetChildren() do
 		topLevel(child)
 	end
+end
+
+function Settings.setUnderwater(submerged: boolean)
+	Settings.start()
+	if underwater == submerged then
+		return
+	end
+	underwater = submerged
+	if underwaterTween then
+		underwaterTween:Cancel()
+	end
+	underwaterTween = TweenService:Create(underwaterFilter, TweenInfo.new(0.18, Enum.EasingStyle.Sine), {
+		LowGain = if submerged then -4 else 0,
+		MidGain = if submerged then -14 else 0,
+		HighGain = if submerged then -30 else 0,
+	})
+	underwaterTween:Play()
 end
 
 function Settings.apply(values, changedKey)

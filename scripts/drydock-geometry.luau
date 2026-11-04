@@ -337,6 +337,9 @@ local function loadFishFreezer()
 	-- FISHFREEZER_SOURCE --
 end
 dependencies.FishFreezer = loadFishFreezer()
+dependencies.BaseGrid = (function()
+	-- BASEGRID_SOURCE --
+end)()
 local function loadBaseHouse()
 	-- BASEHOUSE_SOURCE --
 end
@@ -656,7 +659,7 @@ local function auditDocks(base, label)
 	return models
 end
 
--- Limit construction to the plaza, adjacent beach, and six player bases. This
+-- Limit construction to the plaza, adjacent beach, and all production player bases. This
 -- retains the real integration paths without building the distant terrain or
 -- comparing every village part with every workshop detail.
 local root = Instance.new("Folder")
@@ -671,8 +674,104 @@ Harbour.buildPlaza(village, plazaCenter, rng)
 Harbour.buildBeach(shape, root, village, spots, rng)
 local bases = Instance.new("Folder")
 bases.Name, bases.Parent = "Bases", root
-for index, anchor in { { 668, 1030 }, { 1000, 950 }, { 1150, 1105 }, { 1360, 1330 }, { 1340, 1500 }, { 880, 1638 } } do
+check(Harbour.BASE_COUNT == 15 and #Harbour.BASES == Harbour.BASE_COUNT, "The lobby must provide fifteen production base anchors")
+for index, anchor in Harbour.BASES do
 	Harbour.buildBase(shape, bases, index, shape.toWorld(anchor), rng)
+end
+do
+	local footprints, layoutProblems = {}, {}
+	local function describe(point)
+		return string.format("world (%.1f, %.1f)", point.X, point.Z)
+	end
+	local function footprint(base, label, reference, low, high)
+		local middle = reference * ((low + high) / 2)
+		local volume = {
+			Size = Vector3.new(high.X - low.X, 32, high.Z - low.Z),
+			CFrame = CFrame.fromMatrix(Vector3.new(middle.X, 10, middle.Z), reference.RightVector, Vector3.yAxis, reference.ZVector),
+		}
+		table.insert(footprints, {base=base, label=label, volume=volume})
+	end
+	local function buildingFootprint(base, label, building, reference, exclude)
+		local low, high = Vector3.new(math.huge, math.huge, math.huge), Vector3.new(-math.huge, -math.huge, -math.huge)
+		for _, part in building:GetDescendants() do
+			if part:IsA("BasePart") and part.Transparency < 1 and (not exclude or not part:IsDescendantOf(exclude)) then
+				local a, b = bounds(part, reference)
+				low, high = low:Min(a), high:Max(b)
+			end
+		end
+		footprint(base, label, reference, low, high)
+	end
+	for _, base in bases:GetChildren() do
+		local house = base:FindFirstChild("BaseHouse")
+		local shopBuilding = house:FindFirstChild("Shop")
+		local houseFrame = house:GetAttribute("HouseFrame")
+		buildingFootprint(base, "house", house, houseFrame, shopBuilding)
+		buildingFootprint(base, "shop", shopBuilding, houseFrame)
+		for _, dock in base:GetChildren() do
+			if dock:IsA("Model") and (dock.Name == "Dock" or dock.Name == "DockLink") then
+				local surface = dock:FindFirstChild("DeckSurface")
+				footprint(base, dock.Name, surface.CFrame, -surface.Size / 2, surface.Size / 2)
+			elseif dock:IsA("BasePart") and dock.Material == Enum.Material.Cobblestone and dock.Size.Y > 5 then
+				footprint(base, "quay", dock.CFrame, -dock.Size / 2, dock.Size / 2)
+			end
+		end
+		for _, name in {"WashableFloor", "StoreFloor", "ShopFoundation"} do
+			local floor = house:FindFirstChild(name, true)
+			check(floor ~= nil, base.Name .. " is missing " .. name)
+			if not floor then continue end
+			local unsupported, buried, firstProblem = 0, 0, nil
+			for x = -0.5, 0.5, 0.25 do
+				for z = -0.5, 0.5, 0.25 do
+					local sample = floor.CFrame * Vector3.new(floor.Size.X * x, -floor.Size.Y / 2, floor.Size.Z * z)
+					local point = Vector2.new(sample.X, sample.Z)
+					local distance, height = Harbour.coastDistance(shape, point), Harbour.heightAt(shape, point)
+					if distance <= 0 or (name == "ShopFoundation" and height < sample.Y - 0.15) then
+						unsupported += 1
+						firstProblem = firstProblem or sample
+					end
+					if height > sample.Y + (if name == "ShopFoundation" then floor.Size.Y else 0) + 0.05 then
+						buried += 1
+						firstProblem = firstProblem or sample
+					end
+				end
+			end
+			if unsupported > 0 or buried > 0 then
+				table.insert(layoutProblems, string.format("%s %s at %s: %d unsupported and %d buried ground samples", base.Name, name, describe(firstProblem), unsupported, buried))
+			end
+		end
+		local boatFrame = base:FindFirstChild("BoatSpawn").CFrame
+		local corridor = {
+			Size=Vector3.new(10.6, 32, 74.4),
+			CFrame=boatFrame * CFrame.new(0, 10, -30),
+		}
+		for outward = 0, 60, 10 do
+			for _, side in {-5.3, 0, 5.3} do
+				local sample = boatFrame * Vector3.new(side, 0, -outward)
+				local point = Vector2.new(sample.X, sample.Z)
+				if Harbour.coastDistance(shape, point) >= 0 or Harbour.heightAt(shape, point) >= Biomes.WaterLevel - 0.65 then
+					table.insert(layoutProblems, base.Name .. " launch route reaches land or shallow water at " .. describe(sample))
+				end
+			end
+		end
+		table.insert(footprints, {base=base, label="launch route", volume=corridor})
+	end
+	for i, a in footprints do
+		for j = i + 1, #footprints do
+			local b = footprints[j]
+			if a.base ~= b.base and overlaps(a.volume, b.volume) then
+				table.insert(layoutProblems, a.base.Name .. " " .. a.label .. " at " .. describe(a.volume.CFrame.Position) .. " overlaps " .. b.base.Name .. " " .. b.label .. " at " .. describe(b.volume.CFrame.Position))
+			end
+		end
+	end
+	for _, problem in layoutProblems do print("BASE LAYOUT: " .. problem) end
+	check(#layoutProblems == 0, tostring(#layoutProblems) .. " waterfront base layout conflicts or ground/launch problems")
+	print(string.format("Waterfront layout: %d production bases, %d building/dock/launch footprints checked.", #bases:GetChildren(), #footprints))
+end
+if false -- BASE_LAYOUT_ONLY --
+then
+	assert(failures == 0, tostring(failures) .. " waterfront layout checks failed")
+	print("PASS: fifteen waterfront plots have clear building/dock footprints, supported floors and navigable launch routes.")
+	return
 end
 Harbour.ensureBoating(root)
 local plaza = root:FindFirstChild("Plaza", true)
@@ -1317,7 +1416,7 @@ for _, base in root:GetDescendants() do
 	fixture.sentinel = sentinel
 	table.insert(savedDockFixtures, fixture)
 end
-check(baseCount == 6, "Must check all six base launches")
+check(baseCount == Harbour.BASE_COUNT, "Must check every production base launch")
 Harbour.ensureDocks(root)
 for _, item in freshDockModels do
 	check(item.model.Parent == item.base, item.base.Name .. " fresh docks were unnecessarily replaced during ensure")
@@ -1971,9 +2070,10 @@ checkLaunchFlow()
 assert(failures == 0, tostring(failures) .. " drydock geometry checks failed")
 print(
 	string.format(
-		"PASS: %d actual-builder assertions; %d walk-in route samples, %d rear stair/quay samples, single center drydock, on-demand catalog launches and rowboat restoration, hollow repair basins, submerged slipway, NPC prompt access, detailed docks with four-stud walking lanes, saved-map upgrades and six unchanged water launches. Roblox physics and rendering are not exercised.",
+		"PASS: %d actual-builder assertions; %d walk-in route samples, %d rear stair/quay samples, single center drydock, on-demand catalog launches and rowboat restoration, hollow repair basins, submerged slipway, NPC prompt access, detailed docks with four-stud walking lanes, saved-map upgrades and %d water launches. Roblox physics and rendering are not exercised.",
 		checks,
 		routeSamples,
-		rearRouteSamples
+		rearRouteSamples,
+		baseCount
 	)
 )

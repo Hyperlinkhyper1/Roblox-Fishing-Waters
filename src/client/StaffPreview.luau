@@ -4,6 +4,34 @@ local Staff = require(game:GetService("ReplicatedStorage").Shared.StaffCatalog)
 local Preview = {}
 local templates, pending = {}, {}
 
+-- Accessories can contain oversized or displaced handles. Frame the rig itself
+-- so a single Marketplace item cannot shrink the entire portrait to a dot.
+local function bodyBounds(model: Model): (Vector3, Vector3)
+	local low = Vector3.new(math.huge, math.huge, math.huge)
+	local high = Vector3.new(-math.huge, -math.huge, -math.huge)
+	for _, part in model:GetChildren() do
+		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+			local half = part.Size / 2
+			for x = -1, 1, 2 do
+				for y = -1, 1, 2 do
+					for z = -1, 1, 2 do
+						local point = part.CFrame:PointToWorldSpace(Vector3.new(half.X * x, half.Y * y, half.Z * z))
+						low = Vector3.new(math.min(low.X, point.X), math.min(low.Y, point.Y), math.min(low.Z, point.Z))
+						high = Vector3.new(math.max(high.X, point.X), math.max(high.Y, point.Y), math.max(high.Z, point.Z))
+					end
+				end
+			end
+		end
+	end
+	if low.X == math.huge then
+		local box, size = model:GetBoundingBox()
+		return box.Position, size
+	end
+	-- Leave room above the head for hats without trusting accessory bounds.
+	high += Vector3.new(0, 0.8, 0)
+	return (low + high) / 2, high - low
+end
+
 local function load(role, callback)
 	if templates[role] then
 		callback(templates[role])
@@ -27,7 +55,9 @@ local function load(role, callback)
 			Staff.finishModel(model)
 			for _, item in model:GetDescendants() do
 				if item:IsA("BasePart") then
-					item.Anchored = true
+					-- Keep the rig stationary while allowing accessory welds to place
+					-- their handles correctly relative to the head and body.
+					item.Anchored = item.Name == "HumanoidRootPart"
 					item.CanCollide, item.CanTouch, item.CanQuery = false, false, false
 				elseif item:IsA("Script") or item:IsA("LocalScript") then
 					item:Destroy()
@@ -86,9 +116,7 @@ function Preview.show(view: ViewportFrame, role: string, status: TextLabel, port
 		local model = template:Clone()
 		model.Name, model.Parent = role .. "Preview", world
 		model:PivotTo(CFrame.new())
-		local box
-		box, bounds = model:GetBoundingBox()
-		center = box.Position
+		center, bounds = bodyBounds(model)
 		if portrait then
 			-- Frame the head and torso, including headwear, instead of shrinking the
 			-- entire rig into a card. The lower body is deliberately cropped.

@@ -118,8 +118,9 @@ function DiningRoom.build(parent: Instance, frame: CFrame): Model
 end
 
 DiningRoom.TABLE_TOP = 2.6
-DiningRoom.SEAT_OFFSET = 2.15
--- Each table seats two diners, one on each long side (local ±Z).
+DiningRoom.SEAT_OFFSET = 2.5
+-- Each table seats two diners facing each other, one at each end (local ±Z).
+-- Table and chairs fill a 1x2 block of grid cells (FurnitureCatalog).
 function DiningRoom.buildTable(parent: Instance, frame: CFrame): Model
 	local model = Instance.new("Model")
 	model.Name = "DiningTable"
@@ -128,18 +129,40 @@ function DiningRoom.buildTable(parent: Instance, frame: CFrame): Model
 		result.Name = name
 		return result
 	end
-	piece("TableTop", Vector3.new(4, 0.18, 2.6), CFrame.new(0, DiningRoom.TABLE_TOP - 0.09, 0), WOOD, M.Wood)
-	local cloth = piece("TableCloth", Vector3.new(4.1, 0.04, 1.2), CFrame.new(0, DiningRoom.TABLE_TOP + 0.01, 0), LINEN, M.Fabric)
-	cloth.CanCollide = false
-	for _, x in { -1.75, 1.75 } do
+	local function decorative(name: string, size: Vector3, offset: CFrame, color: Color3, material: Enum.Material?): Part
+		local result = piece(name, size, offset, color, material)
+		result.CanCollide, result.CanQuery = false, false
+		return result
+	end
+	local top = DiningRoom.TABLE_TOP
+	piece("TableTop", Vector3.new(3.6, 0.18, 2.6), CFrame.new(0, top - 0.09, 0), WOOD, M.Wood)
+	decorative("TableApron", Vector3.new(3.3, 0.3, 2.3), CFrame.new(0, top - 0.33, 0), DARK_WOOD, M.Wood)
+	decorative("TableRunner", Vector3.new(1.1, 0.03, 2.66), CFrame.new(0, top + 0.01, 0), LINEN, M.Fabric)
+	for _, x in { -1.5, 1.5 } do
 		for _, z in { -1.05, 1.05 } do
-			piece("TableLeg", Vector3.new(0.22, DiningRoom.TABLE_TOP - 0.18, 0.22), CFrame.new(x, (DiningRoom.TABLE_TOP - 0.18) / 2, z), DARK_WOOD, M.Wood)
+			piece("TableLeg", Vector3.new(0.22, top - 0.18, 0.22), CFrame.new(x, (top - 0.18) / 2, z), DARK_WOOD, M.Wood)
 		end
 	end
-	local candle = Props.cylinder(model, (frame * CFrame.new(0, DiningRoom.TABLE_TOP + 0.25, 0)).Position, 0.45, 0.16, CREAM, M.SmoothPlastic)
+	-- A candle and a small vase of flowers between the place settings.
+	local candle = Props.cylinder(model, (frame * CFrame.new(-0.6, top + 0.25, 0)).Position, 0.45, 0.16, CREAM, M.SmoothPlastic)
 	candle.Name, candle.CanCollide = "Candle", false
+	local flame = decorative("CandleFlame", Vector3.new(0.08, 0.14, 0.08), CFrame.new(-0.6, top + 0.55, 0), rgb(255, 196, 90), M.Neon)
+	local glow = Instance.new("PointLight")
+	glow.Color, glow.Brightness, glow.Range = rgb(255, 196, 120), 0.35, 5
+	glow.Parent = flame
+	local vase = Props.cylinder(model, (frame * CFrame.new(0.6, top + 0.22, 0)).Position, 0.4, 0.26, TERRACOTTA, M.SmoothPlastic)
+	vase.Name, vase.CanCollide = "Vase", false
+	for index, color in { rgb(228, 88, 92), rgb(250, 214, 96), rgb(236, 236, 248) } do
+		local bloom = decorative("Bloom", Vector3.new(0.18, 0.18, 0.18), CFrame.new(0.6 + (index - 2) * 0.1, top + 0.52 + (index % 2) * 0.06, (index - 2) * 0.06), color, M.Fabric)
+		bloom.Shape = Enum.PartType.Ball
+	end
 	for index, side in { 1, -1 } do
 		local z = side * DiningRoom.SEAT_OFFSET
+		-- Cutlery either side of the spot where the dish is served.
+		for _, x in { -0.55, 0.55 } do
+			decorative("Cutlery", Vector3.new(0.06, 0.02, 0.5), CFrame.new(x, top + 0.02, side * 0.65), rgb(196, 200, 204), M.Metal)
+		end
+		decorative("Napkin", Vector3.new(0.3, 0.03, 0.4), CFrame.new(-0.75, top + 0.02, side * 0.65), rgb(70, 110, 140), M.Fabric)
 		local seat = Instance.new("Seat")
 		seat.Name = "DinerSeat" .. index
 		seat.Size = Vector3.new(1.5, 0.3, 1.5)
@@ -148,9 +171,17 @@ function DiningRoom.buildTable(parent: Instance, frame: CFrame): Model
 		seat.Color, seat.Material = WOOD, M.Wood
 		-- Faces the table.
 		seat.CFrame = frame * CFrame.new(0, 1.55, z) * CFrame.Angles(0, if side > 0 then 0 else math.pi, 0)
-		seat:SetAttribute("PlateOffset", Vector3.new(0, DiningRoom.TABLE_TOP + 0.02, side * 0.6))
+		seat:SetAttribute("PlateOffset", Vector3.new(0, top + 0.02, side * 0.6))
 		seat.Parent = model
-		piece("ChairBack", Vector3.new(1.5, 1.8, 0.18), CFrame.new(0, 2.5, z + side * 0.7), DARK_WOOD, M.Wood)
+		decorative("SeatCushion", Vector3.new(1.3, 0.1, 1.3), CFrame.new(0, 1.75, z), rgb(150, 60, 50), M.Fabric)
+		-- A slatted back between two posts.
+		for _, x in { -0.66, 0.66 } do
+			piece("ChairPost", Vector3.new(0.16, 1.9, 0.16), CFrame.new(x, 2.4, z + side * 0.67), DARK_WOOD, M.Wood)
+		end
+		piece("ChairBackRail", Vector3.new(1.5, 0.3, 0.16), CFrame.new(0, 3.2, z + side * 0.67), DARK_WOOD, M.Wood)
+		for _, x in { -0.3, 0, 0.3 } do
+			piece("ChairSlat", Vector3.new(0.14, 1.15, 0.1), CFrame.new(x, 2.45, z + side * 0.67), WOOD, M.Wood)
+		end
 		for _, x in { -0.6, 0.6 } do
 			for _, dz in { -0.6, 0.6 } do
 				piece("ChairLeg", Vector3.new(0.16, 1.4, 0.16), CFrame.new(x, 0.7, z + dz), DARK_WOOD, M.Wood)

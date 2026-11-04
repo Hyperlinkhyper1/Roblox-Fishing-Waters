@@ -667,6 +667,17 @@ local buyPrompt = makePrompt(npc, "TalkToShipwrightPrompt")
 buyPrompt.Parent.Name = "Head"
 buyPrompt.MaxActivationDistance = 8
 Service.start()
+-- The driver's client steers its own hull while the server has handed it ownership
+-- (client/BoatDriving). Stand in for it after each server step with the shared drive code.
+-- The server has just integrated the same input with the same BoatMotion.step the client
+-- runs, so its commanded speed and turn are the client's.
+RunService.PreSimulation:Connect(function(dt)
+	for player, boat in Service.active do
+		if not boat.parked and boat.model:GetAttribute("DriverUserId") == player.UserId then
+			Service.BoatDrive.apply(boat, boat.speed, boat.turn, boat.throttle, boat.steer, dt, workspace:GetServerTimeNow(), nil)
+		end
+	end
+end)
 local previewTemplates = ReplicatedStorage:FindFirstChild("Boating"):FindFirstChild("Previews")
 check(
 	previewTemplates and previewTemplates:FindFirstChild("Rowboat") and previewTemplates:FindFirstChild("FishingBoat"),
@@ -1012,7 +1023,16 @@ check(
 	not floatingBoat.root.Anchored and not floatingBoat.parked and floatingBoat.velocity.Enabled,
 	"Owner input must release the boat and enable driving"
 )
-check(floatingBoat.root.ownerAssignments == 2, "Release must explicitly restore server ownership after unanchoring")
+check(floatingBoat.root.ownerAssignments == 3, "Release must explicitly restore server ownership after unanchoring")
+check(
+	not floatingBoat.root.serverOwned and floatingBoat.model:GetAttribute("DriverUserId") == rich.UserId,
+	"The owner at the helm must simulate their own hull"
+)
+check(
+	floatingBoat.model:GetAttribute("DriveForwardSpeed") == floatingBoat.spec.ForwardSpeed
+		and floatingBoat.model:GetAttribute("DriveTurnRate") == floatingBoat.spec.TurnRate,
+	"The driving client must receive the hull's tuned spec"
+)
 check(
 	parkedRelease
 		and parkedRelease.rest == heldFrame

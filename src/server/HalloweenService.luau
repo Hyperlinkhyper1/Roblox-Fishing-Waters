@@ -1,5 +1,5 @@
--- The Halloween party on the home plaza. On 31 October (in-game) the server puts up the
--- decorations, turns every street lamp on the island orange, and fills the square with locals
+-- The Halloween party across Harbour Isle. On 31 October (in-game) the server puts up the
+-- decorations, turns every street lamp on the island orange, and gathers locals around town
 -- in Roblox's own avatar bundles and Halloween accessories. Everything comes down again once the
 -- midnight fireworks (drawn by each client, see src/client/HalloweenParty.luau) are over.
 local Players = game:GetService("Players")
@@ -357,7 +357,7 @@ local function ghost(parent: Instance, position: Vector3, rng: Random)
 	m:AddTag(BOB_TAG)
 end
 
--- Every street lamp on the island glows orange, with a pumpkin at its foot.
+-- Every street lamp glows orange; occasional pumpkins mark the streets.
 local function decorateTown(island: Instance, folder: Instance, rng: Random)
 	for _, lamp in island:GetDescendants() do
 		if not (lamp:IsA("Model") and lamp.Name == "LampPost") then
@@ -374,7 +374,7 @@ local function decorateTown(island: Instance, folder: Instance, rng: Random)
 			end
 		end
 		local base = lamp:FindFirstChildWhichIsA("BasePart")
-		if base then
+		if base and rng:NextNumber() < 0.35 then
 			local foot = base.Position - Vector3.new(0, base.Size.Y / 2, 0)
 			local angle = rng:NextNumber(0, math.pi * 2)
 			local at = foot + Vector3.new(math.cos(angle) * 1.4, 0, math.sin(angle) * 1.4)
@@ -434,12 +434,12 @@ local function decoratePlaza(folder: Instance, frame: CFrame, rng: Random, taken
 		end
 	end
 	-- Hay bales, tombstones, a cauldron and a scarecrow on open paving, and ghosts overhead.
-	local props = { hayBale, hayBale, hayBale, hayBale, tombstones, tombstones, cauldron, cauldron, scarecrow }
+	local props = { hayBale, tombstones, cauldron, scarecrow }
 	local spots = spotsOnPlaza(frame, rng, #props, 24, 52, 5, 9, taken)
 	for index, ground in spots do
 		props[index](folder, facing(ground, center), rng)
 	end
-	for _ = 1, 5 do
+	for _ = 1, 2 do
 		local angle, radius = rng:NextNumber(0, math.pi * 2), rng:NextNumber(14, 44)
 		ghost(
 			folder,
@@ -553,7 +553,13 @@ local function buildGuest(
 			piece.CanQuery = piece.Name == "Head"
 		end
 	end
-	model:PivotTo(frame + Vector3.new(0, model:GetExtentsSize().Y / 2, 0))
+	-- The pivot is the root part; it rides HipHeight above the feet. Measuring the whole
+	-- model instead counts wings, hats and costumes and leaves the guest hovering.
+	local root = model.PrimaryPart or model:FindFirstChild("HumanoidRootPart")
+	local lift = if humanoid and root and root:IsA("BasePart")
+		then humanoid.HipHeight + root.Size.Y / 2
+		else model:GetExtentsSize().Y / 2
+	model:PivotTo(frame + Vector3.new(0, lift, 0))
 	model:SetAttribute("HomeFrame", model:GetPivot())
 	model:SetAttribute("Dancer", dancer)
 	model.Parent = guests
@@ -584,7 +590,7 @@ local function buildGuest(
 end
 
 -- Guests stand in little chatting circles round the square, with a few dancing on their own.
-local function inviteGuests(guests: Folder, frame: CFrame, rng: Random, taken: { Vector3 }, token: number)
+local function inviteGuests(guests: Folder, frame: CFrame, rng: Random, taken: { Vector3 }, token: number, count: number)
 	local names = table.clone(Halloween.NAMES)
 	local function nextName(): string
 		if #names == 0 then
@@ -593,15 +599,15 @@ local function inviteGuests(guests: Folder, frame: CFrame, rng: Random, taken: {
 		return table.remove(names, rng:NextInteger(1, #names)) :: string
 	end
 	local placed = 0
-	local centers = spotsOnPlaza(frame, rng, math.ceil(Halloween.GUESTS / 2.5), 24, 50, 6, 8, taken)
+	local centers = spotsOnPlaza(frame, rng, math.ceil(count / 2.5), 24, 50, 6, 8, taken)
 	for _, center in centers do
-		if placed >= Halloween.GUESTS then
+		if placed >= count then
 			break
 		end
 		local dancer = rng:NextNumber() < DANCER_SHARE
 		local size = if dancer then 1 else rng:NextInteger(2, 4)
 		local turn = rng:NextNumber(0, math.pi * 2)
-		for index = 1, size do
+		for index = 1, math.min(size, count - placed) do
 			local angle = turn + index / size * math.pi * 2
 			local spot = if size == 1
 				then center
@@ -612,6 +618,88 @@ local function inviteGuests(guests: Folder, frame: CFrame, rng: Random, taken: {
 			local name = nextName()
 			task.spawn(buildGuest, guests, facing(spot, look), guestRng, name, dancer, kid, token)
 			placed += 1
+		end
+	end
+end
+
+-- Put a small string on each house facade, above doorways and player paths.
+local function decorateHouses(island: Instance, folder: Instance)
+	for _, house in island:GetDescendants() do
+		if not house:IsA("Model") then continue end
+		local name = house.Name
+		if name ~= "House" and name ~= "CubeHouse" and name ~= "Townhouse" and name ~= "Villa"
+			and name ~= "BaseHouse" and name ~= "PlazaHouse" and not string.match(name, "^PlazaHouse%d+$") then
+			continue
+		end
+		local face: CFrame? = nil
+		if name == "BaseHouse" then
+			local shell = house:FindFirstChild("Shell")
+			local header = shell and shell:FindFirstChild("DoorHeader")
+			if header and header:IsA("BasePart") then
+				face = header.CFrame * CFrame.new(0, 0.7, header.Size.Z / 2 + 0.25)
+			end
+		else
+			-- The large ground-floor block has local +Z facing the street.
+			local wall: BasePart? = nil
+			local area = 0
+			for _, piece in house:GetChildren() do
+				if piece:IsA("BasePart") and piece.Size.Y >= 6 and piece.Size.X >= 6 and piece.Size.Z >= 6 then
+					local candidate = piece.Size.X * piece.Size.Z
+					if candidate > area then wall, area = piece, candidate end
+				end
+			end
+			if wall then
+				face = wall.CFrame * CFrame.new(0, math.min(wall.Size.Y / 2 - 0.5, 4), wall.Size.Z / 2 + 0.35)
+			end
+		end
+		if face then
+			local decoration = Instance.new("Folder")
+			decoration.Name = "HouseHalloweenDecoration"
+			decoration.Parent = folder
+			garland(decoration, face * Vector3.new(-2.5, 0, 0), face * Vector3.new(2.5, 0, 0))
+		end
+	end
+end
+
+-- Spread the remaining guests and a few small displays along the island's lit streets.
+local function inviteTown(guests: Folder, decorations: Instance, island: Instance, plaza: CFrame, rng: Random, taken: { Vector3 }, token: number, count: number)
+	local lamps = {}
+	for _, item in island:GetDescendants() do
+		if item:IsA("Model") and item.Name == "LampPost" then
+			local base = item:FindFirstChildWhichIsA("BasePart")
+			if base then table.insert(lamps, base.Position - Vector3.new(0, base.Size.Y / 2, 0)) end
+		end
+	end
+	for i = #lamps, 2, -1 do
+		local j = rng:NextInteger(1, i)
+		lamps[i], lamps[j] = lamps[j], lamps[i]
+	end
+	local placed = 0
+	for _, foot in lamps do
+		if placed >= count then break end
+		if Vector2.new(foot.X - plaza.Position.X, foot.Z - plaza.Position.Z).Magnitude < 75 then continue end
+		for _ = 1, 8 do
+			local angle = rng:NextNumber(0, math.pi * 2)
+			local candidate = foot + Vector3.new(math.cos(angle) * 6, 0, math.sin(angle) * 6)
+			local crowded = false
+			for _, other in taken do
+				if Vector2.new(other.X - candidate.X, other.Z - candidate.Z).Magnitude < 14 then
+					crowded = true
+					break
+				end
+			end
+			local ground = not crowded and openGround(candidate, 4)
+			if ground then
+				table.insert(taken, ground)
+				placed += 1
+				local name = Halloween.NAMES[rng:NextInteger(1, #Halloween.NAMES)]
+				local guestRng = Random.new(rng:NextInteger(1, 2 ^ 30))
+				task.spawn(buildGuest, guests, facing(ground, foot), guestRng, name, false, rng:NextNumber() < Halloween.KID_SHARE, token)
+				if placed % 3 == 0 then
+					ghost(decorations, ground + Vector3.new(0, rng:NextNumber(10, 14), 0), rng)
+				end
+				break
+			end
 		end
 	end
 end
@@ -638,9 +726,13 @@ local function openParty()
 	local rng = Random.new(Calendar.now().Year * 31 + 10)
 	local taken: { Vector3 } = {}
 	decoratePlaza(decorations, frame, rng, taken)
-	decorateTown(plaza:FindFirstAncestor("Harbour Isle") or plaza, decorations, rng)
-	inviteGuests(guests, frame, rng, taken, token)
-	print("[Halloween] The party is open on the plaza")
+	local island = plaza:FindFirstAncestor("Harbour Isle") or plaza
+	decorateTown(island, decorations, rng)
+	decorateHouses(island, decorations)
+	local plazaGuests = math.floor(Halloween.GUESTS / 2)
+	inviteGuests(guests, frame, rng, taken, token, plazaGuests)
+	inviteTown(guests, decorations, island, frame, rng, taken, token, Halloween.GUESTS - plazaGuests)
+	print("[Halloween] The party is open across Harbour Isle")
 end
 
 local function closeParty()

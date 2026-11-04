@@ -15,6 +15,7 @@ local Calendar = require(ReplicatedStorage.Shared.Calendar)
 local DrydockCamera = require(script.Parent.DrydockCamera)
 local BoatPreview = require(script.Parent.BoatPreview)
 local BoatCamera = require(script.Parent.BoatCamera)
+local BoatDriving = require(script.Parent.BoatDriving)
 
 local Boating = {}
 
@@ -24,6 +25,7 @@ end
 
 function Boating.start()
 	local player = Players.LocalPlayer
+	BoatDriving.start()
 	local remotes = ReplicatedStorage:WaitForChild("Boating")
 	local request = remotes:WaitForChild("Request") :: RemoteEvent
 	local feedback = remotes:WaitForChild("Feedback") :: RemoteEvent
@@ -127,10 +129,36 @@ function Boating.start()
 		return part
 	end
 	-- Rays and snowflake arms are bars centred on (cx, cy), turned by `angle` degrees.
-	local function iconBar(icon: Frame, name: string, cx: number, cy: number, length: number, angle: number, color: Color3)
-		local bar = iconPart(icon, name, cx - length / 2, cy - 1.5, length, 3, color)
+	local function iconBar(
+		icon: Frame,
+		name: string,
+		cx: number,
+		cy: number,
+		length: number,
+		angle: number,
+		color: Color3,
+		thickness: number?
+	)
+		local width = thickness or 3
+		local bar = iconPart(icon, name, cx - length / 2, cy - width / 2, length, width, color)
 		bar.Rotation = angle
 		return bar
+	end
+	local function iconLine(
+		icon: Frame,
+		name: string,
+		x1: number,
+		y1: number,
+		x2: number,
+		y2: number,
+		color: Color3,
+		thickness: number?
+	)
+		local dx, dy = x2 - x1, y2 - y1
+		return iconBar(
+			icon, name, (x1 + x2) / 2, (y1 + y2) / 2,
+			math.sqrt(dx * dx + dy * dy), math.deg(math.atan2(dy, dx)), color, thickness
+		)
 	end
 	local weatherIcon = iconFrame("WeatherIcon", 3)
 	weatherIcon.Visible = false
@@ -138,7 +166,7 @@ function Boating.start()
 		return iconPart(weatherIcon, name, x, y, width, height, color)
 	end
 
-	-- Day: a sun with rays. Night: a crescent built from overlapping dots, plus two stars.
+	-- Day: a sun with rays. Night: a crescent built from densely overlapping dots, plus two sparkles.
 	local dayIcon = iconFrame("DayNightIcon", 1)
 	local sunColor = Color3.new(1, 1, 1)
 	local moonColor = sunColor
@@ -151,31 +179,70 @@ function Boating.start()
 			iconBar(dayIcon, "SunRay", 19 + math.cos(radians) * 13, 18 + math.sin(radians) * 13, 6, angle, sunColor)
 		)
 	end
+	-- Each dot touches the outer circle and spans the gap to a smaller circle offset to the
+	-- right, so the inner edge curves and the horns taper like a real crescent.
 	local moonParts = {}
-	for index = -4, 4 do
-		local radians = math.rad(index * 19)
-		local size = 4 + 7 * math.cos(radians)
+	local moonRadius, innerRadius, innerOffset = 13, 11, 7
+	for angle = -140, 140, 4 do
+		local radians = math.rad(angle)
+		local sine = innerOffset * math.sin(radians)
+		local inner = -innerOffset * math.cos(radians) + math.sqrt(innerRadius * innerRadius - sine * sine)
+		local size = moonRadius - inner
+		if size < 1.5 then
+			continue
+		end
+		local reach = moonRadius - size / 2
 		table.insert(
 			moonParts,
 			iconPart(
 				dayIcon,
 				"Moon",
-				17 - math.cos(radians) * 6 - size / 2,
-				18 + math.sin(radians) * 12 - size / 2,
+				15 - math.cos(radians) * reach - size / 2,
+				18 + math.sin(radians) * reach - size / 2,
 				size,
 				size,
 				moonColor
 			)
 		)
 	end
-	table.insert(moonParts, iconPart(dayIcon, "Star", 27, 7, 3, 3, moonColor))
-	table.insert(moonParts, iconPart(dayIcon, "Star", 31, 17, 2, 2, moonColor))
+	local function sparkle(cx: number, cy: number, size: number)
+		table.insert(moonParts, iconBar(dayIcon, "Star", cx, cy, size, 0, moonColor, 2))
+		table.insert(moonParts, iconBar(dayIcon, "Star", cx, cy, size, 90, moonColor, 2))
+	end
+	sparkle(27, 14, 8)
+	sparkle(33, 23, 5)
 
 	-- Season: a leaf for spring, summer and autumn, a snowflake for winter.
 	local seasonIcon = iconFrame("SeasonIcon", 2)
-	local leaf = iconPart(seasonIcon, "Leaf", 12, 6, 14, 24, sunColor)
-	leaf.Rotation = 35
-	local stem = iconBar(seasonIcon, "Stem", 12, 29, 9, -55, sunColor)
+	local leafParts = {}
+	-- A solid blade of dots along the midrib, widest just below the middle and pointed at
+	-- both ends, with dark veins drawn over it and a short stem.
+	local veinColor = Color3.fromRGB(28, 32, 38)
+	local baseX, baseY, tipX, tipY = 11, 27, 31, 7
+	local function alongLeaf(t: number, side: number): (number, number)
+		local axisX, axisY = (tipX - baseX) / 28.28, (tipY - baseY) / 28.28
+		return baseX + (tipX - baseX) * t - axisY * side, baseY + (tipY - baseY) * t + axisX * side
+	end
+	table.insert(leafParts, iconLine(seasonIcon, "LeafStem", 6, 32, 12, 26, sunColor))
+	local dots = 30
+	for index = 1, dots do
+		local t = index / (dots + 1)
+		local size = math.max(2, 15 * math.sin(math.pi * t ^ 0.85))
+		local x, y = alongLeaf(t, 0)
+		table.insert(leafParts, iconPart(seasonIcon, "Leaf", x - size / 2, y - size / 2, size, size, sunColor))
+	end
+	local function vein(t1: number, side1: number, t2: number, side2: number)
+		local x1, y1 = alongLeaf(t1, side1)
+		local x2, y2 = alongLeaf(t2, side2)
+		local line = iconLine(seasonIcon, "LeafVein", x1, y1, x2, y2, veinColor, 1.5)
+		line.ZIndex = 3
+		table.insert(leafParts, line)
+	end
+	vein(0.12, 0, 0.86, 0)
+	for _, t in { 0.34, 0.56 } do
+		vein(t, 0, t + 0.11, 4.5)
+		vein(t, 0, t + 0.11, -4.5)
+	end
 	local snowColor = sunColor
 	local flake = {}
 	for index = 0, 2 do
@@ -213,7 +280,9 @@ function Boating.start()
 		end
 		local season = Seasons.current()
 		local winter = season == "Winter"
-		leaf.Visible, stem.Visible = not winter, not winter
+		for _, part in leafParts do
+			part.Visible = not winter
+		end
 		for _, part in flake do
 			part.Visible = winter
 		end
@@ -1166,8 +1235,12 @@ function Boating.start()
 				sentThrottle, sentSteer = throttle, steer
 				request:FireServer("Row", throttle, steer)
 			end
+			-- The server still needs the input to keep the helm (and park the hull), but
+			-- the movers answer it here at once.
+			BoatDriving.setInput(boatModel, throttle, steer)
 			previousSeat = seat
 		else
+			BoatDriving.setInput(nil, 0, 0)
 			previousSeat, sinceInput = nil, 0
 			sentThrottle, sentSteer = nil, nil
 		end

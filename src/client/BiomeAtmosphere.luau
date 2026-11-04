@@ -11,6 +11,7 @@ local TweenService = game:GetService("TweenService")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local PlayerSettings = require(script.Parent.PlayerSettings)
 
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local BiomeAtmosphere = {}
@@ -108,8 +109,35 @@ function BiomeAtmosphere.start()
 			tween:Cancel()
 		end
 		table.clear(activeTweens)
+		-- This runs every half second. Tweening values that barely moved kept Lighting,
+		-- Atmosphere and grading changing on every frame, and each change relights the
+		-- scene; drift below these thresholds waits until it adds up.
 		local function blend(instance: Instance, properties: { [string]: any })
-			local tween = TweenService:Create(instance, transition, properties)
+			local changed = {}
+			local any = false
+			for name, target in properties do
+				local current = (instance :: any)[name]
+				local differs
+				if typeof(target) == "Color3" then
+					differs = math.max(
+						math.abs(current.R - target.R),
+						math.abs(current.G - target.G),
+						math.abs(current.B - target.B)
+					) > 1.5 / 255
+				elseif type(target) == "number" then
+					differs = math.abs(current - target) > 0.004
+				else
+					differs = current ~= target
+				end
+				if differs then
+					changed[name] = target
+					any = true
+				end
+			end
+			if not any then
+				return
+			end
+			local tween = TweenService:Create(instance, transition, changed)
 			table.insert(activeTweens, tween)
 			tween:Play()
 		end
@@ -125,16 +153,29 @@ function BiomeAtmosphere.start()
 		local night = DayNight.darkness(DayNight.clockTime(now))
 		-- Light under a supercell turns dim and faintly green.
 		local cell = if camera then Weather.supercellCover(camera.CFrame.Position, weather.supercell) else 0
-		if weather.kind == "BlackHole" then
-			-- The admin event covers every biome, including the water beneath it.
-			Lighting.FogColor = Color3.fromRGB(29, 5, 48)
-			Lighting.FogStart = if underwater then 0 else surfaceFogStart
-			Lighting.FogEnd = if underwater then UNDERWATER_VISIBILITY else surfaceFogEnd
-			atmosphere.Parent = if underwater then nil else Lighting
+		local blackHole = weather.kind == "BlackHole"
+		-- Distance fog is disabled while Atmosphere is in Lighting. Terrain also
+		-- has its own underwater fog: set its opacity immediately on entry so the
+		-- first submerged frame cannot see through the ocean during a dive tween.
+		Lighting.FogColor = if blackHole then Color3.fromRGB(29, 5, 48)
+			elseif underwater then UNDERWATER_FOG_COLOR else surfaceFogColor
+		Lighting.FogStart = if underwater then 0 else surfaceFogStart
+		Lighting.FogEnd = if underwater then UNDERWATER_VISIBILITY else surfaceFogEnd
+		atmosphere.Parent = if underwater then nil else Lighting
+		local waterColor = if blackHole then Color3.fromRGB(33, 6, 53)
+			elseif underwater then UNDERWATER_BLUE else look.waterColor
+		if underwater then
+			terrain.WaterColor = waterColor
+			terrain.WaterTransparency = UNDERWATER_TRANSPARENCY
+		else
 			blend(terrain, {
-				WaterColor = Color3.fromRGB(33, 6, 53),
-				WaterTransparency = if underwater then UNDERWATER_TRANSPARENCY else 0.22,
+				WaterColor = waterColor,
+				WaterTransparency = if blackHole then 0.22 else Biomes.SurfaceWaterTransparency,
 			})
+		end
+		terrain.WaterReflectance = Biomes.WaterReflectance
+		if blackHole then
+			-- The admin event covers every biome, including the water beneath it.
 			if not underwater then
 				blend(atmosphere, {
 					Offset = Biomes.DistanceFogOffset,
@@ -159,17 +200,6 @@ function BiomeAtmosphere.start()
 			})
 			return
 		end
-		-- Distance fog is disabled while an Atmosphere is in Lighting. Keep the
-		-- surface atmosphere alive, but detach it underwater to enforce a short view.
-		Lighting.FogColor = if underwater then UNDERWATER_FOG_COLOR else surfaceFogColor
-		Lighting.FogStart = if underwater then 0 else surfaceFogStart
-		Lighting.FogEnd = if underwater then UNDERWATER_VISIBILITY else surfaceFogEnd
-		atmosphere.Parent = if underwater then nil else Lighting
-		-- Nearby scenery stays readable as it fades into opaque blue-green fog.
-		blend(terrain, {
-			WaterColor = if underwater then UNDERWATER_BLUE else look.waterColor,
-			WaterTransparency = if underwater then UNDERWATER_TRANSPARENCY else 0.3,
-		})
 		if not underwater then
 			-- Peaks halfway through dusk/dawn; clouds hide the sunset.
 			local twilight = 4 * night * (1 - night) * (1 - overcast)
@@ -222,13 +252,21 @@ function BiomeAtmosphere.start()
 	local underwater = false
 	local biomeElapsed = 0.5
 	local weatherElapsed = 0.5
+	local lastClock: number? = nil
 	-- Follow the camera (including third-person/free cameras), not the avatar.
 	RunService:BindToRenderStep("BiomeAtmosphere", Enum.RenderPriority.Camera.Value + 1, function(dt: number)
 		local camera = workspace.CurrentCamera
 		if not camera then
+			PlayerSettings.setUnderwater(false)
 			return
 		end
-		Lighting.ClockTime = DayNight.clockTime()
+		-- Stepped, and only written when the step changes (see DayNight.lightingClock).
+		-- Compare with what we wrote: ClockTime reads back rounded.
+		local clock = DayNight.lightingClock()
+		if clock ~= lastClock then
+			lastClock = clock
+			Lighting.ClockTime = clock
+		end
 		local position = camera.CFrame.Position
 		biomeElapsed += dt
 		weatherElapsed += dt
@@ -243,12 +281,14 @@ function BiomeAtmosphere.start()
 				showTitle(biome.name)
 			end
 		end
-		-- A small surface margin avoids flickering as the camera skims the waves.
-		local inOcean = Biomes.inOceanBounds(position)
+		-- Enter at the surface immediately; only delay the exit slightly to avoid
+		-- flickering as the camera skims the waves.
+		local inOcean = not Players.LocalPlayer:GetAttribute("MetroRiding") and Biomes.inOceanBounds(position)
 			and position.Y > Biomes.SeaFloor
-		local submerged = inOcean and position.Y < Biomes.WaterLevel + (if underwater then 0.1 else -0.1)
+		local submerged = inOcean and position.Y < Biomes.WaterLevel + (if underwater then 0.1 else 0)
 		local waterChanged = submerged ~= underwater
 		underwater = submerged
+		PlayerSettings.setUnderwater(underwater)
 		if current and (biomeChanged or waterChanged or weatherElapsed >= 0.5) then
 			weatherElapsed = 0
 			apply(current, underwater, if waterChanged then DIVE_BLEND else WEATHER_BLEND)

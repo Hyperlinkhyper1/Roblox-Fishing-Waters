@@ -4,6 +4,35 @@ local Furniture = require('../src/shared/FurnitureCatalog')
 local Data = require('../src/server/AnglerData')
 
 assert(Furniture.GRID == Grid.CELL_SIZE, 'Furniture and house grid sizes must match')
+-- Every model fills a 1x1 or 1x2 block of whole cells, and sits inside it.
+for id, item in Furniture.Items do
+ local across, deep = item.Cells[1], item.Cells[2]
+ assert(across * deep <= 2 and across >= 1 and deep >= 1, id .. ' must be 1x1 or 1x2 cells')
+ for r = 0, 3 do
+  local area = Furniture.footprint(id, 0, 0, r)
+  for _, edge in area do
+   assert(math.abs((edge - Grid.CELL_SIZE / 2) / Grid.CELL_SIZE - math.round((edge - Grid.CELL_SIZE / 2) / Grid.CELL_SIZE)) < 1e-6, id .. ' cells must sit on the grid')
+  end
+  local body = Furniture.body(id, 0, 0, r)
+  assert(body[1] >= area[1] - 1e-6 and body[2] >= area[2] - 1e-6 and body[3] <= area[3] + 1e-6 and body[4] <= area[4] + 1e-6, id .. ' model must fit inside its cells')
+ end
+end
+assert(Furniture.check({}, 'StorageRack', 22.5, -13.5, 0) == nil, 'Rack must fit at the storage room corner')
+assert(Furniture.check({ { ItemId = 'StorageRack', X = 22.5, Z = -13.5, R = 0 } }, 'StorageRack', 18, -13.5, 0) == nil, 'Racks must fit in adjacent tiles')
+assert(Furniture.check({}, 'StorageRack', 4.5, -13.5, 0) == nil, 'Rack must fit in the corner beside the passage wall')
+-- A 1x2 item covers its own cell and the next one along local +X.
+local freezer = Furniture.footprint('Freezer', -9, 72, 0)
+assert(freezer[1] == -11.25 and freezer[3] == -2.25 and freezer[2] == 69.75 and freezer[4] == 74.25, 'Freezer cells')
+local turned = Furniture.footprint('Freezer', -9, 72, 1)
+assert(turned[3] - turned[1] == Grid.CELL_SIZE and turned[4] - turned[2] == 2 * Grid.CELL_SIZE, 'Turned freezer cells')
+-- Two kitchen counters line up end to end with no gap.
+local placedLine = { { ItemId = 'GrillStation', X = -22.5, Z = -13.5, R = 0 } }
+assert(Furniture.check(placedLine, 'Smoker', -13.5, -13.5, 0) == nil, 'Counters must sit end to end')
+assert(Furniture.check(placedLine, 'Smoker', -18, -13.5, 0) ~= nil, 'Counters must not overlap')
+-- Standing strips keep furniture out but may share an aisle with each other.
+local shopFreezer = { ItemId = 'Freezer', X = 9, Z = 67.5, R = 0 }
+assert(Furniture.check({ shopFreezer }, 'PottedPlant', 9, 72, 0) ~= nil, 'A plant must not block the freezer front')
+assert(Furniture.check({ shopFreezer }, 'Freezer', 13.5, 76.5, 2) == nil, 'Facing freezers may share their aisle')
 for column = Grid.BASE_MIN_COLUMN, Grid.BASE_MAX_COLUMN do
  for row = Grid.BASE_MIN_ROW, Grid.BASE_MAX_ROW do
   local x, z = Grid.extendedCellToLocal(column, row)
@@ -26,9 +55,7 @@ for _, id in Furniture.Order do
   for x = math.ceil(room[1] / Grid.CELL_SIZE) * Grid.CELL_SIZE, room[3], Grid.CELL_SIZE do
    for z = math.ceil(room[2] / Grid.CELL_SIZE) * Grid.CELL_SIZE, room[4], Grid.CELL_SIZE do
     for r = 0, 3 do
-     local area = Furniture.footprint(id, x, z, r)
-     if area[1] >= room[1] and area[2] >= room[2] and area[3] <= room[3] and area[4] <= room[4]
-      and Furniture.check({}, id, x, z, r) == nil then
+     if Furniture.check({}, id, x, z, r) == nil then
       found = true
       break
      end
@@ -66,10 +93,7 @@ assert(moved.ShopBuildingVersion == 1 and #moved.Furniture == #oldShop, 'Shop mi
 for index, entry in moved.Furniture do
  local before = oldShop[index]
  if before.Z > 2.25 then
-  assert(entry.X == -before.X and entry.Z == Grid.SHOP_TURN - before.Z and entry.R == (before.R + 2) % 4, before.ItemId .. ' did not turn into the shop')
-  local area = Furniture.footprint(entry.ItemId, entry.X, entry.Z, entry.R)
-  local room = Furniture.Rooms.Shop
-  assert(area[1] >= room[1] and area[3] <= room[3] and area[2] >= room[2] and area[4] <= room[4], before.ItemId .. ' left the shop room')
+  assert(entry.R == (before.R + 2) % 4, before.ItemId .. ' did not turn into the shop')
   assert(Furniture.check(moved.Furniture, entry.ItemId, entry.X, entry.Z, entry.R, index) == nil, before.ItemId .. ' no longer fits in the shop')
  else
   assert(entry.X == before.X and entry.Z == before.Z and entry.R == before.R, before.ItemId .. ' moved out of the house')

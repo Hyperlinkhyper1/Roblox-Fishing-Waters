@@ -25,6 +25,8 @@ local RunService = game:GetService("RunService")
 local Lod = {}
 
 local FADE_TIME = 0.6
+local SURFACE_INSET = Vector3.new(0, 0.2, 0)
+local insetParts = setmetatable({}, { __mode = "k" })
 local PREFETCH_INTERVAL = 1
 local PREFETCH_AHEAD = 400
 local PREFETCH_STEP = 150 -- skip requests that barely move the streamed area
@@ -405,6 +407,12 @@ function Lod.start()
 		end
 		local function onPart(d: Instance)
 			if d:IsA("BasePart") then
+				-- Saved shells were sampled exactly on the real terrain. Keep their
+				-- faces below it while tiles overlap during streaming and fading.
+				if not insetParts[d] then
+					d.Position -= SURFACE_INSET
+					insetParts[d] = true
+				end
 				local visual = visualOf(d, true)
 				if visual then
 					table.insert(visual.parts, d)

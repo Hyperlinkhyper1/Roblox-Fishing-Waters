@@ -119,8 +119,11 @@ function NpcNavigation.walk(
 	local function supported(position: Vector3): boolean
 		return not stayOnGround or supportedBetween(Vector3.new(root.Position.X, feet(), root.Position.Z), position, true)
 	end
-	local function follow(position: Vector3, radius: number, moveDeadline: number, blocked: () -> boolean): boolean
-		if arrived(position, radius) then
+	local function follow(position: Vector3, radius: number, moveDeadline: number, blocked: () -> boolean, canTurn: (() -> boolean)?): boolean
+		local function reached(): boolean
+			return arrived(position, radius) and (canTurn == nil or canTurn())
+		end
+		if reached() then
 			return true
 		end
 		if flatDistance(root.Position, position) < 0.1 then
@@ -134,16 +137,35 @@ function NpcNavigation.walk(
 		humanoid:MoveTo(position)
 		local best = flatDistance(root.Position, position)
 		local progressAt = os.clock()
+		local correcting = false
+		local function finish(ok: boolean): boolean
+			if correcting and root.Parent and humanoid.Parent then
+				humanoid:Move(Vector3.zero)
+			end
+			return ok
+		end
 		while valid() and not blocked() and os.clock() < moveDeadline do
-			if arrived(position, radius) then
-				return true
+			if reached() then
+				return finish(true)
 			end
-			task.wait(POLL_SECONDS)
+			if canTurn and not correcting and arrived(position, radius) then
+				-- MoveTo may stop a stud before a narrow doorway's center.
+				-- Finish this last short approach before turning; the next leg
+				-- must clear the jamb from the rig's actual position. Issue one
+				-- correction, keeping normal segment movement on MoveTo.
+				local direction = Vector3.new(position.X - root.Position.X, 0, position.Z - root.Position.Z)
+				if direction.Magnitude < 0.05 then return false end
+				humanoid:Move(direction.Unit)
+				correcting = true
+			end
+			-- Observe the short correction more often so a fast porter cannot
+			-- step past the narrow band where the next doorway leg is clear.
+			task.wait(if correcting then math.min(POLL_SECONDS, 0.2 / math.max(1, humanoid.WalkSpeed)) else POLL_SECONDS)
 			if not valid() or blocked() then
-				return false
+				return finish(false)
 			end
-			if arrived(position, radius) then
-				return true
+			if reached() then
+				return finish(true)
 			end
 			local current = flatDistance(root.Position, position)
 			if current < best - 0.15 then
@@ -151,10 +173,10 @@ function NpcNavigation.walk(
 			elseif os.clock() - progressAt >= STUCK_SECONDS then
 				-- The humanoid is not making progress. Let the caller replan
 				-- instead of pushing against a corner forever.
-				return false
+				return finish(false)
 			end
 		end
-		return valid() and not blocked() and arrived(position, radius)
+		return finish(valid() and not blocked() and reached())
 	end
 	-- A new path from the same jammed position often repeats the same corner.
 	-- Step straight back along the incoming segment first; only do this after
@@ -219,8 +241,8 @@ function NpcNavigation.walk(
 			local bodySize = Vector3.new(width, bodyHeight, width)
 			local topY = math.max(feet(), target.Y) + 2.5
 			local bottomY = math.min(feet(), target.Y) - 3
-			local function point(column: number, row: number): Vector3?
-				local x, z = grid.extendedCellToLocal(column, row)
+			local function point(column: number, row: number, subdivisions: number): Vector3?
+				local x, z = grid.extendedCellToLocal(column / subdivisions, row / subdivisions)
 				local horizontal = gridFrame:PointToWorldSpace(Vector3.new(x, 0, z))
 				local hit = workspace:Raycast(Vector3.new(horizontal.X, topY, horizontal.Z), Vector3.new(0, bottomY - topY, 0), parameters)
 				-- The base house floor is 0.16 studs above HouseFrame, while the
@@ -246,18 +268,25 @@ function NpcNavigation.walk(
 					-- the actual segment again at half-stud intervals before moving.
 					and supportedBetween(from, to, true, 1)
 			end
-			local function route(): { Vector3 }?
+			local function route(subdivisions: number): { Vector3 }?
+				-- Furniture cells are 4.5 studs wide. A one-cell doorway can sit
+				-- between their centers (the lobby door does), leaving no usable
+				-- edge on that lattice. Retry at half-cell spacing while keeping
+				-- the same physical bounds and full body/floor clearance checks.
+				local spacing = grid.CELL_SIZE / subdivisions
+				local minColumn, maxColumn = grid.BASE_MIN_COLUMN * subdivisions, grid.BASE_MAX_COLUMN * subdivisions
+				local minRow, maxRow = grid.BASE_MIN_ROW * subdivisions, grid.BASE_MAX_ROW * subdivisions
 				local queue, previous, points, usable, edges, cost, closed = {}, {}, {}, {}, {}, {}, {}
 				local function key(column: number, row: number): number
-					return (row - grid.BASE_MIN_ROW) * (grid.BASE_MAX_COLUMN - grid.BASE_MIN_COLUMN + 1) + column - grid.BASE_MIN_COLUMN + 1
+					return (row - minRow) * (maxColumn - minColumn + 1) + column - minColumn + 1
 				end
 				local function isUsable(column: number, row: number): boolean
-					if column < grid.BASE_MIN_COLUMN or column > grid.BASE_MAX_COLUMN or row < grid.BASE_MIN_ROW or row > grid.BASE_MAX_ROW then
+					if column < minColumn or column > maxColumn or row < minRow or row > maxRow then
 						return false
 					end
 					local id = key(column, row)
 					if usable[id] == nil then
-						points[id] = point(column, row)
+						points[id] = point(column, row, subdivisions)
 						usable[id] = points[id] ~= nil and clearAt(points[id])
 					end
 					return usable[id]
@@ -265,9 +294,9 @@ function NpcNavigation.walk(
 				-- Multiple nearby entry cells avoid stranding a rig that starts
 				-- beside a fixture or was pushed away from a cell center.
 				local starts = {}
-				for row = grid.BASE_MIN_ROW, grid.BASE_MAX_ROW do
-					for column = grid.BASE_MIN_COLUMN, grid.BASE_MAX_COLUMN do
-						local x, z = grid.extendedCellToLocal(column, row)
+				for row = minRow, maxRow do
+					for column = minColumn, maxColumn do
+						local x, z = grid.extendedCellToLocal(column / subdivisions, row / subdivisions)
 						local distance = (Vector3.new(x - startLocal.X, 0, z - startLocal.Z)).Magnitude
 						if distance <= grid.CELL_SIZE * 1.5 and isUsable(column, row) then
 							local candidate = points[key(column, row)]
@@ -281,7 +310,7 @@ function NpcNavigation.walk(
 				for _, start in starts do
 					local id = key(start[1], start[2])
 					previous[id] = 0
-					cost[id] = start[3] / grid.CELL_SIZE
+					cost[id] = start[3] / spacing
 					table.insert(queue, { start[1], start[2] })
 				end
 				local finish = nil
@@ -291,7 +320,7 @@ function NpcNavigation.walk(
 					local best, bestScore = 1, math.huge
 					for index, candidate in queue do
 						local id = key(candidate[1], candidate[2])
-						local score = cost[id] + flatDistance(points[id], target) / grid.CELL_SIZE
+						local score = cost[id] + flatDistance(points[id], target) / spacing
 						if score < bestScore then best, bestScore = index, score end
 					end
 					local current = table.remove(queue, best)
@@ -350,7 +379,7 @@ function NpcNavigation.walk(
 			for attempt = 1, MAX_ATTEMPTS do
 				if not valid() or os.clock() >= deadline then break end
 				if arrived(target) then stop() return true end
-				local waypoints = route()
+				local waypoints = route(1) or route(2)
 				if not waypoints then break end
 				local failed = false
 				for index, position in waypoints do
@@ -371,7 +400,12 @@ function NpcNavigation.walk(
 					end
 					local distance = flatDistance(root.Position, aim)
 					local moveDeadline = math.min(deadline, os.clock() + math.max(3, distance / math.max(1, humanoid.WalkSpeed) * 2 + 1))
-					if not follow(aim, ARRIVAL_RADIUS, moveDeadline, function() return false end) then
+					local nextPosition = waypoints[index + 1]
+					local function canTurn(): boolean
+						local current = Vector3.new(root.Position.X, feet(), root.Position.Z)
+						return clearBetween(current, nextPosition)
+					end
+					if not follow(aim, ARRIVAL_RADIUS, moveDeadline, function() return false end, if nextPosition then canTurn else nil) then
 						failed = true
 						break
 					end

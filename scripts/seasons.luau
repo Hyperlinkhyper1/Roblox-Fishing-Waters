@@ -81,6 +81,7 @@ end
 local foliageSource = read("src/client/SeasonFoliage.luau")
 	:gsub('game:GetService%("%a+"%)', "{}")
 	:gsub("require%(ReplicatedStorage%.Shared%.Seasons%)", "{}")
+	:gsub("require%(ReplicatedStorage%.Shared%.Biomes%)", "{}")
 local SeasonFoliage = luau.load(
 	luau.compile(foliageSource),
 	"SeasonFoliage",

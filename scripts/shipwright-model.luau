@@ -124,6 +124,14 @@ Instance = {
 			return class == kind
 				or (class == "BasePart" and (kind == "Part" or kind == "WedgePart" or kind == "VehicleSeat"))
 		end
+		function item:IsDescendantOf(ancestor)
+			local parent = self.Parent
+			while parent do
+				if parent == ancestor then return true end
+				parent = parent.Parent
+			end
+			return false
+		end
 		function item:FindFirstChild(name, recursive)
 			for _, child in (if recursive then self:GetDescendants() else self.children) do
 				if child.Name == name then
@@ -212,6 +220,7 @@ function frameMeta.__index(a, key)
 		end
 	end
 end
+local game = Instance.new("DataModel")
 local function loadShipwright()
 	-- SHIPWRIGHT_SOURCE --
 end
@@ -234,6 +243,9 @@ check(
 for _, frame in { CFrame.new(0, 0, 0), CFrame.new(50, 8, -32) * CFrame.Angles(0, math.pi / 2, 0) } do
 	local npc = Shipwright.build(frame)
 	check(npc.Name == "Shipwright" and npc.Parent == nil, "NPC model contract")
+	check(not Shipwright.ensureAppearance(npc), "Detached NPC must not call the avatar API")
+	npc.Parent = game
+	check(Shipwright.ensureAppearance(npc), "Parented NPC receives its appearance")
 	check(npc:GetAttribute("NpcName") == "Mara" and npc:GetAttribute("Role") == "Shipwright", "NPC identity")
 	check(npc:GetAttribute("CosmeticsVersion") == 3, "Marketplace appearance must be applied and versioned")
 	local primary = npc.PrimaryPart
@@ -378,6 +390,7 @@ end
 -- them must remove those pieces before the catalog outfit is applied.
 local legacy = Instance.new("Model")
 legacy.Name = "Shipwright"
+legacy.Parent = game
 local legacyHumanoid = Instance.new("Humanoid")
 legacyHumanoid.Name = "Humanoid"
 legacyHumanoid.Parent = legacy

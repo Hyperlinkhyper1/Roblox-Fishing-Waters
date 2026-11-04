@@ -1,7 +1,9 @@
--- Furniture bought at the plaza shop and placed in a base house from build mode.
--- Clients only preview placements; every purchase and move is checked against the
--- saved profile here. Placed items are rebuilt from the owner's profile, so a base
--- always shows its current owner's furniture and nobody else's.
+-- Furniture bought at the plaza shop and placed in a base house from build mode, or
+-- on the plot of the player's company island (site "Company", which also takes the
+-- island's storage, kitchen and office kit). Clients only preview placements; every
+-- purchase and move is checked against the saved profile here. Placed items are
+-- rebuilt from the owner's profile, so a base or plot always shows its current
+-- owner's furniture and nobody else's.
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -9,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local CompanyIslandAccess = require(script.Parent.CompanyIslandAccess)
 local CargoService = require(script.Parent.CargoService)
 local FishFreezer = require(script.Parent.Map.FishFreezer)
 local ShopDesk = require(script.Parent.Map.ShopDesk)
@@ -23,6 +26,7 @@ local Decorations = require(script.Parent.Map.Decorations)
 local KitchenService = require(script.Parent.KitchenService)
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
+local CompanyIslandMap = require(script.Parent.Map.CompanyIslands)
 
 local FurnitureService = {}
 local BASE_TAG = "PlayerBase"
@@ -30,6 +34,8 @@ local SHOP_TAG = "FurnitureShop"
 local OWNER_PROMPT_TAG = "ShopOwnerPrompt"
 -- The shop across the street counts as home too; matches build mode on the client.
 local HOME_DISTANCE = 110
+-- From the quay to the far side of the plot; matches build mode on the client.
+local COMPANY_DISTANCE = 150
 local started = false
 local requests = {}
 local busy: { [Player]: boolean } = {}
@@ -125,6 +131,12 @@ local function atHome(player: Player): boolean
 	return frame ~= nil and near(player, frame.Position, HOME_DISTANCE)
 end
 
+local function atCompany(player: Player): boolean
+	local island = CompanyIslandAccess.get(player)
+	local frame = island and island:GetAttribute("PlotFrame")
+	return typeof(frame) == "CFrame" and near(player, frame.Position, COMPANY_DISTANCE)
+end
+
 local function state(player: Player)
 	local profile = BoatService.getProfile(player)
 	if not profile then
@@ -135,11 +147,14 @@ local function state(player: Player)
 		Cash = profile.Cash,
 		Stock = data.FurnitureStock,
 		Placed = data.Furniture,
+		CompanyPlaced = data.CompanyFurniture,
+		CompanyIsland = data.CompanyIsland,
 		PendingWallMigration = data.FurnitureWallMigrationPending == true,
 		Freezer = #data.Freezer,
 		FreezerCount = AnglerData.freezerCount(data),
 		Storage = #data.Storage,
 		StorageCapacity = AnglerData.storageCapacity(data),
+		CageStock = data.CrabCages.Stock, NetStock = data.MusselNets.Stock,
 		Pantry = #data.Pantry,
 		PantryCapacity = AnglerData.pantryCapacity(data),
 		Unlocked = data.Paths.Unlocked,
@@ -173,22 +188,28 @@ local function promptAnchor(parent: Instance, cframe: CFrame): Part
 end
 
 local function key(entry): string
-	return string.format("%s|%s|%s|%d", entry.ItemId, tostring(entry.X), tostring(entry.Z), entry.R)
+	return string.format("%s|%s|%s|%d|%s", entry.ItemId, tostring(entry.X), tostring(entry.Z), entry.R, entry.Key or "")
 end
 
-local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: number): Model?
-	local frame = Furniture.frame(houseFrame, entry)
+local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: number, site: string?): Model?
+	local frame = Furniture.frame(houseFrame, entry, site)
 	local model
-	if entry.ItemId == "Freezer" then
+	if entry.ItemId == "CompanyPrep" then
+		model = Kitchen.buildStation(parent, frame, "Prep")
+		if entry.Key then
+			-- CompanyIslandAccess.stations finds the bench by these; jobs save under its Key.
+			model:SetAttribute("StationFrame", frame)
+			KitchenService.addPrompts(model, frame, entry.Key, userId)
+		end
+	elseif entry.ItemId == "CompanyDesk" then
+		model = CompanyIslandMap.buildDesk(parent, frame)
+		local anchor = promptAnchor(model, frame * CFrame.new(0, 3.6, 2.4))
+		ownerPrompt(anchor, "CompanyOfficePrompt", "Manage company", "Staff and business"):SetAttribute("OwnerUserId", userId)
+	elseif entry.ItemId == "Freezer" then
 		model = FishFreezer.build(parent, frame)
 		local anchor = promptAnchor(model, frame * CFrame.new(0, FishFreezer.HEIGHT * 0.7, FishFreezer.DEPTH / 2))
 		-- CustomerService handles every freezer prompt in a base the same way.
 		ownerPrompt(anchor, "StockFreezerPrompt", "Place fish", "Freezer"):SetAttribute("OwnerUserId", userId)
-		-- Made Available by CustomerService once the Supermarket path lets fish be cooked.
-		local take = ownerPrompt(anchor, "TakeFrozenFishPrompt", "Take fish", "Freezer")
-		take.KeyboardKeyCode, take.GamepadKeyCode = Enum.KeyCode.F, Enum.KeyCode.ButtonY
-		take:SetAttribute("Available", false)
-		take:SetAttribute("OwnerUserId", userId)
 	elseif entry.ItemId == "Register" then
 		model = ShopDesk.build(parent, frame)
 	elseif entry.ItemId == "StorageRack" then
@@ -250,24 +271,14 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 end
 
 -- Rebuilds only what changed, so prompts and fish displays on untouched items survive.
-local function sync(base: Model)
-	local house, houseFrame = houseOf(base)
-	if not house or not houseFrame then
-		return
-	end
-	local folder = house:FindFirstChild("Furniture")
-	if not folder then
-		folder = Instance.new("Model")
-		folder.Name = "Furniture"
-		folder.Parent = house
-	end
-	local owner = ownerOf(base)
+-- `stored` is how many stored fish are left for this site's racks to show; returns
+-- what is left after them.
+local function syncFolder(folder: Instance, houseFrame: CFrame, owner: Player?, site: string?, stored: number): number
 	local profile = owner and BoatService.getProfile(owner)
+	local list = if not profile then {} elseif site == "Company" then profile.Angler.CompanyFurniture else profile.Angler.Furniture
 	local wanted = {}
-	if profile then
-		for _, entry in profile.Angler.Furniture do
-			wanted[key(entry)] = entry
-		end
+	for _, entry in list do
+		wanted[key(entry)] = entry
 	end
 	local present = {}
 	for _, child in folder:GetChildren() do
@@ -284,7 +295,7 @@ local function sync(base: Model)
 	end
 	for entryKey, entry in wanted do
 		if not present[entryKey] and owner then
-			local model = buildItem(folder, houseFrame, entry, owner.UserId)
+			local model = buildItem(folder, houseFrame, entry, owner.UserId, site)
 			if model then
 				model:SetAttribute("OwnerUserId", owner.UserId)
 				present[entryKey] = model
@@ -292,29 +303,66 @@ local function sync(base: Model)
 		end
 	end
 	-- Racks fill in placement order, eight crates each.
-	local stored = if profile then #profile.Angler.Storage else 0
 	local capacity = if profile then AnglerData.storageCapacity(profile.Angler) else 0
-	for _, entry in if profile then profile.Angler.Furniture else {} do
+	for _, entry in list do
 		local model = present[key(entry)]
 		if entry.ItemId == "StorageRack" and model then
-			StorageRack.fill(model, Furniture.frame(houseFrame, entry), math.min(stored, StorageRack.CRATES))
-			stored = math.max(0, stored - StorageRack.CRATES)
+			local tools = entry.Mode == "Tools"
+			StorageRack.fill(model, Furniture.frame(houseFrame, entry, site), if tools then math.min((entry.Cages or 0) + (entry.Nets or 0), StorageRack.CRATES) else math.min(stored, StorageRack.CRATES))
+			if not tools then stored = math.max(0, stored - StorageRack.CRATES) end
 			for _, prompt in model:GetDescendants() do
 				if prompt:IsA("ProximityPrompt") then
+					prompt.Enabled = not tools
 					prompt.ObjectText = string.format("Storage · %d/%d fish", #profile.Angler.Storage, capacity)
 				end
 			end
 		end
 		if entry.ItemId == "KitchenStorage" and model then
-			FurnitureService.refreshKitchenStorage(model, Furniture.frame(houseFrame, entry), if profile and profile.Angler.KitchenStorage then profile.Angler.KitchenStorage.Fish else {})
-			end
+			FurnitureService.refreshKitchenStorage(model, Furniture.frame(houseFrame, entry, site), if profile and profile.Angler.KitchenStorage then profile.Angler.KitchenStorage.Fish else {})
+		end
 	end
+	return stored
+end
+
+local function sync(base: Model): number
+	local owner = ownerOf(base)
+	local profile = owner and BoatService.getProfile(owner)
+	local stored = if profile then #profile.Angler.Storage else 0
+	local house, houseFrame = houseOf(base)
+	if not house or not houseFrame then
+		return stored
+	end
+	local folder = house:FindFirstChild("Furniture")
+	if not folder then
+		folder = Instance.new("Model")
+		folder.Name = "Furniture"
+		folder.Parent = house
+	end
+	return syncFolder(folder, houseFrame, owner, nil, stored)
+end
+
+-- The plot of a company island; its racks show the fish the home racks can't.
+function FurnitureService.syncCompany(island: Model, stored: number?)
+	local folder, frame = island:FindFirstChild("PlotFurniture"), island:GetAttribute("PlotFrame")
+	if not folder or typeof(frame) ~= "CFrame" then
+		return
+	end
+	local owner = ownerOf(island)
+	local profile = owner and BoatService.getProfile(owner)
+	if stored == nil then
+		local base = owner and baseOf(owner)
+		stored = if base then sync(base) elseif profile then #profile.Angler.Storage else 0
+	end
+	syncFolder(folder, frame, owner, "Company", stored :: number)
 end
 
 local function syncPlayer(player: Player)
 	local base = baseOf(player)
-	if base then
-		sync(base)
+	local profile = BoatService.getProfile(player)
+	local stored = if base then sync(base) elseif profile then #profile.Angler.Storage else 0
+	local island = CompanyIslandAccess.get(player)
+	if island then
+		FurnitureService.syncCompany(island, stored)
 	end
 end
 
@@ -353,7 +401,7 @@ end
 
 local function buy(player: Player, itemId: any): (boolean, string)
 	local item = if type(itemId) == "string" then Furniture.Items[itemId] else nil
-	if not item then
+	if not item or item.Kit then
 		return false, "That isn't for sale."
 	elseif not atShop(player, itemId) then
 		return false, "Step inside Harbour Home and approach a display or the counter to buy furniture."
@@ -380,29 +428,45 @@ local function buy(player: Player, itemId: any): (boolean, string)
 	return ok, message
 end
 
-local function place(player: Player, from: any, x: any, z: any, r: any): (boolean, string)
+-- nil when the player stands where they can arrange `site`, otherwise why not.
+local function siteProblem(player: Player, site: string?): string?
+	if site == "Company" then
+		return if atCompany(player) then nil else "Go to your company island to arrange its plot."
+	end
+	return if atHome(player) then nil else "Go home to arrange your furniture."
+end
+
+local function place(player: Player, from: any, x: any, z: any, r: any, site: string?): (boolean, string)
+	local problem = siteProblem(player, site)
 	if type(from) ~= "string" and not (type(from) == "number" and from % 1 == 0) then
 		return false, "That isn't furniture."
 	elseif type(x) ~= "number" or type(z) ~= "number" or type(r) ~= "number" then
 		return false, "That isn't a spot in your house."
-	elseif not atHome(player) then
-		return false, "Go home to arrange your furniture."
+	elseif problem then
+		return false, problem
 	end
 	return run(player, function(profile)
-		local data, reason = AnglerData.placeFurniture(profile.Angler, from, x, z, r)
+		local data, reason = AnglerData.placeFurniture(profile.Angler, from, x, z, r, site)
 		if data then
+			if data.Building then
+				local list = if site == "Company" then data.CompanyFurniture else data.Furniture
+				local entry = list[if type(from) == "number" then from else #list]
+				local blocked = require(script.Parent.BuildingService).furnitureProblem(player, entry, site, profile)
+				if blocked then return nil, blocked end
+			end
 			profile.Angler = data
 		end
 		return data, reason
 	end)
 end
 
-local function pickUp(player: Player, index: any): (boolean, string)
-	if not atHome(player) then
-		return false, "Go home to arrange your furniture."
+local function pickUp(player: Player, index: any, site: string?): (boolean, string)
+	local problem = siteProblem(player, site)
+	if problem then
+		return false, problem
 	end
 	return run(player, function(profile)
-		local data, reason = AnglerData.pickUpFurniture(profile.Angler, index)
+		local data, reason = AnglerData.pickUpFurniture(profile.Angler, index, site)
 		if data then
 			profile.Angler = data
 		end
@@ -413,8 +477,7 @@ end
 local function rackPrompt(player: Player, prompt: ProximityPrompt)
 	local base = baseOf(player)
 	if
-		not base
-		or not prompt:IsDescendantOf(base)
+		not ((base and prompt:IsDescendantOf(base)) or CompanyIslandAccess.ownsPrompt(player, prompt))
 		or not near(player, prompt.Parent.Position, prompt.MaxActivationDistance + 2)
 	then
 		return
@@ -554,6 +617,7 @@ function FurnitureService.refreshKitchenStorage(model: Model, frame: CFrame, fis
 end
 
 local function takeKitchenStorageFish(player: Player, prompt: ProximityPrompt)
+	if prompt:GetAttribute("OwnerUserId") ~= player.UserId then return end
 	local position = (prompt.Parent :: BasePart).Position
 	local reach = prompt.MaxActivationDistance + 2
 	if not near(player, position, reach) then
@@ -583,10 +647,7 @@ local function takeKitchenStorageFish(player: Player, prompt: ProximityPrompt)
 		local name = if species then species.Name else taken.FishId
 		notify(player, string.format("Took a %s (%s) from kitchen storage. Ready to cook!", name, species and species.Rarity or "fish"))
 		CargoService.push(player)
-		local base = baseOf(player)
-		if base then
-			sync(base)
-		end
+		syncPlayer(player)
 	elseif message then
 		notify(player, message)
 	end
@@ -634,8 +695,12 @@ local function buildPreviews(parent: Instance)
 		KitchenStorage = Kitchen.buildStorage or function(p, f) return Kitchen.buildStation(p, f, "KitchenStorage") end,
 		DiningTable = DiningRoom.buildTable,
 		WeatherRadar = WeatherRadar.build,
+		CompanyPrep = function(p, f) return Kitchen.buildStation(p, f, "Prep") end,
+		CompanyDesk = CompanyIslandMap.buildDesk,
 	}
-	for _, id in Furniture.Order do
+	local ids = table.clone(Furniture.Order)
+	table.move(Furniture.KitOrder, 1, #Furniture.KitOrder, #ids + 1, ids)
+	for _, id in ids do
 		local build = builders[id] or function(parent, frame)
 			if Decorations.has(id) then
 				return Decorations.build(parent, frame, id)
@@ -718,8 +783,7 @@ function FurnitureService.start()
 				return data
 			end)
 			if ok then
-				local base = baseOf(player)
-				if base then sync(base) end
+				syncPlayer(player)
 				local msg = if movedCount > 0 then string.format("Moved %d fish from stock onto the prep table! Porter will also bring eligible fish.", movedCount) else "Targets updated! Porter will bring eligible catches here."
 				return { Ok = true, Message = msg }
 			end
@@ -727,7 +791,7 @@ function FurnitureService.start()
 		end
 		return { Ok = false, Message = "Unknown action." }
 	end
-	request.OnServerInvoke = function(player, action, a, b, c, d)
+	request.OnServerInvoke = function(player, action, a, b, c, d, e)
 		if action == "Get" then
 			return { Ok = true, Message = "", State = state(player) }
 		end
@@ -739,9 +803,18 @@ function FurnitureService.start()
 		if action == "Buy" then
 			ok, message = buy(player, a)
 		elseif action == "Place" or action == "Move" then
-			ok, message = place(player, a, b, c, d)
+			ok, message = place(player, a, b, c, d, if e == "Company" then "Company" else nil)
 		elseif action == "PickUp" then
-			ok, message = pickUp(player, a)
+			ok, message = pickUp(player, a, if b == "Company" then "Company" else nil)
+		elseif action == "EditRack" then
+			local site = if c == "Company" then "Company" else nil
+			local problem = siteProblem(player, site)
+			if problem then return { Ok = false, Message = problem, State = state(player) } end
+			ok, message = run(player, function(profile)
+				local data, reason = AnglerData.editRack(profile.Angler, a, b, site)
+				if data then profile.Angler = data end
+				return data, reason
+			end)
 		else
 			ok, message = false, "That furniture action is unavailable."
 		end

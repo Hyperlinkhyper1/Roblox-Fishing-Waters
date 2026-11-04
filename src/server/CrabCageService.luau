@@ -23,6 +23,7 @@ local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 local MutationContext = require(ReplicatedStorage.Shared.MutationContext)
+local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local CrabCageService = {}
@@ -451,7 +452,7 @@ end
 -- Keep a blocked haul's crab until it can be claimed; destroyed cages drop out.
 local pendingRolls: { [Instance]: any } = setmetatable({}, { __mode = "k" }) :: any
 
-local function collect(player: Player, prompt: ProximityPrompt)
+local function collect(player: Player, prompt: ProximityPrompt, automatic: boolean?)
 	local anchor = prompt.Parent
 	local model = anchor and anchor.Parent
 	local base = baseOf(player)
@@ -467,7 +468,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 		return
 	end
 	local root = rootOf(player)
-	if not root or (root.Position - anchor.Position).Magnitude > prompt.MaxActivationDistance + 3 then
+	if not automatic and (not root or (root.Position - anchor.Position).Magnitude > prompt.MaxActivationDistance + 3) then
 		return
 	end
 	local x, z = model:GetAttribute("X"), model:GetAttribute("Z")
@@ -514,14 +515,15 @@ local function collect(player: Player, prompt: ProximityPrompt)
 			roll.Size,
 			roll.Traits,
 			layout,
-			doubleXP
+			doubleXP,
+			automatic
 		)
 	end
 	-- recordCatch checks the entire rotated shape, not just one free tile. Its
 	-- copy is discarded if the catch would be released instead of stored.
 	local _, previewDestination = award(profile.Angler, backpack)
 	if previewDestination == "Released" then
-		notify(player, noRoom)
+		if not automatic then notify(player, noRoom) end
 		return
 	end
 	local soak = CrabCages.soak(rng)
@@ -529,6 +531,10 @@ local function collect(player: Player, prompt: ProximityPrompt)
 	local blocked = false
 	busy[player] = true
 	local ok, message = BoatService.updateProgress(player, function(current)
+		if automatic then
+			assert(current.Angler.Staff.Porter and StaffCatalog.workerLevel(current.Angler, "Porter") >= 2, "Porter unavailable")
+		end
+		assert(not CrabCages.collectProblem(current.Angler, x, z, now), "Harvest is no longer ready")
 		local layout = BackpackCatalog.Items[current.Angler.BackpackId] or BackpackCatalog.Items.Starter
 		local awarded
 		awarded, destination = award(current.Angler, layout)
@@ -539,7 +545,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 	end)
 	busy[player] = nil
 	if not ok then
-		notify(player, if blocked then noRoom else message)
+		if not automatic then notify(player, if blocked then noRoom else message) end
 		return
 	end
 	pendingRolls[model] = nil
@@ -551,7 +557,7 @@ local function collect(player: Player, prompt: ProximityPrompt)
 	-- The same catch card as a landed fish.
 	local catch = ReplicatedStorage:FindFirstChild("Catch")
 	local reveal = catch and catch:FindFirstChild("Update")
-	if reveal and reveal:IsA("RemoteEvent") then
+	if not automatic and reveal and reveal:IsA("RemoteEvent") then
 		reveal:FireClient(player, "Caught", {
 			FishId = roll.FishId,
 			Kg = roll.Kg,
@@ -627,6 +633,84 @@ function CrabCageService.start()
 	for _, base in CollectionService:GetTagged(BASE_TAG) do
 		watchBase(base)
 	end
+	-- Harvest ready equipment while the owner has an active, upgraded porter.
+	task.spawn(function()
+		while true do
+			task.wait(5)
+			for _, player in Players:GetPlayers() do
+				local profile = BoatService.getProfile(player)
+				local base = baseOf(player)
+				if profile and base and not busy[player] and profile.Angler.Staff.Porter
+					and StaffCatalog.workerLevel(profile.Angler, "Porter") >= 2 then
+					for _, model in CollectionService:GetTagged(CAGE_TAG) do
+						if model:IsDescendantOf(base) then
+							local x, z = model:GetAttribute("X"), model:GetAttribute("Z")
+							local prompt = model:FindFirstChild(PROMPT_NAME, true)
+							if prompt and type(x) == "number" and type(z) == "number"
+								and not CrabCages.collectProblem(profile.Angler, x, z, os.time()) then
+								local ok, failure = pcall(collect, player, prompt, true)
+								if not ok then warn("[CrabCages] Porter harvest: " .. tostring(failure)) end
+								break
+							end
+						end
+					end
+				end
+			end
+		end
+	end)
+	-- A level 4 porter replaces worn-out equipment using a tools rack.
+	task.spawn(function()
+		while true do
+			task.wait(5)
+			for _, player in Players:GetPlayers() do
+				local profile = BoatService.getProfile(player)
+				local base = baseOf(player)
+				local dock = base and dockFrame(base)
+				if not profile or not dock or busy[player] or not profile.Angler.Staff.Porter
+					or StaffCatalog.workerLevel(profile.Angler, "Porter") < 4
+					or #profile.Angler.CrabCages.Placed >= CrabCages.MAX_PLACED then continue end
+				local rackIndex
+				for index, rack in profile.Angler.Furniture do
+					if rack.ItemId == "StorageRack" and rack.Mode == "Tools" and (rack.Cages or 0) > 0 then rackIndex = index break end
+				end
+				if not rackIndex then continue end
+				local candidate = table.clone(profile.Angler)
+				candidate.CrabCages = table.clone(profile.Angler.CrabCages)
+				candidate.CrabCages.Stock += 1
+				local ignore = {}
+				for _, other in Players:GetPlayers() do if other.Character then table.insert(ignore, other.Character) end end
+				local chosenX, chosenZ
+				for z = -38, 2, 5 do
+					for x = -22, 23, 5 do
+						if not CrabCages.placeProblem(candidate, x, z) then
+							local frame = cageFrame(dock, x, z)
+							local clear = true
+							for _, point in CrabCages.footprint(Props.CRAB_CAGE_SIZE) do
+								if not openWater(frame * point, ignore) then clear = false break end
+							end
+							if clear then chosenX, chosenZ = x, z break end
+						end
+					end
+					if chosenX then break end
+				end
+				if chosenX then
+					local now = os.time()
+					local soak = CrabCages.soak(function() return random:NextNumber() end)
+					busy[player] = true
+					local ok = BoatService.updateProgress(player, function(current)
+						local rack = current.Angler.Furniture[rackIndex]
+						assert(current.Angler.Staff.Porter and StaffCatalog.workerLevel(current.Angler, "Porter") >= 4, "Porter unavailable")
+						assert(rack and rack.ItemId == "StorageRack" and rack.Mode == "Tools" and (rack.Cages or 0) > 0, "Rack unavailable")
+						rack.Cages -= 1
+						current.Angler.CrabCages.Stock += 1
+						CrabCages.place(current.Angler, chosenX, chosenZ, now, soak)
+					end)
+					busy[player] = nil
+					if ok then refreshPlayer(player) end
+				end
+			end
+		end
+	end)
 	-- Countdowns tick once a second.
 	task.spawn(function()
 		while true do

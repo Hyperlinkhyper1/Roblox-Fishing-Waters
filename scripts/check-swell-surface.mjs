@@ -13,7 +13,8 @@ const mocks = read('scripts/drydock-geometry.luau').split('local function loadLo
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
 const source = read('src/client/SwellSurface.luau')
   .replace(/local Biomes = require\(ReplicatedStorage.Shared.Biomes\)/, 'local Biomes = dependencies.Biomes')
-  .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather');
+  .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather')
+  .replace(/local MeshFeatures = require\(ReplicatedStorage.Shared.MeshFeatures\)/, 'local MeshFeatures = { EditableMeshesEnabled = true }');
 const program = read('scripts/swell-surface.luau')
   .replace('-- MOCKS --', () => mocks)
   .replace('-- BIOMES --', () => read('src/shared/Biomes.luau'))

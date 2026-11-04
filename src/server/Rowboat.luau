@@ -12,7 +12,7 @@ local WOOD = {
 }
 local RAIL = Color3.fromRGB(112, 91, 73)
 local IRON = Color3.fromRGB(49, 47, 42)
-local LAMP = Color3.fromRGB(255, 218, 151)
+local LAMP = Color3.fromRGB(214, 168, 104)
 local PLANK_THICKNESS = 0.14
 local FLOOR_HEIGHT = 0.4
 local connectedCoolers = setmetatable({}, { __mode = "k" })
@@ -329,7 +329,7 @@ function Rowboat.build(frame: CFrame, anchored: boolean?): Model
 		local light = Instance.new("PointLight")
 		light.Color = LAMP
 		light.Range = 8
-		light.Brightness = 0.55
+		light.Brightness = 0.35
 		light.Shadows = false
 		light.Parent = glow
 	end

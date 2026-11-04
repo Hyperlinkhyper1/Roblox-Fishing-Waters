@@ -25,7 +25,7 @@ function WeatherService.start()
 		elapsed %= 0.25
 		local now = workspace:GetServerTimeNow()
 		local state = Weather.getState(now)
-		Lighting.ClockTime = DayNight.clockTime(now)
+		Lighting.ClockTime = DayNight.lightingClock(now)
 		workspace.GlobalWind = state.windDirection * state.windSpeed
 		workspace:SetAttribute("WeatherKind", state.kind)
 		workspace:SetAttribute("WeatherRain", state.rain)

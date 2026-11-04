@@ -23,6 +23,8 @@ SpearSkins.Skins = {
 		ShaftColor = { 148, 119, 84 },
 		GripColor = { 84, 65, 48 },
 		TipColor = { 170, 177, 177 },
+		AccentColor = { 197, 176, 131 },
+		ShaftMaterial = "Wood",
 		Damage = 0.05,
 	},
 	DeepBlue = {
@@ -33,6 +35,8 @@ SpearSkins.Skins = {
 		ShaftColor = { 48, 99, 137 },
 		GripColor = { 30, 53, 72 },
 		TipColor = { 175, 199, 208 },
+		AccentColor = { 219, 231, 221 },
+		ShaftMaterial = "SmoothPlastic",
 		FireRate = 0.05,
 	},
 	Coral = {
@@ -43,6 +47,8 @@ SpearSkins.Skins = {
 		ShaftColor = { 222, 107, 91 },
 		GripColor = { 123, 66, 61 },
 		TipColor = { 230, 198, 166 },
+		AccentColor = { 246, 167, 126 },
+		ShaftMaterial = "SmoothPlastic",
 		Damage = 0.08,
 	},
 	Seafoam = {
@@ -53,6 +59,8 @@ SpearSkins.Skins = {
 		ShaftColor = { 113, 194, 174 },
 		GripColor = { 44, 102, 95 },
 		TipColor = { 195, 226, 213 },
+		AccentColor = { 227, 247, 225 },
+		ShaftMaterial = "SmoothPlastic",
 		FireRate = 0.08,
 	},
 	Obsidian = {
@@ -63,6 +71,8 @@ SpearSkins.Skins = {
 		ShaftColor = { 51, 53, 64 },
 		GripColor = { 28, 27, 36 },
 		TipColor = { 115, 119, 133 },
+		AccentColor = { 164, 112, 219 },
+		ShaftMaterial = "Slate",
 		Damage = 0.12,
 	},
 	Storm = {
@@ -73,6 +83,8 @@ SpearSkins.Skins = {
 		ShaftColor = { 112, 132, 158 },
 		GripColor = { 49, 64, 88 },
 		TipColor = { 214, 225, 235 },
+		AccentColor = { 145, 213, 248 },
+		ShaftMaterial = "Metal",
 		FireRate = 0.12,
 	},
 	ReefTrident = {
@@ -83,6 +95,8 @@ SpearSkins.Skins = {
 		ShaftColor = { 36, 139, 137 },
 		GripColor = { 29, 77, 76 },
 		TipColor = { 120, 222, 207 },
+		AccentColor = { 236, 204, 131 },
+		ShaftMaterial = "Metal",
 		Damage = 0.16,
 	},
 	GoldenHarpoon = {
@@ -93,6 +107,8 @@ SpearSkins.Skins = {
 		ShaftColor = { 176, 130, 49 },
 		GripColor = { 83, 57, 31 },
 		TipColor = { 255, 216, 111 },
+		AccentColor = { 255, 237, 174 },
+		ShaftMaterial = "Metal",
 		FireRate = 0.20,
 	},
 }

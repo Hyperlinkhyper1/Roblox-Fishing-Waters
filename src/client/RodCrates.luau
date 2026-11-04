@@ -21,8 +21,8 @@ local RodCaseOpening = require(script.Parent:WaitForChild("RodCaseOpening"))
 local RodCrates = {}
 local started = false
 
-local WIDTH, HEIGHT = 760, 658
-local CARD_WIDTH, CARD_HEIGHT, CARD_GAP = 170, 200, 10
+local WIDTH, HEIGHT = 760, 698
+local CARD_WIDTH, CARD_HEIGHT, CARD_GAP = 170, 220, 10
 local GOLD = Color3.fromRGB(244, 196, 76)
 local AFFORD = Color3.fromRGB(111, 202, 125)
 local SHORT = Color3.fromRGB(238, 107, 111)
@@ -283,9 +283,9 @@ local function startShop(RodSkins, kind: string)
 			rarity.Font = Enum.Font.GothamBold
 			local perks = label(
 				card,
-				table.concat(RodSkins.perks(skinId), "\n"),
+				table.concat(if rod then RodSkins.previewPerks(skinId) else RodSkins.perks(skinId), "\n"),
 				UDim2.fromOffset(10, 123),
-				UDim2.new(1, -20, 0, 40),
+				UDim2.new(1, -20, 0, 60),
 				11,
 				muted
 			)
@@ -494,7 +494,7 @@ local function startShop(RodSkins, kind: string)
 			if bobber
 				then "Equip one bobber for small luck and mutation boosts. Duplicate copies do not stack perks."
 				elseif spear then "Spear skins boost shark damage or fire rate. Wear affects each bonus; equip copies in your equipment bag."
-				else "Each skin adds its stats on top of Finn's upgrades. Duplicates stack as spares.",
+				else "Bonuses vary with wear; cards show the possible range. Your equipment bag shows each copy's actual bonus.",
 			muted
 		)
 		reveal.Visible = false

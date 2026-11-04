@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local CompanyIslandAccess = require(script.Parent.CompanyIslandAccess)
 local CargoService = require(script.Parent.CargoService)
 local Kitchen = require(script.Parent.Map.Kitchen)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
@@ -130,6 +131,7 @@ local function stations(house: Model, houseFrame: CFrame): { [string]: { model: 
 			result[key] = {
 				model = model,
 				frame = Furniture.frame(houseFrame, {
+					ItemId = model:GetAttribute("ItemId"),
 					X = model:GetAttribute("X"),
 					Z = model:GetAttribute("Z"),
 					R = model:GetAttribute("R"),
@@ -161,7 +163,7 @@ local function syncBenches(base: Model)
 		benches:SetAttribute("OwnerUserId", owner.UserId)
 		for key, bench in Recipes.BuiltIn do
 			local frame = Furniture.frame(houseFrame, bench)
-			local model = Kitchen.buildStation(benches, frame, bench.Station)
+			local model = Kitchen.buildStation(benches, frame, bench.Station, Kitchen.BUILT_IN_WIDTH)
 			model.Name = key
 			KitchenService.addPrompts(model, frame, key, owner.UserId)
 		end
@@ -272,9 +274,27 @@ local function refreshBase(base: Model)
 	end
 end
 
+local function refreshCompany(player: Player)
+	local profile = BoatService.getProfile(player)
+	for key, station in CompanyIslandAccess.stations(player) do
+		refreshStation(station, if profile then profile.Angler.Kitchen[key] else nil, os.time())
+	end
+end
+
 local function stationNear(player: Player, key: any): boolean
+	if type(key) ~= "string" then
+		return false
+	end
+	local propertyStation = CompanyIslandAccess.stations(player)[key]
+	if propertyStation then
+		local anchor = propertyStation.model:FindFirstChild("KitchenPromptAnchor")
+		return anchor ~= nil and near(player, anchor.Position, 8)
+	end
 	local base = baseOf(player)
-	local house, houseFrame = if base then houseOf(base) else nil
+	local house, houseFrame
+	if base then
+		house, houseFrame = houseOf(base)
+	end
 	if type(key) ~= "string" or not house or not houseFrame then
 		return false
 	end
@@ -294,6 +314,7 @@ local function transact(player: Player, transform): (boolean, string)
 	if ok and base then
 		refreshBase(base)
 	end
+	if ok then refreshCompany(player) end
 	return ok, message
 end
 
@@ -429,6 +450,7 @@ function KitchenService.start()
 				syncBenches(base)
 				refreshBase(base)
 			end
+			refreshCompany(player)
 		end)
 	end
 	Players.PlayerAdded:Connect(watchPlayer)
@@ -460,6 +482,13 @@ function KitchenService.start()
 					if not ok then
 						warn("[Kitchen] " .. tostring(failure))
 					end
+				end
+			end
+			for _, island in CollectionService:GetTagged("CompanyIsland") do
+				local owner = ownerOf(island)
+				if owner then
+					local ok, failure = pcall(refreshCompany, owner)
+					if not ok then warn("[Company kitchen] " .. tostring(failure)) end
 				end
 			end
 		end

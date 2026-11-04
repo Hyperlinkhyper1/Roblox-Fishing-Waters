@@ -3,17 +3,20 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
+local Harbour = require(script.Parent.Harbour)
 local LowPoly = require(script.Parent.LowPoly)
 local Props = require(script.Parent.Props)
+local Seabed = require(script.Parent.Seabed)
 local SeabedLife = require(script.Parent.SeabedLife)
 
 local SeabedDetails = {}
-local VERSION = 3
+local VERSION = 5
 local TAU = math.pi * 2
--- Every cell of this grid over the whole floor gets a patch, so no stretch is bare.
--- Patches are copies of a few prebuilt ones per style; halve CELL for 4x the parts.
-local CELL = 64
-local PATCH_TEMPLATES = 16
+-- Reuse small patches across the whole ocean, with a closer weave in the lake.
+-- Keep each copy independently streamed rather than cloning whole reef gardens.
+local CELL = 48
+local LAKE_CELL = 24
+local PATCH_TEMPLATES = 24
 local M = Enum.Material
 local rgb = Color3.fromRGB
 
@@ -49,7 +52,15 @@ local STYLES: { [string]: Style } = {
 	},
 	volcanic = { count = 60, shoreCount = 40, stone = rgb(61, 58, 55), weed = rgb(72, 79, 54), vegetation = 0.15 },
 	ice = { count = 60, shoreCount = 40, stone = rgb(110, 133, 141), weed = rgb(65, 94, 81), vegetation = 0.35 },
-	open = { count = 180, shoreCount = 0, stone = rgb(93, 105, 108), weed = rgb(69, 96, 66), vegetation = 0.55 },
+	open = {
+		count = 480,
+		shoreCount = 0,
+		stone = rgb(132, 137, 125),
+		weed = rgb(69, 96, 66),
+		sand = rgb(206, 190, 148),
+		coral = { rgb(168, 97, 84), rgb(185, 143, 100), rgb(144, 119, 153) },
+		vegetation = 0.7,
+	},
 }
 
 local function model(name: string, parent: Instance): Model
@@ -63,7 +74,12 @@ local function sample(params: RaycastParams, x: number, z: number): RaycastResul
 	-- Start above the tallest island: a ray from below sea level can put plants
 	-- inside the land above it. Only ground and Terrain participate in these rays.
 	local hit = workspace:Raycast(Vector3.new(x, 600, z), Vector3.new(0, -720, 0), params)
-	if hit and hit.Position.Y < Biomes.WaterLevel - 8 and hit.Normal.Y > 0.78 then
+	if
+		hit
+		and hit.Position.Y < Biomes.WaterLevel - 8
+		and hit.Normal.Y > 0.78
+		and Biomes.inOceanBounds(hit.Position)
+	then
 		return hit
 	end
 	return nil
@@ -250,10 +266,15 @@ end
 local function patchTemplate(style: Style, rng: Random): Model
 	local patch = Instance.new("Model")
 	patch.Name = "SeabedPatch"
-	for index = 1, rng:NextInteger(1, 2) do
+	for index = 1, 2 do
 		local angle = rng:NextNumber(0, TAU)
-		local distance = if index == 1 then 0 else rng:NextNumber(3, 8)
-		tuft(patch, Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance), style, rng)
+		local distance = if index == 1 then 0 else rng:NextNumber(5, 10)
+		local point = Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
+		if index == 1 and rng:NextNumber() < 0.2 then
+			stones(patch, point, rng, style.stone)
+		else
+			tuft(patch, point, style, rng)
+		end
 	end
 	settle(patch)
 	patch.WorldPivot = CFrame.new()
@@ -353,14 +374,18 @@ local function scatter(
 		local angle = rng:NextNumber(0, TAU)
 		local position: Vector2
 		if biome == Biomes.OpenSea then
-			local half = Biomes.MapHalfSize - 40
-			position = Vector2.new(rng:NextNumber(-half, half), rng:NextNumber(-half, half))
+			-- Sample the full ocean footprint, including the remote city approach.
+			-- Biome and ocean checks below discard the two unfilled outer corners.
+			position = Vector2.new(
+				rng:NextNumber(Biomes.OceanMin + 40, Biomes.OceanMax - 40),
+				rng:NextNumber(Biomes.OceanMin + 40, Biomes.OceanMax - 40)
+			)
 		else
 			position = biome.center
 				+ Vector2.new(math.cos(angle), math.sin(angle)) * (biome.radius - 35) * math.sqrt(rng:NextNumber())
 		end
 		local world = Vector3.new(position.X, 0, position.Y)
-		if Biomes.at(world) ~= biome then
+		if Biomes.at(world) ~= biome or not Biomes.inOceanBounds(world) then
 			continue
 		end
 		local clear = true
@@ -385,67 +410,107 @@ local function scatter(
 	return placed
 end
 
-local function cellKey(x: number, z: number): number
-	return math.floor(x / CELL) * 100003 + math.floor(z / CELL)
+local function cellKey(x: number, z: number, cell: number): number
+	return math.floor(x / cell) * 100003 + math.floor(z / cell)
 end
 
 -- Fill every grid cell the gardens left bare with a copy of a prebuilt patch, seated on
 -- the sampled ground. Islands and steep slopes simply fail the sample and stay clear.
 local function carpet(details: Folder, params: RaycastParams, seed: number, occupied: { Vector2 })
 	local rng = Random.new(seed)
-	local taken: { [number]: boolean } = {}
-	for _, position in occupied do
-		taken[cellKey(position.X, position.Y)] = true
+	local lake = Harbour.lakeOutline(Biomes.Normal.center)
+	local lakeMin, lakeMax = lake[1], lake[1]
+	for _, point in lake do
+		lakeMin, lakeMax = lakeMin:Min(point), lakeMax:Max(point)
+	end
+	local function inLake(position: Vector3): boolean
+		if position.X < lakeMin.X or position.X > lakeMax.X or position.Z < lakeMin.Y or position.Z > lakeMax.Y then
+			return false
+		end
+		local inside = false
+		local previous = lake[#lake]
+		for _, point in lake do
+			if
+				(point.Y > position.Z) ~= (previous.Y > position.Z)
+				and position.X < (previous.X - point.X) * (position.Z - point.Y) / (previous.Y - point.Y) + point.X
+			then
+				inside = not inside
+			end
+			previous = point
+		end
+		return inside
 	end
 	local pools: { [Style]: { Model } } = {}
 	local folders: { [Biomes.Biome]: Folder } = {}
-	local half = Biomes.MapHalfSize
+	local lakeFloor = Instance.new("Folder")
+	lakeFloor.Name = "LakeFloor"
+	lakeFloor.Parent = details:FindFirstChild(Biomes.Normal.name) or details
 	local count = 0
-	for x = -half, half - CELL, CELL do
-		for z = -half, half - CELL, CELL do
-			if taken[cellKey(x + CELL / 2, z + CELL / 2)] then
-				continue
-			end
-			local hit: RaycastResult?
-			for _ = 1, 2 do
-				hit = sample(params, x + rng:NextNumber(4, CELL - 4), z + rng:NextNumber(4, CELL - 4))
-				if hit then
-					break
-				end
-			end
-			if not hit then
-				continue
-			end
-			local biome = Biomes.at(hit.Position)
-			local style = if biome == Biomes.OpenSea then STYLES.open else STYLES[biome.id]
-			local pool = pools[style]
-			if not pool then
-				pool = {}
-				for _ = 1, PATCH_TEMPLATES do
-					table.insert(pool, patchTemplate(style, rng))
-				end
-				pools[style] = pool
-			end
-			local folder = folders[biome]
-			if not folder then
-				folder = Instance.new("Folder")
-				folder.Name = "Floor"
-				folder.Parent = details:FindFirstChild(biome.name) or details
-				folders[biome] = folder
-			end
-			local normal = hit.Normal
-			local right = normal:Cross(Vector3.zAxis).Unit
-			local frame = CFrame.fromMatrix(hit.Position, right, normal, right:Cross(normal))
-			local patch = pool[rng:NextInteger(1, #pool)]:Clone()
-			patch:PivotTo(frame * CFrame.Angles(0, rng:NextNumber(0, TAU), 0))
-			patch.Parent = folder
-			count += 1
-			if count % 50 == 0 then
-				task.wait()
-			end
+	local function cover(cell: number, minimum: number, maximum: number, lakeOnly: boolean)
+		local taken: { [number]: boolean } = {}
+		for _, position in occupied do
+			taken[cellKey(position.X, position.Y, cell)] = true
 		end
-		task.wait()
+		-- Align both sampling and occupied keys to the same world-space grid.
+		local start = math.floor(minimum / cell) * cell
+		for x = start, maximum - 1, cell do
+			for z = start, maximum - 1, cell do
+				if taken[cellKey(x, z, cell)] then
+					continue
+				end
+				local hit: RaycastResult?
+				for _ = 1, 3 do
+					-- Bounded jitter leaves room between neighbouring copies.
+					local px = math.clamp(x + cell * rng:NextNumber(0.25, 0.75), minimum + 1, maximum - 1)
+					local pz = math.clamp(z + cell * rng:NextNumber(0.25, 0.75), minimum + 1, maximum - 1)
+					local position = Vector3.new(px, Biomes.WaterLevel - 1, pz)
+					if not Biomes.inOceanBounds(position) or inLake(position) ~= lakeOnly then
+						continue
+					end
+					hit = sample(params, px, pz)
+					if hit then
+						break
+					end
+				end
+				if not hit then
+					continue
+				end
+				local biome = Biomes.at(hit.Position)
+				local style = if biome == Biomes.OpenSea then STYLES.open else STYLES[biome.id]
+				local pool = pools[style]
+				if not pool then
+					pool = {}
+					for _ = 1, PATCH_TEMPLATES do
+						table.insert(pool, patchTemplate(style, rng))
+					end
+					pools[style] = pool
+				end
+				local folder = if lakeOnly then lakeFloor else folders[biome]
+				if not folder then
+					folder = Instance.new("Folder")
+					folder.Name = "Floor"
+					folder.Parent = details:FindFirstChild(biome.name) or details
+					folders[biome] = folder
+				end
+				local normal = hit.Normal
+				local right = normal:Cross(Vector3.zAxis).Unit
+				local frame = CFrame.fromMatrix(hit.Position, right, normal, right:Cross(normal))
+				local patch = pool[rng:NextInteger(1, #pool)]:Clone()
+				patch:ScaleTo(rng:NextNumber(0.9, 1.25))
+				patch:PivotTo(frame * CFrame.Angles(0, rng:NextNumber(0, TAU), 0))
+				patch.Parent = folder
+				count += 1
+				if count % 40 == 0 then
+					task.wait()
+				end
+			end
+			task.wait()
+		end
 	end
+	-- OceanMax includes the city approaches; inOceanBounds rejects the empty
+	-- northeast/southwest corners and dry rooms before any ground ray is cast.
+	cover(LAKE_CELL, -Biomes.Normal.radius, Biomes.Normal.radius, true)
+	cover(CELL, Biomes.OceanMin, Biomes.OceanMax, false)
 	for _, pool in pools do
 		for _, template in pool do
 			template:Destroy()
@@ -454,6 +519,7 @@ local function carpet(details: Folder, params: RaycastParams, seed: number, occu
 end
 
 function SeabedDetails.ensure(root: Instance)
+	Seabed.ensureSand(root)
 	local old = root:FindFirstChild("SeabedDetails")
 	if old and old:GetAttribute("Version") == VERSION then
 		return
@@ -461,17 +527,6 @@ function SeabedDetails.ensure(root: Instance)
 	if old then
 		old:Destroy()
 	end
-
-	-- Replace only the existing floor layer beneath the Mediterranean region.
-	-- The top stays at SeaFloor, preserving ocean depth and all island geometry.
-	local home = Biomes.Normal
-	workspace.Terrain:SetMaterialColor(M.Sand, home.seabedColor)
-	workspace.Terrain:FillCylinder(
-		CFrame.new(home.center.X, Biomes.SeaFloor - 4, home.center.Y),
-		8,
-		home.radius,
-		M.Sand
-	)
 
 	local details = Instance.new("Folder")
 	details.Name = "SeabedDetails"

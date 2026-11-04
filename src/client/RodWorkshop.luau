@@ -11,13 +11,14 @@ local RodUpgrades = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChil
 local RodWorkshop = {}
 local started = false
 
-local WIDTH, HEIGHT = 640, 452
+local WIDTH, HEIGHT = 842, 452
 local CARD_WIDTH, CARD_GAP = 188, 14
 local GOLD = Color3.fromRGB(244, 196, 76)
 local AFFORD = Color3.fromRGB(111, 202, 125)
 local SHORT = Color3.fromRGB(238, 107, 111)
 local ACCENTS = {
 	Speed = Color3.fromRGB(86, 196, 232),
+	Handling = Color3.fromRGB(111, 202, 125),
 	Strength = Color3.fromRGB(238, 120, 84),
 	Luck = Color3.fromRGB(196, 120, 240),
 }

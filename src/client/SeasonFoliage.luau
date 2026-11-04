@@ -1,11 +1,13 @@
 -- Recolours grass and tree foliage on this client to match the season. Summer is
 -- the map as built; every other season is a tint over each part's own colour, so
 -- the builders' shading survives. Foliage is any green Grass or LeafyGrass part,
--- plus the terrain's grass materials, picked up again as islands stream in.
+-- plus the terrain's grass materials, picked up again as islands stream in. The tropics (the Coral
+-- Shallows and Pirate Cove) have no seasons, so their foliage stays as built all year.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Seasons = require(ReplicatedStorage.Shared.Seasons)
+local Biomes = require(ReplicatedStorage.Shared.Biomes)
 
 local SeasonFoliage = {}
 
@@ -71,6 +73,9 @@ function SeasonFoliage.start()
 			return
 		end
 		if not isGreen(item.Color) or item:GetAttribute("SeasonExempt") then
+			return
+		end
+		if Biomes.at(item.Position).id == "tropical" then
 			return
 		end
 		-- Characters, held tools and boats keep their own colours.

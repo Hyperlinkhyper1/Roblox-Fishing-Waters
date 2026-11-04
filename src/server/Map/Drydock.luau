@@ -359,7 +359,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 		end
 		local npc = existing:FindFirstChild("Shipwright")
 		if npc and npc:IsA("Model") then
-			Shipwright.ensureAppearance(npc)
+			Shipwright.scheduleAppearance(npc)
 			Shipwright.ensureInteraction(npc)
 		end
 		DrydockInterior.ensure(existing, plazaFrame * CFrame.new(0, 0, 82))
@@ -560,9 +560,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	)
 	local npc = Shipwright.build(at(12, 2, -0.5))
 	npc.Parent = shop
-	-- build applies the outfit before the model is in the DataModel; retry here
-	-- for the rare case where a slow asset request failed the first time.
-	Shipwright.ensureAppearance(npc)
+	Shipwright.scheduleAppearance(npc)
 	part("WorkshopBench", Vector3.new(8, 0.5, 3), 13.5, 5.1, 9, STEEL, M.DiamondPlate)
 	for _, x in { 10.3, 16.7 } do
 		part("BenchLeg", Vector3.new(0.6, 3, 2), x, 3.5, 9, STEEL)

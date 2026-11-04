@@ -206,7 +206,6 @@ local function fishModel(record, welded: boolean): (Model?, Vector3)
 	if not model then
 		return nil, Vector3.zero
 	end
-	local size = FishModels.scaleCatch(model, record.Kg)
 	local anchor: BasePart? = nil
 	for _, part in model:GetDescendants() do
 		if part:IsA("BasePart") then
@@ -224,9 +223,10 @@ local function fishModel(record, welded: boolean): (Model?, Vector3)
 		return nil, Vector3.zero
 	end
 	-- Pivot at the middle of the fish, keeping its axes.
-	local center = model:GetBoundingBox()
-	anchor.PivotOffset = anchor.CFrame:ToObjectSpace(CFrame.new(center.Position))
+	local center = model:GetAttribute("BoundsCenter") :: Vector3
+	anchor.PivotOffset = anchor.CFrame:ToObjectSpace(CFrame.new(center))
 	model.PrimaryPart = anchor
+	local size = FishModels.scaleCatch(model, record.Kg)
 	return model, size
 end
 
@@ -256,7 +256,7 @@ end
 local function fixtureFrames(shop, profile, itemId: string, builtIn: CFrame?): { CFrame }
 	local frames = if builtIn then { builtIn } else {}
 	for _, entry in if profile then profile.Angler.Furniture else {} do
-		if entry.ItemId == itemId then
+		if entry.ItemId == itemId and (itemId ~= "StorageRack" or entry.Mode ~= "Tools") then
 			table.insert(frames, Furniture.frame(shop.frame, entry))
 		end
 	end
@@ -1312,7 +1312,7 @@ local function ensureStaff(shop, owner: Player, role: string)
 				then (desk * CFrame.new(0, 0, ShopDesk.DEPTH / 2 + 1.4)).Position
 				else (shop.frame * CFrame.new(-10, 0.16, 10)).Position
 			model = spawnCustomer(position, role)
-			if ownerOf(shop.base) ~= owner then
+			if ownerOf(shop.base) ~= owner or not (BoatService.getProfile(owner) and BoatService.getProfile(owner).Angler.Staff[role]) then
 				model:Destroy()
 				return
 			end
@@ -1574,16 +1574,11 @@ local function registerShop(base: Model)
 	}
 	shop.freezerPrompt = ownerPrompt(anchor, "StockFreezerPrompt", "Place fish", "Freezer")
 	shop.freezerPrompt.MaxActivationDistance = 5
-	local take = ownerPrompt(anchor, "TakeFrozenFishPrompt", "Take fish", "Freezer")
-	take.MaxActivationDistance = 5
-	take.KeyboardKeyCode, take.GamepadKeyCode = Enum.KeyCode.F, Enum.KeyCode.ButtonY
-	take:SetAttribute("Available", false)
 	shops[base] = shop
 	local function owned()
 		removeStaff(shop)
 		local userId = base:GetAttribute("OwnerUserId")
 		shop.freezerPrompt:SetAttribute("OwnerUserId", userId)
-		take:SetAttribute("OwnerUserId", userId)
 		for _, customer in shop.customers do
 			if customer.prompt then
 				customer.prompt:SetAttribute("OwnerUserId", userId)
@@ -1596,7 +1591,6 @@ local function registerShop(base: Model)
 	end
 	base:GetAttributeChangedSignal("OwnerUserId"):Connect(owned)
 	shop.freezerPrompt:SetAttribute("OwnerUserId", base:GetAttribute("OwnerUserId"))
-	take:SetAttribute("OwnerUserId", base:GetAttribute("OwnerUserId"))
 end
 
 -- Lets the Company path's fisherman boat be unloaded by the porter.
@@ -1653,12 +1647,6 @@ function CustomerService.start()
 					task.spawn(stock, player, shop, prompt)
 				end
 			end
-		elseif prompt.Name == "TakeFrozenFishPrompt" and prompt.Parent and prompt.Parent:IsA("BasePart") then
-			for base, shop in shops do
-				if prompt:IsDescendantOf(base) then
-					task.spawn(takeFrozenFish, player, shop, prompt)
-				end
-			end
 		end
 	end)
 	Players.PlayerRemoving:Connect(function(player)
@@ -1672,6 +1660,11 @@ function CustomerService.start()
 				local profile = owner and BoatService.getProfile(owner)
 				if profile then
 					for _, role in { "Seller", "Porter" } do
+						if not profile.Angler.Staff[role] and shop.staff[role] then
+							shop.staff[role].active = false
+							shop.staff[role].model:Destroy()
+							shop.staff[role] = nil
+						end
 						if profile.Angler.Staff[role] then
 							local worker = ensureStaff(shop, owner, role)
 							if worker and role == "Porter" then
@@ -1701,21 +1694,12 @@ function CustomerService.start()
 					if profile then AnglerData.freezerUsage(profile.Angler) else 0
 				)
 				shop.freezerPrompt.ObjectText = label
-				local cooking = profile ~= nil and Paths.unlocked(profile, "Supermarket")
-				local builtInTake = shop.freezerPrompt.Parent:FindFirstChild("TakeFrozenFishPrompt")
-				if builtInTake then
-					builtInTake:SetAttribute("Available", cooking)
-				end
 				local house = shop.base:FindFirstChild("BaseHouse")
 				local placed = house and house:FindFirstChild("Furniture")
 				for _, item in if placed then placed:GetChildren() else {} do
 					local prompt = item.Name == "Freezer" and item:FindFirstChild("StockFreezerPrompt", true)
 					if prompt then
 						prompt.ObjectText = label
-					end
-					local take = item.Name == "Freezer" and item:FindFirstChild("TakeFrozenFishPrompt", true)
-					if take then
-						take:SetAttribute("Available", cooking)
 					end
 				end
 				refreshShelves(shop)

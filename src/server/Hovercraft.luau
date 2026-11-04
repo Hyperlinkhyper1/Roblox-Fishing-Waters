@@ -265,7 +265,7 @@ function Hovercraft.build(frame: CFrame, anchored: boolean?): Model
 	part("HandlebarStem", Vector3.new(0.14, 0.4, 0.14), CFrame.new(0, 2.05, -2.25), SEAT)
 
 	-- Twin bow lamps sit on the rim and light the way ahead.
-	local lampColor = Color3.fromRGB(239, 247, 255)
+	local lampColor = Color3.fromRGB(214, 206, 184)
 	for _, side in { -1, 1 } do
 		part(
 			"HeadlightHousing",
@@ -285,7 +285,7 @@ function Hovercraft.build(frame: CFrame, anchored: boolean?): Model
 		local headlight = Instance.new("SpotLight")
 		headlight.Name = "Headlight"
 		headlight.Face = Enum.NormalId.Front
-		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 45, 1.2, 65
+		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 30, 0.45, 40
 		headlight.Shadows = false
 		headlight.Parent = lens
 	end

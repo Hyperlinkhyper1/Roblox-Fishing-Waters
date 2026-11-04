@@ -432,9 +432,10 @@ do
 	check(registerLow.X > -3.75 and registerHigh.X < 0, "Register must sit fully on the left side when facing the desk")
 	check(registerLow.Z > -1.5234375 and registerHigh.Z < 1.5234375, "Register overhangs the desktop")
 	check(math.abs(registerLow.Y - 3) < 0.011, "Register must rest on top of the desktop without floating or sinking")
+	check(registerHigh.Y - registerLow.Y < 2, "Register grew taller than the supplied model")
+	check(#register:GetDescendants() < 40, "Cash register is built from too many parts to stream with every base")
 	if index == 1 then
 		auditImported(desk, dependencies.ShopDeskGeometry, deskFrame, 7.5, "Ingenious Lappi")
-		auditImported(register, dependencies.CashRegisterGeometry, registerFrame, 1.8, "Cash Register")
 	end
 	check(freezer and freezer:IsA("Model"), "Shop is missing its default freezer")
 	checkFinish(freezer, {
@@ -524,13 +525,21 @@ do
 	end
 	check(not house.Shell:FindFirstChild("RoomPartition"), "The house still has the old shop partition")
 	local dividerLow, dividerHigh = bounds(house.Shell.StorePartitionFront, houseFrame)
-	check(math.abs(dividerHigh.Z - 1.5 * grid.CELL_SIZE) < EPS and dividerLow.Z <= -grid.CELL_SIZE / 2 + EPS, "Storage divider does not leave the front vestibule open")
+	check(math.abs(dividerHigh.Z - 1.5 * grid.CELL_SIZE) < EPS and dividerLow.Z <= -grid.CELL_SIZE / 2 + EPS, "Storage divider does not meet the lobby back wall")
+	local lobbyBackLow, lobbyBackHigh = bounds(house.Shell.LobbyBackWall, houseFrame)
+	check(math.abs(lobbyBackLow.X + 1.5 * grid.CELL_SIZE) < EPS and math.abs(lobbyBackHigh.X - 1.5 * grid.CELL_SIZE) < EPS, "Lobby back wall does not enclose the entrance")
+	local lobbyFloorLow, lobbyFloorHigh = bounds(house.Shell.LobbyFloor, houseFrame)
+	check(math.abs(lobbyFloorLow.X + 1.5 * grid.CELL_SIZE) < EPS and math.abs(lobbyFloorHigh.X - 1.5 * grid.CELL_SIZE) < EPS and math.abs(lobbyFloorLow.Z - 1.5 * grid.CELL_SIZE) < EPS and math.abs(lobbyFloorHigh.Z - grid.HALF_LENGTH) < EPS, "Lobby floor does not cover the enclosed entrance")
+	check(house.Shell.LobbyFloor.Material == Enum.Material.WoodPlanks, "Lobby floor does not match the office")
+	local _, lobbyRearHigh = bounds(house.Shell.LobbyEastWallRear, houseFrame)
+	local lobbyFrontLow = bounds(house.Shell.LobbyEastWallFront, houseFrame)
+	check(math.abs(lobbyRearHigh.Z - 2 * grid.CELL_SIZE) < EPS and math.abs(lobbyFrontLow.Z - 3 * grid.CELL_SIZE) < EPS, "Lobby storage doorway is not one grid cell wide")
 	local entranceLow, entranceHigh = bounds(house.Shell.EntranceStep, houseFrame)
 	check(math.abs(entranceLow.X + entranceHigh.X) < EPS, "Front entrance is not centered on the house")
 	local office = house:FindFirstChild("Office")
 	check(office and office:FindFirstChild("OfficeFloor"), "Missing enclosed office")
 	local officeFloorLow, officeFloorHigh = bounds(office.OfficeFloor, houseFrame)
-	local officeBack, officeEast = 1.5 * grid.CELL_SIZE, -1.5 * grid.CELL_SIZE
+	local officeBack, officeEast = 0.5 * grid.CELL_SIZE, -1.5 * grid.CELL_SIZE
 	check(
 		math.abs(officeFloorLow.X + grid.HALF_WIDTH) < EPS
 			and math.abs(officeFloorHigh.X - officeEast) < EPS
@@ -767,7 +776,7 @@ for _, recoverFrame in { false, true } do
 	end
 	BaseHouse.ensure(base)
 	local house = base:FindFirstChild("BaseHouse")
-	check(house and house:GetAttribute("LayoutVersion") == 11, "Saved base did not receive the current house layout")
+	check(house and house:GetAttribute("LayoutVersion") == 13, "Saved base did not receive the current house layout")
 	check(not staleHouse or staleHouse.Parent == nil, "Saved base retains a stale house")
 	check(
 		base:GetAttribute("OwnerUserId") == 12345 and base:GetAttribute("BaseId") == 4,
@@ -909,7 +918,7 @@ for _, recoverFrame in { false, true } do
 	)
 	desk = shop:FindFirstChild("ShopDesk")
 	check(
-		desk:GetAttribute("ModelVersion") == 4 and desk:FindFirstChild("CashRegister"):GetAttribute("ModelVersion") == 4,
+		desk:GetAttribute("ModelVersion") == 4 and desk:FindFirstChild("CashRegister"):GetAttribute("ModelVersion") == 5,
 		"Saved desk/register did not receive the smaller window-wall layout"
 	)
 	desk:FindFirstChild("CashRegister"):Destroy()

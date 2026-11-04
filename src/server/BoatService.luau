@@ -29,6 +29,7 @@ local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local BoatDrive = require(ReplicatedStorage.Shared.BoatDrive)
 local builders = {
 	Rowboat = Rowboat,
 	FishingBoat = FishingBoat,
@@ -666,6 +667,13 @@ end
 
 -- `outfit(player, boatId, model)` dresses one of the player's hulls with their
 -- refit dock paint and returns the spec its motors and rudders tune it to.
+-- Refits tune the spec per player; the driving client reads it from the hull.
+local function publishDriveSpec(boat)
+	for _, field in BoatDrive.FIELDS do
+		boat.model:SetAttribute("Drive" .. field, boat.spec[field])
+	end
+end
+
 function BoatService.setOutfitter(outfit: (Player, string, Model) -> any)
 	outfitter = outfit
 end
@@ -680,6 +688,7 @@ function BoatService.refit(player: Player)
 	local boat = active[player]
 	if boat and boat.model.Parent then
 		boat.spec = BoatService.outfit(player, boat.model:GetAttribute("BoatId"), boat.model)
+		publishDriveSpec(boat)
 	end
 end
 
@@ -713,45 +722,32 @@ function BoatService.damageBoat(player: Player, amount: number): boolean
 	return true
 end
 
-local function waterAhead(boat, direction: Vector3): boolean
-	local parameters = RaycastParams.new()
-	-- Only terrain can tell us whether the water ends. Docks, floating objects,
-	-- and other boats are handled by physical collisions instead of the drive.
-	parameters.FilterType = Enum.RaycastFilterType.Include
-	parameters.FilterDescendantsInstances = { workspace.Terrain }
-	parameters.IgnoreWater = false
-	parameters.RespectCanCollide = true
-	local position = boat.root.Position + direction * (boat.spec.Length / 2 + 2)
-	-- The sea ends at the ocean bounds even where the ray below finds nothing: past them is
-	-- empty sky, and the admin-only scale models beyond (ScaleModels) must stay out of reach.
-	if not Biomes.inOceanBounds(Vector3.new(position.X, Biomes.WaterLevel, position.Z)) then
-		return false
-	end
-	local result = workspace:Raycast(
-		Vector3.new(position.X, Biomes.WaterLevel + 14, position.Z),
-		Vector3.new(0, -32, 0),
-		parameters
-	)
-	-- A missed ray is inconclusive (for example at a water voxel boundary).
-	return result == nil or result.Material == Enum.Material.Water
-end
+local updateSuspension = BoatDrive.updateSuspension
 
-local function updateSuspension(boat)
-	local mass = boat.root.AssemblyMass
-	local gravity = workspace.Gravity
-	-- Cancel the assembly's weight separately so soft alignment does not need
-	-- a permanent height error to hold up the hull and its seated passengers.
-	boat.lift.Force = Vector3.new(0, mass * gravity, 0)
-	boat.float.MaxAxesForce = Vector3.new(0, mass * (gravity + 100) * 4, 0)
-	-- Allow acceleration, braking, turning and water drag, but let solid contacts
-	-- stop the hull rather than asking the solver for unlimited collision force.
-	local spec = boat.spec
-	boat.velocity.MaxForce = mass
-		* (math.max(spec.Acceleration, spec.BrakeDeceleration) + spec.ForwardSpeed * spec.TurnRate + gravity * 0.25)
-	-- Approximate hull inertia; keep righting torque proportional to hull size
-	-- without the oversized gravity-based torque that pried boats off obstacles.
-	boat.heading.MaxTorque = mass * (spec.Length ^ 2 + spec.Beam ^ 2) / 12 * 20
-	boat.heading.MaxAngularVelocity = spec.TurnRate + 2
+-- The driver's client simulates its own hull while at the helm (see client/BoatDriving),
+-- so steering answers without a server round trip and the boat is not an interpolated
+-- replica that stalls whenever the connection is busy streaming the map. The server keeps
+-- the hull whenever nobody drives it, and for parking, sinking, lifts and tornadoes.
+local function setDriver(boat, driver: Player?)
+	if boat.driver == driver then
+		return
+	end
+	boat.driver = driver
+	if not boat.parked then
+		boat.root:SetNetworkOwner(driver)
+	end
+	-- The client starts its own bank spring from level, and ours restarts from level too.
+	boat.bank, boat.bankVelocity = 0, 0
+	if driver then
+		publishDriveSpec(boat)
+	else
+		-- Our heading target went stale while the client steered.
+		local look = boat.root.CFrame.LookVector
+		if math.abs(look.X) + math.abs(look.Z) > 0.01 then
+			boat.yaw = math.atan2(-look.X, -look.Z)
+		end
+	end
+	boat.model:SetAttribute("DriverUserId", if driver then driver.UserId else nil)
 end
 
 -- A seated avatar should not push the hull below its waterline. Preserve the
@@ -806,6 +802,8 @@ local function setParked(boat, parked: boolean)
 	if boat.parked == parked then
 		return
 	end
+	-- Anchoring resets ownership, and every release starts on the server.
+	setDriver(boat, nil)
 	boat.parked = parked
 	if parked then
 		-- A standing character is a separate, client-simulated assembly. Keeping
@@ -867,12 +865,6 @@ local FLING_LIFT_SECONDS = 0.9
 local FLING_MAX_SECONDS = 5
 local FLING_COOLDOWN = 4
 
--- The waterline target looks this far ahead along the hull's motion, so the soft
--- suspension starts rising before the bow reaches a crest instead of after.
-local WAVE_LEAD_SECONDS = 0.12
--- At full speed the hull spans this much more water: planing boats skim chop.
-local PLANING_STRETCH = 0.5
-
 local function setMovers(boat, enabled: boolean)
 	boat.float.Enabled = enabled
 	boat.lift.Enabled = enabled
@@ -892,6 +884,7 @@ local function catchInTornado(boat, tornadoes): boolean
 			if boat.parked then
 				setParked(boat, false)
 			end
+			setDriver(boat, nil)
 			boat.speed, boat.turn = 0, 0
 			boat.bank, boat.bankVelocity = 0, 0
 			boat.velocity.PlaneVelocity = Vector2.zero
@@ -956,6 +949,7 @@ function BoatService.hoist(player: Player, height: number?): boolean
 		return false
 	end
 	if not boat.hoistBase then
+		setDriver(boat, nil)
 		setParked(boat, true)
 		local look = boat.root.CFrame.LookVector
 		boat.hoistBase = CFrame.new(boat.root.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
@@ -984,6 +978,8 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 	model:SetAttribute("MaxHealth", BoatCatalog[id].MaxHealth)
 	model:SetAttribute("Health", BoatCatalog[id].MaxHealth)
 	model:SetAttribute("LightsEnabled", true)
+	-- Server time, for the driving client: a fresh hull may start in a dry slipway.
+	model:SetAttribute("LaunchGraceUntil", if existing then workspace:GetServerTimeNow() + 10 else nil)
 	local lights, lightParts = {}, {}
 	for _, piece in model:GetDescendants() do
 		if piece:IsA("PointLight") or piece:IsA("SpotLight") or piece:IsA("SurfaceLight") then
@@ -1156,13 +1152,13 @@ local function dockBase(player: Player, prompt: ProximityPrompt): Model?
 		return nil
 	end
 	local base = prompt:FindFirstAncestorOfClass("Model")
-	while base and not CollectionService:HasTag(base, "PlayerBase") do
+	while base and not CollectionService:HasTag(base, "PlayerBase") and not CollectionService:HasTag(base, "CompanyIsland") do
 		base = base:FindFirstAncestorOfClass("Model")
 	end
 	if
 		not base
 		or base:GetAttribute("OwnerUserId") ~= player.UserId
-		or base:GetAttribute("BaseId") ~= player:GetAttribute("BaseId")
+		or (not CollectionService:HasTag(base, "CompanyIsland") and base:GetAttribute("BaseId") ~= player:GetAttribute("BaseId"))
 	then
 		notify(player, "You can only spawn boats at your own dock.")
 		return nil
@@ -1356,13 +1352,15 @@ function BoatService.start()
 			if type(throttle) ~= "string" or not BoatCatalog[throttle] then
 				return
 			end
-			for _, base in CollectionService:GetTagged("PlayerBase") do
-				if base:GetAttribute("OwnerUserId") == player.UserId then
-					local prompt = base:FindFirstChild("SpawnRowboatPrompt", true)
-					if prompt and prompt:IsA("ProximityPrompt") then
-						spawnBoat(player, prompt, throttle)
+			for _, tag in { "PlayerBase", "CompanyIsland" } do
+				for _, base in CollectionService:GetTagged(tag) do
+					if base:GetAttribute("OwnerUserId") == player.UserId then
+						local prompt = base:FindFirstChild("SpawnRowboatPrompt", true)
+						if prompt and prompt:IsA("ProximityPrompt") and nearPrompt(player, prompt) then
+							spawnBoat(player, prompt, throttle)
+							return
+						end
 					end
-					break
 				end
 			end
 		end
@@ -1391,6 +1389,7 @@ function BoatService.start()
 					-- Release an anchored hull and lower it under its own suspension so
 					-- passengers see it sink instead of the boat vanishing at zero health.
 					setParked(boat, false)
+					setDriver(boat, nil)
 					boat.sinkingAt = serverTime
 					boat.sinkingPosition = boat.root.Position
 					boat.model:SetAttribute("Sinking", true)
@@ -1418,6 +1417,7 @@ function BoatService.start()
 			end
 			if boat.hoistBase then
 				-- Up on the drydock lift; DrydockLaunch moves it.
+				setDriver(boat, nil)
 				continue
 			end
 			if catchInTornado(boat, tornadoes) or (boat.flight and updateFlight(boat, tornadoes)) then
@@ -1456,86 +1456,14 @@ function BoatService.start()
 				setParked(boat, true)
 				continue
 			end
-			boat.turn = turn
-			local root = boat.root
-			local actualForward = root.CFrame.LookVector
-			actualForward = Vector3.new(actualForward.X, 0, actualForward.Z)
-			actualForward = if actualForward.Magnitude > 0.0001
-				then actualForward.Unit
-				else CFrame.Angles(0, boat.yaw, 0).LookVector
-			-- Like a real boat (or car), reversing mirrors the steering direction.
-			local yawRateCommand = -turn * (if speed < 0 then -1 else 1)
-			local actualYaw = math.atan2(-actualForward.X, -actualForward.Z)
-			if math.abs(steer) < 0.08 then
-				boat.yaw = actualYaw
+			-- At the helm, the driver's client steers the movers from its own input; we only
+			-- track the commanded speed so the hull still parks once it has coasted to rest.
+			setDriver(boat, if rowing then player else nil)
+			if boat.driver then
+				boat.speed, boat.turn = speed, turn
+			else
+				weather = BoatDrive.apply(boat, speed, turn, throttle, steer, dt, serverTime, weather)
 			end
-			boat.yaw = BoatMotion.advanceHeading(boat.yaw, actualYaw, yawRateCommand, dt)
-			-- Seat welds change assembly mass when passengers board or leave.
-			updateSuspension(boat)
-			local flatHeading = CFrame.Angles(0, boat.yaw, 0)
-			local motion = root.AssemblyLinearVelocity
-			motion = Vector3.new(motion.X, 0, motion.Z)
-			local planing = math.clamp(math.abs(speed) / boat.spec.ForwardSpeed, 0, 1)
-			weather = weather or Weather.getState(serverTime)
-			local wave = Weather.hullSample(
-				root.Position + motion * WAVE_LEAD_SECONDS,
-				flatHeading.LookVector,
-				boat.spec.Length * 0.4 * (1 + PLANING_STRETCH * planing),
-				boat.spec.Beam * 0.4,
-				serverTime,
-				weather,
-				-- Ride the visible surface: crests are drawn by the client swell mesh,
-				-- troughs are hidden beneath Terrain's flat water.
-				0
-			)
-			-- Riding a swell at speed climbs far faster than bobbing in place: a fixed
-			-- 6 stud/s cap left fast hulls under each oncoming crest, bow first.
-			boat.float.MaxVelocity = 6 + motion.Magnitude * 0.5
-			local yawRate = root.AssemblyAngularVelocity.Y
-			local bankYawRate = -BoatMotion.steering(speed, steer, boat.spec) * (if speed < 0 then -1 else 1)
-			boat.bank, boat.bankVelocity = BoatMotion.bank(
-				boat.bank,
-				boat.bankVelocity,
-				root.AssemblyLinearVelocity:Dot(actualForward),
-				bankYawRate,
-				boat.spec,
-				workspace.Gravity,
-				dt
-			)
-			-- Project the chosen heading onto the wave plane. Sampling a shared
-			-- normal keeps pitch and roll correct at every heading, including
-			-- when the same hull moves between the sheltered lake and open sea.
-			local normal = wave.normal
-			local forward = flatHeading.LookVector
-			forward = (forward - normal * forward:Dot(normal)).Unit
-			local right = forward:Cross(normal).Unit
-			-- Bank relative to the wave plane, keeping the existing swell pitch.
-			local bankCos, bankSin = math.cos(boat.bank), math.sin(boat.bank)
-			right, normal = right * bankCos + normal * bankSin, normal * bankCos - right * bankSin
-			local surfaceFrame = CFrame.fromMatrix(Vector3.zero, right, normal, -forward)
-			boat.heading.CFrame = surfaceFrame
-			local rootOffset = surfaceFrame:VectorToWorldSpace(boat.waterlineOffset)
-			local surfaceHeight = Biomes.WaterLevel + wave.height
-			local floorHeight = boat.model:GetAttribute("DryFloorHeight")
-			if floorHeight then
-				-- The terrain swimming surface stays flat while the boat follows swells.
-				-- Keep even the lowest tilted corner of the sole above its ripples.
-				local lowestFloor = floorHeight * normal.Y
-					- math.abs(right.Y) * boat.model:GetAttribute("DryFloorHalfBeam")
-					- math.abs(forward.Y) * boat.model:GetAttribute("DryFloorHalfLength")
-				surfaceHeight = math.max(surfaceHeight, Biomes.WaterLevel + 0.35 - lowestFloor)
-			end
-			boat.float.Position = Vector3.new(boat.root.Position.X, surfaceHeight + rootOffset.Y, boat.root.Position.Z)
-			local direction = flatHeading.LookVector * (if speed < 0 then -1 else 1)
-			if os.clock() < boat.launchGraceUntil then
-				boat.clearWater = true
-			elseif (math.abs(speed) > 0.1 or throttle ~= 0) and os.clock() - boat.lastWaterCheck > 0.15 then
-				boat.clearWater, boat.lastWaterCheck = waterAhead(boat, direction), os.clock()
-			end
-			if not boat.clearWater then
-				speed = 0
-			end
-			boat.speed = speed
 			-- Replicated intent drives the cosmetic stroke on every viewing client.
 			if boat.model:GetAttribute("RowThrottle") ~= throttle then
 				boat.model:SetAttribute("RowThrottle", throttle)
@@ -1543,18 +1471,6 @@ function BoatService.start()
 			if boat.model:GetAttribute("RowSteer") ~= steer then
 				boat.model:SetAttribute("RowSteer", steer)
 			end
-			-- Compensate only normal yaw around the stern. Impact-induced pitch,
-			-- roll or spinning must not feed extra horizontal propulsion back in.
-			local center = root.AssemblyCenterOfMass
-			boat.driveAttachment.Position = root.CFrame:PointToObjectSpace(center)
-			local stern = root.Position
-				+ root.CFrame:VectorToWorldSpace(Vector3.new(0, 0, boat.spec.Length * 0.4) - boat.waterlineOffset)
-			local lever = center - stern
-			local driveYaw = Vector3.new(0, math.clamp(yawRate, -boat.spec.TurnRate, boat.spec.TurnRate), 0)
-			local movement = actualForward * speed + driveYaw:Cross(lever)
-			boat.velocity.PlaneVelocity = Vector2.new(movement.X, movement.Z)
-			-- AlignOrientation alone owns rotation. Overwriting angular velocity
-			-- every frame fights its roll/pitch corrections and collision response.
 		end
 	end)
 	Players.PlayerRemoving:Connect(function(player)

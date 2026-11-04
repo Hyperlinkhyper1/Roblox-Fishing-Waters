@@ -28,6 +28,8 @@ local DESPAWN_RANGE = 450
 local PACK_SPACING = 7
 local BITE_DAMAGE = 8
 local BITE_INTERVAL = 12
+local BITE_REACH = 4
+local BITE_STANDOFF = 3.5
 local STEP = 0.1
 local random = Random.new()
 local SHARK_HEALTH = 15
@@ -275,6 +277,28 @@ local function spawnPack(folder: Folder, owner: Player, root: BasePart, params: 
 	return pack
 end
 
+-- Only the root replicates on most steps: each client's SharkSwim lays every
+-- visible piece out from it every frame, so pivoting the whole model sent ~40
+-- part CFrames per shark ten times a second. The pieces follow with a full pivot
+-- once the root has drifted this far, so the server's copy (which decides
+-- streaming) stays where the shark is.
+local RESYNC_DISTANCE = 30
+local function placeShark(shark, pose: CFrame)
+	local root = shark.model.PrimaryPart
+	local placed = shark.placedFrame
+	if root and placed and (pose.Position - placed.Position).Magnitude < RESYNC_DISTANCE then
+		root.CFrame = pose
+		return
+	end
+	-- PivotTo carries every piece by the root's move, so return the root to where
+	-- the pieces were last laid out first.
+	if root and placed then
+		root.CFrame = placed
+	end
+	shark.model:PivotTo(pose)
+	shark.placedFrame = pose
+end
+
 local function moveShark(shark, goal: Vector3, speed: number, params: RaycastParams, keepDistance: number)
 	local offset = Vector3.new(goal.X - shark.position.X, 0, goal.Z - shark.position.Z)
 	local distance = offset.Magnitude
@@ -443,10 +467,12 @@ function SharkService.start()
 				if target then
 					local sum = Vector3.new(0, 0, 0)
 					for _, shark in pack.sharks do
-						local reach = 4
 						local offset = hullOffset(target, shark.position)
-						moveShark(shark, shark.position + offset, CHASE_SPEED, params, reach)
-						if offset.Magnitude <= reach and now - shark.lastBite >= BITE_INTERVAL then
+						-- Stop inside bite range: float32 world coordinates can round
+						-- an exact-range stop outside it and prevent every bite.
+						moveShark(shark, shark.position + offset, CHASE_SPEED, params, BITE_STANDOFF)
+						local distance = hullOffset(target, shark.position).Magnitude
+						if distance <= BITE_REACH and now - shark.lastBite >= BITE_INTERVAL then
 							if BoatService.damageBoat(target.player, BITE_DAMAGE) then
 								-- Scar the hull where the shark struck. Its own thread keeps a
 								-- cosmetic failure from stopping every shark in this loop.
@@ -485,7 +511,7 @@ function SharkService.start()
 					local biteAge = now - shark.lastBite
 					local lunge = if target and biteAge < 0.6 then math.sin(biteAge / 0.6 * math.pi) * 1.5 else 0
 					local direction = shark.direction
-					shark.model:PivotTo(CFrame.lookAt(surface + direction * lunge, surface + direction * (lunge + 1)))
+					placeShark(shark, CFrame.lookAt(surface + direction * lunge, surface + direction * (lunge + 1)))
 				end
 			end
 			task.wait(STEP)

@@ -17,10 +17,11 @@ RodSkins.Rarities = {
 }
 
 -- Reel adds to the reel progress per hit (0.05 = +5%), Size to the big and huge
--- fish odds (0.1 = +10%), Mutation to the chance of any mutation, and Astral to
+-- fish odds (0.1 = +10%), Handling to green-hit progress (0.1 = +10%), Mutation to the chance of any mutation, and Astral to
 -- the chance of the night-only Astral mutation after dark.
 RodSkins.Skins = {
 	TideboundRod = {
+		Handling = 0.1,
 		Name = "Tidebound Rod",
 		Rarity = "Uncommon",
 		Description = "A pearl-inlaid teal rod with gilded wavework. A gift for our community.",
@@ -28,6 +29,7 @@ RodSkins.Skins = {
 		Size = 0.075,
 	},
 	UmbrellaRod = {
+		Handling = 0.04,
 		Name = "Umbrella Rod",
 		Rarity = "Common",
 		Description = "A sturdy brolly with a line through the tip. Rain or shine.",
@@ -35,6 +37,7 @@ RodSkins.Skins = {
 		Size = 0,
 	},
 	BambooRod = {
+		Handling = 0.12,
 		Name = "Bamboo Rod",
 		Rarity = "Common",
 		Description = "Hand-cut cane, light and springy.",
@@ -42,6 +45,7 @@ RodSkins.Skins = {
 		Size = 0.1,
 	},
 	BoneRod = {
+		Handling = 0.06,
 		Name = "Bone Rod",
 		Rarity = "Uncommon",
 		Description = "Carved from something big that didn't get away.",
@@ -49,6 +53,7 @@ RodSkins.Skins = {
 		Size = 0.25,
 	},
 	LanternRod = {
+		Handling = 0.14,
 		Name = "Lantern Rod",
 		Rarity = "Uncommon",
 		Description = "A little lantern lights the way to the bite.",
@@ -56,6 +61,7 @@ RodSkins.Skins = {
 		Size = 0.1,
 	},
 	BaguetteRod = {
+		Handling = 0.08,
 		Name = "Baguette Rod",
 		Rarity = "Uncommon",
 		Description = "Freshly baked, surprisingly stiff. Do not eat.",
@@ -63,6 +69,7 @@ RodSkins.Skins = {
 		Size = 0.2,
 	},
 	NightRod = {
+		Handling = 0.28,
 		Name = "Night Rod",
 		Rarity = "Epic",
 		Description = "Forged under a new moon. Astral fish answer its call after dark.",
@@ -71,6 +78,7 @@ RodSkins.Skins = {
 		Astral = 0.04,
 	},
 	MageStaff = {
+		Handling = 0.4,
 		Name = "Mage Staff",
 		Rarity = "Legendary",
 		Description = "An old sorcerer's staff, still humming with magic.",
@@ -79,6 +87,7 @@ RodSkins.Skins = {
 		Mutation = 0.02,
 	},
 	PencilRod = {
+		Handling = 0.1,
 		Name = "Pencil Rod",
 		Rarity = "Common",
 		Description = "Sketch out your next big catch with a freshly sharpened tip.",
@@ -86,6 +95,7 @@ RodSkins.Skins = {
 		Size = 0.05,
 	},
 	BaseballRod = {
+		Handling = 0.05,
 		Name = "Baseball Rod",
 		Rarity = "Common",
 		Description = "A wooden bat ready to knock a catch out of the water.",
@@ -93,6 +103,7 @@ RodSkins.Skins = {
 		Size = 0.18,
 	},
 	MusketRod = {
+		Handling = 0.08,
 		Name = "Musket Rod",
 		Rarity = "Uncommon",
 		Description = "An antique musket repurposed for a different kind of trophy.",
@@ -100,6 +111,7 @@ RodSkins.Skins = {
 		Size = 0.2,
 	},
 	HoneycombRod = {
+		Handling = 0.2,
 		Name = "Honeycomb Rod",
 		Rarity = "Rare",
 		Description = "Golden honeycomb makes every catch a little sweeter.",
@@ -107,6 +119,7 @@ RodSkins.Skins = {
 		Size = 0.4,
 	},
 	StarRod = {
+		Handling = 0.24,
 		Name = "Star Rod",
 		Rarity = "Rare",
 		Description = "A golden star to wish upon before every cast.",
@@ -114,6 +127,7 @@ RodSkins.Skins = {
 		Size = 0.35,
 	},
 	SelfieStickRod = {
+		Handling = 0.3,
 		Name = "Selfie Stick Rod",
 		Rarity = "Epic",
 		Description = "Catch a fish, then catch your best angle.",
@@ -122,6 +136,7 @@ RodSkins.Skins = {
 		Mutation = 0.015,
 	},
 	LightsaberRod = {
+		Handling = 0.45,
 		Name = "Lightsaber Rod",
 		Rarity = "Legendary",
 		Description = "A brilliant energy blade with a fishing line. Cast with confidence.",
@@ -246,10 +261,12 @@ end
 function RodSkins.apply(boosts, skinId: string?, wear: number?)
 	local skin = skinId and RodSkins.Skins[skinId]
 	local result = table.clone(boosts)
+	result.handling = result.handling or 1
 	result.mutation, result.astral = 0, 0
 	if skin then
 		local multiplier = RodSkins.wearMultiplier(wear)
 		result.reel += (skin.Reel or 0) * multiplier
+		result.handling += (skin.Handling or 0) * multiplier
 		result.size += (skin.Size or 0) * multiplier
 		result.mutation = (skin.Mutation or 0) * multiplier
 		result.astral = (skin.Astral or 0) * multiplier
@@ -258,26 +275,46 @@ function RodSkins.apply(boosts, skinId: string?, wear: number?)
 end
 
 -- Player-facing perk lines, e.g. { "+5% reel per hit", "+4% Astral chance at night" }.
-function RodSkins.perks(skinId: string, wear: number?): { string }
+local function perkLines(skinId: string, multiplier: number, maximum: number?): { string }
 	local skin = RodSkins.Skins[skinId]
 	local lines = {}
-	local multiplier = RodSkins.wearMultiplier(wear)
 	local function percent(value: number): string
 		return string.format("%g", math.floor(value * 1000 + 0.5) / 10)
 	end
+	local function bonus(value: number): string
+		local minimum = percent(value * multiplier)
+		return if maximum then minimum .. "–" .. percent(value * maximum) else minimum
+	end
 	if (skin.Reel or 0) > 0 then
-		table.insert(lines, string.format("+%s%% reel per hit", percent(skin.Reel * multiplier)))
+		table.insert(lines, string.format("+%s%% reel per hit", bonus(skin.Reel)))
 	end
 	if (skin.Size or 0) > 0 then
-		table.insert(lines, string.format("+%s%% big fish chance", percent(skin.Size * multiplier)))
+		table.insert(lines, string.format("+%s%% big fish chance", bonus(skin.Size)))
 	end
 	if (skin.Astral or 0) > 0 then
-		table.insert(lines, string.format("+%s%% Astral chance at night", percent(skin.Astral * multiplier)))
+		table.insert(lines, string.format("+%s%% Astral chance at night", bonus(skin.Astral)))
 	end
 	if (skin.Mutation or 0) > 0 then
-		table.insert(lines, string.format("+%s%% mutation chance", percent(skin.Mutation * multiplier)))
+		table.insert(lines, string.format("+%s%% mutation chance", bonus(skin.Mutation)))
+	end
+	if (skin.Handling or 0) > 0 then
+		table.insert(lines, string.format("+%s%% handling", bonus(skin.Handling)))
 	end
 	return lines
+end
+
+function RodSkins.perks(skinId: string, wear: number?): { string }
+	return perkLines(skinId, RodSkins.wearMultiplier(wear))
+end
+
+-- Unopened crates have no wear yet; show the full range a reward can roll.
+function RodSkins.previewPerks(skinId: string): { string }
+	local minimum, maximum = math.huge, -math.huge
+	for _, state in RodSkins.WearStates do
+		minimum = math.min(minimum, state.Multiplier)
+		maximum = math.max(maximum, state.Multiplier)
+	end
+	return perkLines(skinId, minimum, maximum)
 end
 
 return RodSkins

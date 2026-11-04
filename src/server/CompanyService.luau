@@ -11,6 +11,7 @@ local RunService = game:GetService("RunService")
 
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local CompanyIslandAccess = require(script.Parent.CompanyIslandAccess)
 local CustomerService = require(script.Parent.CustomerService)
 local Rowboat = require(script.Parent.Rowboat)
 local FishingBoat = require(script.Parent.FishingBoat)
@@ -47,7 +48,9 @@ local crews: { [Model]: any } = {}
 local folder: Folder
 
 local function dockFrame(base: Model): CFrame?
-	local frame = base:GetAttribute("BoatDockFrame")
+	local owner = Players:GetPlayerByUserId(base:GetAttribute("OwnerUserId") or 0)
+	local property = owner and CompanyIslandAccess.get(owner)
+	local frame = (property or base):GetAttribute("BoatDockFrame")
 	return if typeof(frame) == "CFrame" then frame else nil
 end
 
@@ -138,7 +141,13 @@ local function build(base: Model, owner: Player, boatId: string)
 		return nil
 	end
 	local mooring = MOORINGS[1]
-	for _, option in MOORINGS do
+	local property = CompanyIslandAccess.get(owner)
+	local options = if property then {
+		{ boat = CFrame.new(45, 0, -24), pier = Vector3.new(30, 4.4, -24), pickup = Vector3.new(30, 4.4, -24) },
+		{ boat = CFrame.new(-45, 0, -24), pier = Vector3.new(-30, 4.4, -24), pickup = Vector3.new(-30, 4.4, -24) },
+	} else MOORINGS
+	mooring = options[1]
+	for _, option in options do
 		if water((dock * option.boat).Position) then
 			mooring = option
 			break
@@ -162,6 +171,7 @@ local function build(base: Model, owner: Player, boatId: string)
 	end
 	local crew = {
 		base = base,
+		property = property,
 		ownerId = owner.UserId,
 		boatId = boatId,
 		-- Wears the owner's refit dock paint and keeps the speed of its motors.
@@ -231,7 +241,7 @@ end
 -- Straight out from the mooring, past the end of the piers.
 local function mouthOf(crew): Vector3
 	local side = crew.dock:PointToObjectSpace(crew.moor.Position).X
-	return (crew.dock * CFrame.new(side, 0, -64)).Position
+	return (crew.dock * CFrame.new(side, 0, if crew.property then -110 else -64)).Position
 end
 
 -- A fishing spot in open water reachable in a straight run from the harbour mouth.
@@ -386,8 +396,18 @@ end
 -- The moored company boat for the porter (CustomerService), while it is tied up.
 local function moored(shop, owner: Player): (string?, Model?)
 	local crew = crews[shop.base]
-	if crew and crew.active and crew.mode == "Moored" and crew.ownerId == owner.UserId and crew.model.Parent then
+	if crew and not crew.property and crew.active and crew.mode == "Moored" and crew.ownerId == owner.UserId and crew.model.Parent then
 		return crew.boatId, crew.model
+	end
+	return nil, nil
+end
+
+-- Island porters have their own physical route from the quay to the upper houses.
+function CompanyService.mooredAtIsland(owner: Player): (string?, Model?)
+	for _, crew in crews do
+		if crew.property and crew.active and crew.mode == "Moored" and crew.ownerId == owner.UserId and crew.model.Parent then
+			return crew.boatId, crew.model
+		end
 	end
 	return nil, nil
 end
@@ -397,7 +417,7 @@ local function syncBase(base: Model)
 	local owner = npc.ownerOf(base)
 	local profile = owner and BoatService.getProfile(owner)
 	local boatId = assignment(profile)
-	if crew and (not owner or crew.ownerId ~= owner.UserId or crew.boatId ~= boatId) then
+	if crew and (not owner or crew.ownerId ~= owner.UserId or crew.boatId ~= boatId or crew.dock ~= dockFrame(base)) then
 		despawn(crew)
 		crew = nil
 	end

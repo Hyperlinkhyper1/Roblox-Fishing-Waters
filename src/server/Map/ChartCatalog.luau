@@ -13,7 +13,7 @@ function Catalog.start(root: Instance)
 	folder.Parent = ReplicatedStorage
 	local seen = {}
 	local function add(model)
-		if not model:IsA("Model") or (model.Name ~= "Island" and model.Name ~= "Harbour Isle" and model.Name ~= "Modern City") or seen[model] then
+		if not model:IsA("Model") or (model.Name ~= "Island" and model.Name ~= "Harbour Isle" and model.Name ~= "Modern City" and model.Name ~= "Pirate Cove" and not model:GetAttribute("CompanyIslandVersion")) or seen[model] then
 			return
 		end
 		seen[model] = true
@@ -43,6 +43,7 @@ function Catalog.start(root: Instance)
 		record.Name = model.Name
 		record.Value = coast
 		record:SetAttribute("Atoll", model:GetAttribute("ChartAtoll") == true)
+		record:SetAttribute("ChartLabel", model:GetAttribute("ChartLabel"))
 		record.Parent = folder
 		model.Destroying:Connect(function()
 			record:Destroy()

@@ -65,8 +65,12 @@ local function settle()
   RunService.Heartbeat:Fire()
 end
 local methods = {}
+local vector = {}
+local Vector3 = {new=function(x, y, z) return setmetatable({X=x, Y=y, Z=z}, vector) end}
+vector.__div = function(v, n) return Vector3.new(v.X / n, v.Y / n, v.Z / n) end
+vector.__sub = function(a, b) return Vector3.new(a.X-b.X, a.Y-b.Y, a.Z-b.Z) end
 local function object(class, name, parent)
-  local item = setmetatable({ClassName=class, Name=name, Parent=parent, children={}, attributes={},
+  local item = setmetatable({ClassName=class, Name=name, Parent=parent, children={}, attributes={}, Position=Vector3.new(0, 0, 0),
     ChildAdded=signal(), ChildRemoved=signal(), DescendantAdded=signal(), DescendantRemoving=signal(),
     AncestryChanged=signal()}, {
     __index=function(self, key)
@@ -114,9 +118,6 @@ function methods:IsDescendantOf(ancestor)
   end
   return false
 end
-local vector = {}
-local Vector3 = {new=function(x, y, z) return setmetatable({X=x, Y=y, Z=z}, vector) end}
-vector.__div = function(v, n) return Vector3.new(v.X / n, v.Y / n, v.Z / n) end
 local axes = {RightVector=Vector3.new(1, 0, 0), UpVector=Vector3.new(0, 1, 0), LookVector=Vector3.new(0, 0, 1)}
 local function groundAt(parent, x, z)
   local part = object("BasePart", "GroundPart", parent)
@@ -140,6 +141,7 @@ Lod.start()
 check(#queue == 1, "Shell and island initialization must share one refresh")
 settle()
 check(shell.Parent == shells and wedge.LocalTransparencyModifier == 1, "Hide loaded island shell without reparenting")
+check(wedge.Position.Y == -0.2, "A baked terrain shell is inset below the real terrain to avoid coplanar faces")
 local beforeWrites, beforeScheduled = writes, scheduled
 for i = 1, 3000 do
   local part = object("BasePart", "GroundPart", ground)

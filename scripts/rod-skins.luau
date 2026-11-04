@@ -66,6 +66,17 @@ check(RodSkins.Skins.MageStaff.Mutation == 0.02, "Mage Staff adds 2% mutation ch
 
 -- Skin stats stack on top of the angler's upgrades.
 local base = RodUpgrades.boosts({ Speed = 2, Strength = 1 })
+for skinId, skin in RodSkins.Skins do
+	check(type(skin.Handling) == "number" and skin.Handling > 0, skinId .. " has a Handling stat")
+	local worn = RodSkins.apply(base, skinId, 1)
+	local fresh = RodSkins.apply(base, skinId, 0)
+	check(worn.handling > base.handling and fresh.handling > worn.handling, "Rod Handling respects wear")
+	check(string.find(table.concat(RodSkins.perks(skinId), " "), "handling", 1, true) ~= nil, "Rod perks show Handling")
+end
+check(RodSkins.apply(base, nil).handling == 1, "Starter rod keeps baseline Handling")
+check(RodSkins.apply(base, "Bogus").handling == 1, "Unknown skins keep baseline Handling")
+local upgraded = RodUpgrades.boosts({ Handling = 5 })
+check(RodSkins.apply(upgraded, "MageStaff").handling > upgraded.handling, "Rod and upgrade Handling stack")
 local staff = RodSkins.apply(base, "MageStaff")
 check(
 	math.abs(staff.reel - (base.reel + 0.2)) < 1e-9 and math.abs(staff.size - (base.size + 0.4)) < 1e-9,
@@ -359,6 +370,17 @@ for _, crateId in RodSkins.CrateOrder do
 end
 
 -- Wear is per copy, survives decoding, and scales every skin perk.
+check(RodSkins.previewPerks("BoneRod")[1] == "+20–30% big fish chance", "Crate preview includes the full Bone Rod wear range")
+check(RodSkins.perks("BoneRod", 0.5)[1] == "+20% big fish chance", "Battle-Scarred Bone Rod shows its actual bonus")
+for skinId in RodSkins.Skins do
+	local preview = RodSkins.previewPerks(skinId)
+	local weakest, strongest = RodSkins.perks(skinId, 1), RodSkins.perks(skinId, 0)
+	for index, line in preview do
+		local low = string.match(weakest[index], "^%+([%d.]+)%%")
+		local high = string.match(strongest[index], "^%+([%d.]+)%%")
+		check(string.find(line, "+" .. low .. "–" .. high .. "%", 1, true), "Preview matches actual wear bonuses for " .. skinId)
+	end
+end
 for _, pair in
 	{
 		{ 0, "Factory New", 1.2 },

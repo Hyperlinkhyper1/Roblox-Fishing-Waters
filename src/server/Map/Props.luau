@@ -28,6 +28,36 @@ local function noCollision(piece: BasePart)
 	piece.CanCollide, piece.CanTouch, piece.CanQuery = false, false, false
 end
 
+-- Keep one simple body for small beach props; plants are entirely decorative.
+function Props.simplifyDecorationCollision(model: Model)
+	if model:GetAttribute("DecorationCollisionVersion") == 1 then
+		return
+	end
+	for _, piece in model:GetDescendants() do
+		if not piece:IsA("BasePart") then
+			continue
+		end
+		local keep = false
+		if model.Name == "Sandcastle" then
+			keep = piece.Size == Vector3.new(4, 1.2, 4)
+		elseif model.Name == "BeachBall" then
+			keep = piece:IsA("Part") and piece.Shape == Enum.PartType.Ball
+		end
+		if not keep then
+			noCollision(piece)
+		end
+	end
+	model:SetAttribute("DecorationCollisionVersion", 1)
+end
+
+function Props.ensureDecorationCollision(root: Instance)
+	for _, model in root:GetDescendants() do
+		if model:IsA("Model") and (model.Name == "Bush" or model.Name == "Flowers" or model.Name == "Sandcastle" or model.Name == "BeachBall") then
+			Props.simplifyDecorationCollision(model)
+		end
+	end
+end
+
 -- Keep the existing solid building cores and walking surfaces. Facade details
 -- within 0.65 studs of a core share its collision instead of each adding a body.
 -- Test all eight corners in the core's frame, including on rotated houses.
@@ -399,6 +429,7 @@ function Props.bush(parent: Instance, ground: Vector3, rng: Random, colors: { Co
 			M.LeafyGrass
 		)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -412,6 +443,7 @@ function Props.flowers(parent: Instance, ground: Vector3, rng: Random): Model
 		part(m, Vector3.new(0.15, 1.2, 0.15), CFrame.new(at + Vector3.new(0, 0.6, 0)), rgb(80, 120, 60), M.Grass)
 		ball(m, at + Vector3.new(0, 1.3, 0), 0.6, color, M.Plastic)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -1830,6 +1862,7 @@ function Props.sandcastle(parent: Instance, ground: Vector3, color: Color3): Mod
 	part(m, Vector3.new(1.8, 2.2, 1.8), CFrame.new(ground + Vector3.new(0, 2.3, 0)), color, M.Sand)
 	cylinder(m, ground + Vector3.new(0, 4, 0), 1.6, 0.1, WOOD, M.Wood)
 	part(m, Vector3.new(0.05, 0.5, 0.8), CFrame.new(ground + Vector3.new(0, 4.5, 0.4)), RED, M.Fabric)
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -1869,6 +1902,7 @@ function Props.beachBall(parent: Instance, ground: Vector3): Model
 		)
 		band.Shape = Enum.PartType.Cylinder
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 

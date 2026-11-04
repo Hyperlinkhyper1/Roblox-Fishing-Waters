@@ -23,6 +23,7 @@ local states: { [Player]: BreathState } = {}
 local elapsed = 0
 
 local function isUnderwater(character: Model): boolean
+	if character:GetAttribute("MetroRiding") then return false end
 	-- Breathing is based on the head rather than the root part, so a player can
 	-- tread water at the surface without losing oxygen.
 	local head = character:FindFirstChild("Head") :: BasePart?

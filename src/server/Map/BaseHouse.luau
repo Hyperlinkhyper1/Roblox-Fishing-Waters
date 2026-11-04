@@ -10,12 +10,36 @@ local FishFreezer = require(script.Parent.FishFreezer)
 local ShopDesk = require(script.Parent.ShopDesk)
 
 local BaseHouse = {}
-local VERSION = 11
+local VERSION = 13
 -- Scale the original shell around its house-local origin to the grid edges.
 local SCALE_X = (BaseGrid.HALF_WIDTH * 2) / 46
 local SCALE_Z = (BaseGrid.HALF_LENGTH * 2) / 30
 local LIGHTING_VERSION = 3
 local AWNING_VERSION = 1
+local SURFACE_VERSION = 1
+
+local function repairOverlappingSurfaces(house: Model)
+	if house:GetAttribute("SurfaceVersion") == SURFACE_VERSION then
+		return
+	end
+	local shell = house:FindFirstChild("Shell")
+	if not shell then
+		return
+	end
+	local step = shell:FindFirstChild("EntranceStep")
+	if step and step:IsA("BasePart") then
+		step.CFrame *= CFrame.new(0, -0.02, 0)
+	end
+	for _, name in { "OfficeDoorLintel", "LobbyDoorLintel" } do
+		local lintel = shell:FindFirstChild(name)
+		if lintel and lintel:IsA("BasePart") then
+			-- Keep the top fixed while lifting the underside above the wood header.
+			lintel.Size -= Vector3.new(0, 0.04, 0)
+			lintel.CFrame *= CFrame.new(0, 0.02, 0)
+		end
+	end
+	house:SetAttribute("SurfaceVersion", SURFACE_VERSION)
+end
 -- The shop's walls: front (facing the house), back and sides, all on grid borders.
 local SHOP_FRONT, SHOP_BACK = BaseGrid.SHOP_FRONT, BaseGrid.SHOP_BACK
 local SHOP_MID = (SHOP_FRONT + SHOP_BACK) / 2
@@ -287,6 +311,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 		local interior = string.find(name, "^StorePartition") ~= nil
 			or string.find(name, "^StorePassage") ~= nil
 			or string.find(name, "^Office") ~= nil
+			or string.find(name, "^Lobby") ~= nil
 		local sx = if interior then 1 else SCALE_X
 		local sz = if interior then 1 else SCALE_Z
 		local piece =
@@ -397,18 +422,33 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 	end
 	-- Kitchen/storage divider and its two-cell-wide cross passage, both aligned
 	-- to cell boundaries. The wider opening leaves room to turn through the grid.
-	-- Stop the divider short of the entrance to leave the vestibule open.
+	-- Stop at the lobby's back wall; storage connects to the kitchen here.
 	local passageBack, passageFront = -2.5 * BaseGrid.CELL_SIZE, -0.5 * BaseGrid.CELL_SIZE
 	block(shell, "StorePartitionRear", Vector3.new(0.55, 11.5, passageBack + length), splitX, 5.75, (passageBack - length) / 2, PLASTER, M.Plaster)
 	local dividerFront = 1.5 * BaseGrid.CELL_SIZE
 	block(shell, "StorePartitionFront", Vector3.new(0.55, 11.5, dividerFront - passageFront), splitX, 5.75, (dividerFront + passageFront) / 2, PLASTER, M.Plaster)
 	block(shell, "StorePassageLintel", Vector3.new(0.55, 3, passageFront - passageBack), splitX, 10, (passageFront + passageBack) / 2, PLASTER, M.Plaster)
 
+	-- Enclose the front entrance. The lobby's east wall sits beyond the entire
+	-- exterior doorway, with a doorway into storage opposite the office door.
+	local lobbyBack, lobbyEast = dividerFront, 1.5 * BaseGrid.CELL_SIZE
+	local lobbyDoorLow, lobbyDoorHigh, lobbyDoorTop = 2 * BaseGrid.CELL_SIZE, 3 * BaseGrid.CELL_SIZE, 8.5
+	local lobbyWest = -1.5 * BaseGrid.CELL_SIZE
+	block(shell, "LobbyFloor", Vector3.new(lobbyEast - lobbyWest, 0.02, length - lobbyBack), (lobbyWest + lobbyEast) / 2, 0.17, (lobbyBack + length) / 2, WOOD, M.WoodPlanks, nil, true)
+	block(shell, "LobbyBackWall", Vector3.new(lobbyEast - lobbyWest, 11.5, 0.55), (lobbyWest + lobbyEast) / 2, 5.75, lobbyBack, PLASTER, M.Plaster)
+	block(shell, "LobbyEastWallRear", Vector3.new(0.55, 11.5, lobbyDoorLow - lobbyBack), lobbyEast, 5.75, (lobbyBack + lobbyDoorLow) / 2, PLASTER, M.Plaster)
+	block(shell, "LobbyEastWallFront", Vector3.new(0.55, 11.5, length - lobbyDoorHigh), lobbyEast, 5.75, (lobbyDoorHigh + length) / 2, PLASTER, M.Plaster)
+	block(shell, "LobbyDoorLintel", Vector3.new(0.55, 11.5 - lobbyDoorTop, lobbyDoorHigh - lobbyDoorLow), lobbyEast, (11.5 + lobbyDoorTop) / 2, (lobbyDoorLow + lobbyDoorHigh) / 2, PLASTER, M.Plaster)
+	for _, z in { lobbyDoorLow, lobbyDoorHigh } do
+		block(shell, "LobbyDoorJamb", Vector3.new(0.9, lobbyDoorTop, 0.28), lobbyEast, lobbyDoorTop / 2, z, WOOD, M.Wood)
+	end
+	block(shell, "LobbyDoorHeader", Vector3.new(0.9, 0.3, lobbyDoorHigh - lobbyDoorLow + 0.6), lobbyEast, lobbyDoorTop + 0.15, (lobbyDoorLow + lobbyDoorHigh) / 2, WOOD, M.Wood)
+
 	-- The office fills the kitchen's front-left corner. Its back and east walls
 	-- meet the exterior shell and leave a doorway facing the entrance vestibule.
 	local office = model(house, "Office")
 	office:SetAttribute("RoomType", "Office")
-	local officeBack, officeEast = 1.5 * BaseGrid.CELL_SIZE, -1.5 * BaseGrid.CELL_SIZE
+	local officeBack, officeEast = 0.5 * BaseGrid.CELL_SIZE, -1.5 * BaseGrid.CELL_SIZE
 	local officeDoorZ, officeDoorWidth, officeDoorTop = 2.5 * BaseGrid.CELL_SIZE, BaseGrid.CELL_SIZE, 8.5
 	local doorLow, doorHigh = officeDoorZ - officeDoorWidth / 2, officeDoorZ + officeDoorWidth / 2
 	block(
@@ -650,6 +690,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 
 	-- The structural floor is the queryable reference for the plot, not an invisible blocker.
 	house.PrimaryPart = kitchenFloor
+	repairOverlappingSurfaces(house)
 	local shop = buildShop(house, frame, accent, index)
 	FishFreezer.ensure(shop, frame)
 	ShopDesk.ensure(shop, frame)
@@ -685,6 +726,7 @@ function BaseHouse.ensure(base: Model)
 	end
 	local existing = base:FindFirstChild("BaseHouse")
 	if existing and existing:GetAttribute("LayoutVersion") == VERSION then
+		repairOverlappingSurfaces(existing)
 		-- Earlier shells tilted the canvas upward at its outer edge, leaving it
 		-- detached from the valance. Repair the saved pieces without rebuilding.
 		if existing:GetAttribute("AwningVersion") ~= AWNING_VERSION then

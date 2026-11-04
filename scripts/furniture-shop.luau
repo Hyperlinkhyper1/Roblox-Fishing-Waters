@@ -137,24 +137,25 @@ check(not buy(player, "Unknown") and saves == 0, "Invalid furniture must not sav
 check(not buy(player, {}) and saves == 0, "Malformed furniture must not save")
 check(buy(player, "Freezer"), "Freezer purchase at display must succeed")
 check(
-	profile.Cash == 1250 and profile.Angler.FurnitureStock.Freezer == 1,
+	profile.Cash == 1625 and profile.Angler.FurnitureStock.Freezer == 1,
 	"Purchase must deduct the catalogue price and grant stock"
 )
-check(profile.Angler.Stats.CoinsSpent == 750 and synced == 1, "Purchase must update spending and synchronize")
+check(profile.Angler.Stats.CoinsSpent == 375 and synced == 1, "Purchase must update spending and synchronize")
 stand(counter)
 check(buy(player, "Register"), "Indoor counter purchase must succeed")
-check(profile.Cash == 750 and profile.Angler.FurnitureStock.Register == 1, "Counter must charge the catalogue price")
+check(profile.Cash == 1375 and profile.Angler.FurnitureStock.Register == 1, "Counter must charge the catalogue price")
 stand(anchors.StorageRack)
 failSave = true
 check(not buy(player, "StorageRack"), "Failed saves must report failure")
 check(
-	profile.Cash == 750 and profile.Angler.FurnitureStock.StorageRack == nil,
+	profile.Cash == 1375 and profile.Angler.FurnitureStock.StorageRack == nil,
 	"Failed save must not change cash or stock"
 )
 failSave = false
 check(buy(player, "StorageRack"), "Rack display purchase must succeed")
-check(profile.Cash == 450 and profile.Angler.FurnitureStock.StorageRack == 1, "Rack must charge the catalogue price")
+check(profile.Cash == 1225 and profile.Angler.FurnitureStock.StorageRack == 1, "Rack must charge the catalogue price")
 stand(anchors.Freezer)
+profile.Cash = Furniture.Items.Freezer.Price - 1
 local savesBefore = saves
 check(not buy(player, "Freezer") and saves == savesBefore, "Insufficient cash must not save")
 busy[player] = true
@@ -199,7 +200,7 @@ check(
 	"Server pickup must return the item to stock"
 )
 check(place(player, "Freezer", -9, 72, 1), "Server must also place a freezer in the shop across the street")
-check(place(player, "Register", 9, 72, 2), "Server must also place a register in the shop across the street")
+check(place(player, "Register", 13.5, 72, 2), "Server must also place a register in the shop across the street")
 local savedBefore = saves
 check(
 	not place(player, "StorageRack", -9, 72, 0) and saves == savedBefore,

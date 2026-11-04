@@ -159,6 +159,7 @@ function WeatherController.start()
 	local thunderToken = 0
 	local previousStorm = 0
 	local currentSkyFraction = 0
+	local lastRainPosition: Vector3? = nil
 
 	local function hide()
 		for _, cell in cells do
@@ -202,8 +203,11 @@ function WeatherController.start()
 			groundParams.FilterDescendantsInstances = exclusions
 			elapsed = UPDATE_INTERVAL
 		end
-		for _, cell in cells do
-			cell.part.Position = position + cell.offset + Vector3.new(0, RAIN_HEIGHT, 0)
+		if effectsEnabled and state.rain > 0.01 and not submerged and position ~= lastRainPosition then
+			for _, cell in cells do
+				cell.part.Position = position + cell.offset + Vector3.new(0, RAIN_HEIGHT, 0)
+			end
+			lastRainPosition = position
 		end
 		local windDirection = state.windDirection
 		local windCenter = position + Vector3.new(0, 4, 0)
@@ -216,19 +220,28 @@ function WeatherController.start()
 			sheltered = workspace:Raycast(position + Vector3.new(0, 0.15, 0), Vector3.new(0, 160, 0), rayParams) ~= nil
 			local openCells = 0
 			local rainSpeed = 70 + state.rain * 28
+			local sampleCells = state.rain > 0.01 or state.storm > 0.1
 			for _, cell in cells do
 				local center = position + cell.offset
 				cell.open = not sheltered
 					and not submerged
+					and sampleCells
 					and workspace:Raycast(center + Vector3.new(0, 0.15, 0), Vector3.new(0, 160, 0), rayParams)
 						== nil
 				if cell.open then
 					openCells += 1
 				end
 				local emitter = cell.emitter
+				if not effectsEnabled or not cell.open or state.rain <= 0.01 then
+					if emitter.Enabled then
+						emitter.Enabled = false
+						emitter:Clear()
+					end
+					continue
+				end
 				-- A small drizzle still needs enough drops across each 22-stud cell
 				-- to be visible; the old rate left only a handful in the whole view.
-				emitter.Rate = if state.rain > 0.01 then 60 + 300 * state.rain else 0
+				emitter.Rate = 60 + 180 * state.rain
 				emitter.Speed = NumberRange.new(rainSpeed * 0.94, rainSpeed)
 				emitter.Acceleration = windDirection * state.windSpeed * 1.5
 				-- End rain at terrain, water, or the nearest solid surface, rather
@@ -239,10 +252,7 @@ function WeatherController.start()
 				local groundY = if ground then ground.Position.Y else Biomes.WaterLevel
 				local lifetime = math.clamp((cell.part.Position.Y - groundY) / rainSpeed, 0.06, 1.25)
 				emitter.Lifetime = NumberRange.new(lifetime * 0.86, lifetime)
-				emitter.Enabled = effectsEnabled and cell.open and state.rain > 0.01
-				if not cell.open then
-					emitter:Clear()
-				end
+				emitter.Enabled = true
 			end
 			currentSkyFraction = openCells / #cells
 			local windStrength = math.clamp((state.windSpeed - 6) / 46, 0, 1)

@@ -98,9 +98,15 @@ do
   local itemViews, previewStarted, previewCalls = {}, {}, {}
   local remotes = {}
   local FurniturePreview = {show = function(_, _, id) previewCalls[id] = (previewCalls[id] or 0) + 1 end}
-  for _, id in Furniture.Order do itemButtons[id], stockLabels[id], itemViews[id] = {}, {}, {} end
+${section(build, 'local ITEMS', '\nlocal CAMERA_PITCH')}
+  local site = nil
+${section(build, '\tlocal function placed()', '\n\tlocal function furnitureFolder(')}
+  for _, id in ITEMS do itemButtons[id], stockLabels[id], itemViews[id] = {}, {}, {} end
   local inventoryTitle, emptyInventory, hint = {}, {}, {}
   local rotate, cancel, move, pickUp = {}, {}, {}, {}
+  local active, editingRack = true, false
+  local editRack, rackEditor, rackStatus, rackMode = {}, {}, {}, {}
+  local addCage, takeCage, addNet, takeNet = {}, {}, {}, {}
   local function setButton(item, text, enabled, chosen) item.Active, item.Chosen = enabled, chosen end
 ${section(build, '\tlocal function render()', '\n\tlocal function clearPreview(')}
   render()
@@ -167,6 +173,7 @@ do
   }
   local DiningRoom = {buildTable = builder("DiningTable").build}
   local WeatherRadar = {build = builder("WeatherRadar").build}
+  local CompanyIslandMap = {buildDesk = builder("CompanyDesk").build}
   local Decorations = {
     has = function(id) return Furniture.Items[id].Decoration == true end,
     build = function(parent, frame, id) return builder(id).build(parent, frame) end,

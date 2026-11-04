@@ -15,7 +15,7 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewIndex = process.argv.indexOf('--preview');
 const previewPath = previewIndex > 0 ? resolve(process.argv[previewIndex + 1]) : null;
-const modules = ['LowPoly', 'Props', 'CityLand', 'CityBuildings', 'CityLandmark', 'CityStation', 'CityPort', 'CityRefinery', 'CityMetro', 'Lod', 'ModernCity', 'Biomes'];
+const modules = ['LowPoly', 'Props', 'CityLand', 'CityBuildings', 'CityLandmark', 'CityStation', 'CityPort', 'CityRefinery', 'CityMetro', 'MetroStations', 'Lod', 'ModernCity', 'Biomes'];
 const sources = {};
 for (const name of modules) {
   const folder = name === 'Biomes' ? 'src/shared' : 'src/server/Map';
@@ -571,7 +571,53 @@ local summary = { "trees=" .. trees }
 for i = 1, math.min(10, #keys) do table.insert(summary, keys[i] .. "=" .. groups[keys[i]]) end
 print("City: " .. #parts .. " parts, " .. buildings .. " buildings, " .. pieces .. " pieces (largest " .. biggest .. "), " .. tiles .. " shell tiles, " .. samples .. " channel samples")
 print("Parts by group: " .. table.concat(summary, ", "))
-print("City: " .. checks .. " checks passed")
+-- The new home terminus cuts existing slabs rather than covering the entrance.
+local Stations = require({ __module = "MetroStations" })
+Stations.ensureCity(city)
+check(city:FindFirstChild("CityMetroStop") ~= nil, "City gets a return boarding point")
+Stations.ensureCity(city)
+local home = newInstance("Model"); home.Name = "Harbour Isle"; home.Parent = workspace
+local homeGround = newInstance("Model"); homeGround.Name = "Ground"; homeGround.Parent = home
+local plaza = newInstance("Model"); plaza.Name = "Plaza"; plaza.Parent = home
+local homeFrame = CFrame.new(0, 5.92, -565.25)
+local function homeSlab(parent, size, offset)
+  local p = newInstance("Part"); p.Size = size; p.CFrame = homeFrame * CFrame.new(offset); p.Parent = parent
+  return p
+end
+homeSlab(homeGround, v3(200, 4, 160), v3(0, -2.92, -20))
+homeSlab(plaza, v3(116, 0.6, 116), v3(0, -0.42, 0))
+homeSlab(plaza, v3(1.4, 0.12, 116), v3(24, -0.06, 0))
+local station = Stations.ensureHarbour(home, plaza, homeFrame)
+local function homeBlocked(x, y, z)
+  local world = homeFrame * v3(x, y, z)
+  for _, p in home:GetDescendants() do
+    if p:IsA("BasePart") and p.CanCollide then
+      local q, h = p.CFrame:PointToObjectSpace(world), p.Size / 2
+      if math.abs(q.X) < h.X - 0.001 and math.abs(q.Y) < h.Y - 0.001 and math.abs(q.Z) < h.Z - 0.001 then return p end
+    end
+  end
+  return nil
+end
+for k = 1, 36 do
+  local y, x = -k * 0.8, 80 + (k - 0.5) * 1.35
+  check(homeBlocked(x, y - 0.1, -18) ~= nil, "Home stair " .. k .. " has a tread")
+  for dy = 0.2, 6, 0.4 do
+    check(homeBlocked(x, y + dy, -18) == nil, "Home stair " .. k .. " has continuous headroom")
+  end
+end
+for _, spot in { {129, -18}, {133, -18}, {141, -18}, {145, -40}, {145, 20} } do
+  check(homeBlocked(spot[1], -29, spot[2]) ~= nil and homeBlocked(spot[1], -23, spot[2]) == nil, "Home platform and stair landing are connected")
+end
+check(homeBlocked(15, -1, -40) ~= nil, "Ground alongside the stair is retained")
+local count = #home:GetDescendants()
+check(Stations.ensureHarbour(home, plaza, homeFrame) == station and #home:GetDescendants() == count, "Baked home upgrade is idempotent")
+for _, p in station:GetDescendants() do
+  if p:IsA("BasePart") and p.Position.Y < 0 then
+    check(not Biomes.inOceanBounds(p.Position), "Home station is inside its dry pocket: " .. p.Name)
+  end
+end
+check(not Biomes.inOceanBounds(homeFrame * v3(141, -20, -71)) and Biomes.inOceanBounds(homeFrame * v3(190, -20, -71)), "Only the station pocket is dry")
+print("City and metro: " .. checks .. " checks passed")
 
 if PREVIEW then
   local out = {}

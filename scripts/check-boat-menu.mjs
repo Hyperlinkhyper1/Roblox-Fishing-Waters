@@ -25,6 +25,7 @@ try {
       .replace('require(ReplicatedStorage.Shared.DayNight)', '{ clockTime = function() return 21.5 end, isNight = function(clock) return clock >= 18 or clock < 6 end }')
       .replace('require(ReplicatedStorage.Shared.Seasons)', '{ current = function() return "Autumn", 2 end }')
       .replace('require(ReplicatedStorage.Shared.Calendar)', '{ now = function() return { Month = 10, Day = 31 } end, format = function() return "31 Oct" end }')
+      .replace('require(script.Parent.BoatDriving)', '{ start = function() end, setInput = function() end }')
       .replace('require(script.Parent.DrydockCamera)', 'DrydockCamera')
       .replace('require(script.Parent.BoatPreview)', 'BoatPreview')
       .replace(

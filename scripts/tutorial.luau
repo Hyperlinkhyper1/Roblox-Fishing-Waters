@@ -13,14 +13,37 @@ local function check(value, message)
 end
 
 -- Every source that ships with the tutorial at least compiles.
-for _, path in { "src/server/TutorialService.luau", "src/client/Tutorial.luau", "src/shared/Tutorial.luau" } do
+local sources = {}
+for _, path in
+	{ "src/server/TutorialService.luau", "src/server/GuideCostume.luau", "src/client/Tutorial.luau", "src/shared/Tutorial.luau" }
+do
 	local file = fs.open(path, "r")
 	local source = fs.read(file)
 	fs.close(file)
+	sources[path] = source
 	check(pcall(luau.load, luau.compile(source), path, {}), path .. " does not compile")
 end
 
--- Roster: every guide in the order is defined once, wears a Roblox outfit and has somewhere to stand.
+-- Every costume piece a guide wears is one GuideCostume knows how to build.
+local costumeKinds = {}
+for kind in string.gmatch(sources["src/server/GuideCostume.luau"], "function KINDS%.(%w+)") do
+	costumeKinds[kind] = true
+end
+local function isColor(value)
+	if type(value) ~= "table" or #value ~= 3 then
+		return false
+	end
+	for _, channel in value do
+		if type(channel) ~= "number" or channel < 0 or channel > 255 or channel % 1 ~= 0 then
+			return false
+		end
+	end
+	return true
+end
+local SLEEVES = { Long = true, Short = true, None = true }
+local HAIR = { Short = true, Bun = true, Ponytail = true, Bald = true }
+
+-- Roster: every guide in the order is defined once, is dressed and has somewhere to stand.
 local seen = {}
 for _, id in Tutorial.Order do
 	local npc = Tutorial.Npcs[id]
@@ -28,7 +51,21 @@ for _, id in Tutorial.Order do
 	check(not seen[id], "Guide listed twice: " .. id)
 	seen[id] = true
 	check(type(npc.Name) == "string" and type(npc.Title) == "string", id .. " needs a name and title")
-	check(type(npc.OutfitId) == "number" and npc.OutfitId > 0 and npc.OutfitId % 1 == 0, id .. " needs an outfit")
+	local outfit = npc.Outfit
+	check(type(outfit) == "table", id .. " needs an outfit")
+	for _, field in { "Skin", "Shirt", "Trousers", "Shoes", "Hair" } do
+		check(isColor(outfit[field]), id .. "'s outfit needs a " .. field .. " colour")
+	end
+	for _, field in { "Boots", "Gloves", "Beard" } do
+		check(outfit[field] == nil or isColor(outfit[field]), id .. "'s " .. field .. " is not a colour")
+	end
+	check(SLEEVES[outfit.Sleeves], id .. " has unknown sleeves " .. tostring(outfit.Sleeves))
+	check(HAIR[outfit.HairStyle], id .. " has unknown hair " .. tostring(outfit.HairStyle))
+	check(type(outfit.Pieces) == "table" and #outfit.Pieces > 0, id .. " wears nothing over the basics")
+	for _, spec in outfit.Pieces do
+		check(costumeKinds[spec.Kind], id .. " wears an unknown piece " .. tostring(spec.Kind))
+		check(isColor(spec.Color), id .. "'s " .. tostring(spec.Kind) .. " needs a colour")
+	end
 	check(#npc.Spots > 0, id .. " needs a spot")
 	check(npc.Anchor == nil or (npc.Fallback and #npc.Fallback > 0), id .. " needs plaza fallbacks for its anchor")
 	check(type(npc.Face) == "table" and #npc.Face == 2, id .. " needs a facing point")
@@ -36,10 +73,27 @@ end
 for id in Tutorial.Npcs do
 	check(seen[id], "Guide missing from order: " .. id)
 end
-local outfits = {}
+-- Nobody is a palette swap of another guide: each wears a different set of pieces.
+local looks = {}
 for id, npc in Tutorial.Npcs do
-	check(not outfits[npc.OutfitId], id .. " shares an outfit with " .. tostring(outfits[npc.OutfitId]))
-	outfits[npc.OutfitId] = id
+	local kinds = {}
+	for _, spec in npc.Outfit.Pieces do
+		table.insert(kinds, spec.Kind)
+	end
+	table.sort(kinds)
+	local look = table.concat(kinds, "+")
+	check(not looks[look], id .. " dresses exactly like " .. tostring(looks[look]))
+	looks[look] = id
+end
+-- Pieces that need more than a main colour.
+for id, npc in Tutorial.Npcs do
+	for _, spec in npc.Outfit.Pieces do
+		if spec.Kind == "CaptainCap" then
+			check(isColor(spec.Band) and isColor(spec.Badge), id .. "'s cap needs a band and badge")
+		elseif spec.Kind == "StrawHat" or spec.Kind == "Panama" then
+			check(isColor(spec.Band), id .. "'s hat needs a band")
+		end
+	end
 end
 
 -- Steps: each names a guide, has a goal and pages, and every guide teaches at least once.

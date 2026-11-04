@@ -43,8 +43,11 @@ local function tileKeys(part: BasePart, originX: number, originZ: number, callba
 	end
 end
 
+-- LodRadial marks a mainland (added after the bake, like Pirate Cove) that is still an ordinary
+-- radial island at a distance rather than a tiled block city.
 local function tiled(island: Model): boolean
-	return island.Name == "Harbour Isle" or island:GetAttribute("LodRoot") == true
+	return island.Name == "Harbour Isle"
+		or (island:GetAttribute("LodRoot") == true and island:GetAttribute("LodRadial") ~= true)
 end
 
 -- How many ground parts the client has to receive before an untiled shell gives way
@@ -343,7 +346,7 @@ local function shell(island: Model): Model
 	-- Offshore slopes can be much wider than a small rock. Build its distant
 	-- silhouette from the visible island rather than its submerged footprint.
 	local parts = opaqueParts(island)
-	if island:GetAttribute("LodRoot") then
+	if island:GetAttribute("LodRoot") and not island:GetAttribute("LodRadial") then
 		blockShell(model, island)
 		inert(model)
 	elseif #parts > 0 then
@@ -593,6 +596,32 @@ function Lod.prepareIsland(island: Model)
 			end
 		end
 	end)
+end
+
+-- Scenery swapped into a live island later (a company island's dressing) is cut into
+-- pieces the same way. Call it while `model` is still unparented, so its pieces never
+-- replicate under another streaming mode first.
+function Lod.pin(model: Model)
+	local parts = plainParts(model)
+	if parts and parts <= PIECE_PARTS then
+		addPiece(model)
+	else
+		splitIntoPieces(model)
+	end
+end
+
+-- Forgets the pieces in scenery that is about to be destroyed.
+function Lod.release(model: Instance)
+	for _, d in model:GetDescendants() do
+		local id = if d:IsA("Model") then pieceIds[d] else nil
+		if id then
+			pieces[id], pieceIds[d] = nil, nil
+		end
+	end
+	local id = if model:IsA("Model") then pieceIds[model] else nil
+	if id then
+		pieces[id], pieceIds[model] = nil, nil
+	end
 end
 
 -- Clients report each piece as it streams in (see client/Lod) and the server pins it for

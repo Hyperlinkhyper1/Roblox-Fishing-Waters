@@ -40,6 +40,16 @@ function DayNight.clockTime(serverTime: number?): number
 	return DayNight.clockAt(DayNight.elapsed(serverTime))
 end
 
+-- Lighting.ClockTime moves the sun, and every move re-renders the shadow maps and
+-- relights the scene. Stepping it once per in-game minute (one real second, a
+-- quarter of a degree of sun) looks continuous instead of costing that every frame.
+DayNight.LIGHTING_STEP_HOURS = 1 / 60
+
+function DayNight.lightingClock(serverTime: number?): number
+	local step = DayNight.LIGHTING_STEP_HOURS
+	return math.floor(DayNight.clockTime(serverTime) / step) * step
+end
+
 function DayNight.isNight(clock: number): boolean
 	return clock >= DayNight.NIGHT_START or clock < DayNight.NIGHT_END
 end

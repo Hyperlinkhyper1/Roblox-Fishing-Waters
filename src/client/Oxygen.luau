@@ -1,14 +1,15 @@
--- Bottom HUD breath meter.  The server supplies the state; this module only
+-- Compact breath meter beside the avatar. The server supplies the state; this module only
 -- presents it and fades the local screen before the server respawns the player.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local CharacterMeter = require(script.Parent.CharacterMeter)
 
 local Oxygen = {}
 local started = false
 
-local BUBBLE_COUNT = 12
+local BUBBLE_COUNT = 4
 local BAR_FADE = TweenInfo.new(0.18, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 local BLACKOUT_FADE = TweenInfo.new(1.15, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
 local RETURN_FADE = TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
@@ -34,62 +35,71 @@ function Oxygen.start()
 	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	gui.Parent = player:WaitForChild("PlayerGui")
 
-	-- Centered directly above Roblox's bottom inventory/hotbar.
+	-- Match the cast meter, on the avatar's left side.
 	local meter = Instance.new("Frame")
 	meter.Name = "OxygenBar"
-	meter.AnchorPoint = Vector2.new(0.5, 1)
-	meter.Position = UDim2.new(0.5, 0, 1, -124)
-	meter.Size = UDim2.fromOffset(330, 44)
+	meter.Size = UDim2.fromOffset(14, 180)
 	meter.BackgroundColor3 = Color3.fromRGB(6, 24, 43)
 	meter.BackgroundTransparency = 1
 	meter.BorderSizePixel = 0
 	meter.Visible = false
 	meter.Parent = gui
-	rounded(meter, 12)
+	rounded(meter, 2)
 	local meterStroke = Instance.new("UIStroke")
 	meterStroke.Color = Color3.fromRGB(102, 206, 255)
 	meterStroke.Thickness = 1.5
 	meterStroke.Transparency = 1
 	meterStroke.Parent = meter
 
-	local caption = Instance.new("TextLabel")
+	local caption = Instance.new("CanvasGroup")
 	caption.Name = "Caption"
 	caption.BackgroundTransparency = 1
-	caption.Position = UDim2.fromOffset(13, 0)
-	caption.Size = UDim2.fromOffset(54, 44)
-	caption.Font = Enum.Font.GothamBold
-	caption.Text = "O₂"
-	caption.TextSize = 20
-	caption.TextColor3 = Color3.fromRGB(197, 242, 255)
-	caption.TextTransparency = 1
-	caption.TextXAlignment = Enum.TextXAlignment.Left
+	caption.BorderSizePixel = 0
+	caption.AnchorPoint = Vector2.new(0.5, 0)
+	caption.Position = UDim2.new(0.5, 0, 1, 7)
+	caption.Size = UDim2.fromOffset(34, 22)
+	caption.GroupTransparency = 1
 	caption.ZIndex = 2
 	caption.Parent = meter
+	-- Three circles form a bubble icon without an uploaded image.
+	for index, bubble in { { 19, 5, 8 }, { 11, 12, 6 }, { 22, 17, 4 } } do
+		local dot = Instance.new("Frame")
+		dot.Name = "BubbleIcon" .. index
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.Position = UDim2.fromOffset(bubble[1], bubble[2])
+		dot.Size = UDim2.fromOffset(bubble[3], bubble[3])
+		dot.BackgroundColor3 = Color3.fromRGB(164, 221, 255)
+		dot.BorderSizePixel = 0
+		dot.Parent = caption
+		rounded(dot, 10)
+	end
 
 	local track = Instance.new("Frame")
 	track.Name = "Track"
-	track.Position = UDim2.fromOffset(60, 10)
-	track.Size = UDim2.new(1, -130, 0, 24)
+	track.Position = UDim2.fromOffset(1, 1)
+	track.Size = UDim2.new(1, -2, 1, -2)
 	track.BackgroundColor3 = Color3.fromRGB(10, 54, 83)
 	track.BackgroundTransparency = 1
 	track.BorderSizePixel = 0
 	track.ClipsDescendants = true
 	track.Parent = meter
-	rounded(track, 9)
+	rounded(track, 1)
 
 	local fill = Instance.new("Frame")
 	fill.Name = "Fill"
+	fill.AnchorPoint = Vector2.new(0, 1)
+	fill.Position = UDim2.fromScale(0, 1)
 	fill.Size = UDim2.fromScale(1, 1)
 	fill.BackgroundColor3 = Color3.fromRGB(34, 167, 237)
 	fill.BackgroundTransparency = 1
 	fill.BorderSizePixel = 0
 	fill.ClipsDescendants = true
 	fill.Parent = track
-	rounded(fill, 9)
+	rounded(fill, 1)
 	local shine = Instance.new("UIGradient")
 	shine.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(83, 210, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 111, 205)),
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(195, 234, 255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(64, 125, 166)),
 	})
 	shine.Rotation = 90
 	shine.Parent = fill
@@ -97,15 +107,15 @@ function Oxygen.start()
 	local remaining = Instance.new("TextLabel")
 	remaining.Name = "Remaining"
 	remaining.BackgroundTransparency = 1
-	remaining.AnchorPoint = Vector2.new(1, 0.5)
-	remaining.Position = UDim2.new(1, -12, 0.5, 0)
-	remaining.Size = UDim2.fromOffset(48, 30)
+	remaining.AnchorPoint = Vector2.new(0.5, 1)
+	remaining.Position = UDim2.new(0.5, 0, 0, -5)
+	remaining.Size = UDim2.fromOffset(48, 18)
 	remaining.Font = Enum.Font.GothamBold
 	remaining.Text = "100%"
-	remaining.TextSize = 14
+	remaining.TextSize = 11
 	remaining.TextColor3 = Color3.fromRGB(197, 242, 255)
 	remaining.TextTransparency = 1
-	remaining.TextXAlignment = Enum.TextXAlignment.Right
+	remaining.TextStrokeTransparency = 0.4
 	remaining.ZIndex = 2
 	remaining.Parent = meter
 
@@ -159,7 +169,7 @@ function Oxygen.start()
 			TweenService:Create(meterStroke, BAR_FADE, { Transparency = 0.15 }):Play()
 			TweenService:Create(track, BAR_FADE, { BackgroundTransparency = 0.18 }):Play()
 			TweenService:Create(fill, BAR_FADE, { BackgroundTransparency = 0 }):Play()
-			TweenService:Create(caption, BAR_FADE, { TextTransparency = 0 }):Play()
+			TweenService:Create(caption, BAR_FADE, { GroupTransparency = 0 }):Play()
 			TweenService:Create(remaining, BAR_FADE, { TextTransparency = 0 }):Play()
 		else
 			barTween = TweenService:Create(meter, BAR_FADE, { BackgroundTransparency = 1 })
@@ -167,7 +177,7 @@ function Oxygen.start()
 			TweenService:Create(meterStroke, BAR_FADE, { Transparency = 1 }):Play()
 			TweenService:Create(track, BAR_FADE, { BackgroundTransparency = 1 }):Play()
 			TweenService:Create(fill, BAR_FADE, { BackgroundTransparency = 1 }):Play()
-			TweenService:Create(caption, BAR_FADE, { TextTransparency = 1 }):Play()
+			TweenService:Create(caption, BAR_FADE, { GroupTransparency = 1 }):Play()
 			TweenService:Create(remaining, BAR_FADE, { TextTransparency = 1 }):Play()
 			task.delay(BAR_FADE.Time, function()
 				if not shown then
@@ -179,8 +189,12 @@ function Oxygen.start()
 
 	local function refresh()
 		local oxygen = math.clamp(player:GetAttribute("Oxygen") or 1, 0, 1)
-		fill.Size = UDim2.new(oxygen, 0, 1, 0)
+		fill.Size = UDim2.fromScale(1, oxygen)
 		remaining.Text = string.format("%d%%", math.ceil(oxygen * 100))
+		local low = oxygen <= 0.2
+		fill.BackgroundColor3 = if low then Color3.fromRGB(255, 117, 91) else Color3.fromRGB(255, 255, 255)
+		remaining.TextColor3 = if low then Color3.fromRGB(255, 151, 126) else Color3.fromRGB(197, 242, 255)
+		meterStroke.Color = if low then Color3.fromRGB(255, 117, 91) else Color3.fromRGB(55, 133, 174)
 		setMeterVisible(player:GetAttribute("Underwater") == true and player:GetAttribute("OxygenBlackout") ~= true)
 	end
 
@@ -206,6 +220,10 @@ function Oxygen.start()
 
 	local bubbleTime = 0
 	RunService.RenderStepped:Connect(function(dt)
+		local onScreen = CharacterMeter.position(meter, player, -1)
+		if shown then
+			meter.Visible = onScreen
+		end
 		if not shown then
 			return
 		end

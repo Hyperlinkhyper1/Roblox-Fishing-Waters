@@ -39,6 +39,9 @@ local UserInputService = {
 local houseFrame = CFrame.identity
 local FLOOR_Y = 0.16
 local ROOF_HEIGHT = 8.4
+-- Build mode at home: the company plot site is covered by check-company-islands.
+local site, floorY = nil, FLOOR_Y
+local structures = nil
 local Furniture = (function()
 ${furniture}
 end)()
@@ -114,6 +117,7 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
       do
         local held, spot, pending, sent = nil, nil, false, nil
         local state = {Placed = {}}
+        local function placed() return state.Placed end
         local function updatePreview() end
         local function render() end
         local function notice(message) error(message) end
@@ -332,6 +336,19 @@ assert(pointerSpot(Vector2.zero) == nil, "Missing camera should be harmless")
 -- Execute entry/exit against control and render bindings, including respawn-style cleanup.
 local bound, renderStep = nil, nil
 local controlsEnabled, moved = true, nil
+local hotbarEnabled, hotbarCalls, rejectHotbarWrite = true, 0, false
+local StarterGui = {
+  GetCoreGuiEnabled = function(_, kind)
+    assert(kind == Enum.CoreGuiType.Backpack, "Only the hotbar should change")
+    return hotbarEnabled
+  end,
+  SetCoreGuiEnabled = function(_, kind, value)
+    assert(kind == Enum.CoreGuiType.Backpack, "Only the hotbar should change")
+    hotbarCalls += 1
+    assert(not rejectHotbarWrite, "Core GUI is not ready")
+    hotbarEnabled = value
+  end,
+}
 local root = {Parent = true, Anchored = false, IsA = function(_, kind) return kind == "BasePart" end}
 local humanoid = {Parent = true, Health = 100, AutoRotate = true, Move = function(_, direction) moved = direction end}
 local attributes = {}
@@ -376,12 +393,25 @@ local function showGrid() grid = {Destroy = function() gridDestroyed = true end}
 local Freecam = {stop = function() end}
 local function atHome() return true end
 local function ownHouse() return {}, CFrame.identity end
+local function currentSite() return {}, CFrame.identity, nil end
 local noticeMessage = nil
 local function notice(message) noticeMessage = message end
 local function render() end
 local request = {InvokeServer = function() return {State = {Placed = {}}} end}
 local task = {spawn = function(callback) callback() end}
 local toggle = {Visible = true}
+local structureOpened, structureEntries, structureExits = false, 0, 0
+local StructureEditor = {new = function(options)
+  return {
+    enter = function(_, model, frame, where) structureOpened = true; structureEntries += 1 end,
+    exit = function() structureOpened = false; structureExits += 1 end,
+    isActive = function() return false end,
+    roofVisible = function() return false end,
+    elevation = function() return 0 end,
+    step = function() end,
+    key = function() return false end,
+  }
+end}
 ${section('\tlocal function freezeCharacter(', '\n\tlocal function controls(')}
 ${section('\tlocal function controls(', '\n\tlocal function updateCamera(')}
 ${section('\tlocal exit\n', '\n\tfor id, item in itemButtons')}
@@ -392,9 +422,15 @@ workspace.CurrentCamera = {ViewportSize = Vector2.new(1920, 1080), CameraType = 
 humanoid.SeatPart = {}
 enter()
 assert(not active and not root.Anchored and noticeMessage ~= nil, "Build mode must not anchor a seated character's vehicle")
+assert(hotbarEnabled and hotbarCalls == 0, "A rejected build entry must leave the hotbar untouched")
 humanoid.SeatPart = nil
 enter()
 assert(active and not controlsEnabled and moved.Magnitude == 0, "Build entry must stop character movement")
+assert(not hotbarEnabled, "Build entry must hide the Roblox backpack hotbar")
+hotbarEnabled = true
+hideHotbar()
+assert(not hotbarEnabled, "Build mode must hide a hotbar re-enabled by core scripts")
+assert(structureOpened and structureEntries == 1, "Build entry must open the structural editor on the same property")
 assert(root.Anchored and not humanoid.AutoRotate, "Build entry must physically keep the character in place")
 assert(root.AssemblyLinearVelocity.Magnitude == 0 and root.AssemblyAngularVelocity.Magnitude == 0,
   "Build entry must stop leftover character momentum")
@@ -408,6 +444,8 @@ assert(pan.X > 0 and not controlsEnabled, "Movement keys must move the view whil
 assert(yaw > 0 and turnVelocity > 0, "Build mode must own smooth Q/E turning")
 exit()
 assert(not active and controlsEnabled and bound == nil and renderStep == nil, "Exit must restore controls and release bindings")
+assert(hotbarEnabled, "Exit must restore the hotbar's previous enabled state")
+assert(not structureOpened and structureExits == 1, "Build exit must close structural editing and its previews")
 assert(not root.Anchored and humanoid.AutoRotate, "Exit must restore the character's anchor and rotation settings")
 assert(not roofHidden and gridDestroyed and not panel.Visible and not navigation.Visible, "Exit must clean up build visuals")
 assert(workspace.CurrentCamera.CameraType == "Custom" and workspace.CurrentCamera.FieldOfView == 70
@@ -428,7 +466,19 @@ assert(active and root.Anchored and bound ~= nil, "Character locking and camera 
 moduleAvailable = true
 exit()
 assert(not root.Anchored and humanoid.AutoRotate, "Fallback entry must still clean up the character lock")
-checks += 18
+hotbarEnabled = false
+enter()
+exit()
+assert(not hotbarEnabled, "Exit must preserve a hotbar that was hidden before build mode")
+hotbarEnabled, rejectHotbarWrite = true, true
+enter()
+assert(active, "A delayed CoreGui hotbar must not prevent building")
+rejectHotbarWrite = false
+hideHotbar()
+assert(not hotbarEnabled, "A later visibility pass must retry a failed hotbar hide")
+exit()
+assert(hotbarEnabled, "A retried hotbar hide must preserve its original visibility snapshot")
+checks += 28
 print("Build camera: " .. checks .. " framing, navigation, placement and touch checks passed (no Studio rendering).")
 -- Parse the complete module as well as the exercised functions.
 local function parseBuildMode()

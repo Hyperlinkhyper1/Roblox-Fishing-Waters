@@ -124,15 +124,26 @@ local function button(parent: Instance, caption: string, props: { [string]: any 
 	return item
 end
 
--- A small jewel for each mutation keeps combinations readable on one-cell fish.
+-- Small pictograms are drawn as strokes on a colored circular badge. They do
+-- not depend on platform-specific emoji or uploaded image assets.
 local MUTATION_ICONS = {
-	Corrupted = { "☠", rgb(221, 111, 129) },
-	VoidTouched = { "◉", rgb(182, 139, 255) },
-	Windy = { "≋", rgb(155, 229, 229) },
-	Astral = { "✦", rgb(255, 219, 116) },
-	Rainbow = { "✿", rgb(255, 255, 255) },
-	Neon = { "◆", rgb(120, 242, 255) },
-	Albino = { "❄", rgb(239, 246, 255) },
+	Corrupted = { rgb(180, 55, 77), { {2,2,10,10}, {10,2,2,10}, {6,2,6,10} } },
+	VoidTouched = { rgb(95, 61, 151), { {2,6,4,2}, {4,2,8,2}, {8,2,10,6}, {10,6,8,10}, {8,10,4,10}, {4,10,2,6}, {6,4,6,8} } },
+	Windy = { rgb(55, 151, 170), { {1,4,9,4}, {9,4,10,2}, {1,7,10,7}, {10,7,9,9} } },
+	Ascended = { rgb(190, 151, 57), { {2,5,6,1}, {6,1,10,5}, {6,1,6,10}, {2,10,10,10} } },
+	Floral = { rgb(205, 92, 146), { {6,1,6,11}, {1,6,11,6}, {3,3,9,9}, {9,3,3,9} } },
+	Snowy = { rgb(72, 155, 199), { {6,1,6,11}, {1,3,11,9}, {1,9,11,3}, {4,2,6,4}, {8,2,6,4} } },
+	Tryhard = { rgb(196, 91, 51), { {2,2,10,10}, {10,2,2,10}, {1,3,4,3}, {8,3,11,3}, {1,10,3,10}, {9,10,11,10} } },
+	JackOFish = { rgb(227, 112, 25), { {3,3,9,3}, {9,3,11,6}, {11,6,9,10}, {9,10,3,10}, {3,10,1,6}, {1,6,3,3}, {6,3,7,1}, {3,6,4,6}, {8,6,9,6}, {4,8,8,8} } },
+	JacksPet = { rgb(117, 77, 159), { {2,5,3,9}, {3,9,9,9}, {9,9,10,5}, {10,5,8,2}, {8,2,6,4}, {6,4,4,2}, {4,2,2,5}, {4,6,4,6}, {8,6,8,6} } },
+	ZeusStruck = { rgb(194, 154, 29), { {7,1,3,6}, {3,6,6,6}, {6,6,5,11}, {5,11,10,5}, {10,5,7,5}, {7,5,7,1} } },
+	Nightmare = { rgb(151, 47, 73), { {1,6,4,3}, {4,3,8,3}, {8,3,11,6}, {11,6,8,9}, {8,9,4,9}, {4,9,1,6}, {6,4,6,8} } },
+	Obsidian = { rgb(88, 70, 109), { {6,1,10,4}, {10,4,9,9}, {9,9,6,11}, {6,11,2,8}, {2,8,2,4}, {2,4,6,1}, {6,1,6,11}, {2,4,10,4} } },
+	Gusty = { rgb(57, 160, 125), { {1,3,8,3}, {8,3,10,5}, {10,5,8,7}, {8,7,5,7}, {1,6,6,6}, {1,9,7,9} } },
+	Astral = { rgb(185, 139, 47), { {6,1,6,11}, {1,6,11,6}, {3,3,9,9}, {9,3,3,9} } },
+	Rainbow = { rgb(109, 97, 179), { {1,9,2,5}, {2,5,5,2}, {5,2,8,2}, {8,2,11,5}, {11,5,11,9}, {3,9,4,6}, {4,6,6,5}, {6,5,8,6}, {8,6,9,9} } },
+	Neon = { rgb(40, 164, 185), { {1,8,3,8}, {3,8,4,3}, {4,3,6,3}, {6,3,6,9}, {6,9,8,9}, {8,9,9,4}, {9,4,11,4} } },
+	Albino = { rgb(151, 164, 181), { {1,6,4,3}, {4,3,8,3}, {8,3,11,6}, {11,6,8,9}, {8,9,4,9}, {4,9,1,6}, {5,6,5,6} } },
 }
 
 local function mutationBadge(parent: Instance, record)
@@ -141,36 +152,39 @@ local function mutationBadge(parent: Instance, record)
 	end
 	local index = 0
 	for name in string.gmatch(record.Mutation, "[^+]+") do
-		local style = MUTATION_ICONS[name] or { "✧", WHITE }
-		local color = style[2]
+		local style = MUTATION_ICONS[name] or { MUTED, { {2,6,10,6}, {6,2,6,10} } }
+		local color = style[1]
 		local neon = name == "Neon" and FishMutations.NeonColors[record.NeonColor or ""]
 		if neon then
 			color = rgb(neon[1], neon[2], neon[3])
+			-- Keep the white pictogram visible on especially pale neon colors.
+			if color.R * 0.299 + color.G * 0.587 + color.B * 0.114 > 0.8 then
+				color = color:Lerp(INK, 0.35)
+			end
 		end
-		local badge = text(parent, style[1], {
+		local badge = make("Frame", parent, {
 			Name = "MutationIcon",
 			AnchorPoint = Vector2.new(1, 0),
 			Position = UDim2.new(1, -2 - (index % 2) * 17, 0, 2 + math.floor(index / 2) * 17),
 			Size = UDim2.fromOffset(16, 16),
-			BackgroundColor3 = rgb(24, 24, 32),
-			BackgroundTransparency = 0.08,
-			Font = Enum.Font.GothamBold,
-			TextColor3 = color,
-			TextSize = 13,
-			TextStrokeTransparency = 0.5,
-			TextXAlignment = Enum.TextXAlignment.Center,
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
 			ZIndex = 4,
 		})
-		round(badge, 5)
-		stroke(badge, color, 1)
-		if name == "Rainbow" then
-			make("UIGradient", badge, {
-				Color = ColorSequence.new({
-					ColorSequenceKeypoint.new(0, rgb(255, 100, 126)),
-					ColorSequenceKeypoint.new(0.5, rgb(255, 232, 112)),
-					ColorSequenceKeypoint.new(1, rgb(111, 205, 255)),
-				}),
+		round(badge)
+		for lineIndex, line in style[2] do
+			local dx, dy = line[3] - line[1], line[4] - line[2]
+			local rainbowColors = { rgb(255, 116, 125), rgb(255, 216, 111), rgb(143, 244, 177), rgb(150, 205, 255) }
+			local mark = make("Frame", badge, {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromOffset(2 + (line[1] + line[3]) / 2, 2 + (line[2] + line[4]) / 2),
+				Size = UDim2.fromOffset(math.max(1.5, math.sqrt(dx * dx + dy * dy)), 1.5),
+				Rotation = math.deg(math.atan2(dy, dx)),
+				BackgroundColor3 = if name == "Rainbow" then rainbowColors[(lineIndex - 1) % #rainbowColors + 1] else WHITE,
+				BorderSizePixel = 0,
+				ZIndex = 5,
 			})
+			round(mark)
 		end
 		index += 1
 	end
@@ -186,6 +200,27 @@ end
 
 local function shapeOf(item): { string }
 	return Cargo.shape(item, Catalog.Fish)
+end
+
+-- Fit every bounds corner after rolling the camera, including perspective depth.
+-- Use the tile dimensions because the preview may not be parented/on screen yet.
+local function fitTileFish(model: Model, camera: Camera, width: number, height: number, rotation: number)
+	local center = model:GetAttribute("BoundsCenter") :: Vector3
+	local half = (model:GetAttribute("BoundsSize") :: Vector3) / 2
+	local orientation = camera.CFrame.Rotation * CFrame.Angles(0, 0, rotation * math.pi / 2)
+	local tanY = math.tan(math.rad(camera.FieldOfView / 2))
+	local tanX = tanY * width / height
+	local distance = 0.1
+	for _, x in { -1, 1 } do
+		for _, y in { -1, 1 } do
+			for _, z in { -1, 1 } do
+				local corner = orientation:VectorToObjectSpace(Vector3.new(half.X * x, half.Y * y, half.Z * z))
+				distance = math.max(distance, corner.Z + math.max(math.abs(corner.X) / tanX, math.abs(corner.Y) / tanY) * 1.05)
+			end
+		end
+	end
+	camera.CFrame = CFrame.new(center - orientation.LookVector * distance) * orientation
+	camera:SetAttribute("Distance", distance)
 end
 
 -- Draws an item's filled cells inside its rotated bounding box, with the fish
@@ -205,31 +240,26 @@ local function drawItem(parent: Instance, item, rotation: number): (Frame, { Fra
 		local square = make("Frame", box, {
 			Position = UDim2.fromOffset(cell[1] * STEP, cell[2] * STEP),
 			Size = UDim2.fromOffset(CELL, CELL),
-			BackgroundColor3 = tint,
-			BackgroundTransparency = if item.PartId then 0.1 else 0.2,
+			BackgroundColor3 = CELL_EMPTY:Lerp(tint, 0.18),
+			BackgroundTransparency = 0,
 			BorderSizePixel = 0,
 		})
 		round(square, 3)
-		-- Near-black at the top, lit by the tint toward the bottom edge.
-		make("UIGradient", square, {
-			Color = ColorSequence.new(rgb(30, 31, 36), WHITE),
-			Transparency = NumberSequence.new(0.1, 0.45),
-			Rotation = 90,
-		})
 		stroke(square, tint, 1).Transparency = 0.55
 		table.insert(squares, square)
 	end
 	local view
 	if item.Fish then
+		local previewWidth, previewHeight = width * STEP - GAP - 4, height * STEP - GAP - 16
 		view = make("ViewportFrame", box, {
-			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromOffset(2, 2),
+			Size = UDim2.fromOffset(previewWidth, previewHeight),
 			BackgroundTransparency = 1,
 			ZIndex = 2,
 		})
-		local _, camera = FishModels.show(view, item.Fish.FishId, nil, item.Fish)
-		if camera and rotation % 4 ~= 0 then
-			-- Rolling the camera turns the fish clockwise with its footprint.
-			camera.CFrame *= CFrame.Angles(0, 0, rotation * math.pi / 2)
+		local model, camera = FishModels.show(view, item.Fish.FishId, nil, item.Fish)
+		if model and camera then
+			fitTileFish(model, camera, previewWidth, previewHeight, rotation)
 		end
 		mutationBadge(box, item.Fish)
 		if item.Locked then
@@ -240,19 +270,6 @@ local function drawItem(parent: Instance, item, rotation: number): (Frame, { Fra
 				TextSize = 16,
 				TextStrokeTransparency = 0.2,
 				ZIndex = 4,
-			})
-		end
-		-- One-cell fish are too small for a name next to the model.
-		if width > 1 then
-			text(box, if species then species.Name else tostring(item.Fish.FishId), {
-				Position = UDim2.new(0, 3, 1, -27),
-				Size = UDim2.new(1, -6, 0, 13),
-				TextSize = 12,
-				Font = Enum.Font.BuilderSansBold,
-				TextStrokeTransparency = 0.3,
-				TextTruncate = Enum.TextTruncate.AtEnd,
-				TextXAlignment = Enum.TextXAlignment.Center,
-				ZIndex = 3,
 			})
 		end
 		local heavy = item.Fish.Size == "Huge" or item.Fish.Size == "Big"

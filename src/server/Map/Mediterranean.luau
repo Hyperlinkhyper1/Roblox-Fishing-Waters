@@ -1329,6 +1329,27 @@ function Med.vineyard(parent: Instance, ground: Vector3, facing: number, rng: Ra
 	return m
 end
 
+-- The floor and side walls form a simple hull for these scenery boats.
+local function simplifyBoatCollision(boat: Model)
+	if boat:GetAttribute("BoatCollisionVersion") == 1 then
+		return
+	end
+	for _, piece in boat:GetDescendants() do
+		if piece:IsA("BasePart") and piece.Name ~= "BoatFloor" and piece.Name ~= "BoatSide" then
+			piece.CanCollide, piece.CanTouch, piece.CanQuery = false, false, false
+		end
+	end
+	boat:SetAttribute("BoatCollisionVersion", 1)
+end
+
+function Med.ensureBoatCollision(root: Instance)
+	for _, boat in root:GetDescendants() do
+		if boat:IsA("Model") and boat.Name == "Boat" and boat:GetAttribute("BoatGeometryVersion") == 2 then
+			simplifyBoatCollision(boat)
+		end
+	end
+end
+
 -- Painted wooden fishing boat floating at `position` (the waterline), bow on its local +Z.
 function Med.boat(
 	parent: Instance,
@@ -1407,6 +1428,7 @@ function Med.boat(
 		end
 	end
 	m:SetAttribute("BoatGeometryVersion", 2)
+	simplifyBoatCollision(m)
 	return m
 end
 

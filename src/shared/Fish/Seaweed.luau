@@ -8,7 +8,7 @@ return {
 	BaseValue = 1,
 	Fight = 0,
 	Shapes = {
-		Normal = { "##", "#." },
+		Normal = { "#" },
 	},
 	Build = function(b, kit)
 		local rgb = kit.rgb

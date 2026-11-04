@@ -48,9 +48,9 @@ shop.Stats.CoinsEarned = 2500
 check(Paths.progress(profile(shop), "Fishshop") == 1, "Every goal done is 100%")
 local choices = Paths.choices(profile(shop))
 check(#choices == 1 and choices[1] == "Supermarket", "Only the Supermarket follows the fish shop")
-check(Paths.chooseProblem(profile(shop, 4999), "Supermarket") ~= nil, "The next path costs coins")
-check(Paths.chooseProblem(profile(shop, 5000), "Restaurant") ~= nil, "The restaurant needs the supermarket first")
-check(Paths.chooseProblem(profile(shop, 5000), "Supermarket") == nil, "A finished stage can buy the next")
+check(Paths.chooseProblem(profile(shop, 999), "Supermarket") ~= nil, "The next path costs coins")
+check(Paths.chooseProblem(profile(shop, 1000), "Restaurant") ~= nil, "The restaurant needs the supermarket first")
+check(Paths.chooseProblem(profile(shop, 1000), "Supermarket") == nil, "A finished stage can buy the next")
 
 -- Choosing a path completes the old stage, unlocks the new one and starts its goals.
 local market = Data.choosePath(shop, "Supermarket", Paths.Stages.Supermarket)
@@ -74,9 +74,9 @@ check(Data.decode(market).Paths.Baseline.CoinsEarned == 2500, "Path progress sur
 -- Locked furniture: food cases need the supermarket.
 local locked = Data.decode(nil)
 locked.FurnitureStock.FoodCase = 1
-local _, why = Data.placeFurniture(locked, "FoodCase", 9, 72, 2)
+local _, why = Data.placeFurniture(locked, "FoodCase", 13.5, 72, 2)
 check(why ~= nil and string.find(why, "Supermarket") ~= nil, "Path furniture can't be placed before its path")
-local placedCase, reason = Data.placeFurniture(market, "FoodCase", 9, 72, 2)
+local placedCase, reason = Data.placeFurniture(market, "FoodCase", 13.5, 72, 2)
 check(placedCase ~= nil, "A food case fits in the shop once unlocked: " .. tostring(reason))
 check(Furniture.locked("Freezer", nil) == nil, "Base furniture is never locked")
 check(Furniture.check({}, "GrillStation", -13.5, -9, 0) == nil, "A station fits in the processing room")

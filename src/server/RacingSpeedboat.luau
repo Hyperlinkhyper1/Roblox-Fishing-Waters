@@ -546,7 +546,7 @@ function RacingSpeedboat.build(frame: CFrame, anchored: boolean?): Model
 			Enum.Material.Neon
 		)
 	end
-	local lampColor = Color3.fromRGB(239, 247, 255)
+	local lampColor = Color3.fromRGB(214, 206, 184)
 	for _, side in { -1, 1 } do
 		local deckLamp = part(
 			"DeckLightLens",
@@ -557,7 +557,7 @@ function RacingSpeedboat.build(frame: CFrame, anchored: boolean?): Model
 		)
 		local deckLight = Instance.new("PointLight")
 		deckLight.Name = "DeckLight"
-		deckLight.Color, deckLight.Range, deckLight.Brightness = lampColor, 16, 0.5
+		deckLight.Color, deckLight.Range, deckLight.Brightness = lampColor, 12, 0.3
 		deckLight.Shadows = false
 		deckLight.Parent = deckLamp
 
@@ -586,7 +586,7 @@ function RacingSpeedboat.build(frame: CFrame, anchored: boolean?): Model
 		local headlight = Instance.new("SpotLight")
 		headlight.Name = "Headlight"
 		headlight.Face = Enum.NormalId.Front
-		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 45, 1.3, 65
+		headlight.Color, headlight.Range, headlight.Brightness, headlight.Angle = lampColor, 30, 0.45, 40
 		headlight.Shadows = false
 		headlight.Parent = lens
 	end

@@ -1,5 +1,5 @@
--- The town's Halloween party: on 31 October (in-game) the plaza fills with costumed locals and
--- decorations, and at the midnight into 1 November orange fireworks go up over the fountain.
+-- The town's Halloween party: on 31 October (in-game) costumed locals and decorations spread
+-- across Harbour Isle, and at midnight into 1 November orange fireworks go up over the fountain.
 -- Pure data and date rules, so the server, the client and the tests read the same table.
 
 local Halloween = {}

@@ -12,6 +12,7 @@ local BoatData = require(script.Parent.BoatData)
 local BackpackCatalog = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local CatchConditions = require(ReplicatedStorage.Shared.CatchConditions)
+local CastTiming = require(ReplicatedStorage.Shared.CastTiming)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
@@ -27,6 +28,8 @@ local MAX_LINE_LENGTH = 110
 local MAX_FIGHT_SECONDS = 150
 local BITE_SECONDS = Vector2.new(3, 8)
 local casts = {}
+local charges = {}
+local lastCharge = {}
 local lastRequest = {}
 local random = Random.new()
 local started = false
@@ -83,7 +86,21 @@ local function waterSurface(player: Player, target: Vector3): Vector3?
 	return nil
 end
 
-local function cast(player: Player, target: any)
+local function beginCharge(player: Player)
+	local now = os.clock()
+	if casts[player] or now - (lastCharge[player] or -math.huge) < 0.2 then
+		return
+	end
+	local tool = equippedRod(player)
+	if tool then
+		lastCharge[player] = now
+		charges[player] = { tool = tool, startedAt = now }
+	end
+end
+
+local function cast(player: Player, target: any, heldSeconds: any)
+	local charge = charges[player]
+	charges[player] = nil
 	if typeof(target) ~= "Vector3" or not finite(target) or casts[player] then
 		return
 	end
@@ -122,12 +139,22 @@ local function cast(player: Player, target: any)
 		profile and BoatData.equippedRodWear(profile)
 	)
 	boosts = BobberSkins.apply(boosts, profile and profile.EquippedBobberSkin)
-	local state = { tool = tool, target = surface, phase = "Waiting", boosts = boosts }
+	local perfect = charge ~= nil
+		and charge.tool == tool
+		and CastTiming.validRelease(heldSeconds, os.clock() - charge.startedAt)
+		and CastTiming.isPerfect(heldSeconds)
+	if perfect then
+		boosts.luck += CastTiming.PerfectLuck
+	end
+	local state = { tool = tool, target = surface, phase = "Waiting", boosts = boosts, perfectThrow = perfect }
 	casts[player] = state
 	tool:SetAttribute("CastTarget", surface)
 	tool:SetAttribute("CastAt", workspace:GetServerTimeNow())
 	tool:SetAttribute("CastPhase", "Waiting")
 	send(player, "Cast", surface)
+	if perfect then
+		send(player, "PerfectCast", CastTiming.PerfectLuck)
+	end
 	task.delay(random:NextNumber(BITE_SECONDS.X, BITE_SECONDS.Y), function()
 		if casts[player] ~= state then
 			return
@@ -160,6 +187,7 @@ local function cast(player: Player, target: any)
 			Difficulty = roll.Difficulty,
 			Pool = pool.Name,
 			ReelBoost = state.boosts.reel,
+			HandlingBoost = state.boosts.handling,
 		})
 	end)
 end
@@ -173,7 +201,7 @@ local function award(player: Player, roll)
 		local traits = roll.Traits
 		local message
 		saved, message, autoStored, destination, count =
-			AnglerService.recordCatch(player, roll.FishId, traits.Mutation, roll.Kg, roll.Value, roll.Size, traits)
+			AnglerService.recordCatch(player, roll.FishId, traits.Mutation, roll.Kg, roll.Value, roll.Size, traits, roll.PerfectCatch)
 		if saved or player.Parent ~= Players then
 			break
 		end
@@ -195,7 +223,7 @@ local function award(player: Player, roll)
 	})
 end
 
-local function reel(player: Player, landed: any)
+local function reel(player: Player, landed: any, noMistakes: any)
 	local state = casts[player]
 	if not state then
 		return
@@ -211,12 +239,14 @@ local function reel(player: Player, landed: any)
 	clear(player)
 	if
 		landed ~= true
-		or elapsed < FishCatch.minimumFightSeconds(roll.Difficulty, reelBoost)
+		or elapsed < FishCatch.minimumFightSeconds(roll.Difficulty, reelBoost, state.boosts.handling)
 		or elapsed > MAX_FIGHT_SECONDS
 	then
 		send(player, "Escaped", roll.FishId)
 		return
 	end
+	-- Reeling runs on the client; only the server-validated throw can qualify it.
+	roll.PerfectCatch = state.perfectThrow == true and noMistakes == true
 	task.spawn(award, player, roll)
 end
 
@@ -232,20 +262,29 @@ function CatchService.start()
 	update = Instance.new("RemoteEvent")
 	update.Name, update.Parent = "Update", remotes
 	remotes.Parent = ReplicatedStorage
-	request.OnServerEvent:Connect(function(player, action, value)
+	request.OnServerEvent:Connect(function(player, action, value, heldSeconds)
+		if action == "Charge" then
+			beginCharge(player)
+			return
+		elseif action == "CancelCharge" then
+			charges[player] = nil
+			return
+		end
 		if os.clock() - (lastRequest[player] or -math.huge) < 0.2 then
 			return
 		end
 		lastRequest[player] = os.clock()
 		if action == "Cast" then
-			cast(player, value)
+			cast(player, value, heldSeconds)
 		elseif action == "Reel" then
-			reel(player, value)
+			reel(player, value, heldSeconds)
 		end
 	end)
 	Players.PlayerRemoving:Connect(function(player)
 		clear(player)
 		lastRequest[player] = nil
+		charges[player] = nil
+		lastCharge[player] = nil
 	end)
 	-- Unequipping, dying or walking away from the line ends the cast.
 	local elapsed = 0
@@ -255,6 +294,12 @@ function CatchService.start()
 			return
 		end
 		elapsed = 0
+		for player, charge in charges do
+			local tool = equippedRod(player)
+			if tool ~= charge.tool or os.clock() - charge.startedAt > CastTiming.MaxChargeSeconds then
+				charges[player] = nil
+			end
+		end
 		for player, state in casts do
 			local tool, root = equippedRod(player)
 			if tool ~= state.tool or not root then

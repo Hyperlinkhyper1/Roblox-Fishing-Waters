@@ -8,6 +8,17 @@ local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local ParkedBoats = {}
 local started = false
+-- Rolling a hull rewrites every part in it, and the renderer pays per moved part
+-- (instanced clusters, shadow maps). A full harbour re-pivoted every hull every
+-- frame. Hulls close to the camera still roll every frame; farther ones step on a
+-- stride, distant ones hold their last pose, and the deck you stand on always moves.
+local NEAR_DISTANCE = 160
+local FAR_DISTANCE = 450
+local MID_STRIDE = 3
+-- Skip a move this small (studs at the root, or at 20 studs out for tilt): calm
+-- water or a sheltered berth would otherwise rewrite the hull for nothing.
+local MIN_MOVE = 0.005
+local TILT_ARM = 20
 
 function ParkedBoats.start()
 	if started then
@@ -16,8 +27,14 @@ function ParkedBoats.start()
 	started = true
 	local player = Players.LocalPlayer
 	local heldRoot, heldBoat, heldAt, heldPosition
+	local frame = 0
+	local slots: { [Instance]: number } = setmetatable({}, { __mode = "k" }) :: any
+	local nextSlot = 0
 	-- Before physics, so a local character standing on deck collides with this pose.
 	RunService.PreSimulation:Connect(function()
+		frame += 1
+		local camera = workspace.CurrentCamera
+		local eye = camera and camera.CFrame.Position
 		local folder = workspace:FindFirstChild("PlayerBoats")
 		if not folder then
 			heldRoot, heldBoat, heldAt, heldPosition = nil, nil, nil, nil
@@ -69,21 +86,45 @@ function ParkedBoats.start()
 				and typeof(rest) == "CFrame"
 				and type(parkedAt) == "number"
 			then
-				-- The hull is rigid, so its pivot keeps one offset from the root.
 				local before = root.CFrame
-				local pivot = rest * root.CFrame:ToObjectSpace(model:GetPivot())
-				model:PivotTo(
-					Weather.parkedOffset(
-						rest,
-						parkedAt,
-						now,
-						model:GetAttribute("DryFloorHeight"),
-						model:GetAttribute("DryFloorHalfBeam"),
-						model:GetAttribute("DryFloorHalfLength"),
-						model:GetAttribute("WaterlineRootOffset")
-					) * pivot
+				local riding = ground ~= nil and ground.Instance:IsDescendantOf(model)
+				local due = true
+				if not riding and eye then
+					local distance = (before.Position - eye).Magnitude
+					if distance > FAR_DISTANCE then
+						due = false
+					elseif distance > NEAR_DISTANCE then
+						local slot = slots[model]
+						if not slot then
+							nextSlot += 1
+							slot = nextSlot
+							slots[model] = slot
+						end
+						due = (frame + slot) % MID_STRIDE == 0
+					end
+				end
+				if not due then
+					continue
+				end
+				local offset = Weather.parkedOffset(
+					rest,
+					parkedAt,
+					now,
+					model:GetAttribute("DryFloorHeight"),
+					model:GetAttribute("DryFloorHalfBeam"),
+					model:GetAttribute("DryFloorHalfLength"),
+					model:GetAttribute("WaterlineRootOffset")
 				)
-				if ground and ground.Instance:IsDescendantOf(model) then
+				local goal = offset * rest
+				local change = (goal.Position - before.Position).Magnitude
+					+ ((goal.LookVector - before.LookVector).Magnitude + (goal.UpVector - before.UpVector).Magnitude)
+						* TILT_ARM
+				if change >= MIN_MOVE then
+					-- The hull is rigid, so its pivot keeps one offset from the root.
+					local pivot = rest * before:ToObjectSpace(model:GetPivot())
+					model:PivotTo(offset * pivot)
+				end
+				if riding then
 					local position = before:PointToObjectSpace(avatarRoot.Position)
 					if humanoid.MoveDirection.Magnitude < 0.01 then
 						-- CFrame animation supplies no platform velocity. Keep an idle

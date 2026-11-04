@@ -17,6 +17,7 @@ local StorageRack = { build = dummy }
 local Kitchen = { buildCase = dummy, buildStorage = dummy, buildStation = dummy }
 local DiningRoom = { buildTable = dummy }
 local WeatherRadar = { build = dummy }
+local CompanyIslandMap = { buildDesk = dummy }
 local Recipes = { Stations = {} }
 -- BUILD_SOURCE --
 -- PREVIEWS_SOURCE --

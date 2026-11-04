@@ -38,7 +38,7 @@ Paths.Stages = {
 		Tagline = "Raw fish and ready meals",
 		Description = "Cook fish into dishes on the kitchen benches in your processing room. "
 			.. "Customers buy dishes from food display cases as well as raw fish.",
-		Price = 5000,
+		Price = 1000,
 		Requires = { "Fishshop" },
 		Features = {
 			"Two prep benches in your processing room",
@@ -60,7 +60,7 @@ Paths.Stages = {
 		Tagline = "Fine dining by the water",
 		Description = "A dining room opens behind your house. Diners sit down, order one specific "
 			.. "dish and pay more than shop prices when you serve it.",
-		Price = 15000,
+		Price = 3000,
 		Requires = { "Supermarket" },
 		Features = { "A dining room extension behind your house", "Diners pay 1.5x for the dish they order", "Hire a chef" },
 		Grants = { DiningTable = 2 },
@@ -76,10 +76,11 @@ Paths.Stages = {
 		Tagline = "Let the crew do the fishing",
 		Description = "Hire a fisherman who takes one of your boats onto the water and fishes on his own. "
 			.. "He brings the catch home for your porter to unload.",
-		Price = 20000,
+		Price = 4000,
 		Requires = { "Supermarket" },
 		Features = {
 			"Hire a fisherman",
+			"Buy a private island for $50,000: large dock, storage, kitchen and office",
 			"Assign him one of your boats",
 			"Hire a chef",
 			"Buy the harbour tugboat at the shipyard",

@@ -1,5 +1,5 @@
--- The island tutorial: guides round the home plaza, each wearing one of Roblox's own free avatar
--- characters, and each player's saved progress through them. Talking happens on the client; the
+-- The island tutorial: guides round the home plaza, each dressed for their job (GuideCostume),
+-- and each player's saved progress through them. Talking happens on the client; the
 -- server only checks the player stood beside the right guide before saving the next step.
 -- /tutorial restarts the tour for anyone.
 local Players = game:GetService("Players")
@@ -8,6 +8,7 @@ local TextChatService = game:GetService("TextChatService")
 
 local Tutorial = require(ReplicatedStorage.Shared.Tutorial)
 local BoatService = require(script.Parent.BoatService)
+local GuideCostume = require(script.Parent.GuideCostume)
 local PlazaHouses = require(script.Parent.Map.PlazaHouses)
 
 local Service = {}
@@ -15,8 +16,6 @@ local started = false
 
 local PROMPT = "TutorialNpcPrompt"
 local GUIDE_TAG = "TutorialGuide"
-local IDLE_ANIMATION = "rbxassetid://507766388" -- Roblox's stock R15 idle
-local SKIN = Color3.fromRGB(224, 173, 132)
 
 local remote: RemoteEvent
 local state: Folder
@@ -73,16 +72,26 @@ local function exclusions(): { Instance }
 	return list
 end
 
--- Ground under a spot, if it is open paving: no prop in the way and nothing (a balcony,
--- an awning) overhead that would catch the ray first.
-local function openGround(position: Vector3): Vector3?
+-- Paving, kerbs and promenade slabs are parts of the plaza itself (or terrain, or broad flat
+-- slabs elsewhere); benches, planters and stalls are their own models with narrow tops.
+local function isFloor(plaza: Model, hit: RaycastResult): boolean
+	local part = hit.Instance
+	if part:IsA("Terrain") or part.Parent == plaza then
+		return true
+	end
+	return part:IsA("BasePart") and math.min(part.Size.X, part.Size.Z) >= 4 and part.Size.Y <= 2
+end
+
+-- Ground under a spot, if it is open paving: no prop in the way or underfoot, and nothing
+-- (a balcony, an awning) overhead that would catch the ray first.
+local function openGround(plaza: Model, position: Vector3): Vector3?
 	local ignore = exclusions()
 	local rays = RaycastParams.new()
 	rays.FilterType = Enum.RaycastFilterType.Exclude
 	rays.FilterDescendantsInstances = ignore
 	rays.RespectCanCollide = true
 	local hit = workspace:Raycast(position + Vector3.new(0, 6, 0), Vector3.new(0, -14, 0), rays)
-	if not hit or math.abs(hit.Position.Y - position.Y) > 2.5 then
+	if not hit or math.abs(hit.Position.Y - position.Y) > 2.5 or not isFloor(plaza, hit) then
 		return nil
 	end
 	local overlap = OverlapParams.new()
@@ -96,7 +105,8 @@ local function openGround(position: Vector3): Vector3?
 	return hit.Position
 end
 
--- The first clear spot, falling back to the first listed one so a guide always appears.
+-- The first clear spot; then open paving in widening rings round the listed spots; then the
+-- first listed spot so a guide always appears.
 local function placement(plaza: Model, plazaFrame: CFrame, npc): CFrame
 	local space = anchorFrame(plaza, plazaFrame, npc.Anchor)
 	local spots = npc.Spots
@@ -106,9 +116,27 @@ local function placement(plaza: Model, plazaFrame: CFrame, npc): CFrame
 	local frame = space :: CFrame
 	local chosen
 	for _, spot in spots do
-		chosen = openGround(frame * Vector3.new(spot[1], 0, spot[2]))
+		chosen = openGround(plaza, frame * Vector3.new(spot[1], 0, spot[2]))
 		if chosen then
 			break
+		end
+	end
+	for radius = 2, 8, 2 do
+		if chosen then
+			break
+		end
+		for _, spot in spots do
+			for step = 0, 7 do
+				local angle = step * math.pi / 4
+				local x, z = spot[1] + math.cos(angle) * radius, spot[2] + math.sin(angle) * radius
+				chosen = openGround(plaza, frame * Vector3.new(x, 0, z))
+				if chosen then
+					break
+				end
+			end
+			if chosen then
+				break
+			end
 		end
 	end
 	if not chosen then
@@ -127,33 +155,6 @@ local function placement(plaza: Model, plazaFrame: CFrame, npc): CFrame
 	return CFrame.lookAt(chosen, flat)
 end
 
-local function outfitModel(npc): Model?
-	local loaded, description = pcall(Players.GetHumanoidDescriptionFromOutfitId, Players, npc.OutfitId)
-	if loaded then
-		local ok, model =
-			pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
-		description:Destroy()
-		if ok then
-			return model
-		end
-		warn("[Tutorial] " .. npc.Name .. "'s outfit could not be built: " .. tostring(model))
-	else
-		warn("[Tutorial] " .. npc.Name .. "'s outfit could not load: " .. tostring(description))
-	end
-	-- A plain body keeps the guide on the plaza when the Marketplace is unavailable.
-	local plain = Instance.new("HumanoidDescription")
-	plain.HeadColor, plain.LeftArmColor, plain.RightArmColor = SKIN, SKIN, SKIN
-	plain.TorsoColor = Color3.fromRGB(56, 133, 193)
-	plain.LeftLegColor, plain.RightLegColor = Color3.fromRGB(60, 60, 70), Color3.fromRGB(60, 60, 70)
-	local ok, model = pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, plain, Enum.HumanoidRigType.R15)
-	plain:Destroy()
-	if ok then
-		return model
-	end
-	warn("[Tutorial] " .. npc.Name .. " could not be built: " .. tostring(model))
-	return nil
-end
-
 local function talkPrompt(head: BasePart, id: string, npc)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = PROMPT
@@ -170,55 +171,14 @@ local function talkPrompt(head: BasePart, id: string, npc)
 end
 
 local function buildGuide(id: string, npc, frame: CFrame)
-	local model = outfitModel(npc)
+	local model = GuideCostume.spawn(id, npc.Outfit, npc.Name .. " · " .. npc.Title, frame, guides)
 	if not model then
 		return
 	end
-	model.Name = id
-	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
-	model:SetAttribute("NpcId", id)
+	model:AddTag(GUIDE_TAG)
 	local head = model:FindFirstChild("Head")
 	if head and head:IsA("BasePart") then
-		-- Classic outfits bring a face decal and dynamic heads bring FaceControls; anything else
-		-- gets the engine's built-in smile, like the other locals.
-		if not head:FindFirstChildOfClass("Decal") and not head:FindFirstChildOfClass("FaceControls") then
-			local face = Instance.new("Decal")
-			face.Name, face.Face, face.Texture = "face", Enum.NormalId.Front, "rbxasset://textures/face.png"
-			face.Parent = head
-		end
-	end
-	local humanoid = model:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.DisplayName = npc.Name .. " · " .. npc.Title
-		humanoid.NameDisplayDistance = 40
-		humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
-		humanoid.WalkSpeed, humanoid.JumpPower = 0, 0
-		humanoid.BreakJointsOnDeath = false
-	end
-	for _, part in model:GetDescendants() do
-		if part:IsA("BasePart") then
-			part.Anchored = part.Name == "HumanoidRootPart"
-			part.CanCollide, part.CanTouch = false, false
-			part.CanQuery = part.Name == "Head"
-		end
-	end
-	model:PivotTo(frame + Vector3.new(0, model:GetExtentsSize().Y / 2, 0))
-	-- Clients turn a guide towards whoever walks up and back to this frame afterwards.
-	model:SetAttribute("HomeFrame", model:GetPivot())
-	model.Parent = guides
-	model:AddTag(GUIDE_TAG)
-	if head and head:IsA("BasePart") then
 		talkPrompt(head, id, npc)
-	end
-	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-	if animator then
-		local idle = Instance.new("Animation")
-		idle.AnimationId = IDLE_ANIMATION
-		local loaded, track = pcall(animator.LoadAnimation, animator, idle)
-		if loaded then
-			track.Looped = true
-			track:Play()
-		end
 	end
 end
 

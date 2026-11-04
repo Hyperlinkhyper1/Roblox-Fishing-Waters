@@ -416,8 +416,8 @@ assert(tower and tower.Transparency == 0, "Supercell tower is visible and opaque
 assert(stormParts <= 10 and stormBillows >= 6, "The supercell is a few cores wrapped in billows: " .. stormParts .. " parts")
 before = tower.CFrame.Position
 local moveCount = moves
-frames(1, 1/144)
-assert(moves >= moveCount + 1, "The supercell still moves on a high refresh rate frame")
+frames(6, 1/144)
+assert(moves >= moveCount + 1, "The supercell moves at a capped rate on high refresh displays")
 assert(seenFunnel, "A forced supercell drops a visible tornado")
 local tornadoes = Weather.tornadoes(now)
 print("funnels max", maxFunnels, "active", #tornadoes)

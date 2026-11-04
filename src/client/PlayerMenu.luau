@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local Gamepasses = require(ReplicatedStorage.Shared.Gamepasses)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
@@ -1497,13 +1498,32 @@ function Menu.start()
 			end
 			local stats = profile.Angler.Stats
 			local discovered = 0
-			for _, entry in profile.Angler.Catches do
+			local caughtByRarity = {}
+			for fishId, entry in profile.Angler.Catches do
 				if entry.Count > 0 then
 					discovered += 1
+					local fish = Catalog.Fish[fishId]
+					if fish then
+						caughtByRarity[fish.Rarity] = (caughtByRarity[fish.Rarity] or 0) + entry.Count
+					end
 				end
 			end
 			local entries
 			if journalTab == "Stats" then
+				local catchDetails = {
+					{ "Species Discovered", discovered },
+					{ "Total Weight Caught", string.format("%.2f kg", stats.TotalCaughtKg or 0) },
+				}
+				local rarities = {}
+				for id in Catalog.Rarities do
+					table.insert(rarities, id)
+				end
+				table.sort(rarities, function(a, b)
+					return Catalog.Rarities[a].Order < Catalog.Rarities[b].Order
+				end)
+				for _, id in rarities do
+					table.insert(catchDetails, { Catalog.Rarities[id].Name .. " Caught", caughtByRarity[id] or 0 })
+				end
 				entries = {
 					{ "Astral Anomalies Activated", stats.AstralAnomaliesActivated },
 					{
@@ -1514,7 +1534,8 @@ function Menu.start()
 							{ "Permanent Bestiaries Completed", stats.PermanentBestiariesCompleted },
 						},
 					},
-					{ "Fish Caught", stats.TotalCaught, { { "Species Discovered", discovered } } },
+					{ "Fish Caught", stats.TotalCaught, catchDetails },
+					{ "Perfect Catches", stats.PerfectCatches or 0 },
 					{ "Catch Streak", stats.CatchStreak, { { "Highest Catch Streak", stats.HighestCatchStreak } } },
 					{
 						"Treasure Chests Opened",
@@ -2135,7 +2156,7 @@ function Menu.start()
 		iconTitle(
 			body,
 			homeTab,
-			if homeTab == "Staff" then "Workers" else homeTab,
+			if homeTab == "Staff" then "Manage Workers" else homeTab,
 			24,
 			cream,
 			{ LayoutOrder = order, Size = UDim2.new(1, -10, 0, 40) }
@@ -2205,7 +2226,7 @@ function Menu.start()
 			})
 			local function fitGrid()
 				local width = math.max(1, grid.AbsoluteSize.X)
-				local columns = math.clamp(math.floor((width + 10) / 148), 1, 3)
+				local columns = math.clamp(math.floor((width + 10) / 148), 1, 5)
 				local cellWidth = math.max(1, math.floor((width - (columns - 1) * 10) / columns))
 				local height = math.clamp(math.floor(cellWidth * 1.3), 220, 280)
 				layout.CellSize = UDim2.fromOffset(cellWidth, height)
@@ -2273,73 +2294,24 @@ function Menu.start()
 					elseif selectedStaff == "Fisherman" then "Choose the boat he takes out:"
 					elseif selectedStaff == "RestaurantChef" or selectedStaff == "CompanyChef" then
 						"Choose a recipe for this chef."
-					else "Permanent crew. No daily wages. Returns whenever you join."
+					else "No daily wages. Returns whenever you join."
 				text(details, status, 12, if locked then gold else muted, {
 					LayoutOrder = 3,
 					Size = UDim2.new(1, 0, 0, 0),
 					AutomaticSize = Enum.AutomaticSize.Y,
 				})
 				if selectedStaff == "Porter" then
-					for index, id in StaffCatalog.PorterUpgradeOrder do
-						local upgrade = StaffCatalog.PorterUpgrades[id]
-						local level = StaffCatalog.porterLevel(profile.Angler, id)
-						local price = upgrade.Prices[level + 1]
-						local enabled = hired and price ~= nil and profile.Cash >= price
-						local panel = make("Frame", details, {
-							Name = id .. "Upgrade",
-							BackgroundTransparency = 1,
-							LayoutOrder = index + 3,
-							Size = UDim2.new(1, 0, 0, 116),
-						})
-						text(
-							panel,
-							string.format("%s · Level %d/%d", upgrade.Name, level, #upgrade.Prices),
-							15,
-							cream,
-							{
-								Size = UDim2.new(1, 0, 0, 24),
-							}
-						)
-						text(
-							panel,
-							string.format(
-								"%d %s%s",
-								upgrade.Values[level + 1],
-								upgrade.Unit,
-								if price
-									then " → " .. upgrade.Values[level + 2] .. " " .. upgrade.Unit
-									else " · Maximum"
-							),
-							12,
-							muted,
-							{
-								Position = UDim2.fromOffset(0, 26),
-								Size = UDim2.new(1, 0, 0, 32),
-							}
-						)
-						local buy = button(
-							panel,
-							if not hired
-								then "Hire a porter first"
-								elseif not price then "Max level"
-								elseif not enabled then "$" .. commas(price - profile.Cash) .. " more needed"
-								else "Upgrade · $" .. commas(price),
-							function()
-								if enabled then
-									request("UpgradePorter", id, level)
-								end
-							end,
-							{
-								Name = "Upgrade" .. id,
-								Position = UDim2.fromOffset(0, 64),
-								Size = UDim2.new(1, 0, 0, 40),
-								TextSize = 13,
-								Active = enabled,
-								Selectable = enabled,
-							}
-						)
-						Theme.glassButton(buy, if enabled then "Selected" else "Disabled")
+					local level = StaffCatalog.workerLevel(profile.Angler, "Porter")
+					local price = StaffCatalog.PorterLevelPrices[level]
+					text(details, "Level " .. level .. " / 4 · " .. (if level == 1 then "Carries 3 fish" elseif level == 2 then "Collects crab cages" elseif level == 3 then "Collects crab cages and mussel nets" else "Places stored cages and nets"), 14, cream, { LayoutOrder = 4, Size = UDim2.new(1, 0, 0, 35) })
+					if price then
+						text(details, if level == 1 then "Next: collect crab cages for sale" elseif level == 2 then "Next: collect mussel nets for sale" else "Next: place equipment from tools racks", 13, muted, { LayoutOrder = 5, Size = UDim2.new(1, 0, 0, 30) })
 					end
+					local canUpgrade = hired and price ~= nil and profile.Cash >= price
+					local upgrade = button(details, if not hired then "Hire a porter first" elseif not price then "Maximum level" elseif profile.Cash < price then "$" .. commas(price - profile.Cash) .. " more needed" else "Upgrade to level " .. (level + 1) .. " · $" .. commas(price), function()
+						if canUpgrade then request("UpgradeWorker", "Porter", level) end
+					end, { Name = "UpgradePorterLevel", LayoutOrder = 6, Size = UDim2.new(1, 0, 0, 40), TextSize = 13, Active = canUpgrade, Selectable = canUpgrade })
+					Theme.glassButton(upgrade, if canUpgrade then "Selected" else "Disabled")
 				end
 				if hired and selectedStaff == "Fisherman" then
 					local boats = {}
@@ -2435,6 +2407,7 @@ function Menu.start()
 					BackgroundColor3 = paper,
 					LayoutOrder = index,
 				})
+				workerCard.BackgroundColor3 = Color3.fromRGB(250, 248, 242)
 				Theme.corner(workerCard, 6)
 				cards[id] = workerCard
 				local accent =
@@ -2463,7 +2436,7 @@ function Menu.start()
 				local fade = decoration(
 					portrait,
 					"PortraitFade",
-					Color3.fromRGB(8, 8, 8),
+					Color3.fromRGB(250, 248, 242),
 					UDim2.new(0, 0, 1, -44),
 					UDim2.new(1, 0, 0, 44)
 				)
@@ -2500,13 +2473,15 @@ function Menu.start()
 						Size = UDim2.new(1, -50, 0, 20),
 					}
 				)
-				text(workerCard, role.Name, 18, cream, {
+				text(workerCard, role.Name, 18, Color3.fromRGB(80, 70, 62), {
 					Name = "WorkerName",
 					Position = UDim2.new(0, 6, 1, -76),
 					Size = UDim2.new(1, -12, 0, 26),
 					TextXAlignment = Enum.TextXAlignment.Center,
 					TextScaled = true,
 				})
+				workerCard.WorkerName.TextColor3 = Color3.fromRGB(80, 70, 62)
+				workerCard.WorkerName.TextStrokeTransparency = 1
 				make("UITextSizeConstraint", workerCard.WorkerName, { MinTextSize = 12, MaxTextSize = 18 })
 				-- A transparent native button keeps the entire portrait keyboard/touch selectable.
 				local select = Instance.new("TextButton")
@@ -2516,27 +2491,35 @@ function Menu.start()
 					selectedStaff = id
 					showDetails()
 				end)
-				local hire = button(
-					workerCard,
-					if hired then "Hired" elseif locked then "Locked" else "Hire · $" .. commas(role.Price),
-					function()
-						if enabled then
-							request("HireStaff", id)
-						end
-					end,
-					{
-						Name = "Hire" .. id,
-						Position = UDim2.new(0, 8, 1, -44),
-						Size = UDim2.new(1, -16, 0, 34),
-						TextSize = 13,
-						Active = enabled,
-						Selectable = enabled,
-					}
-				)
-				Theme.glassButton(hire, if enabled then "Selected" else "Disabled")
-				if hired then
-					withIcon(hire, "Check", green, 14)
+				local actions = make("Frame", workerCard, {
+					Name = "WorkerActions", BackgroundColor3 = Color3.fromRGB(43, 133, 218),
+					Position = UDim2.new(0, 5, 1, -44), Size = UDim2.new(1, -10, 0, 36),
+					ZIndex = 5, ClipsDescendants = true,
+				})
+				Theme.corner(actions, 6)
+				actions.BackgroundColor3 = Color3.fromRGB(43, 133, 218)
+				local label = text(actions, if hired then "Lv " .. StaffCatalog.workerLevel(profile.Angler, id) .. " " .. role.Name else if locked then "Locked" else "Hire · $" .. commas(role.Price), 13, Color3.new(1, 1, 1), { Size = UDim2.fromScale(1, 1), TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 6 })
+				local hire = button(actions, if hired then "Fire" else if locked then "Locked" else "Hire · $" .. commas(role.Price), function()
+					if hired then request("FireStaff", id) elseif enabled then request("HireStaff", id) end
+				end, { Name = "Hire" .. id, Size = if hired and id == "Porter" then UDim2.fromScale(0.5, 1) else UDim2.fromScale(1, 1), TextSize = 12, ZIndex = 7, Visible = false, Active = hired or enabled })
+				Theme.glassButton(hire, if hired or enabled then "Selected" else "Disabled")
+				local upgrade
+				if hired and id == "Porter" then
+					label.Size = UDim2.fromScale(0.5, 1)
+					local level = StaffCatalog.workerLevel(profile.Angler, id)
+					local price = StaffCatalog.PorterLevelPrices[level]
+					upgrade = button(actions, if price then "Upgrade $" .. commas(price) else "Max level", function()
+						if price and profile.Cash >= price then request("UpgradeWorker", id, level) end
+					end, { Name = "UpgradeWorkerPorter", Position = UDim2.fromScale(0.5, 0), Size = UDim2.fromScale(0.5, 1), TextSize = 11, ZIndex = 7, Visible = true, Active = price ~= nil and profile.Cash >= price })
+					Theme.glassButton(upgrade, if price and profile.Cash >= price then "Selected" else "Disabled")
 				end
+				local function revealActions(show)
+					label.Visible = not show
+					hire.Visible = show
+				end
+				workerCard.MouseEnter:Connect(function() revealActions(true) end)
+				workerCard.MouseLeave:Connect(function() revealActions(false) end)
+				select.Activated:Connect(function() revealActions(true) end)
 			end
 			showDetails()
 		elseif homeTab == "Overview" then
@@ -3179,6 +3162,17 @@ function Menu.start()
 		end
 	end)
 	player.CharacterRemoving:Connect(close)
+	ProximityPromptService.PromptTriggered:Connect(function(prompt, who)
+		if who ~= player or prompt.Name ~= "CompanyOfficePrompt" or prompt:GetAttribute("OwnerUserId") ~= player.UserId then
+			return
+		end
+		if player:GetAttribute("DrydockScreenOpen") or player:GetAttribute("RodCrateOpening") then return end
+		active, homeTab = "Home", "Staff"
+		overlay.Visible = true
+		player:SetAttribute("PlayerMenuOpen", true)
+		render()
+		request("Get")
+	end)
 	layoutWindow = function()
 		narrow = card.AbsoluteSize.X < 680
 		local isBook = active == "Bestiary" or active == "Journal"

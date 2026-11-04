@@ -17,7 +17,7 @@ local ROPE = rgb(183, 161, 115)
 local NET = rgb(69, 112, 83)
 local GLASS = rgb(67, 99, 105)
 local ORANGE = rgb(220, 113, 48)
-local LAMP = rgb(255, 235, 190)
+local LAMP = rgb(220, 196, 150)
 
 function Trawler.build(frame: CFrame, anchored: boolean?): Model
 	local isAnchored = anchored == true
@@ -472,13 +472,13 @@ function Trawler.build(frame: CFrame, anchored: boolean?): Model
 		local lens = part("HeadlightLens", V(0.53, 0.4, 0.055), F(side * 2.3, 8.92, -12.93), LAMP, M.Neon)
 		local light = Instance.new("SpotLight")
 		light.Name, light.Face = "Headlight", Enum.NormalId.Front
-		light.Color, light.Range, light.Brightness, light.Angle = LAMP, 60, 1.2, 65
+		light.Color, light.Range, light.Brightness, light.Angle = LAMP, 30, 0.45, 40
 		light.Shadows, light.Parent = false, lens
 	end
 	for _, z in { -3.0, 16.3 } do
 		local p = part("DeckWorkLamp", V(0.7, 0.24, 0.55), F(0, if z < 0 then 8.0 else 12.4, z), LAMP, M.Neon)
 		local light = Instance.new("PointLight")
-		light.Name, light.Color, light.Range, light.Brightness = "DeckLight", LAMP, 22, 0.65
+		light.Name, light.Color, light.Range, light.Brightness = "DeckLight", LAMP, 14, 0.3
 		light.Shadows, light.Parent = false, p
 	end
 	-- Lifebuoy on the aft cabin wall with four white bindings.

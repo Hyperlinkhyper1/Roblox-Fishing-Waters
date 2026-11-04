@@ -65,7 +65,7 @@ check(
 	"Receipt retries do not grant a second skip"
 )
 check(not invoke("PreparePathSkip", "Fishshop").Ok, "Completed quests cannot prompt another purchase")
-profile.Cash = 5000
+profile.Cash = 1000
 check(invoke("ChoosePath", "Supermarket").Ok and profile.Cash == 0, "Next stage charges its full price")
 check(
 	profile.Angler.Paths.Active == "Supermarket" and profile.Angler.FurnitureStock.FoodCase == 1,
@@ -92,11 +92,11 @@ check(
 	not invoke("ChoosePath", "Restaurant").Ok and not invoke("ChoosePath", "Company").Ok,
 	"Both branches still require money"
 )
-profile.Cash = 20000
+profile.Cash = 4000
 check(invoke("ChoosePath", "Company").Ok and profile.Cash == 0, "Company branch charges server price")
 check(invoke("PreparePathSkip", "Company").Ok, "A new stage can prepare its own purchase")
 profile.Angler.Paths.Completed.Company = true
-profile.Cash = 15000
+profile.Cash = 3000
 check(invoke("ChoosePath", "Restaurant").Ok, "Player can move on before a delayed receipt")
 check(
 	receipt("late") == granted and profile.Angler.Paths.SkipCredits == 1,
@@ -182,7 +182,7 @@ for _, width in { 1020, 362 } do
 		not content:FindFirstChild("ChooseSupermarket", true).Active,
 		"Next-stage button remains blocked without cash"
 	)
-	profile.Cash = 5000
+	profile.Cash = 1000
 	refresh()
 	check(content:FindFirstChild("ChooseSupermarket", true).Active, "Enough cash enables next-stage purchase")
 	click("ChooseSupermarket")

@@ -17,7 +17,7 @@ local WeatherRadar = require(script.Parent.WeatherRadar)
 
 local FurnitureShop = {}
 local LAYOUT_VERSION = 2
-local INTERIOR_VERSION = 5
+local INTERIOR_VERSION = 6
 local ORIGIN = CFrame.new(6700, 300, 160)
 local W, D, H = 64, 60, 18
 local rgb = Color3.fromRGB
@@ -90,19 +90,19 @@ end
 -- `turn` swings the item's customer side toward that aisle.
 local DISPLAYS = {
 	-- Left wall: the cooking line.
-	{ id = "GrillStation", side = "left", x = -27, z = -6, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
-	{ id = "Smoker", side = "left", x = -27, z = 4, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
-	{ id = "SushiBar", side = "left", x = -27, z = 14, turn = math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
+	{ id = "GrillStation", side = "left", x = -27, z = -6, turn = math.pi / 2, plinth = Vector3.new(6, 0.3, 9.6) },
+	{ id = "Smoker", side = "left", x = -27, z = 4, turn = math.pi / 2, plinth = Vector3.new(6, 0.3, 9.6) },
+	{ id = "SushiBar", side = "left", x = -27, z = 14, turn = math.pi / 2, plinth = Vector3.new(6, 0.3, 9.6) },
 	-- Right wall: the shop floor and storage.
-	{ id = "Freezer", side = "right", x = 27, z = -7, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 9) },
-	{ id = "FoodCase", side = "right", x = 27, z = 4, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
+	{ id = "Freezer", side = "right", x = 27, z = -7, turn = -math.pi / 2, plinth = Vector3.new(6, 0.3, 9.6) },
+	{ id = "FoodCase", side = "right", x = 27, z = 4, turn = -math.pi / 2, plinth = Vector3.new(6, 0.3, 9.6) },
 	{ id = "StorageRack", side = "right", x = 27, z = 14, turn = -math.pi / 2, plinth = Vector3.new(8, 0.3, 6.25) },
 	-- By the entrance, between the corner plant and the freezer: the one outdoor piece.
 	{ id = "WeatherRadar", side = "right", x = 27, z = -18, turn = -math.pi / 2, plinth = Vector3.new(5.5, 0.3, 5.5) },
 	-- Back wall: the sales row under the welcome sign.
-	{ id = "KitchenStorage", side = "back", x = -12, z = 24, turn = math.pi, plinth = Vector3.new(7, 0.3, 7) },
-	{ id = "Register", side = "back", x = 0, z = 24, turn = 0, plinth = Vector3.new(8.5, 0.3, 7) },
-	{ id = "DiningTable", side = "back", x = 12, z = 24, turn = math.pi, plinth = Vector3.new(7, 0.3, 7) },
+	{ id = "KitchenStorage", side = "back", x = -12, z = 24, turn = math.pi, plinth = Vector3.new(9.6, 0.3, 6) },
+	{ id = "Register", side = "back", x = 0, z = 24, turn = 0, plinth = Vector3.new(9, 0.3, 7) },
+	{ id = "DiningTable", side = "back", x = 12, z = 24, turn = math.pi, plinth = Vector3.new(5.5, 0.3, 9.6) },
 }
 
 local function ensureInterior(): Model

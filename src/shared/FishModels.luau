@@ -11,6 +11,11 @@ local SCALE = 4 -- studs per fish length
 local FIN = 0.004
 local rgb = Color3.fromRGB
 local templates: { [string]: Model } = {}
+-- Smooth skins by species (see Builder:loftBody), for FishMeshes on clients.
+local lofts = {}
+local LOFT_STEPS = 6 -- rings between two stations
+FishModels.SCALE = SCALE
+FishModels.LOFT_TAG = "FishLoft"
 
 type Ellipsoid = { c: Vector3, h: Vector3 }
 
@@ -77,8 +82,75 @@ function Builder:layered(name: string, center: Vector3, size: Vector3, colors)
 	)
 end
 
+-- Loft rings are { x, top, bottom, width (half) } cross-sections, snout first.
+type Ring = { x: number, top: number, bottom: number, width: number }
+
+-- Point on a loft cross-section; angle 0 is the back, pi the belly and positive
+-- angles the +Z flank. Slightly egg-shaped: narrow over the back, fullest
+-- just below the middle.
+local function loftPoint(ring: Ring, angle: number): Vector3
+	local c = math.cos(angle)
+	local middle, half = (ring.top + ring.bottom) / 2, (ring.top - ring.bottom) / 2
+	return Vector3.new(ring.x, middle + half * c, ring.width * math.sin(angle) * (1 - 0.18 * c))
+end
+
+-- The cross-section at x, between the two rings around it; outside the loft it
+-- is nil, or the nearest end ring when `clamp` is set.
+local function loftRing(rings: { Ring }, x: number, clamp: boolean?): Ring?
+	if x >= rings[1].x then
+		return if clamp then rings[1] else nil
+	end
+	for index = 2, #rings do
+		local a, b = rings[index - 1], rings[index]
+		if x >= b.x then
+			local t = (a.x - x) / math.max(a.x - b.x, 1e-6)
+			return {
+				x = x,
+				top = a.top + (b.top - a.top) * t,
+				bottom = a.bottom + (b.bottom - a.bottom) * t,
+				width = a.width + (b.width - a.width) * t,
+			}
+		end
+	end
+	return if clamp then rings[#rings] else nil
+end
+
+-- Outward unit normal of the loft skin at x and angle.
+local function loftNormal(rings: { Ring }, x: number, angle: number): Vector3
+	local ring = loftRing(rings, x, true) :: Ring
+	local step = 0.004
+	local ahead, behind = loftRing(rings, x + step, true) :: Ring, loftRing(rings, x - step, true) :: Ring
+	local along = loftPoint(ahead, angle) - loftPoint(behind, angle)
+	local around = loftPoint(ring, angle + 0.01) - loftPoint(ring, angle - 0.01)
+	local point = loftPoint(ring, angle)
+	local outward = point - Vector3.new(ring.x, (ring.top + ring.bottom) / 2, 0)
+	local normal = along:Cross(around)
+	if normal.Magnitude < 1e-9 then
+		return if outward.Magnitude > 1e-9 then outward.Unit else Vector3.new(1, 0, 0)
+	end
+	normal = normal.Unit
+	return if normal:Dot(outward) < 0 then -normal else normal
+end
+
+local function catmull(p0: number, p1: number, p2: number, p3: number, t: number): number
+	return 0.5
+		* (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t)
+end
+
 -- Outermost body surface at (x, y) on one side (+1 or -1), with its normal.
 function Builder:surface(x: number, y: number, side: number): (Vector3?, Vector3?)
+	if self.loft then
+		local ring = loftRing(self.loft, x)
+		if not ring or ring.top <= ring.bottom then
+			return nil, nil
+		end
+		local c = (y - (ring.top + ring.bottom) / 2) / ((ring.top - ring.bottom) / 2)
+		if math.abs(c) >= 1 then
+			return nil, nil
+		end
+		local angle = math.acos(c) * side
+		return loftPoint(ring, angle), loftNormal(self.loft, x, angle)
+	end
 	local best: Ellipsoid? = nil
 	local bestZ = -1
 	for _, section in self.sections do
@@ -104,6 +176,10 @@ function Builder:surface(x: number, y: number, side: number): (Vector3?, Vector3
 end
 
 function Builder:top(x: number): number
+	if self.loft then
+		local ring = loftRing(self.loft, x)
+		return if ring then math.max(ring.top, 0) else 0
+	end
 	local best = 0
 	for _, section in self.sections do
 		local dx = (x - section.c.X) / section.h.X
@@ -115,6 +191,10 @@ function Builder:top(x: number): number
 end
 
 function Builder:bottom(x: number): number
+	if self.loft then
+		local ring = loftRing(self.loft, x)
+		return if ring then math.min(ring.bottom, 0) else 0
+	end
 	local best = 0
 	for _, section in self.sections do
 		local dx = (x - section.c.X) / section.h.X
@@ -301,6 +381,55 @@ function Builder:fishBody(depth: number, width: number, colors, headDrop: number
 	self:layered("TailStalk", Vector3.new(-0.29, 0, 0), Vector3.new(0.2, depth * 0.3, width * 0.42), colors)
 end
 
+-- A smooth skin lofted through `stations` ({ x, top, bottom, half width },
+-- snout first) instead of overlapping spheres. EditableMesh never replicates,
+-- so the sphere body is still built: servers and the wiki see it, and
+-- FishMeshes hides it on each client once the skin exists. Its Chest layers
+-- are the skin's colour swatches, so mutations that repaint parts repaint the
+-- skin too. Markings, eyes and fins follow the skin's surface.
+function Builder:loftBody(stations: { { number } }, colors, depth: number, width: number, headDrop: number?)
+	local existing = {}
+	for _, item in self.model:GetChildren() do
+		existing[item] = true
+	end
+	self:fishBody(depth, width, colors, headDrop)
+	local swatches = { Chest = "Side", ChestBack = "Back", ChestBelly = "Belly" }
+	local anchor: BasePart? = nil
+	for _, item in self.model:GetChildren() do
+		if not existing[item] then
+			item:SetAttribute("LoftFallback", true)
+			if swatches[item.Name] then
+				item:SetAttribute("LoftSwatch", swatches[item.Name])
+			end
+			if item.Name == "Chest" then
+				anchor = item :: BasePart
+			end
+		end
+	end
+	local rings: { Ring } = {}
+	local count = #stations
+	for index = 1, count - 1 do
+		local p0, p1 = stations[math.max(index - 1, 1)], stations[index]
+		local p2, p3 = stations[index + 1], stations[math.min(index + 2, count)]
+		for step = 0, LOFT_STEPS - 1 do
+			local t = step / LOFT_STEPS
+			local function at(key: number): number
+				return catmull(p0[key], p1[key], p2[key], p3[key], t)
+			end
+			local top, bottom = at(2), at(3)
+			table.insert(rings, { x = at(1), top = math.max(top, bottom), bottom = bottom, width = math.max(at(4), 0) })
+		end
+	end
+	local last = stations[count]
+	table.insert(rings, { x = last[1], top = last[2], bottom = last[3], width = last[4] })
+	self.loft = rings
+	if anchor then
+		lofts[self.model.Name] = { rings = rings, anchorPosition = anchor.Position, anchorSize = anchor.Size }
+		self.model:SetAttribute("LoftFish", self.model.Name)
+		self.model:AddTag(FishModels.LOFT_TAG)
+	end
+end
+
 function Builder:face(eyeX: number, eyeY: number, eyeSize: number, iris: Color3, line: Color3)
 	self:eye(eyeX, eyeY, eyeSize, iris)
 	local mouthY = self:bottom(0.46) * 0.35
@@ -395,26 +524,51 @@ end
 -- below are the body-family helpers several of them share, handed over as `kit`.
 local builders = {}
 
+-- Carp cross-sections for the smooth skin: { x, top, bottom, half width }.
+local CARP_STATIONS = {
+	{ 0.505, -0.018, -0.048, 0.012 },
+	{ 0.495, 0.018, -0.072, 0.03 },
+	{ 0.465, 0.05, -0.095, 0.047 },
+	{ 0.41, 0.08, -0.115, 0.06 },
+	{ 0.33, 0.11, -0.13, 0.07 },
+	{ 0.22, 0.14, -0.142, 0.079 },
+	{ 0.1, 0.152, -0.142, 0.081 },
+	{ -0.02, 0.142, -0.13, 0.076 },
+	{ -0.13, 0.112, -0.105, 0.063 },
+	{ -0.22, 0.08, -0.076, 0.047 },
+	{ -0.29, 0.052, -0.05, 0.03 },
+	{ -0.34, 0.04, -0.039, 0.019 },
+	{ -0.375, 0.036, -0.035, 0.012 },
+}
+
 -- Deep-bodied carp with scale rows, barbels and fleshy lips; `p` is the palette.
+-- `p.mesh` swaps the sphere body for a smooth skin (`p.stations` or the
+-- default carp profile).
 local function carp(b, p)
 	local colors, fin = p.colors, p.fin
-	b:fishBody(0.29, 0.16, colors, 0.08)
+	if p.mesh then
+		b:loftBody(p.stations or CARP_STATIONS, colors, 0.29, 0.16, 0.08)
+	else
+		b:fishBody(0.29, 0.16, colors, 0.08)
+	end
 	b:edgeFin(0.11, -0.22, { 0.095, 0.07, 0.05, 0.045, 0.04, 0.035 }, fin, false, 0.05)
 	b:edgeFin(-0.12, -0.22, { 0.07, 0.05 }, fin, true)
 	b:edgeFin(0.02, -0.06, { 0.06, 0.05 }, fin, true)
 	b:forkTail(0.15, 0.05, fin)
 	b:pectoral(0.2, -0.08, 0.1, 0.04, fin)
+	-- On the smooth skin scales overlap like shingles; spaced ones read as spots.
+	local rowStep, columnStep = if p.mesh then 0.03 else 0.04, if p.mesh then 0.032 else 0.045
+	local scaleWidth, scaleHeight = if p.mesh then 0.04 else 0.036, if p.mesh then 0.034 else 0.03
 	local row = 0
-	for y = -0.1, 0.105, 0.04 do
+	for y = -0.1, if p.mesh then 0.14 else 0.105, rowStep do
 		row += 1
-		for x = 0.2 - (row % 2) * 0.022, -0.32, -0.045 do
-			b:marks(
-				x,
-				y,
-				0.036,
-				0.03,
-				if (row + math.floor(x * 40)) % 3 == 0 then p.scale else p.scaleAlt
-			)
+		for x = 0.2 - (row % 2) * columnStep / 2, -0.32, -columnStep do
+			local color = if (row + math.floor(x * 40)) % 3 == 0 then p.scale else p.scaleAlt
+			if p.mesh then
+				-- Scales darken into the back instead of stopping at an edge.
+				color = color:Lerp(colors.back, math.clamp((y - 0.03) / 0.09, 0, 0.8))
+			end
+			b:marks(x, y, scaleWidth, scaleHeight, color)
 		end
 	end
 	for _, side in { 1, -1 } do
@@ -433,7 +587,7 @@ local function carp(b, p)
 			"Barbel"
 		)
 	end
-	b:ellipsoid("Lips", CFrame.new(0.48, -0.035, 0), Vector3.new(0.04, 0.035, 0.055), p.lips)
+	b:ellipsoid("Lips", CFrame.new(if p.mesh then 0.5 else 0.48, -0.035, 0), Vector3.new(0.04, 0.035, 0.055), p.lips)
 	b:face(0.37, 0.01, 0.036, p.iris, p.line)
 end
 
@@ -1276,6 +1430,11 @@ function FishModels.mutate(model: Model, traits)
 		elseif set.Rainbow then
 			rainbow(item, hue, 0.6, 0.72 + 0.28 * shade)
 		end
+		-- Keep corruption visible even when the rolled extra feature is small or
+		-- hidden by the fish's body. Rainbow owns its animated part colours.
+		if set.Corrupted and not set.Rainbow and item.Name ~= "Bone" and item.Name ~= "BoneKnob" and item.Name ~= "Wound" then
+			item.Color = item.Color:Lerp(rgb(125, 35, 145), 0.55)
+		end
 	end
 	if set.Rainbow then
 		model:AddTag(FishModels.RAINBOW_TAG)
@@ -1284,6 +1443,7 @@ function FishModels.mutate(model: Model, traits)
 		aurora(model)
 	end
 	if set.Windy or set.Gusty then windswept(model) end
+ if set.Corrupted then mutationParticles(model, "Corruption", rgb(185, 55, 210), "rbxasset://textures/particles/sparkles_main.dds", 16) end
  if set.Floral then flowers(model) end
  if set.Snowy then mutationParticles(model, "Snowflakes", rgb(221, 244, 255), "rbxasset://textures/particles/sparkles_main.dds", 12) end
  if set.ZeusStruck then mutationParticles(model, "Lightning", rgb(255, 245, 65), "rbxasset://textures/particles/sparkles_main.dds", 25) end
@@ -1297,11 +1457,9 @@ function FishModels.has(fishId: string): boolean
 	return builders[fishId] ~= nil
 end
 
--- `traits` is a catch record (or anything with its Mutation, NeonColor and
--- Corruptions) to paint the fish with.
-function FishModels.create(fishId: string, traits: any?): Model?
-	local template = templates[fishId]
-	if not template then
+local function template(fishId: string): Model?
+	local model = templates[fishId]
+	if not model then
 		local build = builders[fishId]
 		if not build then
 			return nil
@@ -1312,18 +1470,37 @@ function FishModels.create(fishId: string, traits: any?): Model?
 		end
 		local builder = newBuilder(fishId, seed)
 		build(builder)
-		local model = builder.model
+		model = builder.model
 		measure(model)
 		if model:GetAttribute("ViewDirection") == nil then
 			model:SetAttribute("ViewDirection", Vector3.new(0.18, 0.16, 1))
 		end
-		template = model
 		templates[fishId] = model
 	end
-	local model = template:Clone()
+	return model
+end
+
+-- `traits` is a catch record (or anything with its Mutation, NeonColor and
+-- Corruptions) to paint the fish with.
+function FishModels.create(fishId: string, traits: any?): Model?
+	local base = template(fishId)
+	if not base then
+		return nil
+	end
+	local model = base:Clone()
 	FishModels.mutate(model, traits)
 	return model
 end
+
+-- A species' smooth skin: its rings (fish lengths) and where its Chest swatch
+-- sat in the unscaled template (studs). Nil for sphere-bodied species.
+function FishModels.loft(fishId: string)
+	template(fishId)
+	return lofts[fishId]
+end
+
+FishModels.loftPoint = loftPoint
+FishModels.loftNormal = loftNormal
 
 local crabSpecies = { ShoreCrab = true, BlueCrab = true, KingCrab = true }
 -- Crabs cluster tightly in weight, so the cube-root curve used by fish hides
@@ -1365,18 +1542,15 @@ function FishModels.scaleCatch(model: Model, kg: number): Vector3
 	return scaleToLength(model, FishModels.catchLength(kg, model.Name))
 end
 
--- Cache unscaled geometry by species and shape mutations, not by catch weight.
+-- Cache unscaled geometry by species and mutations, not by catch weight.
 local catchBounds = {}
 function FishModels.catchBounds(record): Vector3?
 	local corrupted = FishMutations.parts(record.Mutation).Corrupted
 	local shapes = if corrupted then record.Corruptions or { "Eye" } else {}
-	local key = record.FishId .. ":" .. table.concat(shapes, ",")
+	local key = record.FishId .. ":" .. (record.Mutation or "Normal") .. ":" .. table.concat(shapes, ",")
 	local size = catchBounds[key]
 	if not size then
-		local model = FishModels.create(
-			record.FishId,
-			if corrupted then { Mutation = "Corrupted", Corruptions = shapes } else nil
-		)
+		local model = FishModels.create(record.FishId, record)
 		if not model then
 			return nil
 		end

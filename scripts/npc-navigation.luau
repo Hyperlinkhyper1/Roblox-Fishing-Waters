@@ -471,6 +471,52 @@ clean()
 
 -- Exercise the production grid planner against real-width room openings and
 -- dynamic obstacle boxes. Both ends are inside the 11 by 7 house grid.
+-- The enclosed lobby's side door spans z=9..13.5; its center (11.25)
+-- falls halfway between furniture-grid rows. Include its wooden jambs and
+-- the shell so a route cannot escape around the building instead.
+local lobbyWalls = {
+	{ min = ground(-25.1, -16.1), max = ground(-24.4, 16.1) },
+	{ min = ground(24.4, -16.1), max = ground(25.1, 16.1) },
+	{ min = ground(-24.75, -16.1), max = ground(24.75, -15.4) },
+	{ min = ground(-24.75, 15.4), max = ground(-5.25, 16.1) },
+	{ min = ground(5.25, 15.4), max = ground(24.75, 16.1) },
+	{ min = ground(-6.75, 6.475), max = ground(6.75, 7.025) },
+	{ min = ground(6.475, 6.75), max = ground(7.025, 9) },
+	{ min = ground(6.475, 13.5), max = ground(7.025, 15.75) },
+	{ min = ground(6.3, 8.86), max = ground(7.2, 9.14) },
+	{ min = ground(6.3, 13.36), max = ground(7.2, 13.64) },
+	{ min = ground(-7.025, 2.25), max = ground(-6.475, 9) },
+	{ min = ground(-7.025, 13.5), max = ground(-6.475, 15.75) },
+	{ min = ground(-7.2, 8.86), max = ground(-6.3, 9.14) },
+	{ min = ground(-7.2, 13.36), max = ground(-6.3, 13.64) },
+	{ min = ground(-24.75, 1.975), max = ground(-6.75, 2.525) },
+	{ min = ground(1.975, -15.75), max = ground(2.525, -11.25) },
+	{ min = ground(1.975, -2.25), max = ground(2.525, 6.75) },
+}
+for _, speed in { 9, 16 } do
+	for _, start in { ground(13.5, 9), ground(18, 0), ground(9, 13.5) } do
+		reset({ ground = true, walls = lobbyWalls, noPath = true })
+		npc.gridFrame = gridFrame
+		npc.humanoid.WalkSpeed = speed
+		positionAt(start)
+		check(Navigation.walk(npc, ground(0, 18.6), nil, true), "Porter exits storage through the enclosed lobby doorway")
+		check(Navigation.walk(npc, start, nil, true), "Porter returns through the lobby doorway to the rack")
+		check(Navigation.walk(npc, ground(-18, 11.25), nil, true), "Porter crosses the lobby's opposite office doorway")
+		check(#paths == 0, "Lobby doorway works without navmesh fallback")
+		clean()
+	end
+end
+
+local blockedLobby = table.clone(lobbyWalls)
+table.insert(blockedLobby, { min = ground(6.3, 9), max = ground(7.2, 13.5) })
+reset({ ground = true, walls = blockedLobby, noPath = true })
+npc.gridFrame = gridFrame
+positionAt(ground(13.5, 9))
+check(not Navigation.walk(npc, ground(0, 18.6), nil, true), "An obstructed lobby doorway remains impassable")
+check(math.abs(npc.root.Position.X) >= 6.3 or npc.root.Position.Z <= 7.025,
+	"Refined routing never walks through a wall into the enclosed lobby")
+clean()
+
 local roomWalls = {
 	{ min = ground(-24.75, 1.925), max = ground(-13, 2.575) },
 	{ min = ground(-7, 1.925), max = ground(9, 2.575) },

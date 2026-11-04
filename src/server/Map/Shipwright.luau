@@ -6,6 +6,7 @@
 -- present even when an asset request is slow or unavailable.
 
 local Shipwright = {}
+local scheduled: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
 local COSMETICS_VERSION = 3
 local SKIN = Color3.fromRGB(216, 164, 119)
@@ -122,6 +123,9 @@ function Shipwright.ensureAppearance(model: Model): boolean
 	if model:GetAttribute("CosmeticsVersion") == COSMETICS_VERSION then
 		return true
 	end
+	if not model:IsDescendantOf(game) then
+		return false
+	end
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		return false
@@ -175,6 +179,34 @@ function Shipwright.ensureAppearance(model: Model): boolean
 
 	model:SetAttribute("CosmeticsVersion", COSMETICS_VERSION)
 	return true
+end
+
+-- Asset loading may yield, and generated maps can be built outside the DataModel.
+-- Wait for parenting without holding up world generation or calling the avatar API early.
+function Shipwright.scheduleAppearance(model: Model)
+	if scheduled[model] or model:GetAttribute("CosmeticsVersion") == COSMETICS_VERSION then
+		return
+	end
+	scheduled[model] = true
+	local connection: RBXScriptConnection? = nil
+	local function tryStart()
+		if not model:IsDescendantOf(game) then
+			return
+		end
+		if connection then
+			connection:Disconnect()
+			connection = nil
+		end
+		task.spawn(function()
+			local ok, reason = pcall(Shipwright.ensureAppearance, model)
+			scheduled[model] = nil
+			if not ok then
+				warn("Shipwright appearance setup failed: " .. tostring(reason))
+			end
+		end)
+	end
+	connection = model.AncestryChanged:Connect(tryStart)
+	tryStart()
 end
 
 -- frame is at the soles of the boots. The rig looks along its local -Z axis.
@@ -272,7 +304,7 @@ function Shipwright.build(frame: CFrame): Model
 	humanoid.Parent = model
 
 	model.PrimaryPart = root
-	Shipwright.ensureAppearance(model)
+	ensureFace(model)
 	Shipwright.ensureInteraction(model)
 	return model
 end

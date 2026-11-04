@@ -555,7 +555,7 @@ local function rainTile(i: number, j: number, seed: number, detailed: boolean, p
 		{ 0.08, 0.5 },
 		0.95,
 		BILLOW_MAX,
-		if detailed then 40 else 16
+		if detailed then 24 else 10
 	)
 	layer(
 		"RainCloudScud",
@@ -564,7 +564,7 @@ local function rainTile(i: number, j: number, seed: number, detailed: boolean, p
 		{ 0.22, 0.58 },
 		0.55,
 		60,
-		if detailed then 14 else 5
+		if detailed then 8 else 3
 	)
 	local anchor = Clouds.anchor(model, "CloudWispAnchor", Vector3.new(620, 1, 620))
 	table.insert(pieces, { part = anchor, frame = CFrame.new(0, -88, 0), shade = 0.4, opacity = 0 })

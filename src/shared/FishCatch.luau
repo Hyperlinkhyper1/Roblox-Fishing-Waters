@@ -232,10 +232,10 @@ end
 
 -- Reel minigame tuning. Progress starts at START_PROGRESS; reaching 1 lands the
 -- fish and reaching 0 lets it escape. `reelBoost` (the Reel Speed upgrade)
--- scales the progress each hit gives.
-function FishCatch.tuning(difficulty: number, reelBoost: number?)
+-- and handlingBoost scale progress per green hit; higher Handling needs fewer hits.
+function FishCatch.tuning(difficulty: number, reelBoost: number?, handlingBoost: number?)
 	local d = math.clamp(difficulty, 0, 1)
-	local boost = math.max(1, reelBoost or 1)
+	local boost = math.max(1, reelBoost or 1) * math.max(0.1, handlingBoost or 1)
 	return {
 		needleSpeed = lerp(0.55, 1.65, d), -- arc lengths per second
 		zoneSize = lerp(0.3, 0.09, d), -- fraction of the arc
@@ -247,8 +247,8 @@ function FishCatch.tuning(difficulty: number, reelBoost: number?)
 	}
 end
 
-function FishCatch.minimumFightSeconds(difficulty: number, reelBoost: number?): number
-	local hits = math.ceil((1 - FishCatch.START_PROGRESS) / FishCatch.tuning(difficulty, reelBoost).gain)
+function FishCatch.minimumFightSeconds(difficulty: number, reelBoost: number?, handlingBoost: number?): number
+	local hits = math.ceil((1 - FishCatch.START_PROGRESS) / FishCatch.tuning(difficulty, reelBoost, handlingBoost).gain)
 	return hits * FishCatch.SECONDS_PER_HIT
 end
 

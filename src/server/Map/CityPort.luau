@@ -441,8 +441,20 @@ function CityPort.build(parent: Instance, origin: Vector3, top: number): { { num
 		for k, dz in { -35, -85 } do
 			local side = if (index + k) % 2 == 0 then 1 else -1
 			local hullColor = CONTAINERS[(index * 2 + k) % #CONTAINERS + 1]:Lerp(white, 0.5)
-			part(marina, "MooredBoat", Vector3.new(8, 3.5, 24), Vector3.new(x + side * 9, 0.8, walkZ + dz), hullColor, M.SmoothPlastic)
-			part(marina, "MooredCabin", Vector3.new(5.5, 3, 8), Vector3.new(x + side * 9, 4, walkZ + dz + 3), white, M.SmoothPlastic, false)
+			local bx, bz = x + side * 9, walkZ + dz
+			part(marina, "MooredBoat", Vector3.new(8, 3.5, 24), Vector3.new(bx, 0.8, bz), hullColor, M.SmoothPlastic)
+			part(marina, "BoatDeck", Vector3.new(7.4, 0.2, 23), Vector3.new(bx, 2.65, bz), white, M.SmoothPlastic, false)
+			part(marina, "MooredCabin", Vector3.new(5.5, 3, 8), Vector3.new(bx, 4, bz + 3), white, M.SmoothPlastic, false)
+			part(marina, "CabinRoof", Vector3.new(6, 0.35, 8.6), Vector3.new(bx, 5.65, bz + 3), white, M.SmoothPlastic, false)
+			local windowColor = rgb(50, 75, 86)
+			for _, s in { -1, 1 } do
+				part(marina, "CabinWindow", Vector3.new(0.12, 1.5, 5.8), Vector3.new(bx + s * 2.78, 4.25, bz + 3), windowColor, M.Glass, false)
+				part(marina, "HullStripe", Vector3.new(0.12, 0.4, 22), Vector3.new(bx + s * 4.03, 1.7, bz), white, M.SmoothPlastic, false)
+				strut(marina, "BowRail", Vector3.new(bx + s * 3.3, 3.6, bz - 10), Vector3.new(bx + s * 3.3, 3.6, bz - 4), 0.22, white, M.Metal, false)
+			end
+			part(marina, "CabinWindshield", Vector3.new(4.5, 1.5, 0.12), Vector3.new(bx, 4.25, bz - 1.03), windowColor, M.Glass, false)
+			part(marina, "BowHatch", Vector3.new(2.4, 0.2, 2.6), Vector3.new(bx, 2.85, bz - 7), windowColor, M.SmoothPlastic, false)
+			strut(marina, "MooringLine", Vector3.new(bx - side * 3.8, 2.6, bz + 8), Vector3.new(x + side * 3.5, pontoonTop + 0.1, bz + 10), 0.18, rgb(188, 180, 158), M.Fabric, false)
 		end
 	end
 	for _, x in { -400, -310 } do

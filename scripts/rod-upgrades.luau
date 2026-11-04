@@ -86,6 +86,25 @@ check(
 )
 check(FishCatch.tuning(0.5, maxed.reel).gain > FishCatch.tuning(0.5).gain, "Reel Speed adds progress per hit")
 
+-- Handling must persist and reduce green hits using the same server timing rules.
+check(stock.handling == 1 and RodUpgrades.boosts(legacy.RodUpgrades).handling == 1, "Old saves keep baseline Handling")
+profile.Cash = 10 ^ 9
+cash = profile.Cash
+check(BoatData.upgradeRod(profile, "Handling") == "Upgraded", "Handling can be purchased")
+check(cash - profile.Cash == RodUpgrades.price("Handling", 0), "Handling charges its listed price")
+check(BoatData.decode(profile).RodUpgrades.Handling == 1, "Handling survives a save round-trip")
+local handling = RodUpgrades.boosts({ Handling = 10 }).handling
+for _, difficulty in { 0, 0.5, 1 } do
+	local normal = FishCatch.tuning(difficulty)
+	local better = FishCatch.tuning(difficulty, 1, handling)
+	check(better.gain > normal.gain, "Handling increases green-hit progress")
+	check(better.needleSpeed == normal.needleSpeed and better.zoneSize == normal.zoneSize, "Handling only changes hit progress")
+	check(FishCatch.minimumFightSeconds(difficulty, 1, handling) < FishCatch.minimumFightSeconds(difficulty), "Higher Handling needs fewer hits")
+	local hits = math.ceil((1 - FishCatch.START_PROGRESS) / better.gain)
+	check(FishCatch.minimumFightSeconds(difficulty, 1, handling) == hits * FishCatch.SECONDS_PER_HIT, "Server minimum matches Handling hit count")
+	check(FishCatch.tuning(difficulty, 1, 0.8).gain < normal.gain, "Lower Handling makes the fight harder")
+end
+
 local function sample(boosts, seed)
 	local random = Random and Random.new(seed)
 	local state = seed

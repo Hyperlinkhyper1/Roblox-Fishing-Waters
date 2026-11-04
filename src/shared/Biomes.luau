@@ -33,6 +33,9 @@ local Biomes = {}
 
 Biomes.Seed = 1847
 Biomes.WaterLevel = 0
+-- Shared by map setup and client biome transitions so clarity stays consistent.
+Biomes.SurfaceWaterTransparency = 0.45
+Biomes.WaterReflectance = 0.12
 Biomes.SeaFloor = -64
 Biomes.MapHalfSize = 5200
 -- The original archipelago keeps its generation bounds; the ocean extends
@@ -40,10 +43,12 @@ Biomes.MapHalfSize = 5200
 Biomes.OceanMin = -Biomes.MapHalfSize
 Biomes.OceanMax = 8200
 Biomes.CityOceanStart = 4200
--- Dry rooms below sea level inside the ocean bounds: the city's metro station. The map
+-- Dry rooms below sea level inside the ocean bounds: the two metro stations. The map
 -- clears terrain water out of them, and nobody in them is underwater.
 Biomes.DryPockets = {
 	{ min = Vector3.new(6618, -46, 6882), max = Vector3.new(6884, 8, 7032) },
+	-- Gullhaven's recessed east-row entrance and its 172-stud platform hall.
+	{ min = Vector3.new(62, -34, -678), max = Vector3.new(172, 12, -500) },
 }
 
 function Biomes.inOceanBounds(position: Vector3): boolean
@@ -73,7 +78,7 @@ Biomes.Normal = {
 	seabed = Enum.Material.Sand,
 	seabedColor = rgb(206, 190, 148),
 	look = {
-		waterColor = rgb(46, 110, 118),
+		waterColor = rgb(82, 105, 132),
 		atmosphereColor = rgb(199, 205, 200),
 		atmosphereDecay = rgb(92, 106, 114),
 		density = 0.32,
@@ -121,7 +126,7 @@ Biomes.Tropical = {
 	seabedColor = rgb(226, 214, 170),
 	shelfDepth = -22,
 	look = {
-		waterColor = rgb(38, 170, 170),
+		waterColor = rgb(82, 137, 151),
 		atmosphereColor = rgb(210, 235, 240),
 		atmosphereDecay = rgb(120, 170, 190),
 		density = 0.28,
@@ -190,7 +195,7 @@ Biomes.OpenSea = {
 	seabed = Enum.Material.Slate,
 	seabedColor = rgb(56, 74, 80),
 	look = {
-		waterColor = rgb(30, 80, 96),
+		waterColor = rgb(66, 87, 114),
 		atmosphereColor = rgb(180, 190, 195),
 		atmosphereDecay = rgb(70, 85, 95),
 		density = 0.35,

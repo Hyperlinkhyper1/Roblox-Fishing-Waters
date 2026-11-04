@@ -15,26 +15,53 @@ local Weather = require(ReplicatedStorage.Shared.Weather)
 local AmbientFish = {}
 local started = false
 local TAU = math.pi * 2
-local MAX_SCHOOLS = 6
-local SCHOOL_SIZE = NumberRange.new(3, 6)
+local MAX_SCHOOLS = 8
+local SCHOOL_SIZE = NumberRange.new(3, 5)
 -- Big species cruise alone instead of in shoals.
 local SOLO_KG = 20
 local SPAWN_DISTANCE = NumberRange.new(40, 120)
 local DESPAWN_DISTANCE = 170
 -- School selection is spaced out; models are built or recycled on Heartbeat.
 local SPAWN_INTERVAL = 0.6
+local MODEL_INTERVAL = 0.12
 local MAX_POOLED_FISH = MAX_SCHOOLS * SCHOOL_SIZE.Max
 -- From higher up the shallow schools are invisible anyway.
 local MAX_CAMERA_HEIGHT = 140
-local DEPTH = NumberRange.new(1.5, 5)
+-- Moving welded fish is the costly part, so schools nobody can see skip their
+-- move: those behind the camera every frame, distant ones on most frames.
+local NEAR_DISTANCE = 60
+local FAR_STRIDE = 3
+local BEHIND_DOT = 0.15
+-- Depth of a fish's top below the calm surface; body size and swell add to it.
+local DEPTH = NumberRange.new(3, 6.5)
+local SWELL_MARGIN = 1.5 -- wave crests rise this many amplitudes above the calm level
+-- Water kept above the highest point of every model (dorsal fins, sails).
+local SURFACE_CLEARANCE = 1.5
 local MIN_CLEARANCE = 3 -- studs of water kept beneath a school
-local SPEED = NumberRange.new(2.5, 5)
-local FLEE_RADIUS = 14
-local FLEE_TIME = 1.6
+-- Studs per second. Schools barely drift; anything quicker read as darting.
+local SPEED = 0.1
+-- Radians per second. A school's formation does not spin with its heading, so
+-- turning only re-aims the fish instead of swinging them round the school.
+local WANDER_TURN = 0.03
+local SHORE_TURN = 0.15
+local BOB_HEIGHT, BOB_RATE = 0.06, 0.4
+local TAIL_SWING, TAIL_RATE = 0.05, 2
 local PROBE_INTERVAL = 0.5
 local PROBE_AHEAD = 14
 -- Bottom dwellers, shellfish, plants and junk never swim in open water.
-local GROUNDED = { "Crab$", "Mussel$", "Sea Cucumber$", "^Shrimp$", "^Kelp$", "^Seaweed$", "^Sea Lettuce$" }
+-- Junk is matched by name too: some (the Tire) are catchable lake commons.
+local GROUNDED = {
+	"Crab$",
+	"Mussel$",
+	"Sea Cucumber$",
+	"^Shrimp$",
+	"^Kelp$",
+	"^Seaweed$",
+	"^Sea Lettuce$",
+	"Tire$",
+	"Boot$",
+	"Branch$",
+}
 
 local function between(range: NumberRange, rng: Random): number
 	return rng:NextNumber(range.Min, range.Max)
@@ -42,7 +69,13 @@ end
 
 local function swims(species): boolean
 	-- Limited species may be switched off on the dashboard, so they never swim past.
-	if species.DropOnly or not species.Pools or species.Requires or species.Rarity == "Limited" then
+	if
+		species.DropOnly
+		or not species.Pools
+		or species.Requires
+		or species.Rarity == "Limited"
+		or species.Rarity == "Junk"
+	then
 		return false
 	end
 	for _, pattern in GROUNDED do
@@ -90,6 +123,10 @@ local function build(id: string): (Model?, BasePart?)
 	root.CFrame = CFrame.new(model:GetPivot().Position)
 	root.Transparency = 1
 	root.Anchored = true
+	-- Highest point above the root. Swimming only yaws the fish, so this holds
+	-- at any heading and keeps tall fins under the surface.
+	local box, size = model:GetBoundingBox()
+	root:SetAttribute("SwimTop", box.Position.Y + size.Y / 2 - root.Position.Y)
 	for _, item in model:GetDescendants() do
 		if item:IsA("BasePart") then
 			item.Anchored = false
@@ -115,6 +152,17 @@ function AmbientFish.start()
 	end
 	started = true
 	local player = Players.LocalPlayer
+	local function canSimulate(): boolean
+		local camera = workspace.CurrentCamera
+		if not camera or player:GetAttribute("MetroRiding") then
+			return false
+		end
+		local eye = camera.CFrame.Position
+		-- Surface schools cannot be seen from a dry underground station. Keep
+		-- underwater swimming enabled in the ocean, including deep dives.
+		return eye.Y - Biomes.WaterLevel <= MAX_CAMERA_HEIGHT
+			and (eye.Y >= Biomes.WaterLevel or Biomes.inOceanBounds(eye))
+	end
 	local folder = Instance.new("Folder")
 	folder.Name = "AmbientFish"
 	folder.Parent = workspace
@@ -155,12 +203,6 @@ function AmbientFish.start()
 		local angle = rng:NextNumber(0, TAU)
 		local origin = camera + Vector3.new(math.cos(angle), 0, math.sin(angle)) * between(SPAWN_DISTANCE, rng)
 		local now = workspace:GetServerTimeNow()
-		-- Rough swell sinks storm schools so they never break the surface.
-		local depth = between(DEPTH, rng) + Weather.getState(now, origin).waveAmplitude
-		local floor = floorAt(origin)
-		if not floor or floor > Biomes.WaterLevel - depth - MIN_CLEARANCE then
-			return
-		end
 		local pool = if Weather.inLake(origin) then "MainLake" else "OpenSea"
 		local id = pickSpecies(pool, (Seasons.current(now)), rng)
 		if not id then
@@ -168,21 +210,33 @@ function AmbientFish.start()
 		end
 		local species = FishSpecies[id]
 		local count = if species.AverageKg >= SOLO_KG then 1 else rng:NextInteger(SCHOOL_SIZE.Min, SCHOOL_SIZE.Max)
+		local length = FishModels.catchLength(species.AverageKg, id)
+		local spacing = math.max(length * 1.4, 1.5)
+		-- Clear the body, the school's vertical spread, the bob and rough swell so
+		-- fins and backs never break the surface.
+		local spread = if count == 1 then 0 else spacing * 0.3
+		local swell = Weather.getState(now, origin).waveAmplitude * SWELL_MARGIN
+		local depth = between(DEPTH, rng) + length * 0.5 + spread + swell
+		local floor = floorAt(origin)
+		if not floor or floor > Biomes.WaterLevel - depth - MIN_CLEARANCE then
+			return
+		end
 		local center = Vector3.new(origin.X, Biomes.WaterLevel - depth, origin.Z)
 		local school = {
 			id = id,
 			remaining = count,
-			spacing = math.max(FishModels.catchLength(species.AverageKg, id) * 1.4, 1.5),
+			spacing = spacing,
 			solo = count == 1,
 			center = center,
 			depth = depth,
+			floor = floor,
+			ceiling = Biomes.WaterLevel - SURFACE_CLEARANCE - swell,
 			heading = rng:NextNumber(0, TAU),
 			turn = 0,
 			turnTarget = 0,
 			nextTurn = 0,
 			nextProbe = 0,
-			speed = between(SPEED, rng),
-			fleeUntil = 0,
+			blockedUntil = 0,
 			members = {},
 		}
 		table.insert(schools, school)
@@ -190,7 +244,9 @@ function AmbientFish.start()
 
 	-- Limit cloning, parenting and disposal to one fish per Heartbeat. A bounded
 	-- species-specific pool avoids rebuilding schools as the boat travels.
-	RunService.Heartbeat:Connect(function()
+	local modelElapsed = MODEL_INTERVAL
+	RunService.Heartbeat:Connect(function(dt: number)
+		modelElapsed += dt
 		if #retired > 0 then
 			debug.profilebegin("AmbientFish/Recycle")
 			local fish = table.remove(retired)
@@ -209,6 +265,11 @@ function AmbientFish.start()
 			debug.profileend()
 			return
 		end
+		-- Check here too: the ride attribute can change between render updates.
+		if not canSimulate() or modelElapsed < MODEL_INTERVAL then
+			return
+		end
+		modelElapsed = 0
 		for _, school in schools do
 			if school.remaining <= 0 then
 				continue
@@ -237,106 +298,122 @@ function AmbientFish.start()
 			if school.solo then
 				offset = Vector3.zero
 			end
+			-- A model that reaches higher than the school's depth allowed for sinks
+			-- the whole school, or drops it when the seabed leaves no room.
+			local top = school.center.Y + offset.Y + (root:GetAttribute("SwimTop") or 0) + BOB_HEIGHT
+			if top > school.ceiling then
+				local sunk = school.center - Vector3.yAxis * (top - school.ceiling)
+				if sunk.Y - MIN_CLEARANCE < school.floor then
+					table.insert(retired, { id = school.id, model = model, root = root })
+					school.remaining = 0
+					if #school.members == 0 then
+						despawn(school)
+					end
+					debug.profileend()
+					return
+				end
+				school.center = sunk
+			end
 			local position = school.center + offset
-			root.CFrame = CFrame.new(position)
+			local forward = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading))
+			root.CFrame = CFrame.lookAt(position, position + forward) * CFrame.Angles(0, math.pi / 2, 0)
 			model.Parent = folder
 			table.insert(school.members, {
 				model = model,
 				root = root,
 				offset = offset,
 				position = position,
-				direction = Vector3.xAxis,
+				direction = forward,
 				phase = rng:NextNumber(0, TAU),
-				lag = rng:NextNumber(1.5, 3),
 			})
 			debug.profileend()
 			return
 		end
 	end)
 
+	-- Movement runs every rendered frame: stepping slower than the display reads
+	-- as jitter on something this close to the camera.
 	local spawnElapsed = SPAWN_INTERVAL
+	local frame = 0
 	RunService.RenderStepped:Connect(function(dt: number)
 		dt = math.min(dt, 0.1)
+		frame += 1
+		if not canSimulate() then
+			for index = #schools, 1, -1 do
+				despawn(schools[index])
+			end
+			spawnElapsed = SPAWN_INTERVAL
+			return
+		end
 		local camera = workspace.CurrentCamera
 		if not camera then
 			return
 		end
 		local eye = camera.CFrame.Position
+		local look = camera.CFrame.LookVector
 		local flat = Vector3.new(eye.X, 0, eye.Z)
-		local high = eye.Y - Biomes.WaterLevel > MAX_CAMERA_HEIGHT
 		for index = #schools, 1, -1 do
 			local school = schools[index]
 			local offset = Vector3.new(school.center.X, 0, school.center.Z) - flat
-			if high or offset.Magnitude > DESPAWN_DISTANCE then
+			if offset.Magnitude > DESPAWN_DISTANCE then
 				despawn(school)
 			end
 		end
 		spawnElapsed += dt
-		if not high and #schools < MAX_SCHOOLS and spawnElapsed >= SPAWN_INTERVAL then
+		if #schools < MAX_SCHOOLS and spawnElapsed >= SPAWN_INTERVAL then
 			spawnElapsed = 0
 			spawn(eye)
 		end
 
 		local now = os.clock()
-		local character = player.Character
-		local body = character and character:FindFirstChild("HumanoidRootPart")
-		local threat = if body
-				and body:IsA("BasePart")
-				and body.Position.Y < Biomes.WaterLevel + 4
-			then body.Position
-			else nil
 		local roots, frames = {}, {}
-		for _, school in schools do
+		for index = #schools, 1, -1 do
+			local school = schools[index]
 			-- Wander with slow, smoothed turns.
 			if now >= school.nextTurn then
-				school.nextTurn = now + rng:NextNumber(2, 6)
-				school.turnTarget = rng:NextNumber(-0.5, 0.5)
+				school.nextTurn = now + rng:NextNumber(4, 10)
+				school.turnTarget = rng:NextNumber(-WANDER_TURN, WANDER_TURN)
 			end
 			local forward = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading))
 			if now >= school.nextProbe then
 				school.nextProbe = now + PROBE_INTERVAL
+				local here = floorAt(school.center)
+				if not here or here > school.center.Y - 1 then
+					-- Stranded anyway (terrain edits, a missed probe): never linger on land.
+					despawn(school)
+					continue
+				end
 				local floor = floorAt(school.center + forward * PROBE_AHEAD)
 				if not floor or floor > school.center.Y - MIN_CLEARANCE then
-					-- Shallows, a beach or the map edge ahead: swing round.
-					school.turnTarget = if school.turnTarget >= 0 then 1.6 else -1.6
-					school.nextTurn = now + 1.5
+					-- Shallows, a beach or the map edge ahead: ease round.
+					school.turnTarget = if school.turnTarget >= 0 then SHORE_TURN else -SHORE_TURN
+					school.nextTurn = now + 3
+					school.blockedUntil = now + 3
 				end
 			end
-			local speed = school.speed
-			if threat then
-				local away = Vector3.new(school.center.X - threat.X, 0, school.center.Z - threat.Z)
-				if away.Magnitude < FLEE_RADIUS then
-					school.fleeUntil = now + FLEE_TIME
-					school.heading = math.atan2(away.Z, away.X)
-				end
-			end
-			if now < school.fleeUntil then
-				speed *= 2.6
-			end
-			school.turn += (school.turnTarget - school.turn) * (1 - math.exp(-dt * 1.5))
+			school.turn += (school.turnTarget - school.turn) * (1 - math.exp(-dt * 0.5))
 			school.heading += school.turn * dt
+			local speed = if now < school.blockedUntil then SPEED * 0.5 else SPEED
 			forward = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading))
 			school.center += forward * speed * dt
-			local spin = CFrame.Angles(0, -school.heading, 0)
+			local toSchool = school.center - eye
+			local distance = toSchool.Magnitude
+			local shown = look:Dot(toSchool / distance) > BEHIND_DOT
+				and (distance < NEAR_DISTANCE or (frame + index) % FAR_STRIDE == 0)
 			for _, fish in school.members do
-				local bob = Vector3.yAxis * math.sin(now * 0.8 + fish.phase) * 0.25
-				local target = school.center + spin * fish.offset + bob
-				local step = target - fish.position
-				fish.position += step * (1 - math.exp(-dt * fish.lag))
-				local heading = (forward * speed + step * 0.6)
-				if heading.Magnitude > 0.05 then
-					fish.direction = fish.direction:Lerp(heading.Unit, 1 - math.exp(-dt * 4))
+				-- The formation translates with the school but never rotates, so a
+				-- fish only ever moves at the school's own crawl plus a slight bob.
+				local bob = math.sin(now * BOB_RATE + fish.phase) * BOB_HEIGHT
+				fish.position = school.center + fish.offset + Vector3.yAxis * bob
+				fish.direction = fish.direction:Lerp(forward, 1 - math.exp(-dt * 0.5)).Unit
+				if not shown then
+					continue
 				end
-				local direction = Vector3.new(fish.direction.X, fish.direction.Y * 0.3, fish.direction.Z)
-				if direction.Magnitude < 0.01 then
-					direction = forward
-				end
-				-- A body yaw at swimming frequency reads as a tail beat at this range.
-				local wiggle = math.sin(now * (4 + speed * 1.5) + fish.phase) * 0.16
+				local tail = math.sin(now * TAIL_RATE + fish.phase) * TAIL_SWING
 				table.insert(roots, fish.root)
 				table.insert(
 					frames,
-					CFrame.lookAt(fish.position, fish.position + direction) * CFrame.Angles(0, math.pi / 2 + wiggle, 0)
+					CFrame.lookAt(fish.position, fish.position + fish.direction) * CFrame.Angles(0, math.pi / 2 + tail, 0)
 				)
 			end
 		end

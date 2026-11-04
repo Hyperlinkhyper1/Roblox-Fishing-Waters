@@ -10,13 +10,30 @@ Tutorial.REWARD = 250
 -- How close the server requires a player to stand to the guide they finished talking to.
 Tutorial.TALK_RANGE = 18
 
--- Each guide wears one of Roblox's own free avatar characters (bundles published by Roblox in the
--- Marketplace). OutfitId is the bundle's UserOutfit, loaded with Players:GetHumanoidDescriptionFromOutfitId.
+-- Each guide is dressed for their job in a small Mediterranean harbour town: linen, stripes,
+-- straw hats and work aprons, built from parts by the server (GuideCostume), so nothing depends on
+-- the Marketplace. Colours are { r, g, b } because this module also loads outside Roblox.
+-- Sleeves: "Long", "Short" or "None". Hair: "Short", "Bun", "Ponytail" or "Bald". Shins/Hands
+-- default to the trousers/skin; Boots and Gloves colour them. Pieces are GuideCostume kinds.
 Tutorial.Npcs = {
 	Wren = {
 		Name = "Captain Wren",
 		Title = "Harbourmaster",
-		OutfitId = 1992500252, -- Roblox "Kenneth" bundle
+		Outfit = {
+			Skin = { 214, 160, 118 },
+			Shirt = { 33, 46, 82 }, -- navy reefer jacket
+			Sleeves = "Long",
+			Trousers = { 33, 46, 82 },
+			Shoes = { 28, 26, 26 },
+			Hair = { 196, 196, 192 },
+			HairStyle = "Short",
+			Beard = { 206, 206, 202 },
+			Pieces = {
+				{ Kind = "ShirtFront", Color = { 244, 242, 234 }, Buttons = { 212, 172, 70 } },
+				{ Kind = "Neckerchief", Color = { 24, 24, 30 } },
+				{ Kind = "CaptainCap", Color = { 248, 248, 244 }, Band = { 24, 24, 30 }, Badge = { 212, 172, 70 } },
+			},
+		},
 		Where = "by the fountain",
 		Spots = { { 0, 26 }, { 9, 26 }, { -9, 26 }, { 0, -26 } },
 		Face = { 0, 0 },
@@ -24,7 +41,21 @@ Tutorial.Npcs = {
 	Pike = {
 		Name = "Old Pike",
 		Title = "Angler",
-		OutfitId = 1545219396, -- Roblox "Oliver" bundle
+		Outfit = {
+			Skin = { 186, 128, 88 }, -- years of sun
+			Shirt = { 232, 222, 196 }, -- faded linen
+			Sleeves = "Short",
+			Trousers = { 150, 132, 96 },
+			Shoes = { 92, 62, 40 },
+			Boots = { 74, 64, 52 },
+			Hair = { 222, 220, 214 },
+			HairStyle = "Short",
+			Beard = { 230, 228, 222 },
+			Pieces = {
+				{ Kind = "Vest", Color = { 104, 112, 74 } }, -- olive fishing vest
+				{ Kind = "StrawHat", Color = { 222, 192, 128 }, Band = { 52, 72, 110 } },
+			},
+		},
 		Where = "on the promenade by the bay",
 		Spots = { { 17, 46 }, { 26, 45 }, { 17, 40 } },
 		Face = { 17, 0 },
@@ -32,7 +63,20 @@ Tutorial.Npcs = {
 	Juno = {
 		Name = "Juno",
 		Title = "Pack Trader",
-		OutfitId = 1992514177, -- Roblox "Lindsey" bundle
+		Outfit = {
+			Skin = { 160, 108, 74 },
+			Shirt = { 186, 92, 58 }, -- terracotta linen
+			Sleeves = "Long",
+			Trousers = { 214, 196, 160 },
+			Shoes = { 120, 78, 44 }, -- leather sandals
+			Hair = { 40, 28, 22 },
+			HairStyle = "Short", -- tucked under the scarf
+			Pieces = {
+				{ Kind = "Headscarf", Color = { 226, 168, 52 } },
+				{ Kind = "Belt", Color = { 96, 62, 36 } },
+				{ Kind = "Satchel", Color = { 132, 84, 46 } },
+			},
+		},
 		Where = "beside the backpack stall",
 		-- Counter space: +z is the customers' side of the counter
 		Anchor = "BackpackCounter",
@@ -43,7 +87,21 @@ Tutorial.Npcs = {
 	Marlo = {
 		Name = "Marlo",
 		Title = "Fishmonger",
-		OutfitId = 2219390889, -- Roblox "Dennis" bundle
+		Outfit = {
+			Skin = { 222, 170, 128 },
+			Shirt = { 246, 244, 236 }, -- Breton marinière
+			Sleeves = "Short",
+			Trousers = { 44, 50, 62 },
+			Shoes = { 30, 30, 30 },
+			Boots = { 236, 236, 230 }, -- white market wellies
+			Hair = { 58, 40, 30 },
+			HairStyle = "Short",
+			Pieces = {
+				{ Kind = "Stripes", Color = { 30, 52, 112 } },
+				{ Kind = "Apron", Color = { 70, 120, 140 } }, -- rubberised fish apron
+				{ Kind = "FlatCap", Color = { 72, 66, 58 } },
+			},
+		},
 		Where = "at the market stalls",
 		Spots = { { 36, 0 }, { 36, 12 }, { 34, -12 } },
 		Face = { 0, 0 },
@@ -51,7 +109,19 @@ Tutorial.Npcs = {
 	Rosa = {
 		Name = "Rosa",
 		Title = "Tackle Hand",
-		OutfitId = 2273580660, -- Roblox "Cindy" bundle
+		Outfit = {
+			Skin = { 204, 148, 104 },
+			Shirt = { 128, 146, 106 }, -- sage work shirt
+			Sleeves = "Short",
+			Trousers = { 196, 182, 150 },
+			Shoes = { 238, 236, 228 }, -- canvas deck shoes
+			Hair = { 86, 46, 28 },
+			HairStyle = "Ponytail",
+			Pieces = {
+				{ Kind = "Apron", Color = { 62, 86, 128 }, Pockets = true }, -- denim tackle apron
+				{ Kind = "Neckerchief", Color = { 196, 52, 44 } },
+			},
+		},
 		Where = "outside Tide & Tackle",
 		-- Door space: -z faces out of the door, +x is away from the chalkboard
 		Anchor = "RodShopDoor",
@@ -62,7 +132,22 @@ Tutorial.Npcs = {
 	Tess = {
 		Name = "Tess",
 		Title = "Dockhand",
-		OutfitId = 1545101850, -- Roblox "Summer" bundle
+		Outfit = {
+			Skin = { 176, 120, 82 },
+			Shirt = { 240, 238, 230 }, -- white vest top
+			Sleeves = "None",
+			Trousers = { 46, 72, 112 }, -- work dungarees
+			Shoes = { 30, 30, 30 },
+			Boots = { 226, 176, 40 }, -- yellow deck boots
+			Gloves = { 138, 96, 58 },
+			Hair = { 46, 30, 22 },
+			HairStyle = "Ponytail",
+			Pieces = {
+				{ Kind = "Dungarees", Color = { 46, 72, 112 } },
+				{ Kind = "Bandana", Color = { 196, 52, 44 } },
+				{ Kind = "Rope", Color = { 196, 168, 116 } },
+			},
+		},
 		Where = "on the promenade in front of the Drydock",
 		Spots = { { -5, 47 }, { -16, 46 }, { 5, 44 } },
 		Face = { -5, 0 },
@@ -70,7 +155,21 @@ Tutorial.Npcs = {
 	Hugo = {
 		Name = "Hugo",
 		Title = "Decorator",
-		OutfitId = 3314419321, -- Roblox "Skyler" bundle
+		Outfit = {
+			Skin = { 226, 176, 136 },
+			Shirt = { 168, 196, 220 }, -- pale blue linen
+			Sleeves = "Short",
+			Trousers = { 226, 214, 186 }, -- cream chinos
+			Shoes = { 152, 98, 56 }, -- tan loafers
+			Hair = { 64, 44, 32 },
+			HairStyle = "Short",
+			Pieces = {
+				{ Kind = "Neckerchief", Color = { 214, 160, 48 } },
+				{ Kind = "Belt", Color = { 120, 76, 44 } },
+				{ Kind = "Panama", Color = { 238, 228, 202 }, Band = { 40, 40, 44 } },
+				{ Kind = "Pencil", Color = { 236, 196, 52 } },
+			},
+		},
 		Where = "outside Harbour Home",
 		Anchor = "FurnitureShopDoor",
 		Spots = { { -4.5, -1 }, { 4.5, -1 }, { -4.5, -3 } },

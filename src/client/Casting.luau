@@ -13,9 +13,10 @@ local FishingAudio = require(script.Parent.FishingAudio)
 local Reel = require(script.Parent.ReelMinigame)
 local CatchPopup = require(script.Parent.CatchPopup)
 local FishingBobber = require(ReplicatedStorage.Shared.FishingBobber)
+local CastTiming = require(ReplicatedStorage.Shared.CastTiming)
+local CharacterMeter = require(script.Parent.CharacterMeter)
 
 local Casting = {}
-local CHARGE_SECONDS = 1
 local MIN_CAST, MAX_CAST = 10, 58
 local LINE_COLOR = Color3.fromRGB(232, 234, 214)
 local started = false
@@ -204,38 +205,75 @@ function Casting.start()
 	local reel = Reel.new(gui)
 	local popup = CatchPopup.new(gui)
 
-	-- Small prompt shown while a rod is in hand.
+	-- A slim vertical power meter follows the avatar's right side.
 	local hud = Instance.new("Frame")
 	hud.Name = "CastHint"
-	hud.AnchorPoint = Vector2.new(0.5, 1)
-	hud.Position = UDim2.new(0.5, 0, 1, -96)
-	hud.Size = UDim2.fromOffset(340, 34)
-	hud.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-	hud.BackgroundTransparency = 0.25
+	hud.Size = UDim2.fromOffset(14, 180)
+	hud.BackgroundTransparency = 1
 	hud.BorderSizePixel = 0
 	hud.Visible = false
 	hud.Parent = gui
-	local hudCorner = Instance.new("UICorner")
-	hudCorner.CornerRadius = UDim.new(0, 6)
-	hudCorner.Parent = hud
+	local track = Instance.new("Frame")
+	track.Name = "CastPower"
+	track.Size = UDim2.fromScale(1, 1)
+	track.BackgroundColor3 = Color3.fromRGB(23, 28, 22)
+	track.BackgroundTransparency = 0.25
+	track.BorderSizePixel = 0
+	track.ClipsDescendants = true
+	track.Parent = hud
+	local outline = Instance.new("UIStroke")
+	outline.Color = Color3.fromRGB(24, 34, 23)
+	outline.Thickness = 1.5
+	outline.Parent = track
 	local power = Instance.new("Frame")
 	power.Name = "Power"
-	power.Size = UDim2.fromScale(0, 1)
-	power.BackgroundColor3 = Color3.fromRGB(84, 192, 92)
-	power.BackgroundTransparency = 0.35
+	power.AnchorPoint = Vector2.new(0, 1)
+	power.Position = UDim2.fromScale(0, 1)
+	power.Size = UDim2.fromScale(1, 0)
+	power.BackgroundColor3 = Color3.fromRGB(247, 244, 220)
+	power.BackgroundTransparency = 0.05
 	power.BorderSizePixel = 0
-	power.Parent = hud
-	local powerCorner = hudCorner:Clone()
-	powerCorner.Parent = power
+	power.Parent = track
+	local perfectZone = Instance.new("Frame")
+	perfectZone.Name = "PerfectZone"
+	perfectZone.Size = UDim2.fromScale(1, 1 - CastTiming.PerfectThreshold)
+	perfectZone.BackgroundColor3 = Color3.fromRGB(104, 220, 101)
+	perfectZone.BackgroundTransparency = 0.25
+	perfectZone.BorderSizePixel = 0
+	perfectZone.ZIndex = 2
+	perfectZone.Parent = track
+	local marker = Instance.new("Frame")
+	marker.Name = "PowerMarker"
+	marker.AnchorPoint = Vector2.new(0, 0.5)
+	marker.Size = UDim2.new(1, 0, 0, 2)
+	marker.BackgroundColor3 = Color3.fromRGB(255, 255, 245)
+	marker.BorderSizePixel = 0
+	marker.ZIndex = 3
+	marker.Parent = track
+	local feedback = Instance.new("TextLabel")
+	feedback.Name = "CastFeedback"
+	feedback.BackgroundTransparency = 1
+	feedback.AnchorPoint = Vector2.new(0, 0.5)
+	feedback.Position = UDim2.new(1, 10, 0.5, 0)
+	feedback.Size = UDim2.fromOffset(100, 28)
+	feedback.Font = Enum.Font.GothamBold
+	feedback.TextSize = 20
+	feedback.TextXAlignment = Enum.TextXAlignment.Left
+	feedback.TextStrokeTransparency = 0.25
+	feedback.Text = ""
+	feedback.Visible = false
+	feedback.ZIndex = 4
+	feedback.Parent = hud
 	local hint = Instance.new("TextLabel")
 	hint.BackgroundTransparency = 1
-	hint.Position = UDim2.fromOffset(12, 0)
-	hint.Size = UDim2.new(1, -24, 1, 0)
+	hint.AnchorPoint = Vector2.new(0.5, 0)
+	hint.Position = UDim2.new(0.5, 0, 1, 8)
+	hint.Size = UDim2.fromOffset(170, 44)
 	hint.Font = Enum.Font.GothamMedium
-	hint.TextSize = 14
+	hint.TextSize = 12
 	hint.TextColor3 = Color3.fromRGB(240, 240, 236)
-	hint.TextXAlignment = Enum.TextXAlignment.Left
-	hint.TextTruncate = Enum.TextTruncate.AtEnd
+	hint.TextWrapped = true
+	hint.TextStrokeTransparency = 0.35
 	hint.ZIndex = 2
 	hint.Parent = hud
 
@@ -246,25 +284,55 @@ function Casting.start()
 	local rodConnections = {}
 
 	local noticeText, noticeUntil = "", 0
+	local feedbackUntil = 0
+	local perfectNotice = false
+	local function setPower(strength: number, perfect: boolean)
+		power.Size = UDim2.fromScale(1, strength)
+		marker.Position = UDim2.fromScale(0, 1 - strength)
+		power.BackgroundColor3 = if perfect then Color3.fromRGB(160, 245, 131) else Color3.fromRGB(247, 244, 220)
+	end
+	local function showFeedback(heldSeconds: number)
+		local strength = CastTiming.strength(heldSeconds)
+		local perfect = CastTiming.isPerfect(heldSeconds)
+		setPower(strength, perfect)
+		if perfect then
+			feedback.Text = "Perfect!"
+			feedback.TextColor3 = Color3.fromRGB(160, 245, 131)
+		elseif strength >= 0.7 then
+			feedback.Text = "Nice!"
+			feedback.TextColor3 = Color3.fromRGB(167, 226, 255)
+		elseif strength >= 0.4 then
+			feedback.Text = "Good"
+			feedback.TextColor3 = Color3.fromRGB(255, 227, 151)
+		else
+			feedback.Text = "Meh"
+			feedback.TextColor3 = Color3.fromRGB(221, 220, 210)
+		end
+		feedbackUntil = os.clock() + 1.8
+	end
 	local function refreshHud()
 		hud.Visible = rod ~= nil and phase ~= "Fighting"
-		power.Visible = phase == "Charging"
-		if phase == "Charging" then
-			hint.Text = "Release to cast"
+		feedback.Visible = os.clock() < feedbackUntil and (phase == "Sent" or phase == "Waiting")
+		track.Visible = phase == "Charging" or feedback.Visible
+		hint.TextColor3 = Color3.fromRGB(240, 240, 236)
+		if os.clock() < noticeUntil then
+			hint.Text = noticeText
+			hint.TextColor3 = if perfectNotice then Color3.fromRGB(160, 245, 131) else Color3.fromRGB(240, 240, 236)
+		elseif phase == "Charging" then
+			hint.Text = "Release in the green"
 		elseif phase == "Sent" then
 			hint.Text = "Casting…"
 		elseif phase == "Waiting" then
 			hint.Text = "Waiting for a bite… click to reel in"
-		elseif os.clock() < noticeUntil then
-			hint.Text = noticeText
 		else
 			hint.Text = if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 				then "Hold the screen to cast"
 				else "Hold click to cast, release to throw"
 		end
 	end
-	local function notice(message: string)
+	local function notice(message: string, perfect: boolean?)
 		noticeText, noticeUntil = message, os.clock() + 2.5
+		perfectNotice = perfect == true
 		refreshHud()
 		task.delay(2.6, refreshHud)
 	end
@@ -310,15 +378,24 @@ function Casting.start()
 		end
 		return nil
 	end
-
-	local function charge(): number
-		return math.clamp((os.clock() - chargeStarted) / CHARGE_SECONDS, 0, 1)
-	end
-
 	local function fight(info)
+		local fightingRod = rod
+		if not fightingRod then
+			return
+		end
 		phase = "Fighting"
+		CastAnimation.setReeling(fightingRod, true)
 		refreshHud()
-		local outcome = reel:fight(info.FishId, info.Difficulty, info.Pool, info.ReelBoost)
+		local noMistakes = true
+		local outcome = reel:fight(info.FishId, info.Difficulty, info.Pool, info.ReelBoost, function(landed)
+			if not landed then
+				noMistakes = false
+			end
+			if rod == fightingRod and phase == "Fighting" then
+				CastAnimation.pull(fightingRod, landed)
+			end
+		end, info.HandlingBoost)
+		CastAnimation.setReeling(fightingRod, false)
 		if phase == "Fighting" then
 			phase = "Idle"
 		end
@@ -326,7 +403,7 @@ function Casting.start()
 			refreshHud()
 			return
 		end
-		request:FireServer("Reel", outcome == "Landed")
+		request:FireServer("Reel", outcome == "Landed", noMistakes)
 		if outcome == "Landed" then
 			reel:showMessage("REELING IT IN…", "Bringing your catch aboard.")
 		else
@@ -345,6 +422,10 @@ function Casting.start()
 				return
 			end
 			phase, chargeStarted = "Charging", os.clock()
+			noticeUntil = 0
+			feedbackUntil = 0
+			setPower(0, false)
+			request:FireServer("Charge")
 			CastAnimation.windUp(rod)
 		elseif phase == "Waiting" then
 			request:FireServer("Reel", false)
@@ -358,9 +439,11 @@ function Casting.start()
 		if phase ~= "Charging" then
 			return
 		end
-		local strength = charge()
+		local heldSeconds = os.clock() - chargeStarted
+		local strength = CastTiming.strength(heldSeconds)
 		local target = findWater(strength)
 		if not target then
+			request:FireServer("CancelCharge")
 			if rod then
 				CastAnimation.cancel(rod)
 			end
@@ -374,7 +457,8 @@ function Casting.start()
 			CastAnimation.swing(rod)
 		end
 		phase, sentAt = "Sent", os.clock()
-		request:FireServer("Cast", target)
+		showFeedback(heldSeconds)
+		request:FireServer("Cast", target, heldSeconds)
 		refreshHud()
 	end
 
@@ -383,7 +467,12 @@ function Casting.start()
 			connection:Disconnect()
 		end
 		table.clear(rodConnections)
-		if rod and phase == "Charging" then
+		if phase == "Charging" then
+			request:FireServer("CancelCharge")
+		end
+		noticeUntil = 0
+		feedbackUntil = 0
+		if rod then
 			CastAnimation.cancel(rod)
 		end
 		rod = nil
@@ -435,11 +524,16 @@ function Casting.start()
 			if phase == "Sent" then
 				phase = "Waiting"
 			end
+		elseif kind == "PerfectCast" and rod and phase == "Waiting" then
+			notice(string.format("PERFECT THROW\n+%d%% LUCK", math.floor(CastTiming.PerfectLuck * 100 + 0.5)), true)
 		elseif kind == "Bite" and type(payload) == "table" and rod then
 			local target = rod:GetAttribute("CastTarget")
 			FishingAudio.bite(if typeof(target) == "Vector3" then target else nil)
 			task.spawn(fight, payload)
 		elseif kind == "Cancelled" then
+			if rod then
+				CastAnimation.cancel(rod)
+			end
 			reel:abort()
 			phase = "Idle"
 			if type(payload) == "string" then
@@ -448,6 +542,9 @@ function Casting.start()
 		elseif kind == "ReeledIn" then
 			phase = "Idle"
 		elseif kind == "Escaped" then
+			if rod then
+				CastAnimation.setReeling(rod, false)
+			end
 			-- Also covers a fight the server timed out or could not verify.
 			if phase == "Fighting" then
 				reel:abort()
@@ -465,11 +562,35 @@ function Casting.start()
 	local lines = {}
 	RunService.RenderStepped:Connect(function()
 		local now = os.clock()
+		local onScreen = CharacterMeter.position(hud, player, 1)
+		hud.Visible = rod ~= nil and phase ~= "Fighting" and onScreen
 		if phase == "Charging" then
-			power.Size = UDim2.fromScale(charge(), 1)
+			local heldSeconds = now - chargeStarted
+			local strength = CastTiming.strength(heldSeconds)
+			local perfect = CastTiming.isPerfect(heldSeconds)
+			setPower(strength, perfect)
+			hint.Text = if perfect then "PERFECT — release!" else "Release in the green"
+			hint.TextColor3 = if perfect then Color3.fromRGB(160, 245, 131) else Color3.fromRGB(240, 240, 236)
 		elseif phase == "Sent" and now - sentAt > 4 then
 			phase = "Idle"
 			refreshHud()
+		end
+		if feedback.Visible then
+			if now >= feedbackUntil then
+				refreshHud()
+			else
+				local camera = workspace.CurrentCamera
+				local rightEdge = hud.AbsolutePosition.X + hud.AbsoluteSize.X + 10 + feedback.AbsoluteSize.X
+				local onLeft = camera ~= nil and rightEdge > camera.ViewportSize.X - 12
+				feedback.AnchorPoint = Vector2.new(if onLeft then 1 else 0, 0.5)
+				feedback.TextXAlignment = if onLeft then Enum.TextXAlignment.Right else Enum.TextXAlignment.Left
+				feedback.Position = UDim2.new(
+					if onLeft then 0 else 1,
+					if onLeft then -10 else 10,
+					math.clamp(marker.Position.Y.Scale, 0.08, 0.92),
+					0
+				)
+			end
 		end
 		for _, tool in CollectionService:GetTagged("FishingRod") do
 			local target, castAt, castPhase =

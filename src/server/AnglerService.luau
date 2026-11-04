@@ -28,7 +28,8 @@ function Service.recordCatch(
 	kg: number,
 	value: number,
 	size: string?,
-	traits: { NeonColor: string?, Corruptions: { string }? }?
+	traits: { NeonColor: string?, Corruptions: { string }? }?,
+	perfectCatch: boolean?
 )
 	local caughtAt = os.time()
 	local ownsAutoStore = GamepassService.ownsAutoStore(player)
@@ -51,7 +52,9 @@ function Service.recordCatch(
 			size,
 			traits,
 			backpackLayout,
-			doubleXP
+			doubleXP,
+			nil,
+			perfectCatch
 		)
 		count = profile.Angler.Catches[fishId].Count
 		autoStored = false
@@ -190,6 +193,32 @@ function Service.start()
 					message ..= " Choose a recipe below."
 				end
 			end
+		elseif action == "FireStaff" then
+			local role = if type(key) == "string" then StaffCatalog.Roles[key] else nil
+			if not role or not profile.Angler.Staff[key] then
+				return { Ok = false, Message = "That worker is not hired." }
+			end
+			ok, message = BoatService.updateProgress(player, function(current)
+				assert(current.Angler.Staff[key], "Worker is no longer hired")
+				current.Angler.Staff[key] = nil
+			end)
+			if ok then message = role.Name .. " fired." end
+		elseif action == "UpgradeWorker" then
+			if key ~= "Porter" or not profile.Angler.Staff.Porter then
+				return { Ok = false, Message = "Hire a porter first." }
+			end
+			local level = StaffCatalog.workerLevel(profile.Angler, "Porter")
+			local price = StaffCatalog.PorterLevelPrices[level]
+			if not price or value ~= level then return { Ok = false, Message = "Worker level changed or is already at maximum." } end
+			if profile.Cash < price then return { Ok = false, Message = "Not enough cash." } end
+			ok, message = BoatService.updateProgress(player, function(current)
+				assert(current.Angler.Staff.Porter and StaffCatalog.workerLevel(current.Angler, "Porter") == level, "Worker level changed")
+				assert(current.Cash >= price, "Not enough cash")
+				current.Cash -= price
+				current.Angler.Stats.CoinsSpent += price
+				current.Angler.Upgrades.PorterLevel = level
+			end)
+			if ok then message = "Porter upgraded to level " .. (level + 1) .. "!" end
 		elseif action == "SetChefRecipe" then
 			local recipeId = if value == "" then nil else value
 			local _, reason = Data.setChefRecipe(profile.Angler, key, recipeId)

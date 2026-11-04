@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local MeshFeatures = require(ReplicatedStorage.Shared.MeshFeatures)
 
 local SwellSurface = {}
 -- World-fixed vertex grid around the camera: COUNT cells of SPACING studs a side.
@@ -49,6 +50,9 @@ function SwellSurface.start()
 		return
 	end
 	started = true
+	if not MeshFeatures.EditableMeshesEnabled then
+		return
+	end
 	task.spawn(function()
 		local terrain = workspace.Terrain
 		local size = COUNT + 1
@@ -107,8 +111,8 @@ function SwellSurface.start()
 		part.Material = Enum.Material.SmoothPlastic
 		part.Color = color
 		part.Reflectance = 0.08
-		-- Keeps the sheet in the transparent pass, where vertex alpha applies.
-		part.Transparency = 0.12
+		-- Let submerged scenery remain visible through the extra crest layer.
+		part.Transparency = 0.55
 		part.Parent = workspace
 
 		local parameters = RaycastParams.new()

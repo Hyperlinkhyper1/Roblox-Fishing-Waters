@@ -20,6 +20,17 @@ local function furniture()
 	end
 	return Furniture
 end
+-- Structural build data shares the wallet save. Older profiles do not load the
+-- catalog until they actually contain a building edit.
+local Building
+local function building()
+	if not Building then
+		Building = if script
+			then require(game:GetService("ReplicatedStorage").Shared.BuildingCatalog)
+			else require("../shared/BuildingCatalog")
+	end
+	return Building
+end
 local Recipes
 local function recipes()
 	if not Recipes then
@@ -60,6 +71,11 @@ end
 -- house (Furniture). Storage racks hold overflow fish (Storage) that customers
 -- never see; only freezers stock the shop.
 Data.RACK_CAPACITY = 12
+-- A company island comes with its storage, kitchen and office as furniture in
+-- FurnitureStock; the owner places them on the island's plot (CompanyFurniture).
+Data.COMPANY_KIT = { StorageRack = 4, KitchenStorage = 1, CompanyPrep = 2, CompanyDesk = 1 }
+-- Bench keys handed to placed CompanyPrep benches, in order (Recipes.CompanyBuiltIn).
+Data.COMPANY_BENCHES = { "CompanyPrep1", "CompanyPrep2" }
 -- Cooked dishes (Supermarket path) wait on the kitchen pass, which holds this many;
 -- every placed food display case shows as many again to shop customers.
 Data.PANTRY_CAPACITY = 6
@@ -97,6 +113,8 @@ Data.DefaultSettings =
 	{ Shadows = true, WeatherEffects = true, MasterVolume = 100, MusicVolume = 100, EffectsVolume = 100 }
 local defaults = {
 	TotalCaught = 0,
+	TotalCaughtKg = 0,
+	PerfectCatches = 0,
 	CatchStreak = 0,
 	HighestCatchStreak = 0,
 	CoinsEarned = 0,
@@ -263,11 +281,70 @@ local function migrateFurnitureWalls(data, retry)
 	data.FurnitureWallVersion = FURNITURE_WALL_VERSION
 end
 
+-- Furniture fills whole grid cells now (1x1 or 1x2), so some saved items grew
+-- or moved onto their cells. Anything that no longer fits moves to the nearest
+-- free grid spot, keeping its entry and rotation; with nowhere to go it stays.
+local FURNITURE_CELL_VERSION = 1
+local function migrateFurnitureCells(data)
+	if data.FurnitureCellVersion == FURNITURE_CELL_VERSION then return end
+	for _, site in { "Home", "Company" } do
+		local entries = if site == "Company" then data.CompanyFurniture else data.Furniture
+		local indices = {}
+		for index in entries or {} do table.insert(indices, index) end
+		if #indices == 0 then continue end
+		table.sort(indices)
+		local catalog = furniture()
+		local function fits(entry, others, x, z, strict): boolean
+			local reason = if strict
+				then catalog.check(others, entry.ItemId, x, z, entry.R, nil, site)
+				else catalog.checkRelocation(others, entry.ItemId, x, z, entry.R, site)
+			-- Wall conflicts belong to migrateFurnitureWalls; never move into one.
+			return reason == nil
+				and (not strict or site == "Company" or not catalog.intersectsGridWall({ ItemId = entry.ItemId, X = x, Z = z, R = entry.R }))
+		end
+		for _, index in indices do
+			local entry = entries[index]
+			if not catalog.Items[entry.ItemId] then continue end
+			local others = {}
+			for otherIndex, other in entries do
+				if otherIndex ~= index and catalog.Items[other.ItemId] then table.insert(others, other) end
+			end
+			if fits(entry, others, entry.X, entry.Z, false) then continue end
+			local areas = { catalog.PLOT }
+			if site == "Home" then
+				areas = {}
+				for _, roomId in catalog.allowedRooms(entry.ItemId) do table.insert(areas, catalog.Rooms[roomId]) end
+			end
+			local grid = catalog.GRID
+			local bestX, bestZ, bestDistance = nil, nil, math.huge
+			for _, area in areas do
+				for ix = math.floor(area[1] / grid), math.ceil(area[3] / grid) do
+					for iz = math.floor(area[2] / grid), math.ceil(area[4] / grid) do
+						local x, z = ix * grid, iz * grid
+						local distance = (x - entry.X) ^ 2 + (z - entry.Z) ^ 2
+						if distance < bestDistance and fits(entry, others, x, z, true) then
+							bestX, bestZ, bestDistance = x, z, distance
+						end
+					end
+				end
+			end
+			if bestX ~= nil then
+				entry.X, entry.Z = bestX, bestZ
+			end
+		end
+	end
+	data.FurnitureCellVersion = FURNITURE_CELL_VERSION
+end
+
 function Data.decode(raw)
 	assert(raw == nil or type(raw) == "table", "Invalid angler progress")
 	local data = copy(raw or {})
+	if data.Building ~= nil then
+		data.Building = building().decode(data.Building)
+	end
 	assert(data.ShopSign == nil or (type(data.ShopSign) == "string" and #data.ShopSign <= 96), "Invalid shop sign")
 	data.ShopSign = data.ShopSign or ""
+	assert(data.CompanyIsland == nil or (number(data.CompanyIsland, true) and data.CompanyIsland >= 1 and data.CompanyIsland <= 15), "Invalid company island")
 	for _, name in
 		{
 			"Stats",
@@ -284,6 +361,7 @@ function Data.decode(raw)
 			"ChefRecipes",
 			"FurnitureStock",
 			"Furniture",
+			"CompanyFurniture",
 			"Storage",
 			"Pantry",
 			"Kitchen",
@@ -358,13 +436,13 @@ function Data.decode(raw)
 	assert(number(path.SkipCredits, true) and flags(path.SkipReceipts), "Invalid path skips")
 	assert(path.SkipTarget == nil or type(path.SkipTarget) == "string", "Invalid path skip target")
 	for stat, value in path.Baseline do
-		assert(type(stat) == "string" and number(value, true), "Invalid path baseline")
+		assert(type(stat) == "string" and number(value, stat ~= "TotalCaughtKg"), "Invalid path baseline")
 	end
 	for key, value in defaults do
 		if data.Stats[key] == nil then
 			data.Stats[key] = value
 		end
-		assert(number(data.Stats[key], true), "Invalid statistic " .. key)
+		assert(number(data.Stats[key], key ~= "TotalCaughtKg"), "Invalid statistic " .. key)
 	end
 	-- Legacy catches receive their lifetime XP without crediting the current week.
 	if data.Stats.TotalXP == nil then
@@ -379,6 +457,26 @@ function Data.decode(raw)
 	assert(number(data.TutorialStep, true) and data.TutorialStep >= 1, "Invalid tutorial step")
 	data.TutorialDone = data.TutorialDone == true
 	data.TutorialRewarded = data.TutorialRewarded == true
+	-- Pirate Cove (Shared.PirateCove): each quest giver's current step, and the galley's sales today.
+	data.CoveQuests = data.CoveQuests or {}
+	assert(type(data.CoveQuests) == "table", "Invalid cove quests")
+	for npcId, quest in data.CoveQuests do
+		assert(
+			type(npcId) == "string"
+				and type(quest) == "table"
+				and number(quest.Step, true)
+				and quest.Step >= 1
+				and (quest.Accepted == nil or type(quest.Accepted) == "boolean")
+				and (quest.Base == nil or number(quest.Base, true)),
+			"Invalid cove quest"
+		)
+	end
+	if data.CoveSales ~= nil then
+		assert(
+			type(data.CoveSales) == "table" and number(data.CoveSales.Day, true) and number(data.CoveSales.Count, true),
+			"Invalid cove sales"
+		)
+	end
 	if data.Weekly ~= nil then
 		assert(type(data.Weekly) == "table", "Invalid weekly progress")
 		assert(number(data.Weekly.Start, true), "Invalid week start")
@@ -416,20 +514,38 @@ function Data.decode(raw)
 		assert(type(itemId) == "string" and number(count, true), "Invalid furniture stock")
 	end
 	-- Like holds, placement rules are checked when furniture moves, not here.
-	for index, entry in data.Furniture do
-		assert(
-			type(index) == "number"
-				and type(entry) == "table"
-				and type(entry.ItemId) == "string"
-				and type(entry.X) == "number"
-				and type(entry.Z) == "number"
-				and number(entry.R, true)
-				and entry.R <= 3,
-			"Invalid furniture"
-		)
+	for _, list in { data.Furniture, data.CompanyFurniture } do
+		for index, entry in list do
+			assert(
+				type(index) == "number"
+					and type(entry) == "table"
+					and type(entry.ItemId) == "string"
+					and type(entry.X) == "number"
+					and type(entry.Z) == "number"
+					and number(entry.R, true)
+					and entry.R <= 3,
+				"Invalid furniture"
+			)
+			if entry.ItemId == "StorageRack" then
+				assert(entry.Mode == nil or entry.Mode == "Tools", "Invalid rack mode")
+				assert((entry.Cages == nil or number(entry.Cages, true)) and (entry.Nets == nil or number(entry.Nets, true)), "Invalid rack tools")
+				assert((entry.Cages or 0) + (entry.Nets or 0) <= Data.RACK_CAPACITY, "Rack tools exceed capacity")
+			end
+			assert(entry.Key == nil or table.find(Data.COMPANY_BENCHES, entry.Key), "Invalid bench key")
+		end
+	end
+	assert(data.CompanyKit == nil or data.CompanyKit == 1, "Invalid company kit")
+	-- Owners from before the kit had built-in houses; they get the same fixtures
+	-- once, to place themselves. A purchase is granted it the same way.
+	if data.CompanyIsland and not data.CompanyKit then
+		for itemId, count in Data.COMPANY_KIT do
+			data.FurnitureStock[itemId] = (data.FurnitureStock[itemId] or 0) + count
+		end
+		data.CompanyKit = 1
 	end
 	migrateShopBuilding(data)
 	migrateFurnitureWalls(data)
+	migrateFurnitureCells(data)
 	-- Crab cages wait in Stock until dropped by the dock; Placed spots are dock-local
 	-- studs (Shared.CrabCages holds the rules, which are checked when cages move).
 	if data.CrabCages == nil then
@@ -555,6 +671,7 @@ local function registerCatch(data, record, species, doubleXP)
 	local catchXP = species[record.FishId].CatchXP or Data.XP_PER_CATCH
 	assert(number(catchXP, true) and catchXP > 0, "Invalid catch XP")
 	data.Stats.TotalCaught += 1
+	data.Stats.TotalCaughtKg += record.Kg
 	data.Stats.TotalXP += catchXP * (if doubleXP then 2 else 1)
 	data.Stats.CatchStreak += 1
 	data.Stats.HighestCatchStreak = math.max(data.Stats.HighestCatchStreak, data.Stats.CatchStreak)
@@ -567,13 +684,21 @@ end
 
 -- Gameplay supplies the owned backpack layout. Returns the catch's destination
 -- so identical fish already in hand cannot be mistaken for the new catch.
-function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size, traits, backpackLayout, doubleXP)
+function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, mutations, size, traits, backpackLayout, doubleXP, toFreezer, perfectCatch)
 	assert(type(fishId) == "string" and species[fishId], "Unknown fish")
 	local record = catchRecord(fishId, mutation, kg, value, caughtAt, species, mutations, size, traits)
 	local data = Data.decode(raw)
 	registerCatch(data, record, species, doubleXP)
+	if perfectCatch == true then
+		data.Stats.PerfectCatches += 1
+	end
 	local destination = "Released"
-	if data.Hand == nil then
+	if toFreezer then
+		if Data.canFreeze(data, record) then
+			table.insert(data.Freezer, copy(record))
+			destination = "Freezer"
+		end
+	elseif data.Hand == nil then
 		data.Hand = copy(record)
 		destination = "Hand"
 	elseif backpackLayout then
@@ -878,8 +1003,25 @@ function Data.freezerUsage(raw)
 	return if fits then math.clamp(math.floor(used * 100 + 0.5), 0, 100) else 100
 end
 
+-- Racks at home and on the company plot share one pool of stored fish.
 function Data.storageCapacity(raw)
-	return Data.RACK_CAPACITY * placed(raw, "StorageRack")
+	local count = 0
+	for _, list in { raw.Furniture or {}, raw.CompanyFurniture or {} } do
+		for _, entry in list do
+			if entry.ItemId == "StorageRack" and entry.Mode ~= "Tools" then count += 1 end
+		end
+	end
+	return Data.RACK_CAPACITY * count
+end
+
+-- The placed company bench holding saved bench key `key`, if any.
+local function companyBench(data, key)
+	for _, entry in data.CompanyFurniture or {} do
+		if entry.ItemId == "CompanyPrep" and entry.Key == key then
+			return entry
+		end
+	end
+	return nil
 end
 
 -- Fish still waiting to be stocked: hand, backpack, racks, old cooler and holds.
@@ -1058,14 +1200,23 @@ function Data.buyFurniture(raw, itemId)
 	return data
 end
 
+-- Placed furniture on a site: "Company" is the island plot, anything else the house.
+local function siteList(data, site)
+	return if site == "Company" then data.CompanyFurniture else data.Furniture
+end
+
 -- Places a bought item (`from` is an item id) or moves a placed one (`from` is
--- its index in Furniture).
-function Data.placeFurniture(raw, from, x, z, r)
+-- its index in the site's list) on `site` (see siteList).
+function Data.placeFurniture(raw, from, x, z, r, site)
 	local data = Data.decode(raw)
 	local catalog = furniture()
+	if site == "Company" and not data.CompanyIsland then
+		return nil, "Buy a company island first."
+	end
+	local list = siteList(data, site)
 	local itemId, skip
 	if type(from) == "number" then
-		local entry = data.Furniture[from]
+		local entry = list[from]
 		if not entry then
 			return nil, "That furniture is no longer placed."
 		end
@@ -1073,8 +1224,8 @@ function Data.placeFurniture(raw, from, x, z, r)
 	elseif type(from) == "string" and catalog.Items[from] then
 		itemId = from
 		if (data.FurnitureStock[itemId] or 0) < 1 then
-			return nil, "Buy one at the furniture shop first."
-		elseif catalog.count(data.Furniture, itemId) >= catalog.Items[itemId].MaxPlaced then
+			return nil, if catalog.Items[itemId].Kit then "That comes with a company island." else "Buy one at the furniture shop first."
+		elseif catalog.count(list, itemId) >= catalog.Items[itemId].MaxPlaced then
 			return nil, string.format("You can place up to %d of those.", catalog.Items[itemId].MaxPlaced)
 		end
 	else
@@ -1084,32 +1235,45 @@ function Data.placeFurniture(raw, from, x, z, r)
 	if locked then
 		return nil, locked
 	end
-	local reason = catalog.check(data.Furniture, itemId, x, z, r, skip)
+	local reason = catalog.check(list, itemId, x, z, r, skip, site)
 	if reason then
 		return nil, reason
 	end
-	local placed = { ItemId = itemId, X = x, Z = z, R = r }
+	local placed = if skip then table.clone(list[skip]) else { ItemId = itemId }
+	placed.X, placed.Z, placed.R = x, z, r
 	if skip then
-		data.Furniture[skip] = placed
+		list[skip] = placed
 	else
+		if itemId == "CompanyPrep" then
+			for _, key in Data.COMPANY_BENCHES do
+				if not companyBench(data, key) then
+					placed.Key = key
+					break
+				end
+			end
+		end
 		data.FurnitureStock[itemId] -= 1
 		if data.FurnitureStock[itemId] == 0 then
 			data.FurnitureStock[itemId] = nil
 		end
-		table.insert(data.Furniture, placed)
+		table.insert(list, placed)
 	end
 	if data.FurnitureWallMigrationPending then migrateFurnitureWalls(data, true) end
 	return data
 end
 
 -- Puts a placed item back in stock, unless the fish it holds would have nowhere to go.
-function Data.pickUpFurniture(raw, index)
+function Data.pickUpFurniture(raw, index, site)
 	local data = Data.decode(raw)
-	local entry = type(index) == "number" and data.Furniture[index]
+	local list = siteList(data, site)
+	local entry = type(index) == "number" and list[index]
 	if not entry then
 		return nil, "That furniture is no longer placed."
 	end
-	table.remove(data.Furniture, index)
+	if entry.ItemId == "StorageRack" and ((entry.Cages or 0) + (entry.Nets or 0) > 0) then
+		return nil, "Take the tools off this rack first."
+	end
+	table.remove(list, index)
 	if entry.ItemId == "Freezer" and not Data.canFreeze(data) then
 		return nil, "Sell some fish first. They wouldn't fit in your other freezers."
 	elseif #data.Storage > Data.storageCapacity(data) then
@@ -1118,11 +1282,44 @@ function Data.pickUpFurniture(raw, index)
 		return nil, "Sell some dishes first. They wouldn't fit in your other display cases."
 	elseif entry.ItemId == "KitchenStorage" and #data.KitchenStorage.Fish > 0 then
 		return nil, "Take the fish off your kitchen storage table first."
-	elseif data.Kitchen[entry.ItemId] then
+	elseif data.Kitchen[entry.Key or entry.ItemId] then
 		return nil, "Collect the dish on this station first."
 	end
 	data.FurnitureStock[entry.ItemId] = (data.FurnitureStock[entry.ItemId] or 0) + 1
 	if data.FurnitureWallMigrationPending then migrateFurnitureWalls(data, true) end
+	return data
+end
+
+-- Configure one rack and transfer equipment to or from carried stock.
+function Data.editRack(raw, index, action, site)
+	local data = Data.decode(raw)
+	local rack = type(index) == "number" and siteList(data, site)[index]
+	if not rack or rack.ItemId ~= "StorageRack" then return nil, "Select a storage rack." end
+	if action == "Mode" then
+		if rack.Mode == "Tools" then
+			if (rack.Cages or 0) + (rack.Nets or 0) > 0 then return nil, "Take the tools off this rack first." end
+			rack.Mode = nil
+		else
+			rack.Mode = "Tools"
+			if #data.Storage > Data.storageCapacity(data) then return nil, "Take some fish off your racks first." end
+		end
+	elseif rack.Mode == "Tools" then
+		local field, stock
+		if action == "AddCage" or action == "TakeCage" then field, stock = "Cages", data.CrabCages
+		elseif action == "AddNet" or action == "TakeNet" then field, stock = "Nets", data.MusselNets
+		else return nil, "Unknown rack action." end
+		if string.sub(action, 1, 3) == "Add" then
+			if stock.Stock < 1 then return nil, "You have none of those to store." end
+			if (rack.Cages or 0) + (rack.Nets or 0) >= Data.RACK_CAPACITY then return nil, "This rack is full." end
+			stock.Stock -= 1
+			rack[field] = (rack[field] or 0) + 1
+		else
+			if (rack[field] or 0) < 1 then return nil, "There are none of those on this rack." end
+			if stock.Stock >= 25 then return nil, "Your carried stock is full." end
+			stock.Stock += 1
+			rack[field] -= 1
+		end
+	else return nil, "Switch this rack to tools storage first." end
 	return data
 end
 
@@ -1140,6 +1337,59 @@ function Data.sellFrozen(raw, record)
 		end
 	end
 	return nil, 0
+end
+
+-- Pirate Cove's galley buys straight from the hand, then the backpack, up to `limit` fish on `day`
+-- (counting what was already sold that day). Locked fish stay. `onlyHand` sells just the held fish.
+function Data.sellToCove(raw, day, limit, onlyHand)
+	local data = Data.decode(raw)
+	local sales = data.CoveSales
+	if not sales or sales.Day ~= day then
+		sales = { Day = day, Count = 0 }
+	end
+	local sold, earned = 0, 0
+	local function sell(record)
+		local price = math.max(1, math.floor(record.Value))
+		sold += 1
+		earned += price
+		data.Stats.CoinsEarned += price
+		data.Stats.FishSold += 1
+	end
+	if data.Hand and sales.Count + sold < limit then
+		sell(data.Hand)
+		data.Hand = nil
+	end
+	if not onlyHand then
+		local kept = {}
+		for _, item in data.Backpack do
+			if item.Fish and not item.Locked and sales.Count + sold < limit then
+				sell(item.Fish)
+			else
+				table.insert(kept, item)
+			end
+		end
+		data.Backpack = kept
+	end
+	sales.Count += sold
+	data.CoveSales = sales
+	return data, sold, earned
+end
+
+-- Hands over the first fish `matches` accepts, from the hand, then the backpack (never a locked one).
+function Data.deliverFish(raw, matches)
+	local data = Data.decode(raw)
+	if data.Hand and matches(data.Hand) then
+		local record = data.Hand
+		data.Hand = nil
+		return data, record
+	end
+	for index, item in data.Backpack do
+		if item.Fish and not item.Locked and matches(item.Fish) then
+			table.remove(data.Backpack, index)
+			return data, item.Fish
+		end
+	end
+	return nil, nil
 end
 
 -- The kitchen pass plus every placed food display case.
@@ -1181,7 +1431,9 @@ function Data.startCooking(raw, key, recipeId, species, now)
 		return nil, "Cooking unlocks with the Supermarket path."
 	elseif not station then
 		return nil, "That isn't a kitchen station."
-	elseif not book.BuiltIn[key] and placed(data, key) == 0 then
+	elseif book.CompanyBuiltIn[key] and not (data.CompanyIsland and companyBench(data, key)) then
+		return nil, if data.CompanyIsland then "Place a prep bench on your company plot first." else "Buy a company island to use this kitchen."
+	elseif not book.BuiltIn[key] and not book.CompanyBuiltIn[key] and placed(data, key) == 0 then
 		return nil, "Place that station in your processing room first."
 	elseif data.Kitchen[key] then
 		return nil, "This station is already in use."

@@ -12,6 +12,8 @@ const temporaryRoot = resolve(tmpdir());
 const temporary = await mkdtemp(join(temporaryRoot, 'fishing-boats-'));
 try {
   const anglerData = await readFile(join(root, 'src/server/AnglerData.luau'), 'utf8');
+  // BoatDrive borrows Biomes, BoatMotion and Weather from BoatService's own locals.
+  const boatDrive = (await readFile(join(root, 'src/shared/BoatDrive.luau'), 'utf8')).replace(/^local \w+ = require\(script\.Parent\.\w+\)\r?\n/gm, '');
   const catalog = await readFile(join(root, 'src/shared/BoatCatalog.luau'), 'utf8');
   const rodUpgrades = await readFile(join(root, 'src/shared/RodUpgrades.luau'), 'utf8');
   const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
@@ -97,7 +99,8 @@ try {
     .replace(/local SpearSkins = require\(ReplicatedStorage.Shared.SpearSkins\)/, () => `local SpearSkins = (function()\n${spearSkins}\nend)()`)
     .replace(/local BobberSkins = require\(ReplicatedStorage.Shared.BobberSkins\)/, () => `local BobberSkins = (function()\n${bobberSkins}\nend)()`)
     .replace(/local Biomes = require\(ReplicatedStorage.Shared.Biomes\)/, 'local Biomes = dependencies.Biomes')
-    .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather');
+    .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather')
+    .replace(/local BoatDrive = require\(ReplicatedStorage.Shared.BoatDrive\)/, () => `local BoatDrive = (function()\n${boatDrive}\nend)()`);
   if (process.argv.includes('--inventory-only')) {
     // Boat rendering is outside these wallet tests; allow new builders in the shared workspace.
     const builders = service.match(/local builders = ([^\n]+)/)?.[1] || '';
@@ -111,7 +114,7 @@ try {
     shopPrompt = shopPrompt, purchase = purchase, spawnBoat = spawnBoat,
     getProfile = BoatService.getProfile, updateProgress = BoatService.updateProgress,
     damageBoat = BoatService.damageBoat,
-    profiles = profiles, active = active,
+    profiles = profiles, active = active, BoatDrive = BoatDrive, BoatMotion = BoatMotion,
   }`);
   const program = harness
     .replace('-- BOAT_LAUNCH_COLLISION_SOURCE --', await readFile(join(root, 'src/server/BoatLaunchCollision.luau'), 'utf8'))

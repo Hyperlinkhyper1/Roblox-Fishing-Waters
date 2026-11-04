@@ -369,6 +369,34 @@ function BoatData.buyRodCrates(profile: Profile, crateId: string, count: number)
 	return "Purchased"
 end
 
+-- A rod bought outright (Pirate Cove's trader): one copy of `skinId` with a reserved global serial.
+-- Call with no serial to check affordability only.
+function BoatData.buyRodSkin(profile: Profile, skinId: string, price: number, wear: number, serial: number?): string
+	if not RodSkins.valid(skinId) then
+		return "UnknownRod"
+	end
+	if not profile.OwnedRods.StarterRod then
+		return "NoRod"
+	end
+	if profile.Cash < price then
+		return "InsufficientFunds"
+	end
+	if serial == nil then
+		return "Purchased"
+	end
+	assert(RodSkins.validWear(wear), "Invalid skin wear")
+	assert(type(serial) == "number" and serial >= 1 and serial < 2 ^ 53 - 1 and serial % 1 == 0, "Missing global skin serial")
+	for _, copy in profile.RodSkinCopies do
+		assert(copy.SkinId ~= skinId or copy.Serial ~= serial, "Skin serial already owned")
+	end
+	profile.Cash -= price
+	profile.Angler.Stats.CoinsSpent += price
+	profile.RodSkins[skinId] = (profile.RodSkins[skinId] or 0) + 1
+	table.insert(profile.RodSkinCopies, { SkinId = skinId, Serial = serial, Wear = wear })
+	profile.NextRodSkinSerial[skinId] = math.max(profile.NextRodSkinSerial[skinId] or 1, serial + 1)
+	return "Purchased"
+end
+
 function BoatData.openOwnedRodCrate(
 	profile: Profile,
 	crateId: string,

@@ -72,8 +72,9 @@ check(
 	not invoke("UpgradePorter", {}).Ok and not invoke("UpgradePorter", "Cash", 0).Ok,
 	"Malformed and unknown porter upgrades are rejected"
 )
+profile.Cash = StaffCatalog.PorterUpgrades.PorterSpeed.Prices[1] - 1
 check(
-	not invoke("UpgradePorter", "PorterSpeed", 0).Ok and profile.Cash == 350,
+	not invoke("UpgradePorter", "PorterSpeed", 0).Ok and profile.Cash == StaffCatalog.PorterUpgrades.PorterSpeed.Prices[1] - 1,
 	"Insufficient funds cannot buy a porter upgrade"
 )
 profile.Cash = 100000
@@ -283,12 +284,12 @@ for _, width in { 1020, 362 } do
 	check(content:FindFirstChild("UpgradePorterSpeed", true).Active, "Cash refresh enables porter upgrades")
 	click("UpgradePorterSpeed")
 	check(
-		profile.Angler.Upgrades.PorterSpeed == 1 and profile.Cash == 1400 and contains("20 studs/sec"),
+		profile.Angler.Upgrades.PorterSpeed == 1 and profile.Cash == 1880 and contains("20 studs/sec"),
 		"Speed purchase refreshes the displayed stat and wallet"
 	)
 	click("UpgradePorterCapacity")
 	check(
-		profile.Angler.Upgrades.PorterCapacity == 1 and profile.Cash == 800 and contains("2 fish/trip"),
+		profile.Angler.Upgrades.PorterCapacity == 1 and profile.Cash == 1760 and contains("2 fish/trip"),
 		"Carry purchase refreshes the displayed stat on desktop and mobile"
 	)
 	profile.Angler.Upgrades = { PorterSpeed = 4, PorterCapacity = 4 }
@@ -300,7 +301,7 @@ for _, width in { 1020, 362 } do
 			and contains("Max level"),
 		"Maximum levels have no active purchase controls"
 	)
-	profile.Angler.Upgrades, profile.Cash = {}, 350
+	profile.Angler.Upgrades, profile.Cash = {}, 119
 	check(not content:FindFirstChild("HireFisherman", true).Active, "Company-locked fisherman cannot be hired")
 	click("SelectFisherman")
 	check(contains("Unlocks with The Company"), "Selecting a locked worker explains the required path")
@@ -351,7 +352,7 @@ for _, width in { 1020, 362 } do
 		profile.Angler.Upgrades.SocialMediaAdvertisement == 1 and profile.Cash == 0 and contains("Owned"),
 		"Advertisement purchase refreshes the menu"
 	)
-	profile.Angler.Upgrades, profile.Cash = {}, 350
+	profile.Angler.Upgrades, profile.Cash = {}, 119
 	click("AchievementsTab")
 	check(contains("No achievements yet."), "Achievements remains empty")
 	card.CloseMenu.Activated:Fire()

@@ -20,7 +20,7 @@ local ORANGE = rgb(226, 110, 40)
 local STEEL = rgb(168, 172, 168)
 local GRAY = rgb(146, 151, 149)
 local DARK = rgb(30, 32, 34)
-local LAMP = rgb(255, 235, 190)
+local LAMP = rgb(220, 196, 150)
 
 local DECK_TOP = 1.6
 local BRIDGE_TOP = 4.45
@@ -622,12 +622,12 @@ function Tugboat.build(frame: CFrame, anchored: boolean?): Model
 			part("HeadlightLens", V(0.52, 0.38, 0.05), F(side * 2.2, ROOF_Y - 0.55, FRONT - 0.74), LAMP, M.Neon)
 		local light = Instance.new("SpotLight")
 		light.Name, light.Face = "Headlight", Enum.NormalId.Front
-		light.Color, light.Range, light.Brightness, light.Angle = LAMP, 60, 1.2, 65
+		light.Color, light.Range, light.Brightness, light.Angle = LAMP, 30, 0.45, 40
 		light.Shadows, light.Parent = false, lens
 	end
 	local workLamp = part("DeckWorkLamp", V(0.7, 0.24, 0.5), F(0, ROOF_Y - 0.35, AFT + 0.5), LAMP, M.Neon)
 	local deckLight = Instance.new("PointLight")
-	deckLight.Name, deckLight.Color, deckLight.Range, deckLight.Brightness = "DeckLight", LAMP, 24, 0.7
+	deckLight.Name, deckLight.Color, deckLight.Range, deckLight.Brightness = "DeckLight", LAMP, 14, 0.3
 	deckLight.Shadows, deckLight.Parent = false, workLamp
 
 	-- Twin azimuth thrusters under the stern and a short skeg.

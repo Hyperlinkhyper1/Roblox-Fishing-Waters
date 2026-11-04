@@ -64,11 +64,16 @@ local Weather = { getState = function(time)
 end, supercellCover = function() return 0 end }
 local task = { delay = function() end }
 local pending, render = {}, nil
+local deferTweens = false
+local audioSubmerged = false
+local PlayerSettings = { setUnderwater = function(value) audioSubmerged = value end }
 local TweenService = {}
 function TweenService:Create(target, info, properties)
   local tween = { target = target, info = info, properties = properties }
   function tween:Play()
-    for key, value in self.properties do self.target[key] = value end
+    if not deferTweens then
+      for key, value in self.properties do self.target[key] = value end
+    end
     table.insert(pending, self)
   end
   function tween:Cancel() self.cancelled = true end
@@ -82,7 +87,7 @@ end
 local services = {
   Lighting = Lighting, TweenService = TweenService, RunService = RunService,
   ReplicatedStorage = { Shared = {} },
-  Players = { LocalPlayer = { WaitForChild = function() return {} end } },
+  Players = { LocalPlayer = { WaitForChild = function() return {} end, GetAttribute = function(_, key) return attributes[key] end } },
 }
 local game = { GetService = function(_, name) return services[name] end }
 local Biomes = (function()
@@ -99,6 +104,7 @@ ${read('src/client/BiomeAtmosphere.luau')
   .replace('require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))', 'Theme')
   .replace('require(ReplicatedStorage.Shared.Biomes)', 'Biomes')
   .replace('require(ReplicatedStorage.Shared.Weather)', 'Weather')
+  .replace('require(script.Parent.PlayerSettings)', 'PlayerSettings')
   .replace('require(ReplicatedStorage.Shared.DayNight)', 'DayNight')}
 end)()
 local function rgbEqual(a, b) return a.R == b.R and a.G == b.G and a.B == b.B end
@@ -107,6 +113,7 @@ local function move(x, y, z, dt)
   render(dt or 1/60)
 end
 local function underwaterFog()
+  assert(audioSubmerged, "Audio must muffle on the same camera frame as underwater fog")
   assert(Terrain.WaterTransparency > 0 and Terrain.WaterTransparency <= 0.01,
     "Terrain's native underwater fog must limit visibility too; Lighting fog alone does not affect submerged terrain")
   assert(Terrain.WaterColor.B > Terrain.WaterColor.G and Terrain.WaterColor.G > Terrain.WaterColor.R,
@@ -119,6 +126,7 @@ local function underwaterFog()
     "Underwater fog must be blue")
 end
 local function surfaceFog()
+  assert(not audioSubmerged, "Surface cameras must restore clear audio")
   assert(atmosphere.Parent == Lighting, "Surface atmosphere must return after leaving water")
   assert(Lighting.FogStart == 50 and Lighting.FogEnd == 100000 and rgbEqual(Lighting.FogColor, surfaceFogColor),
     "Leaving water must restore the original distance fog settings")
@@ -127,6 +135,16 @@ Client.start()
 render(1/60)
 surfaceFog()
 assert(rgbEqual(Terrain.WaterColor, Biomes.Normal.look.waterColor), "Initial surface biome")
+-- Hold tweens at their starting values, as in the first actual render frame.
+-- An instant-completion mock otherwise hides the fog gap during a dive tween.
+deferTweens = true
+move(0, -0.001, 0)
+underwaterFog()
+move(0, 5, 0)
+surfaceFog()
+move(0, -0.001, 0)
+underwaterFog()
+deferTweens = false
 move(0, -5, 0)
 underwaterFog()
 local firstDiveTween = pending[#pending]
@@ -136,7 +154,7 @@ assert(pending[#pending] == firstDiveTween, "Surface margin must avoid flickerin
 move(0, 5, 0)
 surfaceFog()
 assert(firstDiveTween.cancelled, "Rapid resurfacing must cancel the in-flight dive transition")
-assert(Terrain.WaterTransparency == 0.3 and grading.Brightness == 0, "Surface clarity and grading restored")
+assert(Terrain.WaterTransparency == Biomes.SurfaceWaterTransparency and grading.Brightness == 0, "Surface clarity and grading restored")
 assert(Lighting.Ambient.R == 0, "Surface ambient must be restored")
 for _, biome in Biomes.list do
   move(biome.center.X, -8, biome.center.Y, 0.6)
@@ -156,20 +174,26 @@ move(Biomes.MapHalfSize + 20, -8, Biomes.MapHalfSize + 20, 0.6)
 underwaterFog()
 move(Biomes.OceanMax + 20, -8, Biomes.MapHalfSize + 20, 0.6)
 surfaceFog()
-assert(Terrain.WaterTransparency == 0.3, "Below sea level outside the ocean is not underwater")
+assert(Terrain.WaterTransparency == Biomes.SurfaceWaterTransparency, "Below sea level outside the ocean is not underwater")
 move(0, Biomes.SeaFloor - 5, 0, 0.6)
 surfaceFog()
-assert(Terrain.WaterTransparency == 0.3, "Below the sea floor is not underwater")
+assert(Terrain.WaterTransparency == Biomes.SurfaceWaterTransparency, "Below the sea floor is not underwater")
 local pocket = Biomes.DryPockets[1]
 move((pocket.min.X + pocket.max.X) / 2, -20, (pocket.min.Z + pocket.max.Z) / 2, 0.6)
 surfaceFog()
-assert(Terrain.WaterTransparency == 0.3, "The city's metro station is a dry pocket below sea level")
+assert(Terrain.WaterTransparency == Biomes.SurfaceWaterTransparency, "The city's metro station is a dry pocket below sea level")
+attributes.MetroRiding = true
+move(1000, -20, 1000, 0.6)
+surfaceFog()
+assert(not audioSubmerged, "An underground metro journey must not activate dive fog or muffling")
+attributes.MetroRiding = nil
 move(pocket.min.X - 20, -8, pocket.min.Z - 20, 0.6)
 underwaterFog()
 move(pocket.min.X - 20, 5, pocket.min.Z - 20)
 surfaceFog()
 workspace.CurrentCamera = nil
 render(1/60)
+assert(not audioSubmerged, "Losing the camera must release muffling")
 workspace.CurrentCamera = { CFrame = { Position = { X = 0, Y = -8, Z = 0 } } }
 render(1/60)
 underwaterFog()
@@ -232,6 +256,12 @@ move(Biomes.Volcanic.center.X, -8, Biomes.Volcanic.center.Y, 0.6)
 assert(atmosphere.Parent == nil and math.abs(Lighting.FogEnd - 10 / 0.28) < 0.00001,
   'Black-hole weather preserves short underwater visibility')
 assert(Terrain.WaterColor.R > Terrain.WaterColor.G, 'The void palette reaches underwater biomes')
+move(0, 5, 0)
+deferTweens = true
+move(0, -0.001, 0)
+assert(Terrain.WaterTransparency == 0.01 and atmosphere.Parent == nil and audioSubmerged,
+  'Black-hole dives must apply fog and audio before any tween advances')
+deferTweens = false
 weather = { rain = 0, storm = 0, cloudCover = 0 }
 move(0, 5, 0, 0.6)
 surfaceFog()

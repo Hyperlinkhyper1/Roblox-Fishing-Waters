@@ -440,7 +440,11 @@ function Reel:pull()
 	if not state or state.result or os.clock() < state.lockUntil then
 		return
 	end
-	if state.t >= state.zone and state.t <= state.zone + state.tuning.zoneSize then
+	local landed = state.t >= state.zone and state.t <= state.zone + state.tuning.zoneSize
+	if state.onPull then
+		state.onPull(landed)
+	end
+	if landed then
 		state.progress += state.tuning.gain
 		state.flash, state.flashColor = 0.25, ZONE
 		state.lockUntil = os.clock() + 0.12
@@ -502,12 +506,13 @@ function Reel:render(state, dt: number)
 end
 
 -- Yields until the fight ends: "Landed", "Escaped" or "Aborted".
--- reelBoost is the server's Reel Speed upgrade for this cast.
-function Reel:fight(fishId: string, difficulty: number, placeName: string?, reelBoost: number?): string
+-- Reel Speed and Handling boosts are snapshotted by the server for this cast.
+function Reel:fight(fishId: string, difficulty: number, placeName: string?, reelBoost: number?, onPull: ((boolean) -> ())?, handlingBoost: number?): string
 	self:abort()
 	local fish = Catalog.Fish[fishId]
 	local state = {
-		tuning = FishCatch.tuning(difficulty, if type(reelBoost) == "number" then reelBoost else nil),
+		onPull = onPull,
+		tuning = FishCatch.tuning(difficulty, if type(reelBoost) == "number" then reelBoost else nil, handlingBoost),
 		difficulty = difficulty,
 		progress = FishCatch.START_PROGRESS,
 		gauge = 2,

@@ -11,7 +11,7 @@ local Staff = {
 			Name = "Porter",
 			Price = 400,
 			Description = "Carries fish from docked boats to your freezer or storage, and restocks the freezer. "
-				.. "Upgrade his speed and the number of fish he carries per trip.",
+				.. "At level 2 he collects crab cages, and at level 3 mussel nets.",
 		},
 		-- Requires names the Paths stage that unlocks hiring.
 		Fisherman = {
@@ -42,13 +42,13 @@ Staff.PorterUpgrades = {
 		Name = "Speed",
 		Unit = "studs/sec",
 		Values = { 16, 20, 24, 28, 32 },
-		Prices = { 600, 1500, 3500, 7500 },
+		Prices = { 120, 300, 700, 1500 },
 	},
 	PorterCapacity = {
 		Name = "Carry Capacity",
 		Unit = "fish/trip",
 		Values = { 1, 2, 3, 4, 5 },
-		Prices = { 600, 1500, 3500, 7500 },
+		Prices = { 120, 300, 700, 1500 },
 	},
 }
 
@@ -58,9 +58,15 @@ function Staff.porterLevel(data, id: string): number
 	return math.clamp(math.floor(level), 0, #upgrade.Prices)
 end
 
+Staff.PorterLevelPrices = { 300, 700, 1500 }
+function Staff.workerLevel(data, role: string): number
+	if role ~= "Porter" then return 1 end
+	return math.clamp(1 + (data.Upgrades.PorterLevel or 0), 1, 4)
+end
+
 function Staff.porterStats(data): (number, number)
 	return Staff.PorterUpgrades.PorterSpeed.Values[Staff.porterLevel(data, "PorterSpeed") + 1],
-		Staff.PorterUpgrades.PorterCapacity.Values[Staff.porterLevel(data, "PorterCapacity") + 1]
+		math.max(3, Staff.PorterUpgrades.PorterCapacity.Values[Staff.porterLevel(data, "PorterCapacity") + 1])
 end
 
 -- Fixed Marketplace uniforms keep each job recognizable. Account avatars can
@@ -78,28 +84,28 @@ local OUTFITS = {
 		Shirt = 6500613508, -- Mechanic Coveralls +
 		Pants = 6500616492, -- Mechanic Coveralls -, matching navy trousers/boots
 		Hair = "",
-		Hat = "110050567314495", -- Plain Navy Beanie
+		Hat = "9667880157", -- Hard Hat
 		Skin = Color3.fromRGB(157, 105, 74),
 	},
 	Fisherman = {
-		Shirt = 6500613508, -- Mechanic Coveralls +, matching the dock crew
+		Shirt = 733260904, -- Fisherman Shirt
 		Pants = 129459077, -- Black Slacks, including black shoes
 		Hair = "",
-		Hat = "110050567314495", -- Plain Navy Beanie
+		Hat = "10714423462", -- Green Fisherman Hat
 		Skin = Color3.fromRGB(198, 140, 104),
 	},
 	RestaurantChef = {
-		Shirt = 382578523,
+		Shirt = 44054130, -- Chef Shirt
 		Pants = 129459077,
-		Hair = "376548738",
-		Hat = "",
+		Hair = "",
+		Hat = "1560402166", -- Chef de Cuisine Hat
 		Skin = Color3.fromRGB(224, 173, 132),
 	},
 	CompanyChef = {
-		Shirt = 382578523,
+		Shirt = 44054130, -- Chef Shirt
 		Pants = 129459077,
 		Hair = "",
-		Hat = "",
+		Hat = "1560402166", -- Chef de Cuisine Hat
 		Skin = Color3.fromRGB(157, 105, 74),
 	},
 }

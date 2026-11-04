@@ -1,8 +1,15 @@
 -- Behavioral checks for SharkService's real update loop, with simulated time.
 local Vector3 = {}
 local vector = {}
+-- Roblox vectors store float32 coordinates, so stopping exactly at bite range
+-- can round a shark just outside it, especially on diagonal approaches.
+local coordinate = buffer.create(4)
+local function float32(value)
+	buffer.writef32(coordinate, 0, value)
+	return buffer.readf32(coordinate, 0)
+end
 function Vector3.new(x, y, z)
-	return setmetatable({ X = x or 0, Y = y or 0, Z = z or 0 }, vector)
+	return setmetatable({ X = float32(x or 0), Y = float32(y or 0), Z = float32(z or 0) }, vector)
 end
 function vector.__add(a, b)
 	return Vector3.new(a.X + b.X, a.Y + b.Y, a.Z + b.Z)
@@ -48,7 +55,10 @@ function Instance.new(class)
 		object.OnServerEvent = { Connect = function(_, fn) object.fire = fn end }
 	end
 	function object:Destroy() self.destroyed = true end
-	function object:PivotTo(pivot) self.pivot = pivot end
+	function object:PivotTo(pivot)
+		self.pivot = pivot
+		if self.PrimaryPart then self.PrimaryPart.CFrame = pivot end
+	end
 	function object:FindFirstChild() return nil end
 	table.insert(objects, object)
 	return object
@@ -74,6 +84,7 @@ root.CFrame = {
 local health = 100
 local boat = { PrimaryPart = root, GetAttribute = function(_, name) if name == "Health" then return health end end }
 local hits, bites = 0, 0
+local hitTimes = {}
 local SpearSkins = (function()
 -- SPEAR_SKINS_SOURCE --
 end)()
@@ -99,7 +110,13 @@ local dependencies = {
 	},
 	BoatService = {
 		activeBoat = function() return "boat", boat end,
-		damageBoat = function(_, damage) hits += 1; health = math.max(0, health - damage); return true end,
+		damageBoat = function(_, damage)
+			assert(damage == 8, "Each shark bite should deal eight hull damage")
+			table.insert(hitTimes, now)
+			hits += 1
+			health = math.max(0, health - damage)
+			return true
+		end,
 	},
 	HullDamage = {
 		bite = function(model, from, direction)
@@ -229,7 +246,8 @@ local function sharkPositions()
 	local positions = {}
 	for _, object in objects do
 		if object.ClassName == "Model" and object.Name == "Shark" and not object.destroyed then
-			table.insert(positions, object.pivot.Position)
+			-- The server moves only the root between full pivots.
+			table.insert(positions, (object.PrimaryPart.CFrame or object.pivot).Position)
 		end
 	end
 	return positions
@@ -243,9 +261,16 @@ local function nearestShark()
 end
 advance(15)
 assert(hits == 0 and nearestShark() > 100, "A roaming pack must not seek a boat that keeps its distance")
-root.Position = sharkPositions()[1] - Vector3.new(20, 0, 0)
+root.Position = sharkPositions()[1] - Vector3.new(20, 0, 13)
 advance(15)
 assert(hits > 0 and health < 100, "Driving close to a pack should start a chase that ends in bites")
+assert(health == 100 - hits * 8, "Bites must reduce the boat's health")
+local hitsAtContact = hits
+advance(12)
+assert(hits > hitsAtContact, "A shark resting alongside the hull must keep biting")
+for index = 2, #hitTimes do
+	assert(hitTimes[index] - hitTimes[index - 1] >= 12, "Repeated bites must respect the cooldown")
+end
 assert(bites == hits, "Every damaging bite should scar the hull")
 root.Position = root.Position + Vector3.new(0, 0, 80)
 advance(3)

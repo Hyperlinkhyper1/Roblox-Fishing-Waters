@@ -20,7 +20,8 @@ let program = shared.slice(0, shared.indexOf('local dependencies =')).replace('-
 program += `
 Enum.Material = setmetatable({}, {__index = function(_, name)
   local valid = {Wood=true, Concrete=true, Grass=true, Fabric=true, WoodPlanks=true,
-    Metal=true, Slate=true, Glass=true, SmoothPlastic=true}
+    Metal=true, Slate=true, Glass=true, SmoothPlastic=true, Neon=true, Ice=true,
+    Sand=true, Ground=true}
   assert(valid[name], "Unknown decoration material: " .. name)
   return name
 end})

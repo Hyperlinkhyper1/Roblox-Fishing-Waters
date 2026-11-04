@@ -19,6 +19,8 @@ local GREEN = rgb(110, 224, 130)
 local STAGE = Vector2.new(300, 190)
 local RAYS = 10 -- Each bar crosses the centre, so this draws twice as many rays.
 local RAY_LENGTH = 340
+-- CanvasGroup clips its descendants, including the burst during its pop-in overshoot.
+local TOP_PADDING = 110
 local HOLD_SECONDS = 4.5
 local LINE_HEIGHT = 34
 
@@ -72,7 +74,7 @@ function Popup.new(gui: ScreenGui)
 		Name = "CatchPopup",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -130),
-		Size = UDim2.fromOffset(760, STAGE.Y + LINE_HEIGHT * 3 + 10),
+		Size = UDim2.fromOffset(760, TOP_PADDING + STAGE.Y + LINE_HEIGHT * 3 + 10),
 		BackgroundTransparency = 1,
 		Visible = false,
 		ZIndex = 20,
@@ -83,7 +85,7 @@ function Popup.new(gui: ScreenGui)
 	local stage = make("Frame", root, {
 		Name = "Stage",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(380, STAGE.Y / 2),
+		Position = UDim2.fromOffset(380, TOP_PADDING + STAGE.Y / 2),
 		Size = UDim2.fromOffset(STAGE.X, STAGE.Y),
 		BackgroundTransparency = 1,
 	})
@@ -158,7 +160,7 @@ function Popup.new(gui: ScreenGui)
 		local label = make("TextLabel", root, {
 			Name = "Line" .. index,
 			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.fromOffset(380, STAGE.Y + (index - 1) * LINE_HEIGHT),
+			Position = UDim2.fromOffset(380, TOP_PADDING + STAGE.Y + (index - 1) * LINE_HEIGHT),
 			Size = UDim2.new(1, 0, 0, LINE_HEIGHT),
 			BackgroundTransparency = 1,
 			Font = Enum.Font.SourceSansSemibold,
@@ -262,7 +264,7 @@ function Popup:show(
 	tween(self.stageScale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
 	for index, line in self.lines do
 		local text = lines[index - first + 1]
-		local slot = UDim2.fromOffset(380, STAGE.Y + (index - 1) * LINE_HEIGHT)
+		local slot = UDim2.fromOffset(380, TOP_PADDING + STAGE.Y + (index - 1) * LINE_HEIGHT)
 		line.label.Text = if text then string.format(text, kg and formatKg(0) or "") else ""
 		line.label.TextTransparency, line.stroke.Transparency = 1, 1
 		line.label.Position = slot + UDim2.fromOffset(0, 14)

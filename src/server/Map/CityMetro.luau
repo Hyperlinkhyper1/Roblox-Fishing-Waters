@@ -94,6 +94,67 @@ local function sign(p: BasePart, face: Enum.NormalId, words: string, color: Colo
 	return label
 end
 
+-- Repair the same named rooms in fresh and baked maps. Rooms retain this
+-- stamp when MetroStations moves them into the persistent city stop.
+function CityMetro.ensureSurfaces(root: Instance, origin: Vector3)
+	for _, room in root:GetChildren() do
+		if room:GetAttribute("MetroSurfaceVersion") == 1 or not room.Name:match("^Metro") then continue end
+		for _, p in room:GetDescendants() do
+			if not p:IsA("BasePart") then continue end
+			local name = p.Name
+			if name == "VaultPanel" or name == "VaultRib" then
+				-- Overlapping arch segments need distinct end-cap planes.
+				local index = math.floor(math.clamp((p.Position.Z - origin.Z - VZ0) / (VZ1 - VZ0), 0, 0.999) * SEGMENTS)
+				p.Size += Vector3.new((if name == "VaultPanel" then 0.24 else 0.2) + index % 2 * 0.12, 0, 0)
+			elseif name == "StairSoffit" or name == "EscalatorTruss" then
+				-- Keep structural backing inside the visible stair edges.
+				p.Size -= Vector3.new(if name == "StairSoffit" then 0.6 else 0.2, 0, 0)
+			elseif name == "BridgeStep" or name == "StairStep" or name == "FixedStep" then
+				local top = p.Position.Y - origin.Y + p.Size.Y / 2
+				local floor = if name == "BridgeStep" then PLATFORM else HALL
+				if math.abs(top - floor) < 0.001 then p.CFrame += Vector3.new(0, 0.06, 0) end
+			elseif name == "RibPilaster" then
+				p.CFrame += Vector3.new(0.04, 0, if p.Position.Z - origin.Z < (VZ0 + VZ1) / 2 then 0.04 else -0.04)
+			elseif name == "EndWall" then
+				-- Extend outward, keeping the platform-facing boundary intact.
+				p.Size += Vector3.new(0.16, 0.12, 0)
+				p.CFrame += Vector3.new(if p.Position.X - origin.X < (VX0 + VX1) / 2 then -0.08 else 0.08, 0, 0)
+				if math.abs(p.Size.Z - 17) < 0.001 then
+					p.Size += Vector3.new(0, 0, 0.06)
+					p.CFrame += Vector3.new(0, 0, if p.Position.Z - origin.Z < (VZ0 + VZ1) / 2 then -0.03 else 0.03)
+				end
+			elseif room.Name == "MetroTicketHall" and name == "FloorBorder" and p.Size.Z > p.Size.X then
+				p.Size -= Vector3.new(0, 0, 3)
+			elseif room.Name == "MetroTicketHall" and (name == "DadoTiles" or name == "FriezeTiles") and p.Size.X > p.Size.Z then
+				p.Size -= Vector3.new(0.48, 0, 0)
+			elseif name == "WellFascia" then
+				p.Size += Vector3.new(if p.Size.X > p.Size.Z then -0.12 else 0.12, 0, 0.12)
+				p.CFrame += Vector3.new(0, 0.06, 0)
+			elseif name == "StairWall" then
+				if p.Size.X < p.Size.Z then
+					p.Size += Vector3.new(0.12, 0, -0.12)
+				else
+					p.Size += Vector3.new(0.08, 0, 0.12)
+					p.CFrame += Vector3.new(0.04, 0, 0)
+				end
+			elseif room.Name == "MetroStairwell" and name == "StairHandrail" then
+				if math.abs(p.CFrame.LookVector.Y) < 0.001 then p.Size += Vector3.new(0.08, 0, 0) end
+			elseif name == "MapFrame" then
+				p.CFrame += Vector3.new(0.04, 0, 0)
+			elseif name == "LightTrough" then
+				p.Size += Vector3.new(0.08, 0, 0)
+				p.CFrame += Vector3.new(0, -0.04, 0)
+			elseif name == "ClockHand" then
+				if p.Size.Y < math.max(p.Size.X, p.Size.Z) then
+					p.Size += Vector3.new(0.12, 0, 0.12)
+					p.CFrame += Vector3.new(0, 0.04, 0)
+				end
+			end
+		end
+		room:SetAttribute("MetroSurfaceVersion", 1)
+	end
+end
+
 function CityMetro.build(parent: Instance, origin: Vector3, top: number, forecourt: { number })
 	local surface = top + 0.9
 	local metro = Instance.new("Model")
@@ -810,6 +871,7 @@ function CityMetro.build(parent: Instance, origin: Vector3, top: number, forecou
 	bin(east, -176, 4)
 	bin(east, -140, -40)
 	bollards(east, -240, -117)
+	CityMetro.ensureSurfaces(metro, origin)
 end
 
 return CityMetro

@@ -14,7 +14,7 @@ const mocks = read('scripts/drydock-geometry.luau').split('local function loadBo
 const client = read('src/client/AmbientFish.luau')
   .replace(/require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'dependencies.$1')
   .replace(/: Weather\.State\?/g, '');
-const program = read('scripts/ambient-fish.luau')
+const program = 'local METRO_ONLY = ' + process.argv.includes('--metro-only') + '\n' + read('scripts/ambient-fish.luau')
   .replace('-- MOCKS --', () => mocks)
   .replace('-- CLIENT --', () => client);
 const temporary = mkdtempSync(join(tmpdir(), 'ambient-fish-'));

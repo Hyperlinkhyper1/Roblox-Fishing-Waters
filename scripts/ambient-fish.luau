@@ -1,7 +1,7 @@
 -- MOCKS --
 
 -- Runs the real AmbientFish schools against recording mocks: species choice,
--- spawn depth, recycling, shore avoidance, fleeing and the single-root welds.
+-- spawn depth, recycling, shore avoidance, the slow drift and the single-root welds.
 -- How the schools look through Terrain water still needs a Studio check.
 NumberRange = {
 	new = function(low, high)
@@ -41,13 +41,26 @@ workspace = Instance.new("Folder")
 workspace.Terrain = Instance.new("Terrain")
 workspace.Terrain.Parent = workspace
 workspace.CurrentCamera = Instance.new("Camera")
-workspace.CurrentCamera.CFrame = CFrame.new(0, 12, 0)
+-- Schools out of view skip their move, so behaviour checks use a camera that
+-- faces every school; the culling check below gives it a real heading.
+local facing = nil
+local function view(position)
+	return {
+		Position = position,
+		LookVector = {
+			Dot = function(_, direction)
+				return if facing then facing:Dot(direction) else 1
+			end,
+		},
+	}
+end
+workspace.CurrentCamera.CFrame = view(Vector3.new(0, 12, 0))
 workspace.CurrentCamera.Parent = workspace
 function workspace:GetServerTimeNow()
 	return clock
 end
 -- Sea everywhere at floorY, except dry land east of shoreX.
-local floorY, shoreX = -30, math.huge
+local floorY, shoreX, dryPocket = -30, math.huge, false
 function workspace:Raycast(origin, direction, params)
 	assert(params.FilterType == Enum.RaycastFilterType.Include, "Depth probes must ignore docks and hulls")
 	assert(params.FilterDescendantsInstances[1] == self.Terrain, "Depth probes read Terrain only")
@@ -66,7 +79,7 @@ function workspace:BulkMoveTo(parts, frames)
 		part.CFrame = frames[index]
 	end
 end
-local player = {}
+local player = Instance.new("Player")
 local character = Instance.new("Model")
 local body = Instance.new("Part")
 body.Name = "HumanoidRootPart"
@@ -88,6 +101,9 @@ dependencies.Biomes = {
 	WaterLevel = 0,
 	SeaFloor = -64,
 	inOceanBounds = function(position)
+		if dryPocket and position.Y < 0 and math.abs(position.X) < 20 and math.abs(position.Z) < 20 then
+			return false
+		end
 		return math.abs(position.X) < 5200 and math.abs(position.Z) < 5200
 	end,
 }
@@ -99,6 +115,8 @@ dependencies.FishSpecies = {
 	NightEel = { Name = "Night Eel", RarityDenominator = 2, AverageKg = 1, Pools = { "OpenSea" }, Requires = { "Night" } },
 	Icefish = { Name = "Icefish", RarityDenominator = 2, AverageKg = 1, Pools = { "OpenSea" }, Seasons = { "Winter" } },
 	SharkFin = { Name = "Shark Fin", RarityDenominator = 2, AverageKg = 1, DropOnly = true },
+	Tire = { Name = "Tire", Rarity = "Common", RarityDenominator = 4, AverageKg = 7, Pools = { "MainLake", "OpenSea" } },
+	LeatherBoot = { Name = "Leather Boot", Rarity = "Junk", RarityDenominator = 2, AverageKg = 1, Pools = { "OpenSea" } },
 }
 local created = {}
 local totalCreated = 0
@@ -119,6 +137,13 @@ dependencies.FishModels = {
 		snout.Name, snout.Anchored = "Snout", true
 		snout.Size, snout.CFrame = Vector3.new(0.1, 0.1, 0.1), CFrame.new(0.55, 0, 0)
 		snout.Parent = model
+		if id == "Tuna" then
+			-- A sail far taller than the body, like a sailfish's dorsal fin.
+			local sail = Instance.new("Part")
+			sail.Name, sail.Anchored = "Sail", true
+			sail.Size, sail.CFrame = Vector3.new(0.3, 6, 0.1), CFrame.new(0, 3, 0)
+			sail.Parent = model
+		end
 		return model
 	end,
 	scaleCatch = function() end,
@@ -159,7 +184,7 @@ local function step(seconds)
 	end
 end
 local function move(x, y, z)
-	workspace.CurrentCamera.CFrame = CFrame.new(x, y, z)
+	workspace.CurrentCamera.CFrame = view(Vector3.new(x, y, z))
 end
 local function fish()
 	return workspace:FindFirstChild("AmbientFish"):GetChildren()
@@ -178,9 +203,39 @@ for _, child in workspace:GetChildren() do
 end
 assert(folders == 1, "Startup must be idempotent")
 
+-- Departure can arrive between render and Heartbeat while a school is only
+-- partly built. Neither queued construction nor movement should continue.
+step(0.6)
+assert(totalCreated > 0, "A partly populated school exists before departure")
+player:SetAttribute("MetroRiding", true)
+local rideCreated, rideMoves = totalCreated, moves
+heartbeat:Fire(1)
+assert(totalCreated == rideCreated, "Departure stops pending builds before the next render")
+step(10)
+assert(totalCreated == rideCreated and moves == rideMoves, "Metro rides do no fish construction or movement")
+assert(#fish() == 0, "Departure drains old schools through the bounded recycler")
+
+player:SetAttribute("MetroRiding", nil)
+dryPocket = true
+move(0, -24, 0)
+step(10)
+assert(totalCreated == rideCreated and #fish() == 0, "Dry underground stations never spawn surrounding surface schools")
+dryPocket = false
+step(10)
+assert(#fish() >= 12, "An underwater camera in the ocean still sees schools")
+local underwaterCreated = totalCreated
+local savedCamera = workspace.CurrentCamera
+workspace.CurrentCamera = nil
+step(2)
+assert(#fish() == 0 and totalCreated == underwaterCreated, "Missing cameras retire schools without building fish")
+workspace.CurrentCamera = savedCamera
+move(0, 12, 0)
+print("Ambient fish: metro ride, underground station, underwater camera and camera recovery checks passed")
+if METRO_ONLY then return end
+
 step(10)
 local models = fish()
-assert(#models >= 6, "Schools fill the water around the camera")
+assert(#models >= 12 and #models <= 40, "Schools fill the water within the cosmetic fish budget")
 for _, model in models do
 	assert(model.Name == "Sardine" or model.Name == "Tuna", "Only open-sea swimmers that bite now: " .. model.Name)
 	local root = rootOf(model)
@@ -200,18 +255,24 @@ for _, model in models do
 	end
 	assert(welds == parts, "Every visible part is welded")
 	local y = root.CFrame.Position.Y
-	assert(y < -1 and y > floorY + 2, "Schools swim just under the surface, clear of the seabed")
+	assert(y < -3 and y > floorY + 2, "Schools swim fully submerged, clear of the seabed")
+	-- The Tuna mock carries a sail far taller than its body. Mock welds don't
+	-- carry parts, so measure from the root and the height recorded at build.
+	local reach = root:GetAttribute("SwimTop")
+	assert(reach and (model.Name ~= "Tuna" or reach > 2.9), "The build records the model's full height")
+	assert(y + reach < -1.4, model.Name .. "'s highest point stays under the surface")
 end
-for _, id in { "BlueCrab", "NightEel", "Icefish", "SharkFin", "Pike" } do
+for _, id in { "BlueCrab", "NightEel", "Icefish", "SharkFin", "Pike", "Tire", "LeatherBoot" } do
 	assert(not created[id], id .. " must not swim here")
 end
 
--- Bodies face the way they swim.
+-- Bodies face the way they drift, at a crawl of about 0.1 studs a second.
 local sample = rootOf(models[1])
 local before = sample.CFrame.Position
-step(0.5)
+step(10)
 local travelled = sample.CFrame.Position - before
-assert(travelled.Magnitude > 0.5, "Fish keep swimming")
+local drift = Vector3.new(travelled.X, 0, travelled.Z).Magnitude
+assert(drift > 0.7 and drift < 1.1, "Fish drift at 0.1 studs per second: " .. drift)
 local flat = Vector3.new(travelled.X, 0, travelled.Z).Unit
 local right = sample.CFrame.RightVector
 assert(Vector3.new(right.X, 0, right.Z).Unit:Dot(flat) > 0.75, "The head (+X) leads")
@@ -224,7 +285,7 @@ step(1)
 assert(#fish() == 0, "Climbing high clears every school")
 move(0, 12, 0)
 step(10)
-assert(#fish() >= 3 and #fish() <= 6, "Solo species spawn one fish per school")
+assert(#fish() >= 3 and #fish() <= 8, "Solo species spawn one fish per school")
 local soloCreated = totalCreated
 move(1200, 12, 0)
 step(10)
@@ -261,14 +322,34 @@ for _, model in fish() do
 	assert(rootOf(model).CFrame.Position.X < shoreX + 12, "Schools stay off the beach")
 end
 
--- A swimmer scatters a nearby school.
-local target = rootOf(fish()[1])
-local spot = target.CFrame.Position
-body.CFrame = CFrame.new(spot.X - 3, -1, spot.Z)
-step(1)
-local fled = target.CFrame.Position
-assert((fled - body.CFrame.Position).Magnitude > (spot - body.CFrame.Position).Magnitude + 3, "Fish flee a swimmer")
+-- Nothing ever darts or swings: per frame, even a swimmer right beside a school
+-- and shore turns leave every fish within its crawl, bob and gentle tail beat.
+facing = Vector3.new(1, 0, 0)
+for frame = 1, 20 * 60 do
+	local near = fish()[1]
+	if near and frame % 60 == 0 then
+		local position = rootOf(near).CFrame.Position
+		body.CFrame = CFrame.new(position.X - 2, -1, position.Z)
+	end
+	local before = {}
+	for _, model in fish() do
+		before[model] = rootOf(model).CFrame
+	end
+	step(1 / 60)
+	for _, model in fish() do
+		local root = rootOf(model)
+		assert(root.CFrame.Position.X < shoreX + 3, "Schools never reach the beach")
+		local previous = before[model]
+		if previous and previous ~= root.CFrame then
+			local moved = (root.CFrame.Position - previous.Position).Magnitude
+			assert(moved < 0.005, "Fish crawl instead of darting: " .. moved)
+			local turn = math.acos(math.clamp(previous.LookVector:Dot(root.CFrame.LookVector), -1, 1))
+			assert(turn < 0.01, "Fish turn gently instead of swinging round: " .. turn)
+		end
+	end
+end
 body.CFrame = CFrame.new(0, 40, 0)
+facing = nil
 
 -- Storm swell sinks new schools.
 move(0, 400, 0)
@@ -280,4 +361,27 @@ for _, model in fish() do
 	assert(rootOf(model).CFrame.Position.Y < -5, "Storm schools swim below the swell")
 end
 
-print("Ambient fish: species pools, welds, depth, heading, solo cruisers, recycling, lake, shallows, shore, fleeing and swell passed")
+-- Schools behind the camera hold still; nearby ones in view move every frame.
+facing = Vector3.new(0, 0, -1)
+local behind, ahead = nil, nil
+for _, model in fish() do
+	local root = rootOf(model)
+	local offset = root.CFrame.Position - Vector3.new(0, 12, 0)
+	if offset.Magnitude > 20 and offset.Unit:Dot(facing) < 0 then
+		behind = behind or root
+	elseif offset.Magnitude > 20 and offset.Magnitude < 60 and offset.Unit:Dot(facing) > 0.3 then
+		ahead = ahead or root
+	end
+end
+assert(behind, "A school swims behind the camera")
+local held = behind.CFrame
+step(0.5)
+assert(behind.CFrame == held, "Schools behind the camera skip their move")
+if ahead then
+	local was = ahead.CFrame
+	step(1 / 60)
+	assert(ahead.CFrame ~= was, "Nearby schools in view move every frame")
+end
+facing = nil
+
+print("Ambient fish: species pools, welds, depth, heading, solo cruisers, recycling, lake, shallows, shore, slow drift, tall fins and swell passed")

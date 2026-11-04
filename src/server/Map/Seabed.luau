@@ -7,6 +7,34 @@ local LowPoly = require(script.Parent.LowPoly)
 local Seabed = {}
 Seabed.Floor = Biomes.SeaFloor
 
+-- Repair baked maps too. Only replace the eight-stud base layer, so raised
+-- biome shelves, island slopes and the water above keep their existing shape.
+function Seabed.ensureSand(root: Instance)
+	if root:GetAttribute("SeabedSandVersion") == 1 then
+		return
+	end
+	local terrain = workspace.Terrain
+	terrain:SetMaterialColor(Enum.Material.Sand, Biomes.Normal.seabedColor)
+	local function fill(x0: number, x1: number, z0: number, z1: number)
+		for x = x0, x1 - 1, 1024 do
+			for z = z0, z1 - 1, 1024 do
+				local sx, sz = math.min(1024, x1 - x), math.min(1024, z1 - z)
+				terrain:FillBlock(
+					CFrame.new(x + sx / 2, Biomes.SeaFloor - 4, z + sz / 2),
+					Vector3.new(sx, 8, sz),
+					Enum.Material.Sand
+				)
+			end
+			task.wait()
+		end
+	end
+	local half, edge = Biomes.MapHalfSize, Biomes.OceanMax
+	fill(-half, half, -half, half)
+	fill(half, edge, Biomes.CityOceanStart, edge)
+	fill(Biomes.CityOceanStart, half, half, edge)
+	root:SetAttribute("SeabedSandVersion", 1)
+end
+
 -- Ease into the shore and flatten into the bed, without ledges or vertical walls.
 function Seabed.height(distance: number, run: number, top: number?, floor: number?): number
 	local bed = floor or Biomes.SeaFloor

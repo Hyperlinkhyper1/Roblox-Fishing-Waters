@@ -145,7 +145,13 @@ local function staffRodCounter(hall: Instance)
 				part.CanQuery = part.Name == "Head"
 			end
 		end
-		keeper:PivotTo(frame + Vector3.new(0, keeper:GetExtentsSize().Y / 2, 0))
+		-- The pivot is the root part; it rides HipHeight above the feet. Measuring the
+		-- whole model instead counts hats and hair and leaves the NPC hovering.
+		local root = keeper.PrimaryPart or keeper:FindFirstChild("HumanoidRootPart")
+		local lift = if humanoid and root and root:IsA("BasePart")
+			then humanoid.HipHeight + root.Size.Y / 2
+			else keeper:GetExtentsSize().Y / 2
+		keeper:PivotTo(frame + Vector3.new(0, lift, 0))
 		keeper.Parent = hall
 		if head and head:IsA("BasePart") then
 			keeperPrompt(head)

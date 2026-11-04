@@ -7,7 +7,7 @@ local dish = { RecipeId = 'Grilled', FishId = 'Trout', Mutation = 'Normal', Kg =
 local old = {
 	Furniture = {
 		{ ItemId = 'PottedPlant', X = 6, Z = 3, R = 0 }, -- shifted partition
-		{ ItemId = 'DiningTable', X = -9, Z = -21, R = 0 }, -- moved dining wall
+		{ ItemId = 'DiningTable', X = -7.5, Z = -21, R = 0 }, -- moved dining wall
 		{ ItemId = 'DiningTable', X = -21, Z = -24, R = 0 }, -- new entrance
 		{ ItemId = 'StorageRack', X = 15, Z = -12, R = 0 },
 		{ ItemId = 'GrillStation', X = -10, Z = -8, R = 0 },
@@ -66,9 +66,9 @@ assert(resolved.FurnitureStock.PottedPlant == 1, 'Picked up item was lost')
 -- unplaceable case without deleting an item or its stored contents.
 -- The plant straddles the old shop partition from the kitchen side, so it stays
 -- in the house; the blocker also covers the shop building across the street.
-Furniture.Items.MigrationTestBlocker = { Name = 'test blocker', Room = 'Shop', Width = 200, Depth = 200, Front = 0, Back = 0 }
+Furniture.Items.MigrationTestBlocker = { Name = 'test blocker', Room = 'Shop', Cells = { 60, 60 }, Width = 200, Depth = 200, Front = 0, Back = 0 }
 local blockedRaw = {
-	Furniture = { { ItemId = 'PottedPlant', X = 6, Z = 1.5, R = 0 }, { ItemId = 'MigrationTestBlocker', X = 0, Z = 0, R = 0 }, { ItemId = 'StorageRack', X = 15, Z = -12, R = 0 } },
+	Furniture = { { ItemId = 'PottedPlant', X = 6, Z = 1.5, R = 0 }, { ItemId = 'MigrationTestBlocker', X = -96, Z = -96, R = 0 }, { ItemId = 'StorageRack', X = 15, Z = -12, R = 0 } },
 	Freezer = { fish }, Storage = { fish }, Kitchen = { GrillStation = { Dish = dish, ReadyAt = 1000 } },
 }
 local blocked = Data.decode(blockedRaw)
