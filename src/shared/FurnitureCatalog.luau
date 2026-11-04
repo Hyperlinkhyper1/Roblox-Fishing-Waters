@@ -41,6 +41,35 @@ Furniture.Order = {
 }
 -- Supplied with a company island (AnglerData.COMPANY_KIT) instead of sold.
 Furniture.KitOrder = { "CompanyPrep", "CompanyDesk" }
+-- Catalogue groups describe the existing inventory; they do not change purchase
+-- rules, placement rooms, or ownership.
+Furniture.Categories = {
+	{ Id = "All", Name = "All" },
+	{ Id = "Shop", Name = "Shop counters" },
+	{ Id = "Kitchen", Name = "Kitchen" },
+	{ Id = "Storage", Name = "Storage" },
+	{ Id = "Seating", Name = "Tables & seating" },
+	{ Id = "Lighting", Name = "Lighting" },
+	{ Id = "Plants", Name = "Plants" },
+	{ Id = "Nautical", Name = "Nautical" },
+	{ Id = "Decor", Name = "Decorations" },
+}
+local CATEGORY_BY_ITEM = {
+	Freezer = "Shop", Register = "Shop", FoodCase = "Shop",
+	GrillStation = "Kitchen", Smoker = "Kitchen", SushiBar = "Kitchen", CompanyPrep = "Kitchen",
+	StorageRack = "Storage", KitchenStorage = "Storage", Bookcase = "Storage", WallShelf = "Storage",
+	DiningTable = "Seating", WoodenBench = "Seating", CompanyDesk = "Seating",
+	FloorLamp = "Lighting", PottedPlant = "Plants", FlowerPlanter = "Plants",
+	BarrelDisplay = "Nautical", CrateStack = "Nautical", RopeBasket = "Nautical", LifeRingStand = "Nautical",
+	AnchorDisplay = "Nautical", FishingNetDisplay = "Nautical", NauticalSign = "Nautical", ShipWheelDisplay = "Nautical",
+	WeatherRadar = "Decor", FishStatue = "Decor", Aquarium = "Decor", Rug = "Decor", CoatRack = "Decor",
+}
+function Furniture.category(itemId: string): string
+	return CATEGORY_BY_ITEM[itemId] or "Decor"
+end
+function Furniture.matchesCategory(itemId: string, category: string): boolean
+	return category == "All" or Furniture.category(itemId) == category
+end
 local DECORATION_ROOMS = { "Shop", "Storage", "Processing" }
 
 Furniture.Items = {

@@ -25,6 +25,9 @@ local RunService = game:GetService("RunService")
 local Lod = {}
 
 local FADE_TIME = 0.6
+-- A shell holds thousands of parts and every transparency write is paid for by the
+-- renderer, so the fade moves in a few steps rather than on every frame.
+local FADE_STEPS = 4
 local SURFACE_INSET = Vector3.new(0, 0.2, 0)
 local insetParts = setmetatable({}, { __mode = "k" })
 local PREFETCH_INTERVAL = 1
@@ -45,7 +48,7 @@ type Island = {
 	connections: { RBXScriptConnection },
 	groundConnections: { RBXScriptConnection },
 }
-type Visual = { parts: { BasePart }, hidden: boolean? }
+type Visual = { parts: { BasePart }, hidden: boolean?, fadeApplied: number? }
 type Tile = Visual & { expected: number, loaded: number, minX: number, minZ: number }
 type Grid = { size: number, x: number, z: number }
 type Shell = Visual & {
@@ -201,6 +204,7 @@ function Lod.start()
 		end
 		local first = visual.hidden == nil
 		visual.hidden = hidden
+		visual.fadeApplied = nil
 		if hidden and not first then
 			-- The real island is already drawn underneath, so the shell can melt away
 			fading[visual] = os.clock()
@@ -258,10 +262,15 @@ function Lod.start()
 		local now = os.clock()
 		for visual, started in fading do
 			local alpha = math.min((now - started) / FADE_TIME, 1)
-			for _, part in visual.parts do
-				part.LocalTransparencyModifier = alpha
+			local stepped = math.ceil(alpha * FADE_STEPS) / FADE_STEPS
+			if stepped ~= visual.fadeApplied then
+				visual.fadeApplied = stepped
+				for _, part in visual.parts do
+					part.LocalTransparencyModifier = stepped
+				end
 			end
 			if alpha >= 1 then
+				visual.fadeApplied = nil
 				fading[visual] = nil
 			end
 		end

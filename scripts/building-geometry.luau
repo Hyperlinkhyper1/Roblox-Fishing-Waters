@@ -84,6 +84,42 @@ Renderer.sync(house,frame,nil,site)
 geometry=house:FindFirstChild('BuildingPieces')
 check(solidAt(geometry,frame*Vector3.new(0,4,0)),'Removing a hosted opening must close the custom wall')
 
+-- Repainting must update finishes without rebuilding walls or disturbing collision.
+local unchangedFolder=geometry
+local unchangedWall=geometry:FindFirstChild('Wall',true)
+local unchangedFrame,unchangedSize=unchangedWall.CFrame,unchangedWall.Size
+custom.Material,custom.Color='Slate',{20,30,40}
+Renderer.sync(house,frame,nil,site)
+check(house:FindFirstChild('BuildingPieces')==unchangedFolder and unchangedWall.Parent~=nil,
+	'Painting must retain the constructed geometry folder and wall instances')
+check(unchangedWall.Material==Enum.Material.Slate and close(unchangedWall.Color.R,20/255),
+	'Painting must recolor the existing wall immediately')
+check(unchangedWall.CFrame==unchangedFrame and unchangedWall.Size==unchangedSize and unchangedWall.CanCollide,
+	'A finish change must preserve wall transforms, dimensions, and collision')
+
+for _,kind in {'Window','Door'} do
+	for _,variant in Building.Variants[kind] do
+		local opening={Id='p55',Kind=kind,HostId=wallId,Offset=9,Style=variant.Style,Level=0,R=0,Material='Wood',Color={100,80,60}}
+		Renderer.sync(house,frame,nil,{Pieces={opening},Overrides={}})
+		local generated=house:FindFirstChild('BuildingPieces')
+		local _,bottom,top=Building.opening(opening)
+		check(#descendantsOfKind(generated,kind)>0,variant.Name..' must render actual catalogue geometry')
+		check(not solidAt(generated,frame*Vector3.new(0.35,(bottom+top)/2+0.25,0)),
+			variant.Name..' must cut a real opening rather than overlay an uncut wall')
+		if kind=='Window' then
+			local pane=generated:FindFirstChild('Glass',true)
+			check(pane and pane.Transparency>0 and not pane.CanCollide,variant.Name..' must retain transparent glazing')
+			local paneMaterial,paneColor=pane.Material,pane.Color
+			opening.Material,opening.Color='Metal',{10,20,30}
+			Renderer.sync(house,frame,nil,{Pieces={opening},Overrides={}})
+			check(house:FindFirstChild('BuildingPieces')==generated and pane.Parent~=nil,
+				'A window finish change must preserve its geometry and glass')
+			check(pane.Material==paneMaterial and pane.Color==paneColor,
+				'Painting a frame must preserve its fixed glass finish')
+		end
+	end
+end
+
 for _,style in {'Flat','Gable','Shed'} do
 	local roof={Id='p5',Kind='Roof',X1=-9,Z1=-9,X2=9,Z2=9,Level=1,Material='RoofShingles',Color={120,70,50},Style=style}
 	local preview=Renderer.preview(workspace,frame,roof,{},baseline,true)
@@ -91,12 +127,51 @@ for _,style in {'Flat','Gable','Shed'} do
 	for _,part in preview:GetDescendants() do
 		if part:IsA('BasePart') then
 			check(not part.CanCollide and not part.CanQuery and not part.CanTouch,style..' preview must not change placement raycasts or physics')
-			check(part.Transparency==0.5 and part.Size.X>0 and part.Size.Y>0 and part.Size.Z>0,'Preview pieces must have valid translucent geometry')
+			check(part.Transparency>0 and part.Transparency<1 and part.Size.X>0 and part.Size.Y>0 and part.Size.Z>0,'Preview pieces must have valid translucent geometry')
 			check(frame:PointToObjectSpace(part.Position).Y>Building.LEVEL_HEIGHT+Building.WALL_HEIGHT,'Roof must use the selected floor level')
 		end
 	end
 	preview:Destroy()
 end
+
+-- Rotation changes the rendered shape without changing the selected variant.
+local turningRoof={Id='p56',Kind='Roof',X1=-9,Z1=-4.5,X2=9,Z2=4.5,Level=0,Material='RoofShingles',Color={120,70,50},Style='Shed',R=0}
+Renderer.sync(house,frame,nil,{Pieces={turningRoof},Overrides={}})
+local shed=house:FindFirstChild('BuildingPieces'):FindFirstChild('ShedRoof',true)
+local firstNormal=frame:ToObjectSpace(shed.CFrame).UpVector
+turningRoof.R=1
+Renderer.sync(house,frame,nil,{Pieces={turningRoof},Overrides={}})
+shed=house:FindFirstChild('BuildingPieces'):FindFirstChild('ShedRoof',true)
+local turnedNormal=frame:ToObjectSpace(shed.CFrame).UpVector
+check(math.abs(firstNormal.X)<0.001 and math.abs(firstNormal.Z)>0.1 and math.abs(turnedNormal.X)>0.1 and math.abs(turnedNormal.Z)<0.001,
+	'R must turn the roof slope by ninety degrees while retaining its Shed style')
+local turnedWindow={Id='p57',Kind='Window',HostId=wallId,Offset=9,Style='Tall',R=1,Level=0,Material='Wood',Color={100,80,60}}
+local rotatedWidth,rotatedBottom,rotatedTop=Building.opening(turnedWindow)
+check(close(rotatedWidth,8) and close(rotatedTop-rotatedBottom,3.5),'Rotating a tall window must swap its opening width and height')
+Renderer.sync(house,frame,nil,{Pieces={turnedWindow},Overrides={}})
+local turningGeometry=house:FindFirstChild('BuildingPieces')
+check(not solidAt(turningGeometry,frame*Vector3.new(3,5.5,0)) and solidAt(turningGeometry,frame*Vector3.new(4.4,5.5,0)),
+	'The rotated window must cut its wider horizontal hole while preserving adjacent wall')
+local turningDoor={Id='p58',Kind='Door',HostId=wallId,Offset=9,Style='Panel',R=0,Level=0,Material='Wood',Color={100,80,60}}
+Renderer.sync(house,frame,nil,{Pieces={turningDoor},Overrides={}})
+local panel=house:FindFirstChild('BuildingPieces'):FindFirstChild('OpenDoor',true)
+local panelStart=frame:PointToObjectSpace(panel.Position)
+turningDoor.R=1
+Renderer.sync(house,frame,nil,{Pieces={turningDoor},Overrides={}})
+panel=house:FindFirstChild('BuildingPieces'):FindFirstChild('OpenDoor',true)
+local panelTurned=frame:PointToObjectSpace(panel.Position)
+check(panelStart.Z>0 and panelTurned.Z<0,'R must change the doorway opening side instead of cycling its catalogue style')
+
+local openingPreview=Renderer.preview(workspace,frame,turnedWindow,{},baseline,true)
+local hostFragments=0
+for _,fragment in openingPreview:GetDescendants() do
+	if fragment:IsA('BasePart') and fragment:GetAttribute('BuildingPreviewHost') then
+		hostFragments+=1
+		check(not fragment.CanCollide and not fragment.CanQuery and not fragment.CanTouch,'Cutout preview host fragments must remain local nonphysical guides')
+	end
+end
+check(hostFragments>0 and openingPreview:FindFirstChild('PlacementOutline')~=nil,'Opening previews must show the cut host and a placement outline')
+openingPreview:Destroy()
 
 local company=Instance.new('Model'); company.Parent=workspace
 local decoration=create(company,'SideWall',Vector3.new(4,10,0.5),frame*CFrame.new(0,5,0))

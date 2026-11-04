@@ -6,20 +6,17 @@ local UserInputService = game:GetService("UserInputService")
 
 local Catalog = require(ReplicatedStorage.Shared.BuildingCatalog)
 local Renderer = require(ReplicatedStorage.Shared.BuildingRenderer)
+local PaintQueue = require(script.Parent.BuildPaintQueue)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local StructureEditor = {}
-local CATEGORIES = { "Wall", "Room", "Door", "Window", "Floor", "Roof", "Stairs" }
-local CATEGORY_NAMES = { Wall = "Walls", Room = "Rooms", Door = "Doors", Window = "Windows", Floor = "Floors", Roof = "Roofs", Stairs = "Stairs" }
+local CATEGORIES = { "Wall", "Room", "Door", "Window", "Floor", "Roof" }
+local CATEGORY_NAMES = { Wall = "Walls", Room = "Rooms", Door = "Doors", Window = "Windows", Floor = "Floors", Roof = "Roofs" }
 local MENU = {
 	Paper = Color3.fromRGB(18, 18, 20), Button = Color3.fromRGB(35, 36, 39), White = Color3.fromRGB(248, 248, 248),
 	Blue = Color3.fromRGB(47, 153, 225), BlueBorder = Color3.fromRGB(30, 121, 187),
 	Ink = Color3.fromRGB(233, 234, 237), Border = Color3.fromRGB(73, 75, 81),
 	Muted = Color3.fromRGB(146, 149, 157), Red = Color3.fromRGB(229, 88, 88),
-}
-local STYLES = {
-	Roof = { "Gable", "Flat", "Shed" }, Stairs = { "North", "East", "South", "West" },
-	Window = { "Picture", "Classic" }, Door = { "Open", "Panel" },
 }
 
 local function make(class: string, parent: Instance, properties): any
@@ -74,6 +71,12 @@ local function copy(entry)
 	if type(entry.Color) == "table" then result.Color = table.clone(entry.Color) end
 	return result
 end
+local function deep(value)
+	if type(value) ~= "table" then return value end
+	local result = {}
+	for key, child in value do result[key] = deep(child) end
+	return result
+end
 
 function StructureEditor.new(options)
 	local self = {}
@@ -85,12 +88,15 @@ function StructureEditor.new(options)
 	local tool, material = "Wall", "Plaster"
 	local section, lastBuildTool = "Furniture", "Wall"
 	local color = { 178, 150, 117 }
-	local styles = { Roof = "Gable", Stairs = "North", Window = "Picture", Door = "Open" }
+	local styles = { Wall = "Solid", Floor = "Tile", Roof = "Gable", Window = "Classic", Door = "Open" }
+	local rotation = 0
 	local level, gridSize = 0, Catalog.GRID
 	local selected, moving, reshaping = nil, nil, nil
 	local anchor, candidate, invalidReason = nil, nil, nil
 	local roomEntries = nil
 	local preview, previewKey, highlight = nil, nil, nil
+	local highlightedId = nil
+	local hiddenHost = {}
 	local previewFolder = make("Folder", workspace, { Name = "StructureEditorPreview" })
 	local targets, targetRefresh = {}, 0
 	local hovered, hoveredInstance, hoverPoint = nil, nil, nil
@@ -98,6 +104,9 @@ function StructureEditor.new(options)
 	local generation = 0
 	local statusMessage = ""
 	local remote, event
+	local paintSession = nil
+	local paintSessions = {}
+	local accept
 
 	local function label(parent, text, properties)
 		local item = make("TextLabel", parent, {
@@ -137,8 +146,6 @@ function StructureEditor.new(options)
 			block(8, 0, 2, 18); block(0, 8, 18, 2)
 		elseif kind == "Roof" then
 			block(0, 6, 11, 3, -35); block(8, 6, 11, 3, 35)
-		elseif kind == "Stairs" then
-			for index = 0, 3 do block(index * 4, 13 - index * 4, 6, 5 + index * 4) end
 		elseif kind == "Floor" then
 			for row = 0, 2 do for column = 0, 2 do block(column * 6, row * 6, 5, 5) end end
 		else
@@ -185,6 +192,7 @@ function StructureEditor.new(options)
 	local editStrip = strip(panel, "EditingTools", 39, 33)
 	local materialStrip = strip(panel, "SurfaceMaterials", 77, 31)
 	local colorStrip = strip(panel, "SurfaceColors", 112, 28)
+	local variantStrip = strip(panel, "StructureCatalogue", 77, 64)
 	local actionStrip = strip(panel, "ConstructionActions", 147, 34)
 	local tabs = make("Frame", options.Gui, {
 		Name = "BuildSections", Active = true, AnchorPoint = Vector2.new(0.5, 1),
@@ -203,6 +211,7 @@ function StructureEditor.new(options)
 	Theme.corner(tooltip, 6)
 	border(tooltip).Color = MENU.Border
 	local toolButtons, materialButtons, colorButtons = {}, {}, {}
+	local variantCards = {}
 	for index, name in CATEGORIES do
 		toolButtons[name] = button(toolStrip, CATEGORY_NAMES[name], {
 			Name = "Tool" .. name, LayoutOrder = index, Size = UDim2.fromOffset(if name == "Window" then 116 else 106, 29),
@@ -219,6 +228,25 @@ function StructureEditor.new(options)
 		toolButtons[name] = button(actionStrip, name, {
 			Name = "Tool" .. name, LayoutOrder = index - 10, Size = UDim2.fromOffset(76, 28),
 		})
+	end
+	for _, kind in CATEGORIES do
+		variantCards[kind] = {}
+		for index, variant in Catalog.Variants[if kind == "Room" then "Wall" else kind] or {} do
+			local card = button(variantStrip, "", {
+				Name = "Variant" .. kind .. variant.Id, LayoutOrder = index, Size = UDim2.fromOffset(164, 58), Visible = false,
+			})
+			local view = make("ViewportFrame", card, {
+				Name = "CatalogueThumbnail", BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3),
+				Size = UDim2.fromOffset(70, 52), Active = false,
+			})
+			label(card, if kind == "Room" then "Room" else variant.Name, {
+				Position = UDim2.fromOffset(78, 4), Size = UDim2.fromOffset(82, 28), TextSize = 11,
+			})
+			label(card, string.format("$%d", variant.Price or 0), {
+				Position = UDim2.fromOffset(78, 34), Size = UDim2.fromOffset(82, 18), TextSize = 12,
+			})
+			table.insert(variantCards[kind], { Button = card, View = view, Variant = variant, Started = false })
+		end
 	end
 	for index, name in Catalog.Materials do
 		materialButtons[name] = button(materialStrip, name:gsub("(%l)(%u)", "%1 %2"), {
@@ -246,7 +274,7 @@ function StructureEditor.new(options)
 	Theme.corner(hex, 4)
 	make("UIStroke", hex, { Color = MENU.Border, Thickness = 1 })
 	local hexApply = button(colorStrip, "Set color", { LayoutOrder = 101, Size = UDim2.fromOffset(80, 23) })
-	local styleButton = button(actionStrip, "Style: Gable [R]", { LayoutOrder = 1, Size = UDim2.fromOffset(142, 28) })
+	local styleButton = button(actionStrip, "Rotate [R]", { Name = "RotateStructure", LayoutOrder = 1, Size = UDim2.fromOffset(106, 28) })
 	local moveButton = button(actionStrip, "Move", { LayoutOrder = 2, Size = UDim2.fromOffset(70, 28) })
 	local reshapeButton = button(actionStrip, "Reshape", { LayoutOrder = 3, Size = UDim2.fromOffset(82, 28) })
 	local finishButton = button(actionStrip, "Apply finish", { LayoutOrder = 4, Size = UDim2.fromOffset(100, 28) })
@@ -261,12 +289,15 @@ function StructureEditor.new(options)
 		if options.Notice then options.Notice(message) end
 	end
 	local function clearPreview()
+		for part, modifier in hiddenHost do if part.Parent then part.LocalTransparencyModifier = modifier end end
+		hiddenHost = {}
 		if preview then preview:Destroy(); preview = nil end
 		previewKey, candidate, invalidReason, roomEntries = nil, nil, nil, nil
 		tooltip.Visible = false
 	end
 	local function clearHighlight()
 		if highlight then highlight:Destroy(); highlight = nil end
+		highlightedId = nil
 	end
 	local function entryById(id)
 		if not state or not id then return nil end
@@ -287,6 +318,23 @@ function StructureEditor.new(options)
 		setButton(decorateTab, true, section == "Decorate")
 		setButton(structureTab, true, section == "Build")
 		toolStrip.Visible, editStrip.Visible = section == "Build", section == "Decorate"
+		materialStrip.Visible, colorStrip.Visible = section == "Decorate", section == "Decorate"
+		variantStrip.Visible = section == "Build"
+		for kind, cards in variantCards do
+			for _, record in cards do
+				record.Button.Visible = kind == tool and section == "Build"
+				setButton(record.Button, not pending, styles[if kind == "Room" then "Wall" else kind] == record.Variant.Style)
+				if record.Button.Visible and not record.Started then
+					record.Started = true
+					Renderer.thumbnail(record.View, {
+						Kind = if kind == "Room" then "Wall" else kind, Style = record.Variant.Style,
+						Material = record.Variant.Material or (if kind == "Roof" then "RoofShingles" elseif kind == "Floor" then "WoodPlanks" elseif kind == "Window" or kind == "Door" then "Wood" else "Plaster"),
+						Color = record.Variant.Color or { 212, 215, 219 }, Level = 0, R = 0,
+						X1 = -4.5, Z1 = -4.5, X2 = 4.5, Z2 = 4.5,
+					})
+				end
+			end
+		end
 		for _, name in { "Select", "Paint", "Remove" } do
 			toolButtons[name].Parent = if section == "Decorate" then editStrip else actionStrip
 		end
@@ -300,21 +348,20 @@ function StructureEditor.new(options)
 		local selectedEntry = entryById(selected)
 		local selecting = tool == "Select" and moving == nil and reshaping == nil
 		moveButton.Visible = selecting and customSelection() and selectedEntry ~= nil
-		reshapeButton.Visible = moveButton.Visible and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor"
-			or selectedEntry.Kind == "Roof" or selectedEntry.Kind == "Stairs")
+		reshapeButton.Visible = moveButton.Visible and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor" or selectedEntry.Kind == "Roof")
 		finishButton.Visible = selecting and selectedEntry ~= nil
 		cancelButton.Visible = anchor ~= nil or moving ~= nil or reshaping ~= nil or selected ~= nil
 		gridButton.Visible = section == "Build"
 		setButton(moveButton, customSelection() and selectedEntry ~= nil and not pending, moving ~= nil)
 		setButton(reshapeButton, customSelection() and selectedEntry ~= nil
-			and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor" or selectedEntry.Kind == "Roof" or selectedEntry.Kind == "Stairs") and not pending, reshaping ~= nil)
+			and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor" or selectedEntry.Kind == "Roof") and not pending, reshaping ~= nil)
 		setButton(finishButton, selectedEntry ~= nil and not pending)
 		setButton(undoButton, state ~= nil and state.CanUndo == true and not pending)
 		setButton(redoButton, state ~= nil and state.CanRedo == true and not pending)
 		setButton(downButton, level > 0 and not pending)
 		setButton(upButton, level < Catalog.MAX_LEVEL and not pending)
-		styleButton.Visible = STYLES[tool] ~= nil
-		styleButton.Text = "Style: " .. (styles[tool] or "") .. " [R]"
+		styleButton.Visible = table.find(CATEGORIES, tool) ~= nil
+		styleButton.Text = string.format("Rotate %d° [R]", rotation * 90)
 		gridButton.Text = string.format("Grid: %g [G]", gridSize)
 		roofsButton.Text = if showRoofs then "Hide roof" else "Show roof"
 		status.Text = if pending then "Saving…" elseif statusMessage ~= "" then statusMessage
@@ -334,13 +381,117 @@ function StructureEditor.new(options)
 		statusMessage, targetRefresh = "", 0
 		setEnabled(value ~= "Furniture")
 	end
-	local function accept(nextState)
+	local function targetIds(data, id)
+		local entry = data and data.Builtins and data.Builtins[id]
+		local group = entry and entry.Kind == "Roof" and id:match("^(b:.+)/[^/]+$")
+		if not group then return { id } end
+		local ids = {}
+		for key, descriptor in data.Builtins do
+			local removed = data.Overrides and data.Overrides[key] and data.Overrides[key].Removed
+			if not removed and descriptor.Kind == "Roof" and key:match("^(b:.+)/[^/]+$") == group then table.insert(ids, key) end
+		end
+		table.sort(ids)
+		return ids
+	end
+	local function sourceEntry(data, id)
+		if not data then return nil end
+		for _, entry in data.Pieces or {} do if entry.Id == id then return entry end end
+		local original = data.Builtins and data.Builtins[id]
+		if not original then return nil end
+		local override = data.Overrides and data.Overrides[id]
+		if override and override.Removed then return nil end
+		return { Material = (override and override.Material) or original.Material, Color = (override and override.Color) or original.Color }
+	end
+	local replayPaint
+	local function scheduleReplay(session)
+		if session.ReplayQueued or session.Abandoned then return end
+		session.ReplayQueued = true
+		task.defer(function()
+			session.ReplayQueued = false
+			if not session.Abandoned then replayPaint(session, false) end
+		end)
+	end
+	local function worldPatch(session, id, patch, optimistic)
+		if session.Dirty then
+			session.Parts = {}
+			for _, part in session.House:GetDescendants() do
+				if part:IsA("BasePart") then
+					local key = part:GetAttribute("BuildingId")
+					if key then session.Parts[key] = session.Parts[key] or {}; table.insert(session.Parts[key], part) end
+				end
+			end
+			session.Dirty = false
+		end
+		for _, part in session.Parts[id] or {} do
+			if not part.Parent or part:GetAttribute("BuildingFixedFinish") then continue end
+			if not session.Watching[part] and part.GetPropertyChangedSignal then
+				session.Watching[part] = true
+				local function changed()
+					if session.Queue:busy() then scheduleReplay(session) end
+				end
+				part:GetPropertyChangedSignal("Color"):Connect(changed)
+				part:GetPropertyChangedSignal("Material"):Connect(changed)
+			end
+			if not session.Snapshots[part] then session.Snapshots[part] = { Material = part.Material, Color = part.Color } end
+			local finish = patch or session.Snapshots[part]
+			if finish.Material then
+				local value = if type(finish.Material) == "string" then Enum.Material[finish.Material] else finish.Material
+				if part.Material ~= value then part.Material = value end
+			end
+			if finish.Color then
+				local value = if type(finish.Color) == "table" and finish.Color[1] then Color3.fromRGB(finish.Color[1], finish.Color[2], finish.Color[3]) else finish.Color
+				if part.Color ~= value then part.Color = value end
+			end
+			if optimistic then session.Applied[part] = { Material = part.Material, Color = part.Color }
+			elseif patch then session.Snapshots[part] = { Material = part.Material, Color = part.Color } end
+		end
+	end
+	replayPaint = function(session, rebase)
+		if session.Abandoned then return end
+		local owner = session.House:GetAttribute("OwnerUserId") or (session.House.Parent and session.House.Parent:GetAttribute("OwnerUserId"))
+		if Players.LocalPlayer and owner and owner ~= Players.LocalPlayer.UserId then
+			-- Release local overrides once. Later replication belongs to the next owner.
+			session.Abandoned = true
+			for id in session.PendingIds do
+				for _, part in session.Parts[id] or {} do
+					local snapshot, applied = session.Snapshots[part], session.Applied[part]
+					if part.Parent and snapshot and applied then
+						if part.Material == applied.Material then part.Material = snapshot.Material end
+						if part.Color == applied.Color then part.Color = snapshot.Color end
+					end
+				end
+			end
+			return
+		end
+		if rebase then
+			for id in session.Touched do worldPatch(session, id, sourceEntry(session.State, id)) end
+		end
+		local records = {}
+		for _, record in session.Queue.Outstanding do table.insert(records, record) end
+		table.sort(records, function(a, b) return a.Serial < b.Serial end)
+		for _, record in records do
+			for _, id in targetIds(session.State, record.Patch.Id) do
+				session.Touched[id] = true
+				worldPatch(session, id, record.Patch, true)
+				if paintSession == session then
+					local entry = entriesById[id]
+					if entry then entry.Material, entry.Color = record.Patch.Material, table.clone(record.Patch.Color) end
+				end
+			end
+		end
+	end
+	accept = function(nextState)
 		if type(nextState) ~= "table" then return end
-		state = nextState
+		if paintSession then
+			local previous = paintSession.State
+			if previous and (nextState.Revision or 0) < (previous.Revision or 0) then return end
+			paintSession.State, paintSession.Dirty = nextState, true
+		end
+		state = deep(nextState)
 		builtins, entriesById = {}, {}
-		for _, entry in nextState.Pieces or {} do entriesById[entry.Id] = entry end
-		for id, entry in nextState.Builtins or {} do
-			local override = nextState.Overrides and nextState.Overrides[id]
+		for _, entry in state.Pieces or {} do entriesById[entry.Id] = entry end
+		for id, entry in state.Builtins or {} do
+			local override = state.Overrides and state.Overrides[id]
 			if override and override.Removed then continue end
 			local descriptor = copy(entry)
 			if override then descriptor.Material, descriptor.Color = override.Material or descriptor.Material, override.Color or descriptor.Color end
@@ -349,7 +500,53 @@ function StructureEditor.new(options)
 		targetRefresh = 0
 		if selected and not entryById(selected) then selected = nil; clearHighlight() end
 		previewKey = nil
+		if paintSession then replayPaint(paintSession, true) end
 		refresh()
+	end
+	local function openPaintSession(model, where)
+		local session = paintSessions[model]
+		if session and session.Site == where and not session.Abandoned then return session end
+		session = { House = model, Site = where, State = nil, Touched = {},
+			Snapshots = setmetatable({}, { __mode = "k" }), Watching = setmetatable({}, { __mode = "k" }),
+			Applied = setmetatable({}, { __mode = "k" }), PendingIds = {}, Parts = {}, Dirty = true }
+		session.Queue = PaintQueue.new({
+			Send = function(entries)
+				if not remote then return { Ok = false, Message = "Building tools are still connecting." } end
+				local ok, result = pcall(remote.InvokeServer, remote, "PaintBatch", { Entries = entries }, session.Site)
+				if ok and type(result) == "table" then return result end
+				local fetched, current = pcall(remote.InvokeServer, remote, "Get", {}, session.Site)
+				return { Ok = false, Message = "Painting could not be saved. Please try again.", State = fetched and current and current.State }
+			end,
+			Changed = function(outstanding)
+				session.PendingIds = {}
+				for _, record in outstanding do
+					for _, id in targetIds(session.State, record.Patch.Id) do session.PendingIds[id] = true end
+				end
+				replayPaint(session, false)
+			end,
+			Result = function(result)
+				if result and result.State and (not session.State or (result.State.Revision or 0) >= (session.State.Revision or 0)) then session.State = result.State end
+				session.Dirty = true
+				if paintSession == session and opened and session.State then accept(session.State) else replayPaint(session, true) end
+				if not result or result.Ok == false then
+					local message = result and result.Message or "Painting could not be saved. Please try again."
+					if paintSession == session and opened then notify(message); refresh() elseif options.Notice then options.Notice(message) end
+				end
+			end,
+		})
+		if model.DescendantAdded then
+			model.DescendantAdded:Connect(function()
+				session.Dirty = true
+				if session.Queue:busy() then scheduleReplay(session) end
+			end)
+		end
+		paintSessions[model] = session
+		return session
+	end
+	local function paint(id)
+		if not paintSession or not state then return end
+		local ids = targetIds(paintSession.State, id)
+		paintSession.Queue:paint({ Id = ids[1], Material = material, Color = table.clone(color) })
 	end
 	local function send(action, payload, onSuccess)
 		if pending or not opened then return end
@@ -357,9 +554,18 @@ function StructureEditor.new(options)
 		pending, statusMessage = true, ""
 		refresh()
 		local token, requestSite = generation, site
-		task.spawn(function()
+		local requestSession = paintSession
+		local function dispatch() task.spawn(function()
 			local ok, result = pcall(remote.InvokeServer, remote, action, payload, requestSite)
-			if token ~= generation then return end
+			if token ~= generation then
+				if ok and type(result) == "table" and type(result.State) == "table" and requestSession then
+					if not requestSession.State or (result.State.Revision or 0) >= (requestSession.State.Revision or 0) then
+						requestSession.State = result.State
+						if paintSession == requestSession and opened then accept(result.State) end
+					end
+				end
+				return
+			end
 			pending = false
 			if ok and type(result) == "table" then
 				if result.State then accept(result.State) end
@@ -370,12 +576,16 @@ function StructureEditor.new(options)
 				notify("Building could not be saved. Please try again.")
 			end
 			refresh()
-		end)
+		end) end
+		if paintSession then paintSession.Queue:drain(dispatch) else dispatch() end
 	end
 	local function changeTool(name)
 		if pending then return end
 		if table.find(CATEGORIES, name) then section, lastBuildTool = "Build", name
 		elseif name == "Paint" then section = "Decorate" end
+		if name ~= tool and table.find(CATEGORIES, name) then
+			material = if name == "Window" or name == "Door" then "Wood" elseif name == "Roof" then "RoofShingles" elseif name == "Floor" then "WoodPlanks" else "Plaster"
+		end
 		tool, anchor, moving, reshaping, statusMessage, targetRefresh = name, nil, nil, nil, "", 0
 		clearPreview()
 		if options.OnModeChanged then options.OnModeChanged(enabled) end
@@ -434,7 +644,7 @@ function StructureEditor.new(options)
 					local id = idOf(item)
 					local entry = entryById(id)
 					if entry and (entry.Level or 0) == level and not item:GetAttribute("BuildingRemoved")
-						and (item.LocalTransparencyModifier or 0) < 0.99 and (item.Transparency or 0) < 1
+						and ((item.LocalTransparencyModifier or 0) < 0.99 or hiddenHost[item] ~= nil) and (item.Transparency or 0) < 1
 						and (self:roofVisible() or entry.Kind ~= "Roof") then table.insert(targets, item) end
 				end
 			end
@@ -482,6 +692,7 @@ function StructureEditor.new(options)
 			local entry = if source then copy(source) else {
 				Kind = kind, Level = host.Level or level, Material = material, Color = table.clone(color), Style = styles[kind],
 			}
+			entry.R = rotation
 			local width = Catalog.opening(entry)
 			local minimum, maximum = width / 2 + 0.2, length - width / 2 - 0.2
 			local openingStep = gridSize / 2
@@ -496,13 +707,23 @@ function StructureEditor.new(options)
 		if source then
 			local entry = copy(source)
 			local cx, cz = (entry.X1 + entry.X2) / 2, (entry.Z1 + entry.Z2) / 2
+			if (rotation - (source.R or 0)) % 2 == 1 then
+				local dx1, dz1 = entry.X1 - cx, entry.Z1 - cz
+				local dx2, dz2 = entry.X2 - cx, entry.Z2 - cz
+				entry.X1, entry.Z1, entry.X2, entry.Z2 = cx - dz1, cz + dx1, cx - dz2, cz + dx2
+			end
 			local dx, dz = math.round((x - cx) / gridSize) * gridSize, math.round((z - cz) / gridSize) * gridSize
 			entry.X1, entry.Z1 = entry.X1 + dx, entry.Z1 + dz
 			entry.X2, entry.Z2, entry.Level = entry.X2 + dx, entry.Z2 + dz, level
+			entry.R = rotation
 			return entry
 		end
-		if kind ~= "Wall" and kind ~= "Room" and kind ~= "Floor" and kind ~= "Roof" and kind ~= "Stairs" then return nil end
+		if kind ~= "Wall" and kind ~= "Room" and kind ~= "Floor" and kind ~= "Roof" then return nil end
 		local first = anchor or Vector2.new(x, z)
+		local dx, dz = x - first.X, z - first.Y
+		if dx == 0 and dz == 0 then dx = gridSize; if kind ~= "Wall" then dz = gridSize end end
+		for _ = 1, rotation do dx, dz = -dz, dx end
+		x, z = first.X + dx, first.Y + dz
 		if kind == "Wall" then
 			if math.abs(x - first.X) >= math.abs(z - first.Y) then z = first.Y else x = first.X end
 			if x == first.X and z == first.Y then x += gridSize end
@@ -512,7 +733,7 @@ function StructureEditor.new(options)
 		end
 		return {
 			Kind = if kind == "Room" then "Floor" else kind, X1 = first.X, Z1 = first.Y, X2 = x, Z2 = z, Level = level,
-			Material = material, Color = table.clone(color), Style = styles[kind],
+			Material = material, Color = table.clone(color), Style = styles[if kind == "Room" then "Floor" else kind], R = rotation,
 		}
 	end
 	local function room(entry)
@@ -522,7 +743,7 @@ function StructureEditor.new(options)
 		for index, edge in edges do
 			table.insert(entries, {
 				Id = "room-preview-" .. index, Kind = "Wall", X1 = edge[1], Z1 = edge[2], X2 = edge[3], Z2 = edge[4],
-				Level = entry.Level, Material = entry.Material, Color = table.clone(entry.Color),
+				Level = entry.Level, Material = entry.Material, Color = table.clone(entry.Color), Style = styles.Wall, R = entry.R,
 			})
 		end
 		local floor = copy(entry)
@@ -553,6 +774,21 @@ function StructureEditor.new(options)
 					elseif tool == "Remove" then "Remove " .. hovered.Kind .. " · Undo available" else hovered.Kind
 				tooltip.Visible = true
 			end
+			if not selected and highlightedId ~= (hovered and hovered.Id) then
+				clearHighlight()
+				if hovered then
+					highlightedId = hovered.Id
+					highlight = make("Folder", previewFolder, { Name = "SurfacePreviewOutline" })
+					for _, part in house:GetDescendants() do
+						if part:IsA("BasePart") and part:GetAttribute("BuildingId") == hovered.Id then
+							make("Highlight", highlight, { Adornee = part, FillTransparency = 0.93,
+								FillColor = if tool == "Remove" then MENU.Red else MENU.Blue,
+								OutlineColor = if tool == "Remove" then MENU.Red else MENU.White,
+								DepthMode = Enum.HighlightDepthMode.Occluded })
+						end
+					end
+				end
+			end
 		elseif state then
 			local raw, reason = candidateAt(position)
 			local entry, normalizeReason
@@ -578,14 +814,24 @@ function StructureEditor.new(options)
 			local key = if entry then string.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
 				entry.Kind, tostring(entry.X1), tostring(entry.Z1), tostring(entry.X2), tostring(entry.Z2), tostring(entry.Level),
 				tostring(entry.HostId), tostring(entry.Offset), tostring(entry.Style), entry.Material or material,
-				tostring(color[1]), tostring(color[2]), tostring(color[3]), tostring(reason), tostring(reshaping or moving)) .. tool else "none"
+				tostring(color[1]), tostring(color[2]), tostring(color[3]), tostring(reason), tostring(reshaping or moving)) .. tool .. tostring(entry.R) else "none"
 			if key ~= previewKey then
+				for part, modifier in hiddenHost do if part.Parent then part.LocalTransparencyModifier = modifier end end
+				hiddenHost = {}
 				if preview then preview:Destroy(); preview = nil end
 				previewKey = key
 				if roomEntries then
 					preview = make("Model", previewFolder, { Name = "RoomPreview" })
 					for _, piece in roomEntries do Renderer.preview(preview, frame, piece, state.Pieces or {}, builtins, reason == nil, site) end
 				elseif entry then preview = Renderer.preview(previewFolder, frame, entry, state.Pieces or {}, builtins, reason == nil, site) end
+				if entry and entry.HostId and reason == nil then
+					for _, part in house:GetDescendants() do
+						if part:IsA("BasePart") and part:GetAttribute("BuildingId") == entry.HostId then
+							hiddenHost[part] = part.LocalTransparencyModifier or 0
+							part.LocalTransparencyModifier = 1
+						end
+					end
+				end
 			end
 			tooltip.Text = if reason then reason elseif entry then string.format("%s · $%d\n%s", if isRoom then "Room" else entry.Kind, cost,
 				if moving then "Click to move" elseif anchor or tool == "Door" or tool == "Window" then "Click to build" else "Click to start") else ""
@@ -599,14 +845,14 @@ function StructureEditor.new(options)
 		end
 	end
 	function self:click(position)
-		if not self:isActive() or pending or overInterface(position) then return end
+		if not self:isActive() or (pending and tool ~= "Paint") or overInterface(position) then return end
 		statusMessage = ""
 		self:step(position)
 		if tool == "Select" and not moving and not reshaping then selectHovered(); return end
 		if tool == "Paint" or tool == "Remove" then
 			if not hovered then return end
 			local id = hovered.Id
-			if tool == "Paint" then send("Paint", { Id = id, Material = material, Color = table.clone(color) })
+			if tool == "Paint" then paint(id)
 			else send("Remove", { Id = id }) end
 			return
 		end
@@ -631,11 +877,9 @@ function StructureEditor.new(options)
 		anchor, moving, reshaping, selected, statusMessage = nil, nil, nil, nil, ""
 		clearPreview(); clearHighlight(); refresh()
 	end
-	local function cycleStyle()
-		local list = STYLES[tool]
-		if not list then return end
-		local index = table.find(list, styles[tool]) or 1
-		styles[tool] = list[index % #list + 1]
+	local function rotate()
+		if not table.find(CATEGORIES, tool) then return end
+		rotation = (rotation + 1) % 4
 		previewKey = nil
 		refresh()
 	end
@@ -652,7 +896,7 @@ function StructureEditor.new(options)
 		if control and input.KeyCode == Enum.KeyCode.Z then send("Undo", {}); return true end
 		if control and input.KeyCode == Enum.KeyCode.Y then send("Redo", {}); return true end
 		if input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.Escape then cancel(); return true end
-		if input.KeyCode == Enum.KeyCode.R then cycleStyle(); return true end
+		if input.KeyCode == Enum.KeyCode.R then rotate(); return true end
 		if input.KeyCode == Enum.KeyCode.G then nextGrid(); return true end
 		if input.KeyCode == Enum.KeyCode.PageUp then changeLevel(1); return true end
 		if input.KeyCode == Enum.KeyCode.PageDown then changeLevel(-1); return true end
@@ -662,7 +906,8 @@ function StructureEditor.new(options)
 	function self:enter(model, houseFrame, where)
 		generation += 1
 		house, frame, site, opened, pending = model, houseFrame, where, true, false
-		state, level, statusMessage, targetRefresh = nil, 0, "", 0
+		paintSession = openPaintSession(model, where)
+		state, level, statusMessage, targetRefresh, rotation = nil, 0, "", 0, 0
 		setSection("Furniture")
 		send("Get", {})
 	end
@@ -676,6 +921,18 @@ function StructureEditor.new(options)
 		refresh()
 	end
 	for name, item in toolButtons do item.Activated:Connect(function() changeTool(name) end) end
+	for kind, cards in variantCards do
+		for _, record in cards do
+			record.Button.Activated:Connect(function()
+				if pending then return end
+				styles[if kind == "Room" then "Wall" else kind] = record.Variant.Style
+				if record.Variant.Material then material = record.Variant.Material end
+				if record.Variant.Color then color = table.clone(record.Variant.Color) end
+				previewKey, statusMessage = nil, ""
+				refresh()
+			end)
+		end
+	end
 	for name, item in materialButtons do item.Activated:Connect(function() material = name; statusMessage = ""; previewKey = nil; refresh() end) end
 	for item, swatch in colorButtons do
 		item.Activated:Connect(function()
@@ -697,7 +954,7 @@ function StructureEditor.new(options)
 	decorateTab.Activated:Connect(function() setSection("Decorate") end)
 	structureTab.Activated:Connect(function() setSection("Build") end)
 	done.Activated:Connect(function() if options.OnExit then options.OnExit() end end)
-	styleButton.Activated:Connect(cycleStyle)
+	styleButton.Activated:Connect(rotate)
 	cancelButton.Activated:Connect(cancel)
 	gridButton.Activated:Connect(nextGrid)
 	downButton.Activated:Connect(function() changeLevel(-1) end)
@@ -710,13 +967,13 @@ function StructureEditor.new(options)
 	undoButton.Activated:Connect(function() send("Undo", {}) end)
 	redoButton.Activated:Connect(function() send("Redo", {}) end)
 	finishButton.Activated:Connect(function()
-		if selected then send("Paint", { Id = selected, Material = material, Color = table.clone(color) }) end
+		if selected then paint(selected) end
 	end)
 	moveButton.Activated:Connect(function()
 		if not customSelection() or pending then return end
 		moving, reshaping, anchor, statusMessage = selected, nil, nil, ""
 		local entry = entryById(selected)
-		if entry then level = entry.Level or level; tool = entry.Kind end
+		if entry then level = entry.Level or level; tool = entry.Kind; rotation = entry.R or 0 end
 		clearPreview(); refresh()
 	end)
 	reshapeButton.Activated:Connect(function()
@@ -725,6 +982,7 @@ function StructureEditor.new(options)
 		if not entry then return end
 		reshaping, moving, anchor, tool, level, statusMessage = selected, nil, nil, entry.Kind, entry.Level or level, ""
 		styles[tool] = entry.Style or styles[tool]
+		rotation = entry.R or 0
 		clearPreview(); refresh()
 	end)
 	-- Wait outside BuildMode.start so a delayed service does not hold up its UI.

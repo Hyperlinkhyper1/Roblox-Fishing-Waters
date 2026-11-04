@@ -213,20 +213,21 @@ profile.Angler.Building.Company.Pieces={}
 furnitureOk=tryFurniture(player,"PottedPlant",item.X,item.Z,item.R,"Company")
 check(furnitureOk and profile.Angler.FurnitureStock.PottedPlant==nil and #profile.Angler.CompanyFurniture==1,"FurnitureService still places owned furniture when the custom wall is removed")
 local stairs={Kind="Stairs",X1=9,Z1=-18,X2=13.5,Z2=-9,Level=0,Style="North",Material="WoodPlanks",Color={128,88,54}}
+saveCount=saves
 result=invoke("Place",{Entries={stairs}},"Company")
-check(not result.Ok,"Staircases cannot consume a working furniture position")
+check(not result.Ok and saves==saveCount,"Removed staircases must not be available through direct placement requests")
 profile.Angler.CompanyFurniture={}
-result=invoke("Place",{Entries={stairs}},"Company")
-check(result.Ok and #result.State.Pieces==1 and result.State.Pieces[1].Kind=="Stairs","Staircases persist through the same authoritative save flow")
-local stairId=result.State.Pieces[1].Id
-check(profile.Cash==460,"Staircase pricing is twenty dollars per grid cell")
+local legacyStairs=assert(Building.normalize(stairs));legacyStairs.Id="p200"
+profile.Angler.Building.Company={NextId=201,Pieces={legacyStairs},Overrides={}}
+result=invoke("Get",nil,"Company")
+check(#result.State.Pieces==1 and result.State.Pieces[1].Kind=="Stairs","Existing saved staircases must survive removal of the new-placement tool")
 check(Service.furnitureProblem(player,item,"Company",profile)~=nil,"FurnitureService also protects staircase footprints")
+result=invoke("Paint",{Id="p200",Material="Marble",Color={200,201,202}},"Company")
+check(result.Ok and result.State.Pieces[1].Material=="Marble","An existing staircase must remain editable without losing saved geometry")
 result=invoke("Undo",{},"Company")
-check(result.Ok and #result.State.Pieces==0 and profile.Cash==500,"Stair undo removes construction and refunds its original price")
+check(result.Ok and #result.State.Pieces==1 and result.State.Pieces[1].Material=="WoodPlanks" and profile.Cash==500,"Undo of a legacy staircase finish must preserve its geometry and wallet")
 result=invoke("Redo",{},"Company")
-check(result.Ok and result.State.Pieces[1].Id==stairId and profile.Cash==460,"Stair redo preserves its stable ID and charges again")
-result=invoke("Paint",{Id=stairId,Style="South",Material="Marble",Color={200,201,202}},"Company")
-check(result.Ok and result.State.Pieces[1].Style=="South","Stair direction and finish can be edited together")
+check(result.Ok and result.State.Pieces[1].Id=="p200" and profile.Cash==500,"Redo of an existing staircase finish preserves its stable ID without a new purchase")
 local invalidStair=copy(stairs);invalidStair.Level=3
 saveCount=saves
 result=invoke("Place",{Entries={invalidStair}},"Company")
@@ -246,6 +247,39 @@ check(result.Ok and edits[roofA].Removed and edits[roofB].Removed and edits[shop
 result=invoke("Undo",{})
 edits=profile.Angler.Building.Home.Overrides
 check(result.Ok and not edits[roofA].Removed and not edits[roofB].Removed and edits[roofA].Material=="Slate" and edits[roofB].Material=="Slate","One undo restores the entire original roof with its previous finish")
+
+-- One bounded paint transaction commits a rapid stroke atomically.
+local batchWallet=profile.Cash
+saveCount=saves
+result=invoke("PaintBatch",{Entries={{Id=selected,Material="Metal",Color={90,100,110}},{Id=roofA,Material="Brick",Color={120,130,140}}}})
+check(result.Ok and saves==saveCount+1 and profile.Cash==batchWallet,"A paint batch must use one atomic save without charging construction prices")
+local paintedWall
+for _,entry in result.State.Pieces do if entry.Id==selected then paintedWall=entry end end
+check(paintedWall and paintedWall.Material=="Metal" and paintedWall.Color[1]==90,"A paint batch must persist custom wall finishes")
+edits=profile.Angler.Building.Home.Overrides
+check(edits[roofA].Material=="Brick" and edits[roofB].Material=="Brick" and edits[shopRoof]==nil,"Paint batches must retain whole-roof grouping without leaking to other buildings")
+result=invoke("Undo",{})
+local priorWall
+for _,entry in result.State.Pieces do if entry.Id==selected then priorWall=entry end end
+check(result.Ok and priorWall.Material=="WoodPlanks" and result.State.Overrides[roofA].Material=="Slate","One undo must reverse the entire saved paint stroke")
+result=invoke("Redo",{})
+check(result.Ok and result.State.Overrides[roofA].Material=="Brick","A paint stroke must be redoable")
+saveCount=saves
+result=invoke("PaintBatch",{Entries={{Id=selected,Material="Wood",Color={1,2,3}},{Id="p_missing",Material="Brick",Color={4,5,6}}}})
+check(not result.Ok and saves==saveCount,"An invalid paint target must reject the whole batch before saving")
+local retained
+for _,entry in profile.Angler.Building.Home.Pieces do if entry.Id==selected then retained=entry end end
+check(retained.Material=="Metal" and retained.Color[1]==90,"Rejecting one paint target must leave earlier batch entries unapplied")
+result=invoke("PaintBatch",{Entries={{Id=selected,Material="Wood",Color={1,2,3}},{Id=roofA,Material="Brick",Color={999,5,6}}}})
+check(not result.Ok and saves==saveCount,"Invalid appearance must reject an entire paint stroke atomically")
+local hugeBatch={}
+for index=1,65 do hugeBatch[index]={Id=selected,Material="Brick",Color={index,2,3}} end
+result=invoke("PaintBatch",{Entries=hugeBatch})
+check(not result.Ok and saves==saveCount,"One remote paint packet must never exceed 64 target changes")
+failSave=true
+result=invoke("PaintBatch",{Entries={{Id=selected,Material="Wood",Color={1,2,3}}}})
+failSave=false
+check(not result.Ok and profile.Cash==batchWallet,"A failed paint save must not debit the wallet or commit an optimistic finish")
 print("Building service: "..checks.." ownership, transaction, persistence, price, history and collision checks passed (no Studio/DataStore).")
 `;
 const folder=await mkdtemp(join(tmpdir(),'building-service-'));

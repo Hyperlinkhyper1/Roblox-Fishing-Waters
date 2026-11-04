@@ -1,0 +1,6676 @@
+Function 0 (make):
+   74: 	local item = Instance.new(class)
+GETIMPORT R3 2 [Instance.new]
+MOVE R4 R0
+CALLFB R3 1 1 [0]
+   75: 	for key, value in props do
+MOVE R4 R2
+LOADNIL R5
+LOADNIL R6
+FORGPREP R4 L1
+   76: 		item[key] = value
+L0: SETTABLE R8 R3 R7
+   75: 	for key, value in props do
+L1: FORGLOOP R4 L0 2
+   78: 	item.Parent = parent
+SETTABLEKS R1 R3 K3 ['Parent']
+   79: 	return item
+RETURN R3 1
+
+Function 1 (notice):
+   83: 	pcall(StarterGui.SetCore, StarterGui, "SendNotification", {
+GETUPVAL R2 U0
+GETTABLEKS R2 R2 K0 ['SetCore']
+GETUPVAL R3 U0
+LOADK R4 K1 ['SendNotification']
+REMARK allocation: table template 3
+DUPTABLE R5 7
+   85: 		Text = message,
+SETTABLEKS R0 R5 K4 ['Text']
+   83: 	pcall(StarterGui.SetCore, StarterGui, "SendNotification", {
+FASTPCALL pcall L0
+GETIMPORT R1 9 [pcall]
+CALL R1 4 0
+   88: end
+L0: RETURN R0 0
+
+Function 2 (label):
+  160: 		local item = make("TextLabel", parent, {
+GETUPVAL R3 U0
+LOADK R4 K0 ['TextLabel']
+MOVE R5 R0
+REMARK allocation: table template 6
+DUPTABLE R6 10
+  162: 			Text = text,
+SETTABLEKS R1 R6 K3 ['Text']
+  165: 			TextXAlignment = Enum.TextXAlignment.Left,
+GETIMPORT R7 13 [Enum.TextXAlignment.Left]
+SETTABLEKS R7 R6 K8 ['TextXAlignment']
+  166: 			TextYAlignment = Enum.TextYAlignment.Top,
+GETIMPORT R7 15 [Enum.TextYAlignment.Top]
+SETTABLEKS R7 R6 K9 ['TextYAlignment']
+  160: 		local item = make("TextLabel", parent, {
+CALLFB R3 3 1 [0]
+  168: 		local bottomMenu = item:IsDescendantOf(panel)
+GETUPVAL R6 U1
+NAMECALL R4 R3 K16 ['IsDescendantOf']
+CALLFB R4 2 1 [1]
+  169: 		if bottomMenu then StructureEditor.styleLabel(item) else Theme.text(item, props.TextColor3) end
+JUMPIFNOT R4 L0
+GETUPVAL R5 U2
+GETTABLEKS R5 R5 K17 ['styleLabel']
+MOVE R6 R3
+CALLFB R5 1 0 [2]
+JUMP L1
+L0: GETUPVAL R5 U3
+GETTABLEKS R5 R5 K18 ['text']
+MOVE R6 R3
+GETTABLEKS R7 R2 K19 ['TextColor3']
+CALLFB R5 2 0 [3]
+  170: 		for key, value in props do
+L1: MOVE R5 R2
+LOADNIL R6
+LOADNIL R7
+FORGPREP R5 L4
+  171: 			if bottomMenu and key == "TextColor3" and value == Theme.Colors.Muted then value = rgb(145, 142, 135) end
+L2: JUMPIFNOT R4 L3
+JUMPXEQKS R8 K19 L3 NOT ['TextColor3']
+GETUPVAL R10 U3
+GETTABLEKS R10 R10 K20 ['Colors']
+GETTABLEKS R10 R10 K21 ['Muted']
+JUMPIFNOTEQ R9 R10 L3
+GETUPVAL R10 U4
+LOADN R11 145
+LOADN R12 142
+LOADN R13 135
+CALLFB R10 3 1 [4]
+MOVE R9 R10
+  172: 			item[key] = value
+L3: SETTABLE R9 R3 R8
+  170: 		for key, value in props do
+L4: FORGLOOP R5 L2 2
+  174: 		return item
+RETURN R3 1
+
+Function 3 (button):
+  177: 		local item = make("TextButton", parent, { Text = text, TextSize = 14 })
+GETUPVAL R3 U0
+LOADK R4 K0 ['TextButton']
+MOVE R5 R0
+REMARK allocation: table template 2
+DUPTABLE R6 4
+SETTABLEKS R1 R6 K1 ['Text']
+CALLFB R3 3 1 [0]
+  178: 		for key, value in props do
+MOVE R4 R2
+LOADNIL R5
+LOADNIL R6
+FORGPREP R4 L1
+  179: 			item[key] = value
+L0: SETTABLE R8 R3 R7
+  178: 		for key, value in props do
+L1: FORGLOOP R4 L0 2
+  181: 		if item:IsDescendantOf(panel) then StructureEditor.styleButton(item) else Theme.glassButton(item) end
+GETUPVAL R6 U1
+NAMECALL R4 R3 K5 ['IsDescendantOf']
+CALLFB R4 2 1 [1]
+JUMPIFNOT R4 L2
+GETUPVAL R4 U2
+GETTABLEKS R4 R4 K6 ['styleButton']
+MOVE R5 R3
+CALLFB R4 1 0 [2]
+RETURN R3 1
+L2: GETUPVAL R4 U3
+GETTABLEKS R4 R4 K7 ['glassButton']
+MOVE R5 R3
+CALLFB R4 1 0 [3]
+  182: 		return item
+RETURN R3 1
+
+Function 4 (horizontalStrip):
+  199: 		local strip = make("ScrollingFrame", panel, {
+GETUPVAL R3 U0
+LOADK R4 K0 ['ScrollingFrame']
+GETUPVAL R5 U1
+REMARK allocation: table template 8
+DUPTABLE R6 11
+  200: 			Name = name,
+SETTABLEKS R0 R6 K1 ['Name']
+  201: 			Position = UDim2.fromOffset(16, y),
+GETIMPORT R7 14 [UDim2.fromOffset]
+LOADN R8 16
+MOVE R9 R1
+CALLFB R7 2 1 [0]
+SETTABLEKS R7 R6 K2 ['Position']
+  202: 			Size = UDim2.new(1, -32, 0, height),
+GETIMPORT R7 16 [UDim2.new]
+LOADN R8 1
+LOADN R9 -32
+LOADN R10 0
+MOVE R11 R2
+CALLFB R7 4 1 [1]
+SETTABLEKS R7 R6 K3 ['Size']
+  204: 			CanvasSize = UDim2.fromOffset(0, 0),
+GETIMPORT R7 14 [UDim2.fromOffset]
+LOADN R8 0
+LOADN R9 0
+CALLFB R7 2 1 [2]
+SETTABLEKS R7 R6 K6 ['CanvasSize']
+  205: 			AutomaticCanvasSize = Enum.AutomaticSize.X,
+GETIMPORT R7 20 [Enum.AutomaticSize.X]
+SETTABLEKS R7 R6 K7 ['AutomaticCanvasSize']
+  206: 			ScrollingDirection = Enum.ScrollingDirection.X,
+GETIMPORT R7 21 [Enum.ScrollingDirection.X]
+SETTABLEKS R7 R6 K8 ['ScrollingDirection']
+  199: 		local strip = make("ScrollingFrame", panel, {
+CALLFB R3 3 1 [3]
+  209: 		Theme.scroll(strip)
+GETUPVAL R4 U2
+GETTABLEKS R4 R4 K22 ['scroll']
+MOVE R5 R3
+CALLFB R4 1 0 [4]
+  210: 		strip.ScrollBarThickness = 4
+LOADN R4 4
+SETTABLEKS R4 R3 K23 ['ScrollBarThickness']
+  211: 		make("UIListLayout", strip, {
+GETUPVAL R4 U0
+LOADK R5 K24 ['UIListLayout']
+MOVE R6 R3
+REMARK allocation: table template 3
+DUPTABLE R7 28
+  212: 			FillDirection = Enum.FillDirection.Horizontal,
+GETIMPORT R8 30 [Enum.FillDirection.Horizontal]
+SETTABLEKS R8 R7 K25 ['FillDirection']
+  213: 			SortOrder = Enum.SortOrder.LayoutOrder,
+GETIMPORT R8 32 [Enum.SortOrder.LayoutOrder]
+SETTABLEKS R8 R7 K26 ['SortOrder']
+  214: 			Padding = UDim.new(0, 8),
+GETIMPORT R8 34 [UDim.new]
+LOADN R9 0
+LOADN R10 8
+CALLFB R8 2 1 [5]
+SETTABLEKS R8 R7 K27 ['Padding']
+  211: 		make("UIListLayout", strip, {
+CALLFB R4 3 0 [6]
+  216: 		return strip
+RETURN R3 1
+
+Function 5 (ownHouse):
+  348: 		for _, base in CollectionService:GetTagged("PlayerBase") do
+GETUPVAL R0 U0
+LOADK R2 K0 ['PlayerBase']
+NAMECALL R0 R0 K1 ['GetTagged']
+CALLFB R0 2 3 [0]
+FORGPREP R0 L3
+  349: 			if base:GetAttribute("OwnerUserId") == player.UserId then
+L0: LOADK R7 K2 ['OwnerUserId']
+NAMECALL R5 R4 K3 ['GetAttribute']
+CALLFB R5 2 1 [1]
+GETUPVAL R6 U1
+GETTABLEKS R6 R6 K4 ['UserId']
+JUMPIFNOTEQ R5 R6 L3
+  350: 				local model = base:FindFirstChild("BaseHouse")
+LOADK R7 K5 ['BaseHouse']
+NAMECALL R5 R4 K6 ['FindFirstChild']
+CALLFB R5 2 1 [2]
+  351: 				local frame = model and model:GetAttribute("HouseFrame")
+MOVE R6 R5
+JUMPIFNOT R6 L1
+LOADK R8 K7 ['HouseFrame']
+NAMECALL R6 R5 K3 ['GetAttribute']
+CALLFB R6 2 1 [3]
+  352: 				if model and model:IsA("Model") and typeof(frame) == "CFrame" then
+L1: JUMPIFNOT R5 L3
+LOADK R9 K8 ['Model']
+NAMECALL R7 R5 K9 ['IsA']
+CALLFB R7 2 1 [4]
+JUMPIFNOT R7 L3
+REMARK builtin typeof/1
+FASTCALL1 44 R6 L2
+MOVE R8 R6
+GETIMPORT R7 11 [typeof]
+CALL R7 1 1
+L2: JUMPXEQKS R7 K12 L3 NOT ['CFrame']
+  353: 					return model, frame
+RETURN R5 2
+  348: 		for _, base in CollectionService:GetTagged("PlayerBase") do
+L3: FORGLOOP R0 L0 2
+  357: 		return nil, nil
+LOADNIL R0
+LOADNIL R1
+RETURN R0 2
+
+Function 6 (currentSite):
+  361: 		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+GETUPVAL R0 U0
+GETTABLEKS R0 R0 K0 ['Character']
+JUMPIFNOT R0 L0
+GETUPVAL R0 U0
+GETTABLEKS R0 R0 K0 ['Character']
+LOADK R2 K1 ['HumanoidRootPart']
+NAMECALL R0 R0 K2 ['FindFirstChild']
+CALLFB R0 2 1 [0]
+  362: 		if not root then
+L0: JUMPIF R0 L1
+  363: 			return nil, nil, nil
+LOADNIL R1
+LOADNIL R2
+LOADNIL R3
+RETURN R1 3
+  365: 		for _, island in CollectionService:GetTagged("CompanyIsland") do
+L1: GETUPVAL R1 U1
+LOADK R3 K3 ['CompanyIsland']
+NAMECALL R1 R1 K4 ['GetTagged']
+CALLFB R1 2 3 [1]
+FORGPREP R1 L4
+  366: 			local frame = island:GetAttribute("PlotFrame")
+L2: LOADK R8 K5 ['PlotFrame']
+NAMECALL R6 R5 K6 ['GetAttribute']
+CALLFB R6 2 1 [2]
+  368: 				island:IsA("Model")
+LOADK R9 K7 ['Model']
+NAMECALL R7 R5 K8 ['IsA']
+CALLFB R7 2 1 [3]
+JUMPIFNOT R7 L4
+  369: 				and island:GetAttribute("OwnerUserId") == player.UserId
+LOADK R9 K9 ['OwnerUserId']
+NAMECALL R7 R5 K6 ['GetAttribute']
+CALLFB R7 2 1 [4]
+GETUPVAL R8 U0
+GETTABLEKS R8 R8 K10 ['UserId']
+JUMPIFNOTEQ R7 R8 L4
+REMARK builtin typeof/1
+  370: 				and typeof(frame) == "CFrame"
+FASTCALL1 44 R6 L3
+MOVE R8 R6
+GETIMPORT R7 12 [typeof]
+CALL R7 1 1
+L3: JUMPXEQKS R7 K13 L4 NOT ['CFrame']
+  371: 				and (root.Position - frame.Position).Magnitude <= COMPANY_DISTANCE
+GETTABLEKS R8 R0 K14 ['Position']
+GETTABLEKS R9 R6 K14 ['Position']
+SUB R7 R8 R9
+GETTABLEKS R7 R7 K15 ['Magnitude']
+LOADN R8 150
+JUMPIFNOTLE R7 R8 L4
+  373: 				return island, frame, "Company"
+MOVE R7 R5
+MOVE R8 R6
+LOADK R9 K16 ['Company']
+RETURN R7 3
+  365: 		for _, island in CollectionService:GetTagged("CompanyIsland") do
+L4: FORGLOOP R1 L2 2
+  376: 		local model, frame = ownHouse()
+GETUPVAL R1 U2
+CALLFB R1 0 2 [5]
+  377: 		if model and frame and (root.Position - frame.Position).Magnitude <= HOME_DISTANCE then
+JUMPIFNOT R1 L5
+JUMPIFNOT R2 L5
+GETTABLEKS R4 R0 K14 ['Position']
+GETTABLEKS R5 R2 K14 ['Position']
+SUB R3 R4 R5
+GETTABLEKS R3 R3 K15 ['Magnitude']
+LOADN R4 110
+JUMPIFNOTLE R3 R4 L5
+  378: 			return model, frame, nil
+MOVE R3 R1
+MOVE R4 R2
+LOADNIL R5
+RETURN R3 3
+  380: 		return nil, nil, nil
+L5: LOADNIL R3
+LOADNIL R4
+LOADNIL R5
+RETURN R3 3
+
+Function 7 (atHome):
+  383: 		local model = currentSite()
+GETUPVAL R0 U0
+CALLFB R0 0 1 [0]
+  384: 		return model ~= nil
+JUMPXEQKNIL R0 L0 NOT
+LOADB R1 0 +1
+L0: LOADB R1 1
+L1: RETURN R1 1
+
+Function 8 (placed):
+  388: 		if not state then
+GETUPVAL R0 U0
+JUMPIF R0 L0
+REMARK allocation: table hash 0
+  389: 			return {}
+NEWTABLE R0 0 0
+RETURN R0 1
+  391: 		return (if site == "Company" then state.CompanyPlaced else state.Placed) or {}
+L0: GETUPVAL R1 U1
+JUMPXEQKS R1 K0 L1 NOT ['Company']
+GETUPVAL R0 U0
+GETTABLEKS R0 R0 K1 ['CompanyPlaced']
+JUMP L2
+L1: GETUPVAL R0 U0
+GETTABLEKS R0 R0 K2 ['Placed']
+L2: JUMPIF R0 L3
+REMARK allocation: table hash 0
+NEWTABLE R0 0 0
+L3: RETURN R0 1
+
+Function 9 (furnitureFolder):
+  394: 		return house and house:FindFirstChild(if site == "Company" then "PlotFurniture" else "Furniture")
+GETUPVAL R0 U0
+JUMPIFNOT R0 L2
+GETUPVAL R0 U0
+GETUPVAL R3 U1
+JUMPXEQKS R3 K0 L0 NOT ['Company']
+LOADK R2 K1 ['PlotFurniture']
+JUMP L1
+L0: LOADK R2 K2 ['Furniture']
+L1: NAMECALL R0 R0 K3 ['FindFirstChild']
+CALLFB R0 2 1 [0]
+L2: RETURN R0 1
+
+Function 10 (setButton):
+  398: 		item.Text = text
+SETTABLEKS R1 R0 K0 ['Text']
+  399: 		item.Active = enabled
+SETTABLEKS R2 R0 K1 ['Active']
+  400: 		local appearance = if chosen then "Selected" elseif enabled then "Normal" else "Disabled"
+JUMPIFNOT R3 L0
+LOADK R4 K2 ['Selected']
+JUMP L2
+L0: JUMPIFNOT R2 L1
+LOADK R4 K3 ['Normal']
+JUMP L2
+L1: LOADK R4 K4 ['Disabled']
+  401: 		if item:IsDescendantOf(panel) then StructureEditor.styleButton(item, appearance) else Theme.glassButton(item, appearance) end
+L2: GETUPVAL R7 U0
+NAMECALL R5 R0 K5 ['IsDescendantOf']
+CALLFB R5 2 1 [0]
+JUMPIFNOT R5 L3
+GETUPVAL R5 U1
+GETTABLEKS R5 R5 K6 ['styleButton']
+MOVE R6 R0
+MOVE R7 R4
+CALLFB R5 2 0 [1]
+RETURN R0 0
+L3: GETUPVAL R5 U2
+GETTABLEKS R5 R5 K7 ['glassButton']
+MOVE R6 R0
+MOVE R7 R4
+CALLFB R5 2 0 [2]
+  402: 	end
+RETURN R0 0
+
+Function 11 (render):
+  404: 		local total, matching = 0, 0
+LOADN R0 0
+LOADN R1 0
+REMARK allocation: table hash 0
+  405: 		local categoryCounts = {}
+NEWTABLE R2 0 0
+  406: 		for _, id in ITEMS do
+GETUPVAL R3 U0
+LOADNIL R4
+LOADNIL R5
+FORGPREP R3 L12
+  407: 			local item = Furniture.Items[id]
+L0: GETUPVAL R9 U1
+GETTABLEKS R9 R9 K0 ['Items']
+GETTABLE R8 R9 R7
+  408: 			local stock = if state and Furniture.allowedOn(id, site) then state.Stock[id] or 0 else 0
+GETUPVAL R10 U2
+JUMPIFNOT R10 L1
+GETUPVAL R10 U1
+GETTABLEKS R10 R10 K1 ['allowedOn']
+MOVE R11 R7
+GETUPVAL R12 U3
+CALLFB R10 2 1 [0]
+JUMPIFNOT R10 L1
+GETUPVAL R11 U2
+GETTABLEKS R11 R11 K3 ['Stock']
+GETTABLE R10 R11 R7
+ORK R9 R10 K2 [0]
+JUMP L2
+L1: LOADN R9 0
+  409: 			local full = state ~= nil and Furniture.count(placed(), id) >= item.MaxPlaced
+L2: LOADB R10 0
+GETUPVAL R11 U2
+JUMPXEQKNIL R11 L4
+GETUPVAL R11 U1
+GETTABLEKS R11 R11 K4 ['count']
+GETUPVAL R12 U4
+CALLFB R12 0 1 [1]
+MOVE R13 R7
+CALLFB R11 2 1 [2]
+GETTABLEKS R12 R8 K5 ['MaxPlaced']
+JUMPIFLE R12 R11 L3
+LOADB R10 0 +1
+L3: LOADB R10 1
+  410: 			total += stock
+L4: ADD R0 R0 R9
+  411: 			local category = Furniture.category(id)
+GETUPVAL R11 U1
+GETTABLEKS R11 R11 K6 ['category']
+MOVE R12 R7
+CALLFB R11 1 1 [3]
+MOVE R8 R11
+  412: 			categoryCounts[category] = (categoryCounts[category] or 0) + stock
+GETTABLE R13 R2 R8
+ORK R12 R13 K2 [0]
+ADD R11 R12 R9
+SETTABLE R11 R2 R8
+  413: 			local visible = Furniture.matchesCategory(id, furnitureCategory)
+GETUPVAL R11 U1
+GETTABLEKS R11 R11 K7 ['matchesCategory']
+MOVE R12 R7
+GETUPVAL R13 U5
+CALLFB R11 2 1 [4]
+MOVE R8 R11
+  414: 			if visible then matching += stock end
+JUMPIFNOT R8 L5
+ADD R1 R1 R9
+  415: 			itemButtons[id].Visible = stock > 0 and visible
+L5: GETUPVAL R12 U6
+GETTABLE R11 R12 R7
+LOADB R12 0
+LOADN R13 0
+JUMPIFNOTLT R13 R9 L6
+MOVE R12 R8
+L6: SETTABLEKS R12 R11 K8 ['Visible']
+  416: 			itemButtons[id].Selectable = stock > 0 and not full and not pending
+GETUPVAL R12 U6
+GETTABLE R11 R12 R7
+LOADB R12 0
+LOADN R13 0
+JUMPIFNOTLT R13 R9 L7
+NOT R12 R10
+JUMPIFNOT R12 L7
+GETUPVAL R13 U7
+NOT R12 R13
+L7: SETTABLEKS R12 R11 K9 ['Selectable']
+  417: 			stockLabels[id].Text = string.format("%d unplaced", stock)
+GETUPVAL R12 U8
+GETTABLE R11 R12 R7
+GETIMPORT R12 12 [string.format]
+LOADK R13 K13 ['%d unplaced']
+MOVE R14 R9
+CALLFB R12 2 1 [5]
+SETTABLEKS R12 R11 K14 ['Text']
+  418: 			if stock > 0 and visible and not previewStarted[id] then
+LOADN R11 0
+JUMPIFNOTLT R11 R9 L8
+JUMPIFNOT R8 L8
+GETUPVAL R12 U9
+GETTABLE R11 R12 R7
+JUMPIF R11 L8
+  419: 				previewStarted[id] = true
+GETUPVAL R11 U9
+LOADB R12 1
+SETTABLE R12 R11 R7
+  420: 				FurniturePreview.show(itemViews[id], remotes, id)
+GETUPVAL R11 U10
+GETTABLEKS R11 R11 K15 ['show']
+GETUPVAL R13 U11
+GETTABLE R12 R13 R7
+GETUPVAL R13 U12
+MOVE R14 R7
+CALLFB R11 3 0 [6]
+  422: 			setButton(itemButtons[id], "", stock > 0 and not full and not pending, held ~= nil and held.From == id)
+L8: GETUPVAL R11 U13
+GETUPVAL R13 U6
+GETTABLE R12 R13 R7
+LOADK R13 K16 ['']
+LOADB R14 0
+LOADN R15 0
+JUMPIFNOTLT R15 R9 L9
+NOT R14 R10
+JUMPIFNOT R14 L9
+GETUPVAL R15 U7
+NOT R14 R15
+L9: LOADB R15 0
+GETUPVAL R16 U14
+JUMPXEQKNIL R16 L11
+GETUPVAL R16 U14
+GETTABLEKS R16 R16 K17 ['From']
+JUMPIFEQ R16 R7 L10
+LOADB R15 0 +1
+L10: LOADB R15 1
+L11: CALLFB R11 4 0 [7]
+  406: 		for _, id in ITEMS do
+L12: FORGLOOP R3 L0 2
+  424: 		for _, category in Furniture.Categories do
+GETUPVAL R3 U1
+GETTABLEKS R3 R3 K18 ['Categories']
+LOADNIL R4
+LOADNIL R5
+FORGPREP R3 L18
+  425: 			local count = if category.Id == "All" then total else categoryCounts[category.Id] or 0
+L13: GETTABLEKS R9 R7 K19 ['Id']
+JUMPXEQKS R9 K20 L14 NOT ['All']
+MOVE R8 R0
+JUMP L15
+L14: GETTABLEKS R10 R7 K19 ['Id']
+GETTABLE R9 R2 R10
+ORK R8 R9 K2 [0]
+  426: 			setButton(categoryButtons[category.Id], string.format("%s · %d", category.Name, count), not pending, furnitureCategory == category.Id)
+L15: GETUPVAL R9 U13
+GETUPVAL R11 U15
+GETTABLEKS R12 R7 K19 ['Id']
+GETTABLE R10 R11 R12
+GETIMPORT R11 12 [string.format]
+LOADK R12 K21 ['%s · %d']
+GETTABLEKS R13 R7 K22 ['Name']
+MOVE R14 R8
+CALLFB R11 3 1 [8]
+GETUPVAL R13 U7
+NOT R12 R13
+GETUPVAL R14 U5
+GETTABLEKS R15 R7 K19 ['Id']
+JUMPIFEQ R14 R15 L16
+LOADB R13 0 +1
+L16: LOADB R13 1
+L17: CALLFB R9 4 0 [9]
+  424: 		for _, category in Furniture.Categories do
+L18: FORGLOOP R3 L13 2
+  428: 		inventoryTitle.Text = string.format("Unplaced furniture · %d", total)
+GETUPVAL R3 U16
+GETIMPORT R4 12 [string.format]
+LOADK R5 K23 ['Unplaced furniture · %d']
+MOVE R6 R0
+CALLFB R4 2 1 [10]
+SETTABLEKS R4 R3 K14 ['Text']
+  429: 		emptyInventory.Visible = matching == 0
+GETUPVAL R3 U17
+JUMPXEQKN R1 K2 L19 [0]
+LOADB R4 0 +1
+L19: LOADB R4 1
+L20: SETTABLEKS R4 R3 K8 ['Visible']
+  430: 		emptyInventory.Text = if not state
+GETUPVAL R3 U17
+GETUPVAL R5 U2
+JUMPIF R5 L21
+  431: 			then "Loading your furniture…"
+LOADK R4 K24 ['Loading your furniture…']
+JUMP L24
+  432: 			elseif total > 0 and furnitureCategory ~= "All"
+L21: LOADN R5 0
+JUMPIFNOTLT R5 R0 L22
+GETUPVAL R5 U5
+JUMPXEQKS R5 K20 L22 ['All']
+  433: 			then "No unplaced furniture in this catalogue. Choose another category."
+LOADK R4 K25 ['No unplaced furniture in this ca'...]
+JUMP L24
+  434: 			elseif site == "Company"
+L22: GETUPVAL R5 U3
+JUMPXEQKS R5 K26 L23 NOT ['Company']
+  435: 			then "Nothing to place here. Racks, kitchen storage, the radar and decorations from Harbour Home can go on your plot."
+LOADK R4 K27 ['Nothing to place here. Racks, ki'...]
+JUMP L24
+  436: 			else "No unplaced furniture. Buy items at Harbour Home, or pick up furniture in your house."
+L23: LOADK R4 K28 ['No unplaced furniture. Buy items'...]
+  430: 		emptyInventory.Text = if not state
+L24: SETTABLEKS R4 R3 K14 ['Text']
+  437: 		setButton(rotate, "Rotate [R]", held ~= nil)
+GETUPVAL R3 U13
+GETUPVAL R4 U18
+LOADK R5 K29 ['Rotate [R]']
+GETUPVAL R7 U14
+JUMPXEQKNIL R7 L25 NOT
+LOADB R6 0 +1
+L25: LOADB R6 1
+L26: CALLFB R3 3 0 [11]
+  438: 		setButton(cancel, "Cancel [X]", held ~= nil or selected ~= nil)
+GETUPVAL R3 U13
+GETUPVAL R4 U19
+LOADK R5 K30 ['Cancel [X]']
+LOADB R6 1
+GETUPVAL R7 U14
+JUMPXEQKNIL R7 L28 NOT
+GETUPVAL R7 U20
+JUMPXEQKNIL R7 L27 NOT
+LOADB R6 0 +1
+L27: LOADB R6 1
+L28: CALLFB R3 3 0 [12]
+  439: 		setButton(move, "Move", selected ~= nil and held == nil and not pending)
+GETUPVAL R3 U13
+GETUPVAL R4 U21
+LOADK R5 K31 ['Move']
+LOADB R6 0
+GETUPVAL R7 U20
+JUMPXEQKNIL R7 L29
+LOADB R6 0
+GETUPVAL R7 U14
+JUMPXEQKNIL R7 L29 NOT
+GETUPVAL R7 U7
+NOT R6 R7
+L29: CALLFB R3 3 0 [13]
+  440: 		setButton(pickUp, "Pick up", selected ~= nil and held == nil and not pending)
+GETUPVAL R3 U13
+GETUPVAL R4 U22
+LOADK R5 K32 ['Pick up']
+LOADB R6 0
+GETUPVAL R7 U20
+JUMPXEQKNIL R7 L30
+LOADB R6 0
+GETUPVAL R7 U14
+JUMPXEQKNIL R7 L30 NOT
+GETUPVAL R7 U7
+NOT R6 R7
+L30: CALLFB R3 3 0 [14]
+  441: 		local rack = selected and placed()[selected]
+GETUPVAL R2 U20
+JUMPIFNOT R2 L31
+GETUPVAL R3 U4
+CALLFB R3 0 1 [15]
+GETUPVAL R4 U20
+GETTABLE R2 R3 R4
+  442: 		local isRack = rack and rack.ItemId == "StorageRack" and held == nil
+L31: MOVE R1 R2
+JUMPIFNOT R1 L33
+LOADB R1 0
+GETTABLEKS R3 R2 K33 ['ItemId']
+JUMPXEQKS R3 K34 L33 NOT ['StorageRack']
+GETUPVAL R3 U14
+JUMPXEQKNIL R3 L32
+LOADB R1 0 +1
+L32: LOADB R1 1
+  443: 		editRack.Visible = not not isRack
+L33: GETUPVAL R3 U23
+NOT R5 R1
+NOT R4 R5
+SETTABLEKS R4 R3 K8 ['Visible']
+  444: 		setButton(editRack, if editingRack then "Close editor" else "Edit rack", not pending)
+GETUPVAL R3 U13
+GETUPVAL R4 U23
+GETUPVAL R6 U24
+JUMPIFNOT R6 L34
+LOADK R5 K35 ['Close editor']
+JUMP L35
+L34: LOADK R5 K36 ['Edit rack']
+L35: GETUPVAL R7 U7
+NOT R6 R7
+CALLFB R3 3 0 [16]
+  445: 		rackEditor.Visible = active and not not isRack and editingRack
+GETUPVAL R3 U25
+GETUPVAL R4 U26
+JUMPIFNOT R4 L36
+NOT R5 R1
+NOT R4 R5
+JUMPIFNOT R4 L36
+GETUPVAL R4 U24
+L36: SETTABLEKS R4 R3 K8 ['Visible']
+  446: 		rackStatus.Text = if isRack and rack.Mode == "Tools"
+GETUPVAL R3 U27
+JUMPIFNOT R1 L37
+GETTABLEKS R5 R2 K37 ['Mode']
+JUMPXEQKS R5 K38 L37 NOT ['Tools']
+  447: 			then string.format("Stored: %d cages, %d nets / 12 · Carrying: %d cages, %d nets", rack.Cages or 0, rack.Nets or 0, state.CageStock or 0, state.NetStock or 0)
+GETIMPORT R4 12 [string.format]
+LOADK R5 K39 ['Stored: %d cages, %d nets / 12 �'...]
+GETTABLEKS R7 R2 K40 ['Cages']
+ORK R6 R7 K2 [0]
+GETTABLEKS R8 R2 K41 ['Nets']
+ORK R7 R8 K2 [0]
+GETUPVAL R9 U2
+GETTABLEKS R9 R9 K42 ['CageStock']
+ORK R8 R9 K2 [0]
+GETUPVAL R10 U2
+GETTABLEKS R10 R10 K43 ['NetStock']
+ORK R9 R10 K2 [0]
+CALLFB R4 5 1 [17]
+JUMP L38
+  448: 			else "Fish storage · Switch mode to store cages and nets."
+L37: LOADK R4 K44 ['Fish storage · Switch mode to s'...]
+  446: 		rackStatus.Text = if isRack and rack.Mode == "Tools"
+L38: SETTABLEKS R4 R3 K14 ['Text']
+  449: 		setButton(rackMode, if isRack and rack.Mode == "Tools" then "Mode: Tools" else "Mode: Fish", not pending)
+GETUPVAL R3 U13
+GETUPVAL R4 U28
+JUMPIFNOT R1 L39
+GETTABLEKS R6 R2 K37 ['Mode']
+JUMPXEQKS R6 K38 L39 NOT ['Tools']
+LOADK R5 K45 ['Mode: Tools']
+JUMP L40
+L39: LOADK R5 K46 ['Mode: Fish']
+L40: GETUPVAL R7 U7
+NOT R6 R7
+CALLFB R3 3 0 [18]
+REMARK allocation: table array 4
+  450: 		for _, item in { addCage, takeCage, addNet, takeNet } do
+NEWTABLE R3 0 4
+GETUPVAL R6 U29
+GETUPVAL R7 U30
+GETUPVAL R8 U31
+GETUPVAL R9 U32
+SETLIST R3 R6 4 [1]
+LOADNIL R4
+LOADNIL R5
+FORGPREP R3 L44
+  451: 			item.Visible = not not (isRack and rack.Mode == "Tools")
+L41: MOVE R10 R1
+JUMPIFNOT R10 L43
+GETTABLEKS R11 R2 K37 ['Mode']
+JUMPXEQKS R11 K38 L42 ['Tools']
+LOADB R10 0 +1
+L42: LOADB R10 1
+L43: NOT R9 R10
+NOT R8 R9
+SETTABLEKS R8 R7 K8 ['Visible']
+  452: 			setButton(item, item.Text, not pending)
+GETUPVAL R8 U13
+MOVE R9 R7
+GETTABLEKS R10 R7 K14 ['Text']
+GETUPVAL R12 U7
+NOT R11 R12
+CALLFB R8 3 0 [19]
+  450: 		for _, item in { addCage, takeCage, addNet, takeNet } do
+L44: FORGLOOP R3 L41 2
+  454: 		if held then
+GETUPVAL R3 U14
+JUMPIFNOT R3 L49
+  455: 			local item = Furniture.Items[held.ItemId]
+GETUPVAL R3 U1
+GETTABLEKS R3 R3 K0 ['Items']
+GETUPVAL R4 U14
+GETTABLEKS R4 R4 K33 ['ItemId']
+GETTABLE R2 R3 R4
+  456: 			hint.Text = if spot and spot.Reason
+GETUPVAL R3 U33
+GETUPVAL R5 U34
+JUMPIFNOT R5 L45
+GETUPVAL R5 U34
+GETTABLEKS R5 R5 K47 ['Reason']
+JUMPIFNOT R5 L45
+  457: 				then spot.Reason
+GETUPVAL R4 U34
+GETTABLEKS R4 R4 K47 ['Reason']
+JUMP L48
+  458: 				else string.format("Place your %s: %s.", string.lower(item.Name), if site == "Company" then "inside the plot's fence" else Furniture.roomNames(held.ItemId))
+L45: GETIMPORT R4 12 [string.format]
+LOADK R5 K48 ['Place your %s: %s.']
+GETIMPORT R6 50 [string.lower]
+GETTABLEKS R7 R2 K22 ['Name']
+CALLFB R6 1 1 [20]
+GETUPVAL R8 U3
+JUMPXEQKS R8 K26 L46 NOT ['Company']
+LOADK R7 K51 ['inside the plot's fence']
+JUMP L47
+L46: GETUPVAL R7 U1
+GETTABLEKS R7 R7 K52 ['roomNames']
+GETUPVAL R8 U14
+GETTABLEKS R8 R8 K33 ['ItemId']
+CALLFB R7 1 1 [21]
+L47: CALLFB R4 3 1 [22]
+  456: 			hint.Text = if spot and spot.Reason
+L48: SETTABLEKS R4 R3 K14 ['Text']
+RETURN R0 0
+  459: 		elseif selected and placed()[selected] then
+L49: GETUPVAL R3 U20
+JUMPIFNOT R3 L53
+GETUPVAL R4 U4
+CALLFB R4 0 1 [23]
+GETUPVAL R5 U20
+GETTABLE R3 R4 R5
+JUMPIFNOT R3 L53
+  460: 			local entry = placed()[selected]
+GETUPVAL R3 U4
+CALLFB R3 0 1 [24]
+GETUPVAL R4 U20
+GETTABLE R1 R3 R4
+  461: 			if entry.ItemId == "StorageRack" then
+GETTABLEKS R3 R1 K33 ['ItemId']
+JUMPXEQKS R3 K34 L52 NOT ['StorageRack']
+  462: 				hint.Text = if entry.Mode == "Tools" then string.format("Tools rack: %d cages, %d nets / 12. Carrying: %d cages, %d nets. Level 4 porters place stored tools.", entry.Cages or 0, entry.Nets or 0, state.CageStock or 0, state.NetStock or 0) else "Storage rack selected. Click Edit rack to choose its mode."
+GETUPVAL R3 U33
+GETTABLEKS R5 R1 K37 ['Mode']
+JUMPXEQKS R5 K38 L50 NOT ['Tools']
+GETIMPORT R4 12 [string.format]
+LOADK R5 K53 ['Tools rack: %d cages, %d nets / '...]
+GETTABLEKS R7 R1 K40 ['Cages']
+ORK R6 R7 K2 [0]
+GETTABLEKS R8 R1 K41 ['Nets']
+ORK R7 R8 K2 [0]
+GETUPVAL R9 U2
+GETTABLEKS R9 R9 K42 ['CageStock']
+ORK R8 R9 K2 [0]
+GETUPVAL R10 U2
+GETTABLEKS R10 R10 K43 ['NetStock']
+ORK R9 R10 K2 [0]
+CALLFB R4 5 1 [25]
+JUMP L51
+L50: LOADK R4 K54 ['Storage rack selected. Click Edi'...]
+L51: SETTABLEKS R4 R3 K14 ['Text']
+RETURN R0 0
+  464: 				hint.Text = Furniture.Items[entry.ItemId].Name .. " selected. Move it or pick it up."
+L52: GETUPVAL R3 U33
+GETUPVAL R6 U1
+GETTABLEKS R6 R6 K0 ['Items']
+GETTABLEKS R7 R1 K33 ['ItemId']
+GETTABLE R5 R6 R7
+GETTABLEKS R5 R5 K22 ['Name']
+LOADK R6 K55 [' selected. Move it or pick it up'...]
+CONCAT R4 R5 R6
+SETTABLEKS R4 R3 K14 ['Text']
+RETURN R0 0
+  466: 		elseif state and state.PendingWallMigration then
+L53: GETUPVAL R3 U2
+JUMPIFNOT R3 L54
+GETUPVAL R3 U2
+GETTABLEKS R3 R3 K56 ['PendingWallMigration']
+JUMPIFNOT R3 L54
+  467: 			hint.Text = "Some furniture needs room near the new walls. Move or pick up furniture to make space."
+GETUPVAL R3 U33
+LOADK R4 K57 ['Some furniture needs room near t'...]
+SETTABLEKS R4 R3 K14 ['Text']
+RETURN R0 0
+  468: 		elseif site == "Company" then
+L54: GETUPVAL R3 U3
+JUMPXEQKS R3 K26 L55 NOT ['Company']
+  469: 			hint.Text = "Furnish your company plot: storage racks, prep benches, kitchen storage and your desk. Click placed furniture to move it."
+GETUPVAL R3 U33
+LOADK R4 K58 ['Furnish your company plot: stora'...]
+SETTABLEKS R4 R3 K14 ['Text']
+RETURN R0 0
+  471: 			hint.Text = "Choose furniture to place, or click placed furniture. Buy more at Harbour Home on the plaza."
+L55: GETUPVAL R3 U33
+LOADK R4 K59 ['Choose furniture to place, or cl'...]
+SETTABLEKS R4 R3 K14 ['Text']
+  473: 	end
+RETURN R0 0
+
+Function 12 (clearPreview):
+REMARK allocation: table hash 0
+  476: 		ghostParts = {}
+NEWTABLE R0 0 0
+SETUPVAL R0 U0
+  477: 		if preview then
+GETUPVAL R0 U1
+JUMPIFNOT R0 L0
+  478: 			preview:Destroy()
+GETUPVAL R0 U1
+NAMECALL R0 R0 K0 ['Destroy']
+CALLFB R0 1 0 [0]
+  479: 			preview = nil
+LOADNIL R0
+SETUPVAL R0 U1
+  481: 	end
+L0: RETURN R0 0
+
+Function 13 (setHighlight):
+  483: 		if highlight then
+GETUPVAL R1 U0
+JUMPIFNOT R1 L0
+  484: 			highlight:Destroy()
+GETUPVAL R1 U0
+NAMECALL R1 R1 K0 ['Destroy']
+CALLFB R1 1 0 [0]
+  485: 			highlight = nil
+LOADNIL R1
+SETUPVAL R1 U0
+  487: 		if model then
+L0: JUMPIFNOT R0 L1
+  488: 			highlight = make("Highlight", model, {
+GETUPVAL R1 U1
+LOADK R2 K1 ['Highlight']
+MOVE R3 R0
+REMARK allocation: table template 3
+DUPTABLE R4 6
+  489: 				FillColor = rgb(240, 200, 90),
+GETUPVAL R5 U2
+LOADN R6 240
+LOADN R7 200
+LOADN R8 90
+CALLFB R5 3 1 [1]
+SETTABLEKS R5 R4 K2 ['FillColor']
+  491: 				OutlineColor = rgb(255, 230, 150),
+GETUPVAL R5 U2
+LOADN R6 255
+LOADN R7 230
+LOADN R8 150
+CALLFB R5 3 1 [2]
+SETTABLEKS R5 R4 K5 ['OutlineColor']
+  488: 			highlight = make("Highlight", model, {
+CALLFB R1 3 1 [3]
+SETUPVAL R1 U0
+  494: 	end
+L1: RETURN R0 0
+
+Function 14 (placedModel):
+  496: 		local entry = placed()[index]
+GETUPVAL R2 U0
+CALLFB R2 0 1 [0]
+GETTABLE R1 R2 R0
+  497: 		local folder = furnitureFolder()
+GETUPVAL R2 U1
+CALLFB R2 0 1 [1]
+  498: 		if not entry or not folder then
+JUMPIFNOT R1 L0
+JUMPIF R2 L1
+  499: 			return nil
+L0: LOADNIL R3
+RETURN R3 1
+  501: 		for _, model in folder:GetChildren() do
+L1: NAMECALL R3 R2 K0 ['GetChildren']
+CALLFB R3 1 3 [2]
+FORGPREP R3 L3
+  503: 				model:GetAttribute("ItemId") == entry.ItemId
+L2: LOADK R10 K1 ['ItemId']
+NAMECALL R8 R7 K2 ['GetAttribute']
+CALLFB R8 2 1 [3]
+GETTABLEKS R9 R1 K1 ['ItemId']
+JUMPIFNOTEQ R8 R9 L3
+  504: 				and model:GetAttribute("X") == entry.X
+LOADK R10 K3 ['X']
+NAMECALL R8 R7 K2 ['GetAttribute']
+CALLFB R8 2 1 [4]
+GETTABLEKS R9 R1 K3 ['X']
+JUMPIFNOTEQ R8 R9 L3
+  505: 				and model:GetAttribute("Z") == entry.Z
+LOADK R10 K4 ['Z']
+NAMECALL R8 R7 K2 ['GetAttribute']
+CALLFB R8 2 1 [5]
+GETTABLEKS R9 R1 K4 ['Z']
+JUMPIFNOTEQ R8 R9 L3
+  506: 				and model:GetAttribute("R") == entry.R
+LOADK R10 K5 ['R']
+NAMECALL R8 R7 K2 ['GetAttribute']
+CALLFB R8 2 1 [6]
+GETTABLEKS R9 R1 K5 ['R']
+JUMPIFNOTEQ R8 R9 L3
+  508: 				return model
+RETURN R7 1
+  501: 		for _, model in folder:GetChildren() do
+L3: FORGLOOP R3 L2 2
+  511: 		return nil
+LOADNIL R3
+RETURN R3 1
+
+Function 15 (choose):
+  514: 		if selected ~= index then editingRack = false end
+GETUPVAL R1 U0
+JUMPIFEQ R1 R0 L0
+LOADB R1 0
+SETUPVAL R1 U1
+  515: 		selected = index
+L0: SETUPVAL R0 U0
+  516: 		setHighlight(if index then placedModel(index) else nil)
+GETUPVAL R1 U2
+JUMPIFNOT R0 L1
+GETUPVAL R2 U3
+MOVE R3 R0
+CALLFB R2 1 1 [0]
+JUMP L2
+L1: LOADNIL R2
+L2: CALLFB R1 1 0 [1]
+  517: 		render()
+GETUPVAL R1 U4
+CALLFB R1 0 0 [2]
+  518: 	end
+RETURN R0 0
+
+Function 16 (plate):
+  522: 		return make("Part", parent, {
+GETUPVAL R5 U0
+LOADK R6 K0 ['Part']
+MOVE R7 R0
+REMARK allocation: table template 10
+DUPTABLE R8 13
+  528: 			Material = Enum.Material.SmoothPlastic,
+GETIMPORT R9 16 [Enum.Material.SmoothPlastic]
+SETTABLEKS R9 R8 K8 ['Material']
+  529: 			Color = color,
+SETTABLEKS R3 R8 K9 ['Color']
+  530: 			Transparency = transparency,
+SETTABLEKS R4 R8 K10 ['Transparency']
+  531: 			Size = Vector3.new(area[3] - area[1], 0.08, area[4] - area[2]),
+GETIMPORT R9 19 [Vector3.new]
+GETTABLEN R11 R1 3
+GETTABLEN R12 R1 1
+SUB R10 R11 R12
+LOADK R11 K20 [0.080000000000000002]
+GETTABLEN R13 R1 4
+GETTABLEN R14 R1 2
+SUB R12 R13 R14
+CALLFB R9 3 1 [0]
+SETTABLEKS R9 R8 K11 ['Size']
+  532: 			CFrame = houseFrame * CFrame.new((area[1] + area[3]) / 2, y, (area[2] + area[4]) / 2),
+GETUPVAL R10 U1
+GETIMPORT R11 21 [CFrame.new]
+GETTABLEN R14 R1 1
+GETTABLEN R15 R1 3
+ADD R13 R14 R15
+DIVK R12 R13 K22 [2]
+MOVE R13 R2
+GETTABLEN R16 R1 2
+GETTABLEN R17 R1 4
+ADD R15 R16 R17
+DIVK R14 R15 K22 [2]
+CALLFB R11 3 1 [1]
+MUL R9 R10 R11
+SETTABLEKS R9 R8 K12 ['CFrame']
+  522: 		return make("Part", parent, {
+CALL R5 3 -1
+RETURN R5 -1
+
+Function 17 (buildPreview):
+  536: 		clearPreview()
+GETUPVAL R0 U0
+CALLFB R0 0 0 [0]
+  537: 		if not held then
+GETUPVAL R0 U1
+JUMPIF R0 L0
+  538: 			return
+RETURN R0 0
+  540: 		local model = make("Model", nil, { Name = "FurniturePreview" })
+L0: GETUPVAL R0 U2
+LOADK R1 K0 ['Model']
+LOADNIL R2
+REMARK allocation: table template 1
+DUPTABLE R3 3
+CALLFB R0 3 1 [1]
+  541: 		local item = Furniture.Items[held.ItemId]
+GETUPVAL R2 U3
+GETTABLEKS R2 R2 K4 ['Items']
+GETUPVAL R3 U1
+GETTABLEKS R3 R3 K5 ['ItemId']
+GETTABLE R1 R2 R3
+  543: 		local floor = Furniture.floor(held.ItemId, site)
+GETUPVAL R2 U3
+GETTABLEKS R2 R2 K6 ['floor']
+GETUPVAL R3 U1
+GETTABLEKS R3 R3 K5 ['ItemId']
+GETUPVAL R4 U4
+CALLFB R2 2 1 [2]
+  544: 		if site == "Company" then
+GETUPVAL R3 U4
+JUMPXEQKS R3 K7 L3 NOT ['Company']
+  545: 			plate(model, Furniture.PLOT, floor + 0.05, ROOM, 0.75).Name = "AllowedRoom"
+GETUPVAL R3 U5
+MOVE R4 R0
+GETUPVAL R5 U3
+GETTABLEKS R5 R5 K8 ['PLOT']
+ADDK R6 R2 K9 [0.050000000000000003]
+GETUPVAL R7 U6
+LOADK R8 K10 [0.75]
+CALLFB R3 5 1 [3]
+LOADK R4 K11 ['AllowedRoom']
+SETTABLEKS R4 R3 K1 ['Name']
+  546: 			for _, area in Furniture.PlotBlocked do
+GETUPVAL R3 U3
+GETTABLEKS R3 R3 K12 ['PlotBlocked']
+LOADNIL R4
+LOADNIL R5
+FORGPREP R3 L2
+  547: 				plate(model, area, floor + 0.07, BLOCKED, 0.8).Name = "KeepClear"
+L1: GETUPVAL R8 U5
+MOVE R9 R0
+MOVE R10 R7
+ADDK R11 R2 K13 [0.070000000000000007]
+GETUPVAL R12 U7
+LOADK R13 K14 [0.80000000000000004]
+CALLFB R8 5 1 [4]
+LOADK R9 K15 ['KeepClear']
+SETTABLEKS R9 R8 K1 ['Name']
+  546: 			for _, area in Furniture.PlotBlocked do
+L2: FORGLOOP R3 L1 2
+  550: 		for _, roomId in if site == "Company" then {} else Furniture.allowedRooms(held.ItemId) do
+L3: GETUPVAL R6 U4
+JUMPXEQKS R6 K7 L4 NOT ['Company']
+REMARK allocation: table hash 0
+NEWTABLE R3 0 0
+JUMP L5
+L4: GETUPVAL R6 U3
+GETTABLEKS R6 R6 K16 ['allowedRooms']
+GETUPVAL R7 U1
+GETTABLEKS R7 R7 K5 ['ItemId']
+CALLFB R6 1 1 [5]
+MOVE R3 R6
+L5: LOADNIL R4
+LOADNIL R5
+FORGPREP R3 L9
+  551: 			local room = Furniture.Rooms[roomId]
+L6: GETUPVAL R9 U3
+GETTABLEKS R9 R9 K17 ['Rooms']
+GETTABLE R8 R9 R7
+  552: 			plate(model, room, floor + 0.05, ROOM, 0.75).Name = "AllowedRoom"
+GETUPVAL R9 U5
+MOVE R10 R0
+MOVE R11 R8
+ADDK R12 R2 K9 [0.050000000000000003]
+GETUPVAL R13 U6
+LOADK R14 K10 [0.75]
+CALLFB R9 5 1 [6]
+LOADK R10 K11 ['AllowedRoom']
+SETTABLEKS R10 R9 K1 ['Name']
+  553: 			for _, area in Furniture.Blocked do
+GETUPVAL R9 U3
+GETTABLEKS R9 R9 K18 ['Blocked']
+LOADNIL R10
+LOADNIL R11
+FORGPREP R9 L8
+  555: 				if area[1] < room[3] and area[3] > room[1] and area[2] < room[4] and area[4] > room[2] then
+L7: GETTABLEN R14 R13 1
+GETTABLEN R15 R8 3
+JUMPIFNOTLT R14 R15 L8
+GETTABLEN R14 R13 3
+GETTABLEN R15 R8 1
+JUMPIFNOTLT R15 R14 L8
+GETTABLEN R14 R13 2
+GETTABLEN R15 R8 4
+JUMPIFNOTLT R14 R15 L8
+GETTABLEN R14 R13 4
+GETTABLEN R15 R8 2
+JUMPIFNOTLT R15 R14 L8
+  556: 					plate(model, area, floor + 0.07, BLOCKED, 0.8).Name = "KeepClear"
+GETUPVAL R14 U5
+MOVE R15 R0
+MOVE R16 R13
+ADDK R17 R2 K13 [0.070000000000000007]
+GETUPVAL R18 U7
+LOADK R19 K14 [0.80000000000000004]
+CALLFB R14 5 1 [7]
+LOADK R15 K15 ['KeepClear']
+SETTABLEKS R15 R14 K1 ['Name']
+  553: 			for _, area in Furniture.Blocked do
+L8: FORGLOOP R9 L7 2
+  550: 		for _, roomId in if site == "Company" then {} else Furniture.allowedRooms(held.ItemId) do
+L9: FORGLOOP R3 L6 2
+  560: 		local height = HEIGHTS[held.ItemId] or 3
+GETUPVAL R4 U8
+GETUPVAL R5 U1
+GETTABLEKS R5 R5 K5 ['ItemId']
+GETTABLE R3 R4 R5
+ORK R2 R3 K19 [3]
+  561: 		local ghost = FurniturePreview.clone(remotes, held.ItemId)
+GETUPVAL R3 U9
+GETTABLEKS R3 R3 K20 ['clone']
+GETUPVAL R4 U10
+GETUPVAL R5 U1
+GETTABLEKS R5 R5 K5 ['ItemId']
+CALLFB R3 2 1 [8]
+  562: 		if ghost then
+JUMPIFNOT R3 L16
+  563: 			ghost.Name = "ItemGhost"
+LOADK R4 K21 ['ItemGhost']
+SETTABLEKS R4 R3 K1 ['Name']
+  564: 			ghost:SetAttribute("TemplatePivot", ghost:GetPivot())
+LOADK R6 K22 ['TemplatePivot']
+NAMECALL R7 R3 K23 ['GetPivot']
+CALL R7 1 -1
+NAMECALL R4 R3 K24 ['SetAttribute']
+CALL R4 -1 0
+  565: 			for _, part in ghost:GetDescendants() do
+NAMECALL R4 R3 K25 ['GetDescendants']
+CALLFB R4 1 3 [9]
+FORGPREP R4 L15
+  566: 				if part:IsA("BasePart") then
+L10: LOADK R11 K26 ['BasePart']
+NAMECALL R9 R8 K27 ['IsA']
+CALLFB R9 2 1 [10]
+JUMPIFNOT R9 L13
+REMARK builtin table.insert/2
+  567: 					table.insert(ghostParts, { Part = part, Color = part.Color })
+GETUPVAL R10 U11
+REMARK allocation: table template 2
+DUPTABLE R11 30
+SETTABLEKS R8 R11 K28 ['Part']
+GETTABLEKS R12 R8 K29 ['Color']
+SETTABLEKS R12 R11 K29 ['Color']
+FASTCALL2 52 R10 R11 L11
+GETIMPORT R9 33 [table.insert]
+CALL R9 2 0
+  568: 					part.Anchored, part.CanCollide, part.CanQuery, part.CanTouch, part.CastShadow = true, false, false, false, false
+L11: LOADB R9 1
+LOADB R10 0
+LOADB R11 0
+LOADB R12 0
+LOADB R13 0
+SETTABLEKS R9 R8 K34 ['Anchored']
+SETTABLEKS R10 R8 K35 ['CanCollide']
+SETTABLEKS R11 R8 K36 ['CanQuery']
+SETTABLEKS R12 R8 K37 ['CanTouch']
+SETTABLEKS R13 R8 K38 ['CastShadow']
+REMARK builtin math.max/2
+  569: 					part.Transparency = math.max(0.3, part.Transparency)
+LOADK R10 K39 [0.29999999999999999]
+GETTABLEKS R11 R8 K40 ['Transparency']
+FASTCALL2 18 R10 R11 L12
+GETIMPORT R9 43 [math.max]
+CALL R9 2 1
+L12: SETTABLEKS R9 R8 K40 ['Transparency']
+JUMP L15
+  570: 				elseif part:IsA("ProximityPrompt") or part:IsA("LayerCollector") or part:IsA("Light") or part:IsA("ParticleEmitter")
+L13: LOADK R11 K44 ['ProximityPrompt']
+NAMECALL R9 R8 K27 ['IsA']
+CALLFB R9 2 1 [11]
+JUMPIF R9 L14
+LOADK R11 K45 ['LayerCollector']
+NAMECALL R9 R8 K27 ['IsA']
+CALLFB R9 2 1 [12]
+JUMPIF R9 L14
+LOADK R11 K46 ['Light']
+NAMECALL R9 R8 K27 ['IsA']
+CALLFB R9 2 1 [13]
+JUMPIF R9 L14
+LOADK R11 K47 ['ParticleEmitter']
+NAMECALL R9 R8 K27 ['IsA']
+CALLFB R9 2 1 [14]
+JUMPIF R9 L14
+  571: 					or part:IsA("Beam") or part:IsA("Trail") then
+LOADK R11 K48 ['Beam']
+NAMECALL R9 R8 K27 ['IsA']
+CALLFB R9 2 1 [15]
+JUMPIF R9 L14
+LOADK R11 K49 ['Trail']
+NAMECALL R9 R8 K27 ['IsA']
+CALLFB R9 2 1 [16]
+JUMPIFNOT R9 L15
+  572: 					part.Enabled = false
+L14: LOADB R9 0
+SETTABLEKS R9 R8 K50 ['Enabled']
+  565: 			for _, part in ghost:GetDescendants() do
+L15: FORGLOOP R4 L10 2
+  575: 			ghost.Parent = model
+SETTABLEKS R0 R3 K51 ['Parent']
+  576: 			make("Highlight", model, {
+GETUPVAL R4 U2
+LOADK R5 K52 ['Highlight']
+MOVE R6 R0
+REMARK allocation: table template 5
+DUPTABLE R7 60
+  577: 				Name = "GhostOutline", Adornee = ghost, FillTransparency = 0.94, OutlineTransparency = 0,
+SETTABLEKS R3 R7 K54 ['Adornee']
+  578: 				DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+GETIMPORT R8 64 [Enum.HighlightDepthMode.AlwaysOnTop]
+SETTABLEKS R8 R7 K59 ['DepthMode']
+  576: 			make("Highlight", model, {
+CALLFB R4 3 0 [17]
+JUMP L17
+  582: 			make("Part", model, {
+L16: GETUPVAL R4 U2
+LOADK R5 K28 ['Part']
+MOVE R6 R0
+REMARK allocation: table template 9
+DUPTABLE R7 71
+  584: 				Material = Enum.Material.SmoothPlastic, Transparency = 0.7, Size = Vector3.new(item.Width, height, item.Depth),
+GETIMPORT R8 73 [Enum.Material.SmoothPlastic]
+SETTABLEKS R8 R7 K68 ['Material']
+GETIMPORT R8 76 [Vector3.new]
+GETTABLEKS R9 R1 K77 ['Width']
+MOVE R10 R2
+GETTABLEKS R11 R1 K78 ['Depth']
+CALLFB R8 3 1 [18]
+SETTABLEKS R8 R7 K70 ['Size']
+  582: 			make("Part", model, {
+CALLFB R4 3 0 [19]
+  588: 		make("Part", model, {
+L17: GETUPVAL R4 U2
+LOADK R5 K28 ['Part']
+MOVE R6 R0
+REMARK allocation: table template 9
+DUPTABLE R7 81
+  595: 			Material = Enum.Material.SmoothPlastic,
+GETIMPORT R8 73 [Enum.Material.SmoothPlastic]
+SETTABLEKS R8 R7 K68 ['Material']
+  597: 			Size = Vector3.new(1, 0.1, 1),
+GETIMPORT R8 76 [Vector3.new]
+LOADN R9 1
+LOADK R10 K82 [0.10000000000000001]
+LOADN R11 1
+CALLFB R8 3 1 [20]
+SETTABLEKS R8 R7 K70 ['Size']
+  588: 		make("Part", model, {
+CALLFB R4 3 0 [21]
+  599: 		for index = 1, #Furniture.access(held.ItemId, 0, 0, 0) do
+LOADN R6 1
+GETUPVAL R7 U3
+GETTABLEKS R7 R7 K83 ['access']
+GETUPVAL R8 U1
+GETTABLEKS R8 R8 K5 ['ItemId']
+LOADN R9 0
+LOADN R10 0
+LOADN R11 0
+CALLFB R7 4 1 [22]
+LENGTH R4 R7
+LOADN R5 1
+FORNPREP R4 L19
+  600: 			make("Part", model, {
+L18: GETUPVAL R7 U2
+LOADK R8 K28 ['Part']
+MOVE R9 R0
+REMARK allocation: table template 9
+DUPTABLE R10 85
+  601: 				Name = "Clearance" .. index,
+LOADK R12 K86 ['Clearance']
+MOVE R13 R6
+CONCAT R11 R12 R13
+SETTABLEKS R11 R10 K1 ['Name']
+  607: 				Material = Enum.Material.SmoothPlastic,
+GETIMPORT R11 73 [Enum.Material.SmoothPlastic]
+SETTABLEKS R11 R10 K68 ['Material']
+  609: 				Size = Vector3.new(1, 0.06, 1),
+GETIMPORT R11 76 [Vector3.new]
+LOADN R12 1
+LOADK R13 K87 [0.059999999999999998]
+LOADN R14 1
+CALLFB R11 3 1 [23]
+SETTABLEKS R11 R10 K70 ['Size']
+  600: 			make("Part", model, {
+CALLFB R7 3 0 [24]
+  599: 		for index = 1, #Furniture.access(held.ItemId, 0, 0, 0) do
+FORNLOOP R4 L18
+  613: 		make("Part", model, {
+L19: GETUPVAL R4 U2
+LOADK R5 K28 ['Part']
+MOVE R6 R0
+REMARK allocation: table template 9
+DUPTABLE R7 89
+  620: 			Material = Enum.Material.Neon,
+GETIMPORT R8 91 [Enum.Material.Neon]
+SETTABLEKS R8 R7 K68 ['Material']
+  621: 			Color = rgb(250, 240, 200),
+GETUPVAL R8 U12
+LOADN R9 250
+LOADN R10 240
+LOADN R11 200
+CALLFB R8 3 1 [25]
+SETTABLEKS R8 R7 K29 ['Color']
+  622: 			Size = Vector3.new(0.5, 0.12, math.max(item.Front, 1) * 0.8),
+GETIMPORT R8 76 [Vector3.new]
+LOADK R9 K92 [0.5]
+LOADK R10 K93 [0.12]
+REMARK builtin math.max/2
+GETTABLEKS R13 R1 K94 ['Front']
+FASTCALL2K 18 R13 K95 L20 [1]
+LOADK R14 K95 [1]
+GETIMPORT R12 43 [math.max]
+CALL R12 2 1
+L20: MULK R11 R12 K14 [0.80000000000000004]
+CALLFB R8 3 1 [26]
+SETTABLEKS R8 R7 K70 ['Size']
+  613: 		make("Part", model, {
+CALLFB R4 3 0 [27]
+REMARK allocation: table array 2
+  624: 		for _, side in { -1, 1 } do
+NEWTABLE R4 0 2
+LOADN R7 -1
+LOADN R8 1
+SETLIST R4 R7 2 [1]
+LOADNIL R5
+LOADNIL R6
+FORGPREP R4 L24
+  625: 			make("Part", model, {
+L21: GETUPVAL R9 U2
+LOADK R10 K28 ['Part']
+MOVE R11 R0
+REMARK allocation: table template 9
+DUPTABLE R12 96
+  626: 				Name = if side == -1 then "FacingLeft" else "FacingRight", Anchored = true, CanCollide = false,
+JUMPXEQKN R8 K97 L22 NOT [-1]
+LOADK R13 K98 ['FacingLeft']
+JUMP L23
+L22: LOADK R13 K99 ['FacingRight']
+L23: SETTABLEKS R13 R12 K1 ['Name']
+  627: 				CanQuery = false, CanTouch = false, CastShadow = false, Material = Enum.Material.Neon,
+GETIMPORT R13 91 [Enum.Material.Neon]
+SETTABLEKS R13 R12 K68 ['Material']
+  628: 				Color = rgb(250, 240, 200), Size = Vector3.new(0.16, 0.12, 0.8),
+GETUPVAL R13 U12
+LOADN R14 250
+LOADN R15 240
+LOADN R16 200
+CALLFB R13 3 1 [28]
+SETTABLEKS R13 R12 K29 ['Color']
+GETIMPORT R13 76 [Vector3.new]
+LOADK R14 K100 [0.16]
+LOADK R15 K93 [0.12]
+LOADK R16 K14 [0.80000000000000004]
+CALLFB R13 3 1 [29]
+SETTABLEKS R13 R12 K70 ['Size']
+  625: 			make("Part", model, {
+CALLFB R9 3 0 [30]
+  624: 		for _, side in { -1, 1 } do
+L24: FORGLOOP R4 L21 2
+  631: 		model.Parent = workspace
+GETIMPORT R4 102 [workspace]
+SETTABLEKS R4 R0 K51 ['Parent']
+  632: 		preview = model
+SETUPVAL R0 U13
+  633: 	end
+RETURN R0 0
+
+Function 18 (lay):
+  659: 			part.Size = Vector3.new(area[3] - area[1] - 0.1, part.Size.Y, area[4] - area[2] - 0.1)
+GETIMPORT R3 2 [Vector3.new]
+GETTABLEN R6 R1 3
+GETTABLEN R7 R1 1
+SUB R5 R6 R7
+SUBK R4 R5 K3 [0.10000000000000001]
+GETTABLEKS R5 R0 K4 ['Size']
+GETTABLEKS R5 R5 K5 ['Y']
+GETTABLEN R8 R1 4
+GETTABLEN R9 R1 2
+SUB R7 R8 R9
+SUBK R6 R7 K3 [0.10000000000000001]
+CALLFB R3 3 1 [0]
+SETTABLEKS R3 R0 K4 ['Size']
+  660: 			part.CFrame = houseFrame * CFrame.new((area[1] + area[3]) / 2, floor + y, (area[2] + area[4]) / 2)
+GETUPVAL R4 U0
+GETIMPORT R5 7 [CFrame.new]
+GETTABLEN R8 R1 1
+GETTABLEN R9 R1 3
+ADD R7 R8 R9
+DIVK R6 R7 K8 [2]
+GETUPVAL R8 U1
+ADD R7 R8 R2
+GETTABLEN R10 R1 2
+GETTABLEN R11 R1 4
+ADD R9 R10 R11
+DIVK R8 R9 K8 [2]
+CALLFB R5 3 1 [1]
+MUL R3 R4 R5
+SETTABLEKS R3 R0 K6 ['CFrame']
+  661: 		end
+RETURN R0 0
+
+Function 19 (updatePreview):
+  635: 		if not preview or not held or not spot then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R0 U1
+JUMPIFNOT R0 L0
+GETUPVAL R0 U2
+JUMPIF R0 L1
+  636: 			return
+L0: RETURN R0 0
+  638: 		local item = Furniture.Items[held.ItemId]
+L1: GETUPVAL R1 U3
+GETTABLEKS R1 R1 K0 ['Items']
+GETUPVAL R2 U1
+GETTABLEKS R2 R2 K1 ['ItemId']
+GETTABLE R0 R1 R2
+  639: 		local frame = Furniture.frame(houseFrame, { ItemId = held.ItemId, X = spot.X, Z = spot.Z, R = held.R }, site)
+GETUPVAL R1 U3
+GETTABLEKS R1 R1 K2 ['frame']
+GETUPVAL R2 U4
+REMARK allocation: table template 4
+DUPTABLE R3 6
+GETUPVAL R4 U1
+GETTABLEKS R4 R4 K1 ['ItemId']
+SETTABLEKS R4 R3 K1 ['ItemId']
+GETUPVAL R4 U2
+GETTABLEKS R4 R4 K3 ['X']
+SETTABLEKS R4 R3 K3 ['X']
+GETUPVAL R4 U2
+GETTABLEKS R4 R4 K4 ['Z']
+SETTABLEKS R4 R3 K4 ['Z']
+GETUPVAL R4 U1
+GETTABLEKS R4 R4 K5 ['R']
+SETTABLEKS R4 R3 K5 ['R']
+GETUPVAL R4 U5
+CALLFB R1 3 1 [0]
+  640: 		local color = if spot.Reason then BLOCKED else FITS
+GETUPVAL R3 U2
+GETTABLEKS R3 R3 K7 ['Reason']
+JUMPIFNOT R3 L2
+GETUPVAL R2 U6
+JUMP L3
+L2: GETUPVAL R2 U7
+  641: 		local height = HEIGHTS[held.ItemId] or 3
+L3: GETUPVAL R5 U8
+GETUPVAL R6 U1
+GETTABLEKS R6 R6 K1 ['ItemId']
+GETTABLE R4 R5 R6
+ORK R3 R4 K8 [3]
+  642: 		local body = preview:FindFirstChild("Body") :: BasePart?
+GETUPVAL R4 U0
+LOADK R6 K9 ['Body']
+NAMECALL R4 R4 K10 ['FindFirstChild']
+CALLFB R4 2 1 [1]
+  643: 		local ghost = preview:FindFirstChild("ItemGhost") :: Model?
+GETUPVAL R5 U0
+LOADK R7 K11 ['ItemGhost']
+NAMECALL R5 R5 K10 ['FindFirstChild']
+CALLFB R5 2 1 [2]
+  644: 		local access = preview:FindFirstChild("Access") :: BasePart
+GETUPVAL R6 U0
+LOADK R8 K12 ['Access']
+NAMECALL R6 R6 K10 ['FindFirstChild']
+CALLFB R6 2 1 [3]
+  645: 		local arrow = preview:FindFirstChild("FacingArrow") :: BasePart
+GETUPVAL R7 U0
+LOADK R9 K13 ['FacingArrow']
+NAMECALL R7 R7 K10 ['FindFirstChild']
+CALLFB R7 2 1 [4]
+  646: 		access.Color = color
+SETTABLEKS R2 R6 K14 ['Color']
+  647: 		if body then
+JUMPIFNOT R4 L4
+  648: 			body.Color = color
+SETTABLEKS R2 R4 K14 ['Color']
+  649: 			body.CFrame = frame * CFrame.new(0, height / 2, 0)
+GETIMPORT R9 17 [CFrame.new]
+LOADN R10 0
+DIVK R11 R3 K18 [2]
+LOADN R12 0
+CALLFB R9 3 1 [5]
+MUL R8 R1 R9
+SETTABLEKS R8 R4 K15 ['CFrame']
+  651: 		if ghost then
+L4: JUMPIFNOT R5 L7
+  652: 			ghost:PivotTo(frame * ghost:GetAttribute("TemplatePivot"))
+LOADK R13 K19 ['TemplatePivot']
+NAMECALL R11 R5 K20 ['GetAttribute']
+CALLFB R11 2 1 [6]
+MUL R10 R1 R11
+NAMECALL R8 R5 K21 ['PivotTo']
+CALLFB R8 2 0 [7]
+  653: 			for _, entry in ghostParts do entry.Part.Color = entry.Color:Lerp(color, 0.18) end
+GETUPVAL R8 U9
+LOADNIL R9
+LOADNIL R10
+FORGPREP R8 L6
+L5: GETTABLEKS R13 R12 K22 ['Part']
+GETTABLEKS R14 R12 K14 ['Color']
+MOVE R16 R2
+LOADK R17 K23 [0.17999999999999999]
+NAMECALL R14 R14 K24 ['Lerp']
+CALLFB R14 3 1 [8]
+SETTABLEKS R14 R13 K14 ['Color']
+L6: FORGLOOP R8 L5 2
+  654: 			local outline = preview:FindFirstChild("GhostOutline") :: Highlight
+GETUPVAL R8 U0
+LOADK R10 K25 ['GhostOutline']
+NAMECALL R8 R8 K10 ['FindFirstChild']
+CALLFB R8 2 1 [9]
+MOVE R4 R8
+  655: 			outline.OutlineColor, outline.FillColor = color, color
+SETTABLEKS R2 R4 K26 ['OutlineColor']
+SETTABLEKS R2 R4 K27 ['FillColor']
+  657: 		local floor = Furniture.floor(held.ItemId, site)
+L7: GETUPVAL R8 U3
+GETTABLEKS R8 R8 K28 ['floor']
+GETUPVAL R9 U1
+GETTABLEKS R9 R9 K1 ['ItemId']
+GETUPVAL R10 U5
+CALLFB R8 2 1 [10]
+MOVE R5 R8
+REMARK allocation: closure with 2 upvalues
+  658: 		local function lay(part: BasePart, area: { number }, y: number)
+NEWCLOSURE R3 P0
+CAPTURE UPVAL U4
+CAPTURE VAL R5
+  662: 		lay(access, Furniture.footprint(held.ItemId, spot.X, spot.Z, held.R) :: { number }, 0.12)
+MOVE R8 R3
+MOVE R9 R6
+GETUPVAL R10 U3
+GETTABLEKS R10 R10 K29 ['footprint']
+GETUPVAL R11 U1
+GETTABLEKS R11 R11 K1 ['ItemId']
+GETUPVAL R12 U2
+GETTABLEKS R12 R12 K3 ['X']
+GETUPVAL R13 U2
+GETTABLEKS R13 R13 K4 ['Z']
+GETUPVAL R14 U1
+GETTABLEKS R14 R14 K5 ['R']
+CALLFB R10 4 1 [11]
+LOADK R11 K30 [0.12]
+CALLFB R8 3 0 [12]
+  663: 		for index, strip in Furniture.access(held.ItemId, spot.X, spot.Z, held.R) do
+GETUPVAL R8 U3
+GETTABLEKS R8 R8 K31 ['access']
+GETUPVAL R9 U1
+GETTABLEKS R9 R9 K1 ['ItemId']
+GETUPVAL R10 U2
+GETTABLEKS R10 R10 K3 ['X']
+GETUPVAL R11 U2
+GETTABLEKS R11 R11 K4 ['Z']
+GETUPVAL R12 U1
+GETTABLEKS R12 R12 K5 ['R']
+CALLFB R8 4 3 [13]
+FORGPREP R8 L9
+  664: 			local clearance = preview:FindFirstChild("Clearance" .. index) :: BasePart?
+L8: GETUPVAL R13 U0
+LOADK R16 K32 ['Clearance']
+MOVE R17 R11
+CONCAT R15 R16 R17
+NAMECALL R13 R13 K10 ['FindFirstChild']
+CALLFB R13 2 1 [14]
+MOVE R6 R13
+  665: 			if clearance then
+JUMPIFNOT R6 L9
+  666: 				clearance.Color = color
+SETTABLEKS R2 R6 K14 ['Color']
+  667: 				lay(clearance, strip, 0.1)
+MOVE R13 R3
+MOVE R14 R6
+MOVE R15 R12
+LOADK R16 K33 [0.10000000000000001]
+CALLFB R13 3 0 [15]
+  663: 		for index, strip in Furniture.access(held.ItemId, spot.X, spot.Z, held.R) do
+L9: FORGLOOP R8 L8 2
+  670: 		local arrowZ = item.Depth / 2 + 0.85
+GETTABLEKS R9 R0 K35 ['Depth']
+DIVK R8 R9 K18 [2]
+ADDK R3 R8 K34 [0.84999999999999998]
+  671: 		arrow.Size = Vector3.new(0.16, 0.12, 1.25)
+GETIMPORT R8 37 [Vector3.new]
+LOADK R9 K38 [0.16]
+LOADK R10 K30 [0.12]
+LOADK R11 K39 [1.25]
+CALLFB R8 3 1 [16]
+SETTABLEKS R8 R7 K40 ['Size']
+  672: 		arrow.CFrame = frame * CFrame.new(0, 0.22, arrowZ)
+GETIMPORT R9 17 [CFrame.new]
+LOADN R10 0
+LOADK R11 K41 [0.22]
+MOVE R12 R3
+CALLFB R9 3 1 [17]
+MUL R8 R1 R9
+SETTABLEKS R8 R7 K15 ['CFrame']
+REMARK allocation: table array 2
+  673: 		for _, side in { -1, 1 } do
+NEWTABLE R8 0 2
+LOADN R11 -1
+LOADN R12 1
+SETLIST R8 R11 2 [1]
+LOADNIL R9
+LOADNIL R10
+FORGPREP R8 L14
+  674: 			local wing = preview:FindFirstChild(if side == -1 then "FacingLeft" else "FacingRight") :: BasePart
+L10: GETUPVAL R13 U0
+JUMPXEQKN R12 K42 L11 NOT [-1]
+LOADK R15 K43 ['FacingLeft']
+JUMP L12
+L11: LOADK R15 K44 ['FacingRight']
+L12: NAMECALL R13 R13 K10 ['FindFirstChild']
+CALLFB R13 2 1 [18]
+MOVE R7 R13
+  675: 			wing.CFrame = frame * CFrame.new(side * 0.24, 0.22, arrowZ + 0.35) * CFrame.Angles(0, side * math.rad(45), 0)
+GETIMPORT R15 17 [CFrame.new]
+MULK R16 R12 K45 [0.23999999999999999]
+LOADK R17 K41 [0.22]
+ADDK R18 R3 K46 [0.34999999999999998]
+CALLFB R15 3 1 [19]
+MUL R14 R1 R15
+GETIMPORT R15 48 [CFrame.Angles]
+LOADN R16 0
+REMARK builtin math.rad/1
+LOADN R19 45
+FASTCALL1 22 R19 L13
+GETIMPORT R18 51 [math.rad]
+CALL R18 1 1
+L13: MUL R17 R12 R18
+LOADN R18 0
+CALLFB R15 3 1 [20]
+MUL R13 R14 R15
+SETTABLEKS R13 R7 K15 ['CFrame']
+  673: 		for _, side in { -1, 1 } do
+L14: FORGLOOP R8 L10 2
+  677: 	end
+RETURN R0 0
+
+Function 20 (mousePosition):
+  682: 		return UserInputService:GetMouseLocation() - GuiService:GetGuiInset()
+GETUPVAL R1 U0
+NAMECALL R1 R1 K0 ['GetMouseLocation']
+CALLFB R1 1 1 [0]
+GETUPVAL R2 U1
+NAMECALL R2 R2 K1 ['GetGuiInset']
+CALLFB R2 1 1 [1]
+SUB R0 R1 R2
+RETURN R0 1
+
+Function 21 (pointerFloor):
+  687: 		local camera = workspace.CurrentCamera
+GETIMPORT R1 2 [workspace.CurrentCamera]
+  688: 		if not camera then
+JUMPIF R1 L0
+  689: 			return nil
+LOADNIL R2
+RETURN R2 1
+  691: 		local ray = camera:ScreenPointToRay(position.X, position.Y)
+L0: GETTABLEKS R4 R0 K3 ['X']
+GETTABLEKS R5 R0 K4 ['Y']
+NAMECALL R2 R1 K5 ['ScreenPointToRay']
+CALLFB R2 3 1 [0]
+  692: 		local elevation = if structures and structures:isActive() then structures:elevation() else 0
+GETUPVAL R3 U0
+JUMPIFNOT R3 L1
+GETUPVAL R3 U0
+NAMECALL R3 R3 K6 ['isActive']
+CALLFB R3 1 1 [1]
+JUMPIFNOT R3 L1
+GETUPVAL R3 U0
+NAMECALL R3 R3 K7 ['elevation']
+CALLFB R3 1 1 [2]
+MOVE R1 R3
+JUMP L2
+L1: LOADN R1 0
+  693: 		local pointerY = if structures and structures:isActive()
+L2: GETUPVAL R4 U0
+JUMPIFNOT R4 L3
+GETUPVAL R4 U0
+NAMECALL R4 R4 K6 ['isActive']
+CALLFB R4 1 1 [3]
+JUMPIFNOT R4 L3
+  694: 			then Building.planeHeight(site, elevation / Building.LEVEL_HEIGHT) else floorY
+GETUPVAL R3 U1
+GETTABLEKS R3 R3 K8 ['planeHeight']
+GETUPVAL R4 U2
+GETUPVAL R6 U1
+GETTABLEKS R6 R6 K9 ['LEVEL_HEIGHT']
+DIV R5 R1 R6
+CALLFB R3 2 1 [4]
+JUMP L4
+L3: GETUPVAL R3 U3
+  695: 		local floor = houseFrame * CFrame.new(0, pointerY, 0)
+L4: GETUPVAL R4 U4
+GETIMPORT R5 12 [CFrame.new]
+LOADN R6 0
+MOVE R7 R3
+LOADN R8 0
+CALLFB R5 3 1 [5]
+MUL R1 R4 R5
+  696: 		local normal = houseFrame.UpVector
+GETUPVAL R3 U4
+GETTABLEKS R3 R3 K13 ['UpVector']
+  697: 		local denominator = ray.Direction:Dot(normal)
+GETTABLEKS R4 R2 K14 ['Direction']
+MOVE R6 R3
+NAMECALL R4 R4 K15 ['Dot']
+CALLFB R4 2 1 [6]
+REMARK builtin math.abs/1
+  698: 		if math.abs(denominator) < 1e-4 then
+FASTCALL1 2 R4 L5
+MOVE R6 R4
+GETIMPORT R5 18 [math.abs]
+CALL R5 1 1
+L5: LOADK R6 K19 [0.0001]
+JUMPIFNOTLT R5 R6 L6
+  699: 			return nil
+LOADNIL R5
+RETURN R5 1
+  701: 		local t = (floor.Position - ray.Origin):Dot(normal) / denominator
+L6: GETTABLEKS R7 R1 K20 ['Position']
+GETTABLEKS R8 R2 K21 ['Origin']
+SUB R6 R7 R8
+MOVE R8 R3
+NAMECALL R6 R6 K15 ['Dot']
+CALLFB R6 2 1 [7]
+DIV R5 R6 R4
+  702: 		if t < 0 then
+LOADN R6 0
+JUMPIFNOTLT R5 R6 L7
+  703: 			return nil
+LOADNIL R6
+RETURN R6 1
+  705: 		return houseFrame:PointToObjectSpace(ray.Origin + ray.Direction * t)
+L7: GETUPVAL R6 U4
+GETTABLEKS R9 R2 K21 ['Origin']
+GETTABLEKS R11 R2 K14 ['Direction']
+MUL R10 R11 R5
+ADD R8 R9 R10
+NAMECALL R6 R6 K22 ['PointToObjectSpace']
+CALL R6 2 -1
+RETURN R6 -1
+
+Function 22 (pointerSpot):
+  708: 		local point = pointerFloor(position)
+GETUPVAL R1 U0
+MOVE R2 R0
+CALLFB R1 1 1 [0]
+  709: 		if not point then
+JUMPIF R1 L0
+  710: 			return nil
+LOADNIL R2
+RETURN R2 1
+  712: 		if held then
+L0: GETUPVAL R2 U1
+JUMPIFNOT R2 L1
+  715: 			local area = Furniture.footprint(held.ItemId, 0, 0, held.R) :: { number }
+GETUPVAL R2 U2
+GETTABLEKS R2 R2 K0 ['footprint']
+GETUPVAL R3 U1
+GETTABLEKS R3 R3 K1 ['ItemId']
+LOADN R4 0
+LOADN R5 0
+GETUPVAL R6 U1
+GETTABLEKS R6 R6 K2 ['R']
+CALLFB R2 4 1 [1]
+  716: 			return BaseGrid.snap(point.X - (area[1] + area[3]) / 2), BaseGrid.snap(point.Z - (area[2] + area[4]) / 2)
+GETUPVAL R3 U3
+GETTABLEKS R3 R3 K3 ['snap']
+GETTABLEKS R5 R1 K4 ['X']
+GETTABLEN R8 R2 1
+GETTABLEN R9 R2 3
+ADD R7 R8 R9
+DIVK R6 R7 K5 [2]
+SUB R4 R5 R6
+CALLFB R3 1 1 [2]
+GETUPVAL R4 U3
+GETTABLEKS R4 R4 K3 ['snap']
+GETTABLEKS R6 R1 K6 ['Z']
+GETTABLEN R9 R2 2
+GETTABLEN R10 R2 4
+ADD R8 R9 R10
+DIVK R7 R8 K5 [2]
+SUB R5 R6 R7
+CALL R4 1 -1
+RETURN R3 -1
+  718: 		return BaseGrid.snap(point.X), BaseGrid.snap(point.Z)
+L1: GETUPVAL R2 U3
+GETTABLEKS R2 R2 K3 ['snap']
+GETTABLEKS R3 R1 K4 ['X']
+CALLFB R2 1 1 [3]
+GETUPVAL R3 U3
+GETTABLEKS R3 R3 K3 ['snap']
+GETTABLEKS R4 R1 K6 ['Z']
+CALL R3 1 -1
+RETURN R2 -1
+
+Function 23 (aim):
+  721: 		if not held or not state then
+GETUPVAL R1 U0
+JUMPIFNOT R1 L0
+GETUPVAL R1 U1
+JUMPIF R1 L1
+  722: 			return
+L0: RETURN R0 0
+  724: 		local x, z = pointerSpot(position)
+L1: GETUPVAL R1 U2
+MOVE R2 R0
+CALLFB R1 1 2 [0]
+  725: 		if not x then
+JUMPIF R1 L2
+  726: 			return
+RETURN R0 0
+REMARK builtin type/1
+  728: 		local skip = if type(held.From) == "number" then held.From else nil
+L2: GETUPVAL R5 U0
+GETTABLEKS R5 R5 K0 ['From']
+FASTCALL1 40 R5 L3
+GETIMPORT R4 2 [type]
+CALL R4 1 1
+L3: JUMPXEQKS R4 K3 L4 NOT ['number']
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K0 ['From']
+JUMP L5
+L4: LOADNIL R3
+  729: 		local reason = Furniture.check(placed(), held.ItemId, x, z, held.R, skip, site)
+L5: GETUPVAL R4 U3
+GETTABLEKS R4 R4 K4 ['check']
+GETUPVAL R5 U4
+CALLFB R5 0 1 [1]
+GETUPVAL R6 U0
+GETTABLEKS R6 R6 K5 ['ItemId']
+MOVE R7 R1
+MOVE R8 R2
+GETUPVAL R9 U0
+GETTABLEKS R9 R9 K6 ['R']
+MOVE R10 R3
+GETUPVAL R11 U5
+CALLFB R4 7 1 [2]
+  730: 		if spot and spot.X == x and spot.Z == z and spot.R == held.R and spot.Reason == reason then return end
+GETUPVAL R5 U6
+JUMPIFNOT R5 L6
+GETUPVAL R5 U6
+GETTABLEKS R5 R5 K7 ['X']
+JUMPIFNOTEQ R5 R1 L6
+GETUPVAL R5 U6
+GETTABLEKS R5 R5 K8 ['Z']
+JUMPIFNOTEQ R5 R2 L6
+GETUPVAL R5 U6
+GETTABLEKS R5 R5 K6 ['R']
+GETUPVAL R6 U0
+GETTABLEKS R6 R6 K6 ['R']
+JUMPIFNOTEQ R5 R6 L6
+GETUPVAL R5 U6
+GETTABLEKS R5 R5 K9 ['Reason']
+JUMPIFNOTEQ R5 R4 L6
+RETURN R0 0
+REMARK allocation: table template 4
+  731: 		spot = { X = x, Z = z, R = held.R, Reason = reason }
+L6: DUPTABLE R5 10
+SETTABLEKS R1 R5 K7 ['X']
+SETTABLEKS R2 R5 K8 ['Z']
+GETUPVAL R6 U0
+GETTABLEKS R6 R6 K6 ['R']
+SETTABLEKS R6 R5 K6 ['R']
+SETTABLEKS R4 R5 K9 ['Reason']
+SETUPVAL R5 U6
+  732: 		updatePreview()
+GETUPVAL R5 U7
+CALLFB R5 0 0 [3]
+  733: 		render()
+GETUPVAL R5 U8
+CALLFB R5 0 0 [4]
+  734: 	end
+RETURN R0 0
+
+Function 24 (hold):
+REMARK allocation: table template 3
+  737: 		held = { ItemId = itemId, From = from, R = r }
+DUPTABLE R3 3
+SETTABLEKS R0 R3 K0 ['ItemId']
+SETTABLEKS R1 R3 K1 ['From']
+SETTABLEKS R2 R3 K2 ['R']
+SETUPVAL R3 U0
+  738: 		spot = nil
+LOADNIL R3
+SETUPVAL R3 U1
+  739: 		buildPreview()
+GETUPVAL R3 U2
+CALLFB R3 0 0 [0]
+  740: 		aim(mousePosition())
+GETUPVAL R3 U3
+GETUPVAL R4 U4
+CALL R4 0 -1
+CALL R3 -1 0
+  741: 		render()
+GETUPVAL R3 U5
+CALLFB R3 0 0 [1]
+  742: 	end
+RETURN R0 0
+
+Function 25 (drop):
+  744: 		held, spot = nil, nil
+LOADNIL R0
+LOADNIL R1
+SETUPVAL R0 U0
+SETUPVAL R1 U1
+  745: 		clearPreview()
+GETUPVAL R0 U2
+CALLFB R0 0 0 [0]
+  746: 		render()
+GETUPVAL R0 U3
+CALLFB R0 0 0 [1]
+  747: 	end
+RETURN R0 0
+
+Function 26 (send):
+  750: 		pending = true
+LOADB R1 1
+SETUPVAL R1 U0
+  751: 		render()
+GETUPVAL R1 U1
+CALLFB R1 0 0 [0]
+  752: 		local ok, result = pcall(request.InvokeServer, request, action, ...)
+GETUPVAL R2 U2
+GETTABLEKS R2 R2 K0 ['InvokeServer']
+GETUPVAL R3 U2
+MOVE R4 R0
+GETVARARGS R5 -1
+FASTPCALL pcall L0
+GETIMPORT R1 2 [pcall]
+CALL R1 -1 2
+  753: 		pending = false
+L0: LOADB R3 0
+SETUPVAL R3 U0
+  754: 		if ok and type(result) == "table" then
+JUMPIFNOT R1 L6
+REMARK builtin type/1
+FASTCALL1 40 R2 L1
+MOVE R4 R2
+GETIMPORT R3 4 [type]
+CALL R3 1 1
+L1: JUMPXEQKS R3 K5 L6 NOT ['table']
+  755: 			state = result.State or state
+GETTABLEKS R3 R2 K6 ['State']
+JUMPIF R3 L2
+GETUPVAL R3 U3
+L2: SETUPVAL R3 U3
+  756: 			if not result.Ok and result.Message ~= "" then
+GETTABLEKS R3 R2 K7 ['Ok']
+JUMPIF R3 L3
+GETTABLEKS R3 R2 K8 ['Message']
+JUMPXEQKS R3 K9 L3 ['']
+  757: 				notice(result.Message)
+GETUPVAL R3 U4
+GETTABLEKS R4 R2 K8 ['Message']
+CALLFB R3 1 0 [1]
+  759: 			render()
+L3: GETUPVAL R3 U1
+CALLFB R3 0 0 [2]
+  760: 			return result.Ok == true
+GETTABLEKS R4 R2 K7 ['Ok']
+JUMPXEQKB R4 1 L4
+LOADB R3 0 +1
+L4: LOADB R3 1
+L5: RETURN R3 1
+  762: 		notice("Your furniture couldn't be saved. Try again.")
+L6: GETUPVAL R3 U4
+LOADK R4 K10 ['Your furniture couldn't be saved'...]
+CALLFB R3 1 0 [3]
+  763: 		render()
+GETUPVAL R3 U1
+CALLFB R3 0 0 [4]
+  764: 		return false
+LOADB R3 0
+RETURN R3 1
+
+Function 27 (placeHeld):
+  768: 		if not held or not spot or pending then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R0 U1
+JUMPIFNOT R0 L0
+GETUPVAL R0 U2
+JUMPIFNOT R0 L1
+  769: 			return
+L0: RETURN R0 0
+  771: 		if spot.Reason then
+L1: GETUPVAL R0 U1
+GETTABLEKS R0 R0 K0 ['Reason']
+JUMPIFNOT R0 L2
+  772: 			notice(spot.Reason)
+GETUPVAL R0 U3
+GETUPVAL R1 U1
+GETTABLEKS R1 R1 K0 ['Reason']
+CALLFB R0 1 0 [0]
+  773: 			return
+RETURN R0 0
+REMARK builtin type/1
+  775: 		local action = if type(held.From) == "number" then "Move" else "Place"
+L2: GETUPVAL R2 U0
+GETTABLEKS R2 R2 K1 ['From']
+FASTCALL1 40 R2 L3
+GETIMPORT R1 3 [type]
+CALL R1 1 1
+L3: JUMPXEQKS R1 K4 L4 NOT ['number']
+LOADK R0 K5 ['Move']
+JUMP L5
+L4: LOADK R0 K6 ['Place']
+  776: 		if send(action, held.From, spot.X, spot.Z, held.R, site) then
+L5: GETUPVAL R1 U4
+MOVE R2 R0
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K1 ['From']
+GETUPVAL R4 U1
+GETTABLEKS R4 R4 K7 ['X']
+GETUPVAL R5 U1
+GETTABLEKS R5 R5 K8 ['Z']
+GETUPVAL R6 U0
+GETTABLEKS R6 R6 K9 ['R']
+GETUPVAL R7 U5
+CALLFB R1 6 1 [1]
+JUMPIFNOT R1 L6
+  777: 			drop()
+GETUPVAL R1 U6
+CALLFB R1 0 0 [2]
+  778: 			choose(nil)
+GETUPVAL R1 U7
+LOADNIL R2
+CALLFB R1 1 0 [3]
+  780: 	end
+L6: RETURN R0 0
+
+Function 28 (clickFurniture):
+  783: 		local camera = workspace.CurrentCamera
+GETIMPORT R1 2 [workspace.CurrentCamera]
+  784: 		local folder = furnitureFolder()
+GETUPVAL R2 U0
+CALLFB R2 0 1 [0]
+  785: 		if not camera or not folder or not state then
+JUMPIFNOT R1 L0
+JUMPIFNOT R2 L0
+GETUPVAL R3 U1
+JUMPIF R3 L1
+  786: 			return
+L0: RETURN R0 0
+  788: 		local ray = camera:ScreenPointToRay(position.X, position.Y)
+L1: GETTABLEKS R5 R0 K3 ['X']
+GETTABLEKS R6 R0 K4 ['Y']
+NAMECALL R3 R1 K5 ['ScreenPointToRay']
+CALLFB R3 3 1 [1]
+  789: 		local parameters = RaycastParams.new()
+GETIMPORT R4 8 [RaycastParams.new]
+CALLFB R4 0 1 [2]
+MOVE R1 R4
+  790: 		parameters.FilterType = Enum.RaycastFilterType.Include
+GETIMPORT R4 12 [Enum.RaycastFilterType.Include]
+SETTABLEKS R4 R1 K13 ['FilterType']
+REMARK allocation: table array 1
+  791: 		parameters.FilterDescendantsInstances = { folder }
+NEWTABLE R4 0 1
+MOVE R5 R2
+SETLIST R4 R5 1 [1]
+SETTABLEKS R4 R1 K14 ['FilterDescendantsInstances']
+  792: 		local reach = (ray.Origin - houseFrame.Position).Magnitude + 80
+GETTABLEKS R6 R3 K16 ['Origin']
+GETUPVAL R7 U2
+GETTABLEKS R7 R7 K17 ['Position']
+SUB R5 R6 R7
+GETTABLEKS R5 R5 K18 ['Magnitude']
+ADDK R4 R5 K15 [80]
+  793: 		local hit = workspace:Raycast(ray.Origin, ray.Direction * reach, parameters)
+GETIMPORT R5 19 [workspace]
+GETTABLEKS R7 R3 K16 ['Origin']
+GETTABLEKS R9 R3 K20 ['Direction']
+MUL R8 R9 R4
+MOVE R9 R1
+NAMECALL R5 R5 K21 ['Raycast']
+CALLFB R5 4 1 [3]
+  794: 		local model = hit and hit.Instance
+MOVE R4 R5
+JUMPIFNOT R4 L2
+GETTABLEKS R4 R5 K22 ['Instance']
+  795: 		while model and model.Parent ~= folder do
+L2: JUMPIFNOT R4 L3
+GETTABLEKS R6 R4 K23 ['Parent']
+JUMPIFEQ R6 R2 L3
+  796: 			model = model.Parent
+GETTABLEKS R4 R4 K23 ['Parent']
+  795: 		while model and model.Parent ~= folder do
+JUMPBACK L2
+  798: 		if not model then
+L3: JUMPIF R4 L4
+  799: 			choose(nil)
+GETUPVAL R6 U3
+LOADNIL R7
+CALLFB R6 1 0 [4]
+  800: 			return
+RETURN R0 0
+  802: 		for index, entry in placed() do
+L4: GETUPVAL R6 U4
+CALLFB R6 0 3 [5]
+FORGPREP R6 L6
+  804: 				model:GetAttribute("ItemId") == entry.ItemId
+L5: LOADK R13 K24 ['ItemId']
+NAMECALL R11 R4 K25 ['GetAttribute']
+CALLFB R11 2 1 [6]
+GETTABLEKS R12 R10 K24 ['ItemId']
+JUMPIFNOTEQ R11 R12 L6
+  805: 				and model:GetAttribute("X") == entry.X
+LOADK R13 K3 ['X']
+NAMECALL R11 R4 K25 ['GetAttribute']
+CALLFB R11 2 1 [7]
+GETTABLEKS R12 R10 K3 ['X']
+JUMPIFNOTEQ R11 R12 L6
+  806: 				and model:GetAttribute("Z") == entry.Z
+LOADK R13 K26 ['Z']
+NAMECALL R11 R4 K25 ['GetAttribute']
+CALLFB R11 2 1 [8]
+GETTABLEKS R12 R10 K26 ['Z']
+JUMPIFNOTEQ R11 R12 L6
+  807: 				and model:GetAttribute("R") == entry.R
+LOADK R13 K27 ['R']
+NAMECALL R11 R4 K25 ['GetAttribute']
+CALLFB R11 2 1 [9]
+GETTABLEKS R12 R10 K27 ['R']
+JUMPIFNOTEQ R11 R12 L6
+  809: 				choose(index)
+GETUPVAL R11 U3
+MOVE R12 R9
+CALLFB R11 1 0 [10]
+  810: 				return
+RETURN R0 0
+  802: 		for index, entry in placed() do
+L6: FORGLOOP R6 L5 2
+  813: 	end
+RETURN R0 0
+
+Function 29 (hideRoofPart):
+  816: 		if not house or not part:IsA("BasePart") then
+GETUPVAL R1 U0
+JUMPIFNOT R1 L0
+LOADK R3 K0 ['BasePart']
+NAMECALL R1 R0 K1 ['IsA']
+CALLFB R1 2 1 [0]
+JUMPIF R1 L1
+  817: 			return
+L0: RETURN R0 0
+  819: 		local folder = house:FindFirstChild("Furniture")
+L1: GETUPVAL R1 U0
+LOADK R3 K2 ['Furniture']
+NAMECALL R1 R1 K3 ['FindFirstChild']
+CALLFB R1 2 1 [1]
+  820: 		if folder and part:IsDescendantOf(folder) then
+JUMPIFNOT R1 L2
+MOVE R4 R1
+NAMECALL R2 R0 K4 ['IsDescendantOf']
+CALLFB R2 2 1 [2]
+JUMPIFNOT R2 L2
+  821: 			return
+RETURN R0 0
+  823: 		if site == "Company" then
+L2: GETUPVAL R2 U1
+JUMPXEQKS R2 K5 L4 NOT ['Company']
+  824: 			local construction = house:FindFirstChild("BuildingPieces")
+GETUPVAL R1 U0
+LOADK R3 K6 ['BuildingPieces']
+NAMECALL R1 R1 K3 ['FindFirstChild']
+CALLFB R1 2 1 [3]
+  825: 			if not construction or not part:IsDescendantOf(construction) then return end
+JUMPIFNOT R1 L3
+MOVE R4 R1
+NAMECALL R2 R0 K4 ['IsDescendantOf']
+CALLFB R2 2 1 [4]
+JUMPIF R2 L4
+L3: RETURN R0 0
+  827: 		if houseFrame:PointToObjectSpace(part.Position).Y > ROOF_HEIGHT then
+L4: GETUPVAL R2 U2
+GETTABLEKS R4 R0 K7 ['Position']
+NAMECALL R2 R2 K8 ['PointToObjectSpace']
+CALLFB R2 2 1 [5]
+GETTABLEKS R2 R2 K9 ['Y']
+LOADK R3 K10 [8.4000000000000004]
+JUMPIFNOTLT R3 R2 L6
+  828: 			if hidden[part] == nil then
+GETUPVAL R3 U3
+GETTABLE R2 R3 R0
+JUMPXEQKNIL R2 L5 NOT
+  829: 				hidden[part] = part.LocalTransparencyModifier
+GETUPVAL R2 U3
+GETTABLEKS R3 R0 K11 ['LocalTransparencyModifier']
+SETTABLE R3 R2 R0
+  831: 			part.LocalTransparencyModifier = 1
+L5: LOADN R2 1
+SETTABLEKS R2 R0 K11 ['LocalTransparencyModifier']
+  833: 	end
+L6: RETURN R0 0
+
+Function 30 (??):
+  848: 					if active and house == watched and part:IsDescendantOf(watched) then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R0 U1
+GETUPVAL R1 U2
+JUMPIFNOTEQ R0 R1 L0
+GETUPVAL R0 U3
+GETUPVAL R2 U2
+NAMECALL R0 R0 K0 ['IsDescendantOf']
+CALLFB R0 2 1 [0]
+JUMPIFNOT R0 L0
+  849: 						hideRoofPart(part)
+GETUPVAL R0 U4
+GETUPVAL R1 U3
+CALLFB R0 1 0 [1]
+  851: 				end)
+L0: RETURN R0 0
+
+Function 31 (??):
+  847: 				task.defer(function()
+GETIMPORT R1 2 [task.defer]
+REMARK allocation: closure with 5 upvalues
+NEWCLOSURE R2 P0
+CAPTURE UPVAL U0
+CAPTURE UPVAL U1
+CAPTURE UPVAL U2
+CAPTURE VAL R0
+CAPTURE UPVAL U3
+CALLFB R1 1 0 [0]
+  852: 			end)
+RETURN R0 0
+
+Function 32 (hideRoof):
+  835: 		if not house or (structures and structures:roofVisible()) then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R0 U1
+JUMPIFNOT R0 L1
+GETUPVAL R0 U1
+NAMECALL R0 R0 K0 ['roofVisible']
+CALLFB R0 1 1 [0]
+JUMPIFNOT R0 L1
+  836: 			return
+L0: RETURN R0 0
+  839: 		if site == "Company" and not house:FindFirstChild("BuildingPieces") then
+L1: GETUPVAL R0 U2
+JUMPXEQKS R0 K1 L2 NOT ['Company']
+GETUPVAL R0 U0
+LOADK R2 K2 ['BuildingPieces']
+NAMECALL R0 R0 K3 ['FindFirstChild']
+CALLFB R0 2 1 [1]
+JUMPIF R0 L2
+  840: 			return
+RETURN R0 0
+  842: 		if not roofConnection then
+L2: GETUPVAL R0 U3
+JUMPIF R0 L3
+  843: 			local watched = house
+GETUPVAL R0 U0
+  844: 			roofConnection = house.DescendantAdded:Connect(function(part)
+GETUPVAL R1 U0
+GETTABLEKS R1 R1 K4 ['DescendantAdded']
+REMARK allocation: closure with 4 upvalues
+NEWCLOSURE R3 P0
+CAPTURE UPVAL U4
+CAPTURE UPVAL U0
+CAPTURE VAL R0
+CAPTURE UPVAL U5
+NAMECALL R1 R1 K5 ['Connect']
+CALLFB R1 2 1 [2]
+SETUPVAL R1 U3
+  854: 		for _, part in house:GetDescendants() do
+L3: GETUPVAL R0 U0
+NAMECALL R0 R0 K6 ['GetDescendants']
+CALLFB R0 1 3 [3]
+FORGPREP R0 L5
+  855: 			hideRoofPart(part)
+L4: GETUPVAL R5 U5
+MOVE R6 R4
+CALLFB R5 1 0 [4]
+  854: 		for _, part in house:GetDescendants() do
+L5: FORGLOOP R0 L4 2
+  857: 	end
+RETURN R0 0
+
+Function 33 (showRoof):
+  859: 		if roofConnection then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+  860: 			roofConnection:Disconnect()
+GETUPVAL R0 U0
+NAMECALL R0 R0 K0 ['Disconnect']
+CALLFB R0 1 0 [0]
+  861: 			roofConnection = nil
+LOADNIL R0
+SETUPVAL R0 U0
+  863: 		for part, modifier in hidden do
+L0: GETUPVAL R0 U1
+LOADNIL R1
+LOADNIL R2
+FORGPREP R0 L2
+  864: 			if part.Parent then
+L1: GETTABLEKS R5 R3 K1 ['Parent']
+JUMPIFNOT R5 L2
+  865: 				part.LocalTransparencyModifier = modifier
+SETTABLEKS R4 R3 K2 ['LocalTransparencyModifier']
+  863: 		for part, modifier in hidden do
+L2: FORGLOOP R0 L1 2
+REMARK allocation: table hash 0
+  868: 		hidden = {}
+NEWTABLE R0 0 0
+SETUPVAL R0 U1
+  869: 	end
+RETURN R0 0
+
+Function 34 (line):
+  878: 				make("Part", folder, {
+GETUPVAL R4 U0
+LOADK R5 K0 ['Part']
+GETUPVAL R6 U1
+REMARK allocation: table template 11
+DUPTABLE R7 16
+  880: 					CastShadow = false, Size = Vector3.new(width, 0.025, depth),
+GETIMPORT R8 19 [Vector3.new]
+MOVE R9 R2
+LOADK R10 K20 [0.025000000000000001]
+MOVE R11 R3
+CALLFB R8 3 1 [0]
+SETTABLEKS R8 R7 K10 ['Size']
+  881: 					CFrame = houseFrame * CFrame.new(x, elevation, z),
+GETUPVAL R9 U2
+GETIMPORT R10 21 [CFrame.new]
+MOVE R11 R0
+GETUPVAL R12 U3
+MOVE R13 R1
+CALLFB R10 3 1 [1]
+MUL R8 R9 R10
+SETTABLEKS R8 R7 K11 ['CFrame']
+  882: 					Color = rgb(184, 150, 222), Material = Enum.Material.SmoothPlastic, Transparency = 0.35,
+GETUPVAL R8 U4
+LOADN R9 184
+LOADN R10 150
+LOADN R11 222
+CALLFB R8 3 1 [2]
+SETTABLEKS R8 R7 K12 ['Color']
+GETIMPORT R8 24 [Enum.Material.SmoothPlastic]
+SETTABLEKS R8 R7 K13 ['Material']
+  878: 				make("Part", folder, {
+CALLFB R4 3 0 [3]
+  884: 			end
+RETURN R0 0
+
+Function 35 (sample):
+  946: 			local key = string.format("%.3f:%.3f", x, z)
+GETIMPORT R2 2 [string.format]
+LOADK R3 K3 ['%.3f:%.3f']
+MOVE R4 R0
+MOVE R5 R1
+CALLFB R2 3 1 [0]
+  947: 			if samples[key] ~= nil then return samples[key] or nil end
+GETUPVAL R4 U0
+GETTABLE R3 R4 R2
+JUMPXEQKNIL R3 L0
+GETUPVAL R5 U0
+GETTABLE R4 R5 R2
+ORK R3 R4 K4 [nil]
+RETURN R3 1
+  948: 			local origin = houseFrame:PointToWorldSpace(Vector3.new(x, 0.8, z))
+L0: GETUPVAL R3 U1
+GETIMPORT R5 7 [Vector3.new]
+MOVE R6 R0
+LOADK R7 K8 [0.80000000000000004]
+MOVE R8 R1
+CALL R5 3 -1
+NAMECALL R3 R3 K9 ['PointToWorldSpace']
+CALL R3 -1 1
+  949: 			local hit = workspace:Raycast(origin, up * -8, params)
+GETIMPORT R4 11 [workspace]
+MOVE R6 R3
+GETUPVAL R8 U2
+MULK R7 R8 K12 [-8]
+GETUPVAL R8 U3
+NAMECALL R4 R4 K13 ['Raycast']
+CALLFB R4 4 1 [1]
+  950: 			if hit and hit.Normal:Dot(up) >= 0.7 and hit.Material ~= Enum.Material.Water then
+JUMPIFNOT R4 L1
+GETTABLEKS R5 R4 K14 ['Normal']
+GETUPVAL R7 U2
+NAMECALL R5 R5 K15 ['Dot']
+CALLFB R5 2 1 [2]
+LOADK R6 K16 [0.69999999999999996]
+JUMPIFNOTLE R6 R5 L1
+GETTABLEKS R5 R4 K17 ['Material']
+GETIMPORT R6 20 [Enum.Material.Water]
+JUMPIFEQ R5 R6 L1
+  951: 				local point = hit.Position + up * 0.13
+GETTABLEKS R5 R4 K21 ['Position']
+GETUPVAL R7 U2
+MULK R6 R7 K22 [0.13]
+ADD R3 R5 R6
+  952: 				samples[key] = point
+GETUPVAL R5 U0
+SETTABLE R3 R5 R2
+  953: 				return point
+RETURN R3 1
+  955: 			samples[key] = false
+L1: GETUPVAL R5 U0
+LOADB R6 0
+SETTABLE R6 R5 R2
+  956: 			return nil
+LOADNIL R5
+RETURN R5 1
+
+Function 36 (line):
+  961: 			local mx, mz = (x1 + x2) / 2, (z1 + z2) / 2
+ADD R7 R0 R2
+DIVK R5 R7 K0 [2]
+ADD R7 R1 R3
+DIVK R6 R7 K0 [2]
+REMARK builtin math.abs/1
+  962: 			if math.abs(mx) < halfWidth and math.abs(mz) < halfLength then return end
+FASTCALL1 2 R5 L0
+MOVE R8 R5
+GETIMPORT R7 3 [math.abs]
+CALL R7 1 1
+L0: GETUPVAL R8 U0
+JUMPIFNOTLT R7 R8 L2
+REMARK builtin math.abs/1
+FASTCALL1 2 R6 L1
+MOVE R8 R6
+GETIMPORT R7 3 [math.abs]
+CALL R7 1 1
+L1: GETUPVAL R8 U1
+JUMPIFNOTLT R7 R8 L2
+RETURN R0 0
+REMARK allocation: table hash 0
+  963: 			local points, count = {}, 0
+L2: NEWTABLE R7 0 0
+LOADN R8 0
+  964: 			for index = 0, 4 do
+LOADN R11 0
+LOADN R9 4
+LOADN R10 1
+FORNPREP R9 L5
+  965: 				local t = index / 4
+L3: DIVK R12 R11 K4 [4]
+  966: 				local point = sample(x1 + (x2 - x1) * t, z1 + (z2 - z1) * t)
+GETUPVAL R13 U2
+SUB R16 R2 R0
+MUL R15 R16 R12
+ADD R14 R0 R15
+SUB R17 R3 R1
+MUL R16 R17 R12
+ADD R15 R1 R16
+CALLFB R13 2 1 [0]
+  967: 				points[index + 1] = point
+ADDK R14 R11 K5 [1]
+SETTABLE R13 R7 R14
+  968: 				if point then count += 1 end
+JUMPIFNOT R13 L4
+ADDK R8 R8 K5 [1]
+  964: 			for index = 0, 4 do
+L4: FORNLOOP R9 L3
+  970: 			if count == 0 then return end
+L5: JUMPXEQKN R8 K6 L6 NOT [0]
+RETURN R0 0
+  971: 			local first, last = points[1], points[5]
+L6: GETTABLEN R9 R7 1
+GETTABLEN R10 R7 5
+  972: 			local continuous = count == 5
+JUMPXEQKN R8 K7 L7 [5]
+LOADB R11 0 +1
+L7: LOADB R11 1
+  973: 			if continuous then
+L8: JUMPIFNOT R11 L11
+  974: 				for index = 2, 4 do
+LOADN R14 2
+LOADN R12 4
+LOADN R13 1
+FORNPREP R12 L11
+  975: 					if (points[index] - first:Lerp(last, (index - 1) / 4)).Magnitude > 0.15 then
+L9: GETTABLE R16 R7 R14
+MOVE R19 R10
+SUBK R21 R14 K5 [1]
+DIVK R20 R21 K4 [4]
+NAMECALL R17 R9 K8 ['Lerp']
+CALLFB R17 3 1 [1]
+SUB R15 R16 R17
+GETTABLEKS R15 R15 K9 ['Magnitude']
+LOADK R16 K10 [0.14999999999999999]
+JUMPIFNOTLT R16 R15 L10
+  976: 						continuous = false
+LOADB R11 0
+  977: 						break
+JUMP L11
+  974: 				for index = 2, 4 do
+L10: FORNLOOP R12 L9
+  981: 			if not continuous then
+L11: JUMPIF R11 L13
+  984: 				if depth < 3 then
+LOADN R12 3
+JUMPIFNOTLT R4 R12 L12
+  985: 					line(x1, z1, mx, mz, depth + 1)
+GETUPVAL R12 U3
+MOVE R13 R0
+MOVE R14 R1
+MOVE R15 R5
+MOVE R16 R6
+ADDK R17 R4 K5 [1]
+CALLFB R12 5 0 [2]
+  986: 					line(mx, mz, x2, z2, depth + 1)
+GETUPVAL R12 U3
+MOVE R13 R5
+MOVE R14 R6
+MOVE R15 R2
+MOVE R16 R3
+ADDK R17 R4 K5 [1]
+CALLFB R12 5 0 [3]
+  988: 				return
+L12: RETURN R0 0
+  990: 			local length = (last - first).Magnitude
+L13: SUB R11 R10 R9
+GETTABLEKS R11 R11 K9 ['Magnitude']
+  991: 			if length < 0.01 then return end
+LOADK R12 K11 [0.01]
+JUMPIFNOTLT R11 R12 L14
+RETURN R0 0
+  992: 			make("Part", folder, {
+L14: GETUPVAL R12 U4
+LOADK R13 K12 ['Part']
+GETUPVAL R14 U5
+REMARK allocation: table template 11
+DUPTABLE R15 28
+  995: 				Material = Enum.Material.SmoothPlastic, Color = rgb(235, 245, 255), Transparency = 0.3,
+GETIMPORT R16 31 [Enum.Material.SmoothPlastic]
+SETTABLEKS R16 R15 K22 ['Material']
+GETUPVAL R16 U6
+LOADN R17 235
+LOADN R18 245
+LOADN R19 255
+CALLFB R16 3 1 [4]
+SETTABLEKS R16 R15 K23 ['Color']
+  996: 				Size = Vector3.new(0.024, 0.08, length),
+GETIMPORT R16 34 [Vector3.new]
+LOADK R17 K35 [0.024]
+LOADK R18 K36 [0.080000000000000002]
+MOVE R19 R11
+CALLFB R16 3 1 [5]
+SETTABLEKS R16 R15 K26 ['Size']
+  997: 				CFrame = CFrame.lookAt((first + last) / 2, last, up),
+GETIMPORT R16 38 [CFrame.lookAt]
+ADD R18 R9 R10
+DIVK R17 R18 K0 [2]
+MOVE R18 R10
+GETUPVAL R19 U7
+CALLFB R16 3 1 [6]
+SETTABLEKS R16 R15 K27 ['CFrame']
+  992: 			make("Part", folder, {
+CALLFB R12 3 0 [7]
+  999: 		end
+RETURN R0 0
+
+Function 37 (showGrid):
+  871: 		local folder = make("Folder", workspace, { Name = "BuildGrid" })
+GETUPVAL R0 U0
+LOADK R1 K0 ['Folder']
+GETIMPORT R2 2 [workspace]
+REMARK allocation: table template 1
+DUPTABLE R3 5
+CALLFB R0 3 1 [0]
+  872: 		grid = folder
+SETUPVAL R0 U1
+  873: 		if structures and structures:isActive() then
+GETUPVAL R1 U2
+JUMPIFNOT R1 L9
+GETUPVAL R1 U2
+NAMECALL R1 R1 K6 ['isActive']
+CALLFB R1 1 1 [1]
+JUMPIFNOT R1 L9
+  874: 			local size = structures:gridSize()
+GETUPVAL R1 U2
+NAMECALL R1 R1 K7 ['gridSize']
+CALLFB R1 1 1 [2]
+  875: 			local offset = Building.gridOffset(site)
+GETUPVAL R2 U3
+GETTABLEKS R2 R2 K8 ['gridOffset']
+GETUPVAL R3 U4
+CALLFB R2 1 1 [3]
+  876: 			local elevation = Building.planeHeight(site, structures:elevation() / Building.LEVEL_HEIGHT)
+GETUPVAL R3 U3
+GETTABLEKS R3 R3 K9 ['planeHeight']
+GETUPVAL R4 U4
+GETUPVAL R6 U2
+NAMECALL R6 R6 K10 ['elevation']
+CALLFB R6 1 1 [4]
+GETUPVAL R7 U3
+GETTABLEKS R7 R7 K11 ['LEVEL_HEIGHT']
+DIV R5 R6 R7
+CALLFB R3 2 1 [5]
+REMARK allocation: closure with 5 upvalues
+  877: 			local function line(x: number, z: number, width: number, depth: number)
+NEWCLOSURE R4 P0
+CAPTURE UPVAL U0
+CAPTURE VAL R0
+CAPTURE UPVAL U5
+CAPTURE VAL R3
+CAPTURE UPVAL U6
+  885: 			for _, area in Building.Bounds[site or "Home"] do
+GETUPVAL R8 U3
+GETTABLEKS R8 R8 K12 ['Bounds']
+GETUPVAL R10 U4
+ORK R9 R10 K13 ['Home']
+GETTABLE R5 R8 R9
+LOADNIL R6
+LOADNIL R7
+FORGPREP R5 L8
+REMARK builtin math.ceil/1
+  886: 				for column = math.ceil((area[1] - offset) / size), math.floor((area[3] - offset) / size) do
+L0: GETTABLEN R15 R9 1
+SUB R14 R15 R2
+DIV R13 R14 R1
+FASTCALL1 7 R13 L1
+GETIMPORT R12 16 [math.ceil]
+CALL R12 1 1
+REMARK builtin math.floor/1
+L1: GETTABLEN R16 R9 3
+SUB R15 R16 R2
+DIV R14 R15 R1
+FASTCALL1 12 R14 L2
+GETIMPORT R13 18 [math.floor]
+CALL R13 1 1
+L2: MOVE R10 R13
+LOADN R11 1
+FORNPREP R10 L4
+  887: 					line(column * size + offset, (area[2] + area[4]) / 2, 0.035, area[4] - area[2])
+L3: MOVE R13 R4
+MUL R15 R12 R1
+ADD R14 R15 R2
+GETTABLEN R17 R9 2
+GETTABLEN R18 R9 4
+ADD R16 R17 R18
+DIVK R15 R16 K19 [2]
+LOADK R16 K20 [0.035000000000000003]
+GETTABLEN R18 R9 4
+GETTABLEN R19 R9 2
+SUB R17 R18 R19
+CALLFB R13 4 0 [6]
+  886: 				for column = math.ceil((area[1] - offset) / size), math.floor((area[3] - offset) / size) do
+FORNLOOP R10 L3
+REMARK builtin math.ceil/1
+  889: 				for row = math.ceil((area[2] - offset) / size), math.floor((area[4] - offset) / size) do
+L4: GETTABLEN R15 R9 2
+SUB R14 R15 R2
+DIV R13 R14 R1
+FASTCALL1 7 R13 L5
+GETIMPORT R12 16 [math.ceil]
+CALL R12 1 1
+REMARK builtin math.floor/1
+L5: GETTABLEN R16 R9 4
+SUB R15 R16 R2
+DIV R14 R15 R1
+FASTCALL1 12 R14 L6
+GETIMPORT R13 18 [math.floor]
+CALL R13 1 1
+L6: MOVE R10 R13
+LOADN R11 1
+FORNPREP R10 L8
+  890: 					line((area[1] + area[3]) / 2, row * size + offset, area[3] - area[1], 0.035)
+L7: MOVE R13 R4
+GETTABLEN R16 R9 1
+GETTABLEN R17 R9 3
+ADD R15 R16 R17
+DIVK R14 R15 K19 [2]
+MUL R16 R12 R1
+ADD R15 R16 R2
+GETTABLEN R17 R9 3
+GETTABLEN R18 R9 1
+SUB R16 R17 R18
+LOADK R17 K20 [0.035000000000000003]
+CALLFB R13 4 0 [7]
+  889: 				for row = math.ceil((area[2] - offset) / size), math.floor((area[4] - offset) / size) do
+FORNLOOP R10 L7
+  885: 			for _, area in Building.Bounds[site or "Home"] do
+L8: FORGLOOP R5 L0 2
+  893: 			return
+RETURN R0 0
+  895: 		if site == "Company" then
+L9: GETUPVAL R1 U4
+JUMPXEQKS R1 K21 L14 NOT ['Company']
+  897: 			local area, half = Furniture.PLOT, BaseGrid.CELL_SIZE / 2
+GETUPVAL R1 U7
+GETTABLEKS R1 R1 K22 ['PLOT']
+GETUPVAL R3 U8
+GETTABLEKS R3 R3 K23 ['CELL_SIZE']
+DIVK R2 R3 K19 [2]
+  898: 			for x = area[1] + half, area[3], BaseGrid.CELL_SIZE do
+GETTABLEN R6 R1 1
+ADD R5 R6 R2
+GETTABLEN R3 R1 3
+GETUPVAL R4 U8
+GETTABLEKS R4 R4 K23 ['CELL_SIZE']
+FORNPREP R3 L11
+  899: 				plate(folder, { x - 0.02, area[2], x + 0.02, area[4] }, floorY + 0.13, rgb(235, 245, 255), 0.3)
+L10: GETUPVAL R6 U9
+MOVE R7 R0
+REMARK allocation: table array 4
+NEWTABLE R8 0 4
+SUBK R9 R5 K24 [0.02]
+GETTABLEN R10 R1 2
+ADDK R11 R5 K24 [0.02]
+GETTABLEN R12 R1 4
+SETLIST R8 R9 4 [1]
+GETUPVAL R10 U10
+ADDK R9 R10 K25 [0.13]
+GETUPVAL R10 U6
+LOADN R11 235
+LOADN R12 245
+LOADN R13 255
+CALLFB R10 3 1 [8]
+LOADK R11 K26 [0.29999999999999999]
+CALLFB R6 5 0 [9]
+  898: 			for x = area[1] + half, area[3], BaseGrid.CELL_SIZE do
+FORNLOOP R3 L10
+  901: 			for z = area[2] + half, area[4], BaseGrid.CELL_SIZE do
+L11: GETTABLEN R6 R1 2
+ADD R5 R6 R2
+GETTABLEN R3 R1 4
+GETUPVAL R4 U8
+GETTABLEKS R4 R4 K23 ['CELL_SIZE']
+FORNPREP R3 L13
+  902: 				plate(folder, { area[1], z - 0.02, area[3], z + 0.02 }, floorY + 0.13, rgb(235, 245, 255), 0.3)
+L12: GETUPVAL R6 U9
+MOVE R7 R0
+REMARK allocation: table array 4
+NEWTABLE R8 0 4
+GETTABLEN R9 R1 1
+SUBK R10 R5 K24 [0.02]
+GETTABLEN R11 R1 3
+ADDK R12 R5 K24 [0.02]
+SETLIST R8 R9 4 [1]
+GETUPVAL R10 U10
+ADDK R9 R10 K25 [0.13]
+GETUPVAL R10 U6
+LOADN R11 235
+LOADN R12 245
+LOADN R13 255
+CALLFB R10 3 1 [10]
+LOADK R11 K26 [0.29999999999999999]
+CALLFB R6 5 0 [11]
+  901: 			for z = area[2] + half, area[4], BaseGrid.CELL_SIZE do
+FORNLOOP R3 L12
+  904: 			return
+L13: RETURN R0 0
+  907: 		local halfWidth, halfLength = BaseGrid.HALF_WIDTH, BaseGrid.HALF_LENGTH
+L14: GETUPVAL R1 U8
+GETTABLEKS R1 R1 K27 ['HALF_WIDTH']
+GETUPVAL R2 U8
+GETTABLEKS R2 R2 K28 ['HALF_LENGTH']
+  908: 		for column = 0, BaseGrid.COLUMNS do
+LOADN R5 0
+GETUPVAL R3 U8
+GETTABLEKS R3 R3 K29 ['COLUMNS']
+LOADN R4 1
+FORNPREP R3 L16
+  909: 			local x = -halfWidth + column * BaseGrid.CELL_SIZE
+L15: MINUS R7 R1
+GETUPVAL R9 U8
+GETTABLEKS R9 R9 K23 ['CELL_SIZE']
+MUL R8 R5 R9
+ADD R6 R7 R8
+  910: 			plate(folder, { x - 0.012, -halfLength, x + 0.012, halfLength }, FLOOR_Y + 0.13, rgb(235, 245, 255), 0.3)
+GETUPVAL R7 U9
+MOVE R8 R0
+REMARK allocation: table array 4
+NEWTABLE R9 0 4
+SUBK R10 R6 K30 [0.012]
+MINUS R11 R2
+ADDK R12 R6 K30 [0.012]
+MOVE R13 R2
+SETLIST R9 R10 4 [1]
+LOADK R10 K31 [0.29000000000000004]
+GETUPVAL R11 U6
+LOADN R12 235
+LOADN R13 245
+LOADN R14 255
+CALLFB R11 3 1 [12]
+LOADK R12 K26 [0.29999999999999999]
+CALLFB R7 5 0 [13]
+  908: 		for column = 0, BaseGrid.COLUMNS do
+FORNLOOP R3 L15
+  912: 		for row = 0, BaseGrid.ROWS do
+L16: LOADN R5 0
+GETUPVAL R3 U8
+GETTABLEKS R3 R3 K32 ['ROWS']
+LOADN R4 1
+FORNPREP R3 L18
+  913: 			local z = -halfLength + row * BaseGrid.CELL_SIZE
+L17: MINUS R7 R2
+GETUPVAL R9 U8
+GETTABLEKS R9 R9 K23 ['CELL_SIZE']
+MUL R8 R5 R9
+ADD R6 R7 R8
+  914: 			plate(folder, { -halfWidth, z - 0.012, halfWidth, z + 0.012 }, FLOOR_Y + 0.13, rgb(235, 245, 255), 0.3)
+GETUPVAL R7 U9
+MOVE R8 R0
+REMARK allocation: table array 4
+NEWTABLE R9 0 4
+MINUS R10 R1
+SUBK R11 R6 K30 [0.012]
+MOVE R12 R1
+ADDK R13 R6 K30 [0.012]
+SETLIST R9 R10 4 [1]
+LOADK R10 K31 [0.29000000000000004]
+GETUPVAL R11 U6
+LOADN R12 235
+LOADN R13 245
+LOADN R14 255
+CALLFB R11 3 1 [14]
+LOADK R12 K26 [0.29999999999999999]
+CALLFB R7 5 0 [15]
+  912: 		for row = 0, BaseGrid.ROWS do
+FORNLOOP R3 L17
+  919: 		local base = house and house.Parent
+L18: GETUPVAL R3 U11
+JUMPIFNOT R3 L19
+GETUPVAL R3 U11
+GETTABLEKS R3 R3 K33 ['Parent']
+  920: 		if not base then return end
+L19: JUMPIF R3 L20
+RETURN R0 0
+REMARK allocation: table hash 0
+  921: 		local surfaces = {}
+L20: NEWTABLE R4 0 0
+REMARK allocation: table template 8
+  922: 		local surfaceNames = {
+DUPTABLE R5 43
+  928: 		for _, part in base:GetDescendants() do
+NAMECALL R6 R3 K44 ['GetDescendants']
+CALLFB R6 1 3 [16]
+FORGPREP R6 L27
+  929: 			if part:IsA("BasePart") and part.CanQuery and (
+L21: LOADK R13 K45 ['BasePart']
+NAMECALL R11 R10 K46 ['IsA']
+CALLFB R11 2 1 [17]
+JUMPIFNOT R11 L27
+GETTABLEKS R11 R10 K47 ['CanQuery']
+JUMPIFNOT R11 L27
+  930: 				surfaceNames[part.Name]
+GETTABLEKS R12 R10 K3 ['Name']
+GETTABLE R11 R5 R12
+JUMPIF R11 L26
+  931: 				or (part.Name == "DeckSurface" and part.Parent and (part.Parent.Name == "Dock" or part.Parent.Name == "DockLink"))
+GETTABLEKS R11 R10 K3 ['Name']
+JUMPXEQKS R11 K48 L22 NOT ['DeckSurface']
+GETTABLEKS R11 R10 K33 ['Parent']
+JUMPIFNOT R11 L22
+GETTABLEKS R11 R10 K33 ['Parent']
+GETTABLEKS R11 R11 K3 ['Name']
+JUMPXEQKS R11 K49 L26 ['Dock']
+GETTABLEKS R11 R10 K33 ['Parent']
+GETTABLEKS R11 R11 K3 ['Name']
+JUMPXEQKS R11 K50 L26 ['DockLink']
+  932: 				or ((part.Name == "DockRamp" or part.Name == "QuayLanding") and part:FindFirstAncestor("DockAccess"))
+L22: GETTABLEKS R11 R10 K3 ['Name']
+JUMPXEQKS R11 K51 L23 ['DockRamp']
+GETTABLEKS R11 R10 K3 ['Name']
+JUMPXEQKS R11 K52 L24 NOT ['QuayLanding']
+L23: LOADK R13 K53 ['DockAccess']
+NAMECALL R11 R10 K54 ['FindFirstAncestor']
+CALLFB R11 2 1 [18]
+JUMPIF R11 L26
+  933: 				or (part.Parent == base and part.Size.X >= 45 and part.Size.Z >= 40)
+L24: GETTABLEKS R11 R10 K33 ['Parent']
+JUMPIFNOTEQ R11 R3 L25
+GETTABLEKS R11 R10 K55 ['Size']
+GETTABLEKS R11 R11 K56 ['X']
+LOADN R12 45
+JUMPIFNOTLE R12 R11 L25
+GETTABLEKS R11 R10 K55 ['Size']
+GETTABLEKS R11 R11 K57 ['Z']
+LOADN R12 40
+JUMPIFLE R12 R11 L26
+  934: 				or (part.Name == "Step" and part.Parent and part.Parent.Name == "BeachStairs")
+L25: GETTABLEKS R11 R10 K3 ['Name']
+JUMPXEQKS R11 K58 L27 NOT ['Step']
+GETTABLEKS R11 R10 K33 ['Parent']
+JUMPIFNOT R11 L27
+GETTABLEKS R11 R10 K33 ['Parent']
+GETTABLEKS R11 R11 K3 ['Name']
+JUMPXEQKS R11 K59 L27 NOT ['BeachStairs']
+REMARK builtin table.insert/2
+  936: 				table.insert(surfaces, part)
+L26: FASTCALL2 52 R4 R10 L27
+MOVE R12 R4
+MOVE R13 R10
+GETIMPORT R11 62 [table.insert]
+CALL R11 2 0
+  928: 		for _, part in base:GetDescendants() do
+L27: FORGLOOP R6 L21 2
+  939: 		local params = RaycastParams.new()
+GETIMPORT R5 65 [RaycastParams.new]
+CALLFB R5 0 1 [19]
+  940: 		params.FilterType = Enum.RaycastFilterType.Include
+GETIMPORT R6 69 [Enum.RaycastFilterType.Include]
+SETTABLEKS R6 R5 K70 ['FilterType']
+  941: 		params.FilterDescendantsInstances = surfaces
+SETTABLEKS R4 R5 K71 ['FilterDescendantsInstances']
+  942: 		params.RespectCanCollide = true
+LOADB R6 1
+SETTABLEKS R6 R5 K72 ['RespectCanCollide']
+  943: 		local up = houseFrame.UpVector
+GETUPVAL R4 U5
+GETTABLEKS R4 R4 K73 ['UpVector']
+REMARK allocation: table hash 0
+  944: 		local samples = {}
+NEWTABLE R3 0 0
+REMARK allocation: closure with 4 upvalues
+  945: 		local function sample(x: number, z: number): Vector3?
+NEWCLOSURE R6 P1
+CAPTURE VAL R3
+CAPTURE UPVAL U5
+CAPTURE VAL R4
+CAPTURE VAL R5
+REMARK allocation: closure with 8 upvalues
+  958: 		local function line(x1: number, z1: number, x2: number, z2: number, depth: number)
+NEWCLOSURE R7 P2
+CAPTURE VAL R1
+CAPTURE VAL R2
+CAPTURE VAL R6
+CAPTURE VAL R7
+CAPTURE UPVAL U0
+CAPTURE VAL R0
+CAPTURE UPVAL U6
+CAPTURE VAL R4
+ 1000: 		local size = BaseGrid.CELL_SIZE
+GETUPVAL R8 U8
+GETTABLEKS R8 R8 K23 ['CELL_SIZE']
+ 1001: 		for column = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN + 1 do
+GETUPVAL R11 U8
+GETTABLEKS R11 R11 K74 ['BASE_MIN_COLUMN']
+GETUPVAL R12 U8
+GETTABLEKS R12 R12 K76 ['BASE_MAX_COLUMN']
+ADDK R9 R12 K75 [1]
+LOADN R10 1
+FORNPREP R9 L31
+ 1002: 			local x = -halfWidth + (column - 1) * size
+L28: MINUS R13 R1
+SUBK R15 R11 K75 [1]
+MUL R14 R15 R8
+ADD R12 R13 R14
+ 1003: 			for row = BaseGrid.BASE_MIN_ROW, BaseGrid.BASE_MAX_ROW do
+GETUPVAL R15 U8
+GETTABLEKS R15 R15 K77 ['BASE_MIN_ROW']
+GETUPVAL R13 U8
+GETTABLEKS R13 R13 K78 ['BASE_MAX_ROW']
+LOADN R14 1
+FORNPREP R13 L30
+ 1004: 				local z = -halfLength + (row - 1) * size
+L29: MINUS R17 R2
+SUBK R19 R15 K75 [1]
+MUL R18 R19 R8
+ADD R16 R17 R18
+ 1005: 				line(x, z, x, z + size, 0)
+MOVE R17 R7
+MOVE R18 R12
+MOVE R19 R16
+MOVE R20 R12
+ADD R21 R16 R8
+LOADN R22 0
+CALLFB R17 5 0 [20]
+ 1003: 			for row = BaseGrid.BASE_MIN_ROW, BaseGrid.BASE_MAX_ROW do
+FORNLOOP R13 L29
+ 1001: 		for column = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN + 1 do
+L30: FORNLOOP R9 L28
+ 1008: 		for row = BaseGrid.BASE_MIN_ROW, BaseGrid.BASE_MAX_ROW + 1 do
+L31: GETUPVAL R11 U8
+GETTABLEKS R11 R11 K77 ['BASE_MIN_ROW']
+GETUPVAL R12 U8
+GETTABLEKS R12 R12 K78 ['BASE_MAX_ROW']
+ADDK R9 R12 K75 [1]
+LOADN R10 1
+FORNPREP R9 L35
+ 1009: 			local z = -halfLength + (row - 1) * size
+L32: MINUS R13 R2
+SUBK R15 R11 K75 [1]
+MUL R14 R15 R8
+ADD R12 R13 R14
+ 1010: 			for column = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN do
+GETUPVAL R15 U8
+GETTABLEKS R15 R15 K74 ['BASE_MIN_COLUMN']
+GETUPVAL R13 U8
+GETTABLEKS R13 R13 K76 ['BASE_MAX_COLUMN']
+LOADN R14 1
+FORNPREP R13 L34
+ 1011: 				local x = -halfWidth + (column - 1) * size
+L33: MINUS R17 R1
+SUBK R19 R15 K75 [1]
+MUL R18 R19 R8
+ADD R16 R17 R18
+ 1012: 				line(x, z, x + size, z, 0)
+MOVE R17 R7
+MOVE R18 R16
+MOVE R19 R12
+ADD R20 R16 R8
+MOVE R21 R12
+LOADN R22 0
+CALLFB R17 5 0 [21]
+ 1010: 			for column = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN do
+FORNLOOP R13 L33
+ 1008: 		for row = BaseGrid.BASE_MIN_ROW, BaseGrid.BASE_MAX_ROW + 1 do
+L34: FORNLOOP R9 L32
+ 1015: 	end
+L35: RETURN R0 0
+
+Function 38 (panBy):
+ 1018: 		local limit = if site == "Company" then Vector2.new(60, 40) else PAN_LIMIT
+GETUPVAL R2 U0
+JUMPXEQKS R2 K0 L0 NOT ['Company']
+GETIMPORT R1 3 [Vector2.new]
+LOADN R2 60
+LOADN R3 40
+CALLFB R1 2 1 [0]
+JUMP L1
+L0: GETUPVAL R1 U1
+ 1019: 		pan = Vector2.new(
+L1: GETIMPORT R2 3 [Vector2.new]
+REMARK builtin math.clamp/3
+ 1020: 			math.clamp(pan.X + delta.X, -limit.X, limit.X),
+GETUPVAL R5 U2
+GETTABLEKS R5 R5 K4 ['X']
+GETTABLEKS R6 R0 K4 ['X']
+ADD R4 R5 R6
+GETTABLEKS R6 R1 K4 ['X']
+MINUS R5 R6
+GETTABLEKS R6 R1 K4 ['X']
+FASTCALL 46 L2
+GETIMPORT R3 7 [math.clamp]
+CALL R3 3 1
+REMARK builtin math.clamp/3
+ 1021: 			math.clamp(pan.Y + delta.Y, -limit.Y, limit.Y)
+L2: GETUPVAL R6 U2
+GETTABLEKS R6 R6 K8 ['Y']
+GETTABLEKS R7 R0 K8 ['Y']
+ADD R5 R6 R7
+GETTABLEKS R7 R1 K8 ['Y']
+MINUS R6 R7
+GETTABLEKS R7 R1 K8 ['Y']
+FASTCALL 46 L3
+GETIMPORT R4 7 [math.clamp]
+CALL R4 3 -1
+ 1019: 		pan = Vector2.new(
+L3: CALL R2 -1 1
+SETUPVAL R2 U2
+ 1023: 	end
+RETURN R0 0
+
+Function 39 (dragView):
+ 1025: 		local first, last = pointerFloor(from), pointerFloor(to)
+GETUPVAL R4 U0
+MOVE R5 R0
+CALLFB R4 1 1 [0]
+MOVE R2 R4
+GETUPVAL R3 U0
+MOVE R4 R1
+CALLFB R3 1 1 [1]
+ 1026: 		if first and last then
+JUMPIFNOT R2 L0
+JUMPIFNOT R3 L0
+ 1027: 			panBy(Vector2.new(first.X - last.X, first.Z - last.Z))
+GETUPVAL R4 U1
+GETIMPORT R5 2 [Vector2.new]
+GETTABLEKS R7 R2 K3 ['X']
+GETTABLEKS R8 R3 K3 ['X']
+SUB R6 R7 R8
+GETTABLEKS R8 R2 K4 ['Z']
+GETTABLEKS R9 R3 K4 ['Z']
+SUB R7 R8 R9
+CALL R5 2 -1
+CALL R4 -1 0
+ 1029: 	end
+L0: RETURN R0 0
+
+Function 40 (changeZoom):
+REMARK builtin math.clamp/3
+ 1031: 		zoom = math.clamp(zoom * 0.85 ^ steps, 0.45, 2.5)
+GETUPVAL R3 U0
+LOADK R5 K0 [0.84999999999999998]
+POW R4 R5 R0
+MUL R2 R3 R4
+LOADK R3 K1 [0.45000000000000001]
+LOADK R4 K2 [2.5]
+FASTCALL 46 L0
+GETIMPORT R1 5 [math.clamp]
+CALL R1 3 1
+L0: SETUPVAL R1 U0
+ 1032: 	end
+RETURN R0 0
+
+Function 41 (clearNavigation):
+REMARK builtin table.clear/1
+ 1034: 		table.clear(panKeys)
+GETUPVAL R1 U0
+FASTCALL1 134 R1 L0
+GETIMPORT R0 2 [table.clear]
+CALL R0 1 0
+REMARK builtin table.clear/1
+ 1035: 		table.clear(turnKeys)
+L0: GETUPVAL R1 U1
+FASTCALL1 134 R1 L1
+GETIMPORT R0 2 [table.clear]
+CALL R0 1 0
+ 1036: 		turnVelocity = 0
+L1: LOADN R0 0
+SETUPVAL R0 U2
+ 1037: 		dragging, dragPosition, touch = false, nil, nil
+LOADB R0 0
+LOADNIL R1
+LOADNIL R2
+SETUPVAL R0 U3
+SETUPVAL R1 U4
+SETUPVAL R2 U5
+ 1038: 		touchDragged = false
+LOADB R0 0
+SETUPVAL R0 U6
+ 1039: 	end
+RETURN R0 0
+
+Function 42 (cameraInput):
+ 1041: 		if inputState == Enum.UserInputState.End or inputState == Enum.UserInputState.Cancel then
+GETIMPORT R3 3 [Enum.UserInputState.End]
+JUMPIFEQ R1 R3 L0
+GETIMPORT R3 5 [Enum.UserInputState.Cancel]
+JUMPIFNOTEQ R1 R3 L1
+ 1042: 			panKeys[input.KeyCode] = nil
+L0: GETUPVAL R3 U0
+GETTABLEKS R4 R2 K6 ['KeyCode']
+LOADNIL R5
+SETTABLE R5 R3 R4
+ 1043: 			turnKeys[input.KeyCode] = nil
+GETUPVAL R3 U1
+GETTABLEKS R4 R2 K6 ['KeyCode']
+LOADNIL R5
+SETTABLE R5 R3 R4
+JUMP L2
+ 1044: 		elseif inputState == Enum.UserInputState.Begin and not UserInputService:GetFocusedTextBox() then
+L1: GETIMPORT R3 8 [Enum.UserInputState.Begin]
+JUMPIFNOTEQ R1 R3 L2
+GETUPVAL R3 U2
+NAMECALL R3 R3 K9 ['GetFocusedTextBox']
+CALLFB R3 1 1 [0]
+JUMPIF R3 L2
+ 1045: 			panKeys[input.KeyCode] = PAN_KEYS[input.KeyCode]
+GETUPVAL R3 U0
+GETTABLEKS R4 R2 K6 ['KeyCode']
+GETUPVAL R6 U3
+GETTABLEKS R7 R2 K6 ['KeyCode']
+GETTABLE R5 R6 R7
+SETTABLE R5 R3 R4
+ 1046: 			turnKeys[input.KeyCode] = TURN_KEYS[input.KeyCode]
+GETUPVAL R3 U1
+GETTABLEKS R4 R2 K6 ['KeyCode']
+GETUPVAL R6 U4
+GETTABLEKS R7 R2 K6 ['KeyCode']
+GETTABLE R5 R6 R7
+SETTABLE R5 R3 R4
+ 1049: 		return if UserInputService:GetFocusedTextBox()
+L2: GETUPVAL R4 U2
+NAMECALL R4 R4 K9 ['GetFocusedTextBox']
+CALLFB R4 1 1 [1]
+JUMPIFNOT R4 L3
+ 1050: 			then Enum.ContextActionResult.Pass
+GETIMPORT R3 12 [Enum.ContextActionResult.Pass]
+RETURN R3 1
+ 1051: 			else Enum.ContextActionResult.Sink
+L3: GETIMPORT R3 14 [Enum.ContextActionResult.Sink]
+RETURN R3 1
+
+Function 43 (freezeCharacter):
+ 1055: 		local character = player.Character
+GETUPVAL R0 U0
+GETTABLEKS R0 R0 K0 ['Character']
+ 1056: 		local root = character and character:FindFirstChild("HumanoidRootPart")
+MOVE R1 R0
+JUMPIFNOT R1 L0
+LOADK R3 K1 ['HumanoidRootPart']
+NAMECALL R1 R0 K2 ['FindFirstChild']
+CALLFB R1 2 1 [0]
+ 1057: 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+L0: MOVE R2 R0
+JUMPIFNOT R2 L1
+LOADK R4 K3 ['Humanoid']
+NAMECALL R2 R0 K4 ['FindFirstChildOfClass']
+CALLFB R2 2 1 [1]
+ 1058: 		if not root or not root:IsA("BasePart") or not humanoid or humanoid.Health <= 0 then
+L1: JUMPIFNOT R1 L2
+LOADK R5 K5 ['BasePart']
+NAMECALL R3 R1 K6 ['IsA']
+CALLFB R3 2 1 [2]
+JUMPIFNOT R3 L2
+JUMPIFNOT R2 L2
+GETTABLEKS R3 R2 K7 ['Health']
+LOADN R4 0
+JUMPIFNOTLE R3 R4 L3
+ 1059: 			return false
+L2: LOADB R3 0
+RETURN R3 1
+ 1061: 		if humanoid.SeatPart then
+L3: GETTABLEKS R3 R2 K8 ['SeatPart']
+JUMPIFNOT R3 L4
+ 1062: 			notice("Leave your seat before entering build mode.")
+GETUPVAL R3 U1
+LOADK R4 K9 ['Leave your seat before entering '...]
+CALLFB R3 1 0 [3]
+ 1063: 			return false
+LOADB R3 0
+RETURN R3 1
+REMARK allocation: table template 4
+ 1065: 		frozen = { Root = root, Anchored = root.Anchored, Humanoid = humanoid, AutoRotate = humanoid.AutoRotate }
+L4: DUPTABLE R3 13
+SETTABLEKS R1 R3 K10 ['Root']
+GETTABLEKS R4 R1 K11 ['Anchored']
+SETTABLEKS R4 R3 K11 ['Anchored']
+SETTABLEKS R2 R3 K3 ['Humanoid']
+GETTABLEKS R4 R2 K12 ['AutoRotate']
+SETTABLEKS R4 R3 K12 ['AutoRotate']
+SETUPVAL R3 U2
+ 1066: 		humanoid:Move(Vector3.zero)
+GETIMPORT R5 16 [Vector3.zero]
+NAMECALL R3 R2 K17 ['Move']
+CALLFB R3 2 0 [4]
+ 1067: 		humanoid.AutoRotate = false
+LOADB R3 0
+SETTABLEKS R3 R2 K12 ['AutoRotate']
+ 1068: 		root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = Vector3.zero, Vector3.zero
+GETIMPORT R3 16 [Vector3.zero]
+GETIMPORT R4 16 [Vector3.zero]
+SETTABLEKS R3 R1 K18 ['AssemblyLinearVelocity']
+SETTABLEKS R4 R1 K19 ['AssemblyAngularVelocity']
+ 1069: 		root.Anchored = true
+LOADB R3 1
+SETTABLEKS R3 R1 K11 ['Anchored']
+ 1070: 		return true
+LOADB R3 1
+RETURN R3 1
+
+Function 44 (releaseCharacter):
+ 1073: 		if not frozen then
+GETUPVAL R0 U0
+JUMPIF R0 L0
+ 1074: 			return
+RETURN R0 0
+ 1076: 		if frozen.Root.Parent then
+L0: GETUPVAL R0 U0
+GETTABLEKS R0 R0 K0 ['Root']
+GETTABLEKS R0 R0 K1 ['Parent']
+JUMPIFNOT R0 L1
+ 1077: 			frozen.Root.Anchored = frozen.Anchored
+GETUPVAL R0 U0
+GETTABLEKS R0 R0 K0 ['Root']
+GETUPVAL R1 U0
+GETTABLEKS R1 R1 K2 ['Anchored']
+SETTABLEKS R1 R0 K2 ['Anchored']
+ 1079: 		if frozen.Humanoid.Parent then
+L1: GETUPVAL R0 U0
+GETTABLEKS R0 R0 K3 ['Humanoid']
+GETTABLEKS R0 R0 K1 ['Parent']
+JUMPIFNOT R0 L2
+ 1080: 			frozen.Humanoid.AutoRotate = frozen.AutoRotate
+GETUPVAL R0 U0
+GETTABLEKS R0 R0 K3 ['Humanoid']
+GETUPVAL R1 U0
+GETTABLEKS R1 R1 K4 ['AutoRotate']
+SETTABLEKS R1 R0 K4 ['AutoRotate']
+ 1082: 		frozen = nil
+L2: LOADNIL R0
+SETUPVAL R0 U0
+ 1083: 	end
+RETURN R0 0
+
+Function 45 (??):
+ 1087: 			local scripts = player:FindFirstChild("PlayerScripts")
+GETUPVAL R0 U0
+LOADK R2 K0 ['PlayerScripts']
+NAMECALL R0 R0 K1 ['FindFirstChild']
+CALLFB R0 2 1 [0]
+ 1088: 			local playerModule = scripts and scripts:FindFirstChild("PlayerModule")
+MOVE R1 R0
+JUMPIFNOT R1 L0
+LOADK R3 K2 ['PlayerModule']
+NAMECALL R1 R0 K1 ['FindFirstChild']
+CALLFB R1 2 1 [1]
+ 1089: 			if not playerModule or not playerModule:IsA("ModuleScript") then
+L0: JUMPIFNOT R1 L1
+LOADK R4 K3 ['ModuleScript']
+NAMECALL R2 R1 K4 ['IsA']
+CALLFB R2 2 1 [2]
+JUMPIF R2 L2
+ 1090: 				return
+L1: RETURN R0 0
+ 1092: 			local module = require(playerModule)
+L2: GETIMPORT R2 6 [require]
+MOVE R3 R1
+CALLFB R2 1 1 [3]
+MOVE R0 R2
+ 1093: 			local playerControls = module:GetControls()
+NAMECALL R1 R0 K7 ['GetControls']
+CALLFB R1 1 1 [4]
+ 1094: 			if enabled then
+GETUPVAL R2 U1
+JUMPIFNOT R2 L3
+ 1095: 				playerControls:Enable()
+NAMECALL R2 R1 K8 ['Enable']
+CALLFB R2 1 0 [5]
+RETURN R0 0
+ 1097: 				playerControls:Disable()
+L3: NAMECALL R2 R1 K9 ['Disable']
+CALLFB R2 1 0 [6]
+ 1098: 				local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+GETUPVAL R0 U0
+GETTABLEKS R0 R0 K10 ['Character']
+JUMPIFNOT R0 L4
+GETUPVAL R2 U0
+GETTABLEKS R2 R2 K10 ['Character']
+LOADK R4 K11 ['Humanoid']
+NAMECALL R2 R2 K12 ['FindFirstChildOfClass']
+CALLFB R2 2 1 [7]
+MOVE R0 R2
+ 1099: 				if humanoid then
+L4: JUMPIFNOT R0 L5
+ 1100: 					humanoid:Move(Vector3.zero)
+GETIMPORT R4 15 [Vector3.zero]
+NAMECALL R2 R0 K16 ['Move']
+CALLFB R2 2 0 [8]
+ 1103: 		end)
+L5: RETURN R0 0
+
+Function 46 (controls):
+REMARK allocation: closure with 2 upvalues
+ 1086: 		pcall(function()
+NEWCLOSURE R2 P0
+CAPTURE UPVAL U0
+CAPTURE VAL R0
+FASTPCALL pcall L0
+GETIMPORT R1 1 [pcall]
+CALL R1 1 0
+ 1104: 	end
+L0: RETURN R0 0
+
+Function 47 (hideHotbar):
+ 1108: 		if hotbarBefore == nil then
+GETUPVAL R0 U0
+JUMPXEQKNIL R0 L3 NOT
+ 1109: 			local ok, enabled = pcall(StarterGui.GetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack)
+GETUPVAL R1 U1
+GETTABLEKS R1 R1 K0 ['GetCoreGuiEnabled']
+GETUPVAL R2 U1
+GETIMPORT R3 4 [Enum.CoreGuiType.Backpack]
+FASTPCALL pcall L0
+GETIMPORT R0 6 [pcall]
+CALL R0 3 2
+ 1110: 			hotbarBefore = if ok then enabled else true
+L0: JUMPIFNOT R0 L1
+MOVE R2 R1
+JUMP L2
+L1: LOADB R2 1
+L2: SETUPVAL R2 U0
+ 1112: 		pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, false)
+L3: GETUPVAL R1 U1
+GETTABLEKS R1 R1 K7 ['SetCoreGuiEnabled']
+GETUPVAL R2 U1
+GETIMPORT R3 4 [Enum.CoreGuiType.Backpack]
+LOADB R4 0
+FASTPCALL pcall L4
+GETIMPORT R0 6 [pcall]
+CALL R0 4 0
+ 1113: 	end
+L4: RETURN R0 0
+
+Function 48 (restoreHotbar):
+ 1115: 		if hotbarBefore ~= nil then
+GETUPVAL R0 U0
+JUMPXEQKNIL R0 L1
+ 1116: 			pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, hotbarBefore)
+GETUPVAL R1 U1
+GETTABLEKS R1 R1 K0 ['SetCoreGuiEnabled']
+GETUPVAL R2 U1
+GETIMPORT R3 4 [Enum.CoreGuiType.Backpack]
+GETUPVAL R4 U0
+FASTPCALL pcall L0
+GETIMPORT R0 6 [pcall]
+CALL R0 4 0
+ 1117: 			hotbarBefore = nil
+L0: LOADNIL R0
+SETUPVAL R0 U0
+ 1119: 	end
+L1: RETURN R0 0
+
+Function 49 (updateCamera):
+ 1122: 		local camera = workspace.CurrentCamera
+GETIMPORT R1 2 [workspace.CurrentCamera]
+ 1123: 		if not camera then
+JUMPIF R1 L0
+ 1124: 			return
+RETURN R0 0
+ 1126: 		camera.CameraType = Enum.CameraType.Scriptable
+L0: GETIMPORT R2 6 [Enum.CameraType.Scriptable]
+SETTABLEKS R2 R1 K4 ['CameraType']
+ 1127: 		camera.FieldOfView = 50
+LOADN R2 50
+SETTABLEKS R2 R1 K7 ['FieldOfView']
+ 1128: 		camera.FieldOfViewMode = Enum.FieldOfViewMode.Vertical
+GETIMPORT R2 10 [Enum.FieldOfViewMode.Vertical]
+SETTABLEKS R2 R1 K8 ['FieldOfViewMode']
+ 1129: 		local viewport = camera.ViewportSize
+GETTABLEKS R2 R1 K11 ['ViewportSize']
+ 1130: 		if viewport.X <= 0 or viewport.Y <= 0 then
+GETTABLEKS R3 R2 K12 ['X']
+LOADN R4 0
+JUMPIFLE R3 R4 L1
+GETTABLEKS R3 R2 K13 ['Y']
+LOADN R4 0
+JUMPIFNOTLE R3 R4 L2
+ 1131: 			return
+L1: RETURN R0 0
+ 1133: 		local inset = GuiService:GetGuiInset()
+L2: GETUPVAL R3 U0
+NAMECALL R3 R3 K14 ['GetGuiInset']
+CALLFB R3 1 1 [0]
+ 1134: 		local top = navigation.AbsolutePosition.Y + navigation.AbsoluteSize.Y + inset.Y + 12
+GETUPVAL R7 U1
+GETTABLEKS R7 R7 K16 ['AbsolutePosition']
+GETTABLEKS R7 R7 K13 ['Y']
+GETUPVAL R8 U1
+GETTABLEKS R8 R8 K17 ['AbsoluteSize']
+GETTABLEKS R8 R8 K13 ['Y']
+ADD R6 R7 R8
+GETTABLEKS R7 R3 K13 ['Y']
+ADD R5 R6 R7
+ADDK R4 R5 K15 [12]
+ 1135: 		local bottom = panel.AbsolutePosition.Y + inset.Y - 12
+GETUPVAL R7 U2
+GETTABLEKS R7 R7 K16 ['AbsolutePosition']
+GETTABLEKS R7 R7 K13 ['Y']
+GETTABLEKS R8 R3 K13 ['Y']
+ADD R6 R7 R8
+SUBK R5 R6 K15 [12]
+ 1136: 		local focal = viewport.Y / (2 * math.tan(math.rad(camera.FieldOfView / 2)))
+GETTABLEKS R6 R2 K13 ['Y']
+LOADN R8 2
+REMARK builtin math.tan/1+
+REMARK builtin math.rad/1
+GETTABLEKS R12 R1 K7 ['FieldOfView']
+DIVK R11 R12 K18 [2]
+FASTCALL1 22 R11 L3
+GETIMPORT R10 21 [math.rad]
+CALL R10 1 -1
+L3: FASTCALL 27 L4
+GETIMPORT R9 23 [math.tan]
+CALL R9 -1 1
+L4: MUL R7 R8 R9
+DIV R3 R6 R7
+REMARK builtin math.max/2
+ 1137: 		local halfArea = math.max(1, bottom - top) / (2 * focal)
+LOADN R8 1
+SUB R9 R5 R4
+FASTCALL2 18 R8 R9 L5
+GETIMPORT R7 25 [math.max]
+CALL R7 2 1
+L5: LOADN R9 2
+MUL R8 R9 R3
+DIV R6 R7 R8
+ 1138: 		local upper, lower = (viewport.Y / 2 - top) / focal, (viewport.Y / 2 - bottom) / focal
+GETTABLEKS R11 R2 K13 ['Y']
+DIVK R10 R11 K18 [2]
+SUB R9 R10 R4
+DIV R7 R9 R3
+GETTABLEKS R11 R2 K13 ['Y']
+DIVK R10 R11 K18 [2]
+SUB R9 R10 R5
+DIV R8 R9 R3
+REMARK builtin math.clamp/3
+ 1139: 		local step = math.clamp(dt or 0, 0, 0.1)
+ORK R10 R0 K26 [0]
+LOADN R11 0
+LOADK R12 K27 [0.10000000000000001]
+FASTCALL 46 L6
+GETIMPORT R9 29 [math.clamp]
+CALL R9 3 1
+ 1140: 		if not UserInputService:GetFocusedTextBox() then
+L6: GETUPVAL R10 U3
+NAMECALL R10 R10 K30 ['GetFocusedTextBox']
+CALLFB R10 1 1 [1]
+JUMPIF R10 L10
+ 1141: 			local turn = 0
+LOADN R10 0
+ 1142: 			for _, direction in turnKeys do
+GETUPVAL R11 U4
+LOADNIL R12
+LOADNIL R13
+FORGPREP R11 L8
+ 1143: 				turn += direction
+L7: ADD R10 R10 R15
+ 1142: 			for _, direction in turnKeys do
+L8: FORGLOOP R11 L7 2
+ 1145: 			local targetVelocity = turn * TURN_SPEED
+GETUPVAL R12 U5
+MUL R11 R10 R12
+REMARK builtin math.exp/1
+ 1146: 			local blend = 1 - math.exp(-TURN_RESPONSE * step)
+LOADN R14 -12
+MUL R13 R14 R9
+FASTCALL1 11 R13 L9
+GETIMPORT R12 33 [math.exp]
+CALL R12 1 1
+L9: SUBRK R10 K31 [1] R12
+ 1148: 			yaw = (yaw + targetVelocity * step + (turnVelocity - targetVelocity) * blend / TURN_RESPONSE)
+GETUPVAL R15 U6
+MUL R16 R11 R9
+ADD R14 R15 R16
+GETUPVAL R18 U7
+SUB R17 R18 R11
+MUL R16 R17 R10
+DIVK R15 R16 K15 [12]
+ADD R13 R14 R15
+ 1149: 				% (2 * math.pi)
+LOADN R15 2
+GETIMPORT R16 35 [math.pi]
+MUL R14 R15 R16
+MOD R12 R13 R14
+ 1148: 			yaw = (yaw + targetVelocity * step + (turnVelocity - targetVelocity) * blend / TURN_RESPONSE)
+SETUPVAL R12 U6
+ 1150: 			turnVelocity += (targetVelocity - turnVelocity) * blend
+GETUPVAL R12 U7
+GETUPVAL R15 U7
+SUB R14 R11 R15
+MUL R13 R14 R10
+ADD R12 R12 R13
+SETUPVAL R12 U7
+REMARK builtin math.sin/1
+ 1152: 		local sinYaw, cosYaw = math.sin(yaw), math.cos(yaw)
+L10: GETUPVAL R13 U6
+FASTCALL1 24 R13 L11
+GETIMPORT R12 37 [math.sin]
+CALL R12 1 1
+L11: MOVE R10 R12
+REMARK builtin math.cos/1
+GETUPVAL R12 U6
+FASTCALL1 9 R12 L12
+GETIMPORT R11 39 [math.cos]
+CALL R11 1 1
+ 1154: 			Vector3.new(sinYaw * math.cos(CAMERA_PITCH), math.sin(CAMERA_PITCH), cosYaw * math.cos(CAMERA_PITCH))
+L12: GETIMPORT R12 42 [Vector3.new]
+REMARK builtin math.cos/1
+GETUPVAL R15 U8
+FASTCALL1 9 R15 L13
+GETIMPORT R14 39 [math.cos]
+CALL R14 1 1
+L13: MUL R13 R10 R14
+REMARK builtin math.sin/1
+GETUPVAL R15 U8
+FASTCALL1 24 R15 L14
+GETIMPORT R14 37 [math.sin]
+CALL R14 1 1
+REMARK builtin math.cos/1
+L14: GETUPVAL R17 U8
+FASTCALL1 9 R17 L15
+GETIMPORT R16 39 [math.cos]
+CALL R16 1 1
+L15: MUL R15 R11 R16
+CALLFB R12 3 1 [2]
+ 1155: 		local orientation = CFrame.lookAt(Vector3.zero, -back)
+GETIMPORT R13 45 [CFrame.lookAt]
+GETIMPORT R14 47 [Vector3.zero]
+MINUS R15 R12
+CALLFB R13 2 1 [3]
+ 1158: 		local distance = 18
+LOADN R14 18
+ 1159: 		local fitHeight = if structures and structures:isActive() then 18 else ROOF_HEIGHT
+GETUPVAL R16 U9
+JUMPIFNOT R16 L16
+GETUPVAL R16 U9
+NAMECALL R16 R16 K48 ['isActive']
+CALLFB R16 1 1 [4]
+JUMPIFNOT R16 L16
+LOADN R15 18
+JUMP L17
+L16: LOADK R15 K49 [8.4000000000000004]
+ 1160: 		local fitX, fitZ = if site == "Company" then 34 else 26, if site == "Company" then 24 else 18
+L17: GETUPVAL R18 U10
+JUMPXEQKS R18 K50 L18 NOT ['Company']
+LOADN R16 34
+JUMP L19
+L18: LOADN R16 26
+L19: GETUPVAL R18 U10
+JUMPXEQKS R18 K50 L20 NOT ['Company']
+LOADN R17 24
+JUMP L21
+L20: LOADN R17 18
+REMARK allocation: table array 2
+ 1161: 		for _, x in { -fitX, fitX } do
+L21: NEWTABLE R18 0 2
+MINUS R21 R16
+MOVE R22 R16
+SETLIST R18 R21 2 [1]
+LOADNIL R19
+LOADNIL R20
+FORGPREP R18 L29
+REMARK allocation: table array 2
+ 1162: 			for _, z in { -fitZ, fitZ } do
+L22: NEWTABLE R23 0 2
+MINUS R26 R17
+MOVE R27 R17
+SETLIST R23 R26 2 [1]
+LOADNIL R24
+LOADNIL R25
+FORGPREP R23 L28
+REMARK allocation: table array 2
+ 1163: 				for _, y in { 0, fitHeight } do
+L23: NEWTABLE R28 0 2
+LOADN R31 0
+MOVE R32 R15
+SETLIST R28 R31 2 [1]
+LOADNIL R29
+LOADNIL R30
+FORGPREP R28 L27
+ 1164: 					local point = orientation:PointToObjectSpace(Vector3.new(x, y, z))
+L24: GETIMPORT R35 42 [Vector3.new]
+MOVE R36 R22
+MOVE R37 R32
+MOVE R38 R27
+CALL R35 3 -1
+NAMECALL R33 R13 K51 ['PointToObjectSpace']
+CALL R33 -1 1
+REMARK builtin math.max/4
+ 1166: 						distance,
+MOVE R35 R14
+REMARK builtin math.abs/1
+ 1167: 						math.abs(point.X) * focal / (viewport.X / 2 - 12) + point.Z,
+GETTABLEKS R40 R33 K12 ['X']
+FASTCALL1 2 R40 L25
+GETIMPORT R39 53 [math.abs]
+CALL R39 1 1
+L25: MUL R38 R39 R3
+GETTABLEKS R41 R2 K12 ['X']
+DIVK R40 R41 K18 [2]
+SUBK R39 R40 K15 [12]
+DIV R37 R38 R39
+GETTABLEKS R38 R33 K54 ['Z']
+ADD R36 R37 R38
+ 1168: 						(point.Y + upper * point.Z) / halfArea,
+GETTABLEKS R39 R33 K13 ['Y']
+GETTABLEKS R41 R33 K54 ['Z']
+MUL R40 R7 R41
+ADD R38 R39 R40
+DIV R37 R38 R6
+ 1169: 						(-point.Y - lower * point.Z) / halfArea
+GETTABLEKS R41 R33 K13 ['Y']
+MINUS R40 R41
+GETTABLEKS R42 R33 K54 ['Z']
+MUL R41 R8 R42
+SUB R39 R40 R41
+DIV R38 R39 R6
+ 1165: 					distance = math.max(
+FASTCALL 18 L26
+GETIMPORT R34 25 [math.max]
+CALL R34 4 1
+L26: MOVE R14 R34
+ 1163: 				for _, y in { 0, fitHeight } do
+L27: FORGLOOP R28 L24 2
+ 1162: 			for _, z in { -fitZ, fitZ } do
+L28: FORGLOOP R23 L23 2
+ 1161: 		for _, x in { -fitX, fitX } do
+L29: FORGLOOP R18 L22 2
+REMARK builtin math.max/2
+ 1174: 		cameraDistance = math.max(18, distance * zoom)
+LOADN R19 18
+GETUPVAL R21 U12
+MUL R20 R14 R21
+FASTCALL2 18 R19 R20 L30
+GETIMPORT R18 25 [math.max]
+CALL R18 2 1
+L30: SETUPVAL R18 U11
+ 1175: 		if not UserInputService:GetFocusedTextBox() then
+GETUPVAL R18 U3
+NAMECALL R18 R18 K30 ['GetFocusedTextBox']
+CALLFB R18 1 1 [5]
+JUMPIF R18 L34
+ 1176: 			local direction = Vector2.zero
+GETIMPORT R17 56 [Vector2.zero]
+ 1177: 			for _, axis in panKeys do
+GETUPVAL R18 U13
+LOADNIL R19
+LOADNIL R20
+FORGPREP R18 L32
+ 1178: 				direction += axis
+L31: ADD R17 R17 R22
+ 1177: 			for _, axis in panKeys do
+L32: FORGLOOP R18 L31 2
+ 1180: 			if direction.Magnitude > 0 then
+GETTABLEKS R18 R17 K57 ['Magnitude']
+LOADN R19 0
+JUMPIFNOTLT R19 R18 L34
+ 1181: 				local axis = direction.Unit
+GETTABLEKS R16 R17 K58 ['Unit']
+ 1183: 					Vector2.new(axis.X * cosYaw + axis.Y * sinYaw, -axis.X * sinYaw + axis.Y * cosYaw)
+GETIMPORT R18 59 [Vector2.new]
+GETTABLEKS R21 R16 K12 ['X']
+MUL R20 R21 R11
+GETTABLEKS R22 R16 K13 ['Y']
+MUL R21 R22 R10
+ADD R19 R20 R21
+GETTABLEKS R23 R16 K12 ['X']
+MINUS R22 R23
+MUL R21 R22 R10
+GETTABLEKS R23 R16 K13 ['Y']
+MUL R22 R23 R11
+ADD R20 R21 R22
+CALLFB R18 2 1 [6]
+MOVE R15 R18
+ 1184: 				panBy(floorDirection * math.min(cameraDistance, 100) * 0.45 * step)
+GETUPVAL R18 U14
+REMARK builtin math.min/2
+GETUPVAL R23 U11
+FASTCALL2K 19 R23 K61 L33 [100]
+LOADK R24 K61 [100]
+GETIMPORT R22 63 [math.min]
+CALL R22 2 1
+L33: MUL R21 R15 R22
+MULK R20 R21 K60 [0.45000000000000001]
+MUL R19 R20 R9
+CALLFB R18 1 0 [7]
+ 1187: 		local elevation = if structures and structures:isActive() then structures:elevation() else 0
+L34: GETUPVAL R18 U9
+JUMPIFNOT R18 L35
+GETUPVAL R18 U9
+NAMECALL R18 R18 K48 ['isActive']
+CALLFB R18 1 1 [8]
+JUMPIFNOT R18 L35
+GETUPVAL R18 U9
+NAMECALL R18 R18 K64 ['elevation']
+CALLFB R18 1 1 [9]
+MOVE R14 R18
+JUMP L36
+L35: LOADN R14 0
+ 1188: 		local center = houseFrame * Vector3.new(pan.X, floorY + elevation, pan.Y)
+L36: GETUPVAL R18 U15
+GETIMPORT R19 42 [Vector3.new]
+GETUPVAL R20 U16
+GETTABLEKS R20 R20 K12 ['X']
+GETUPVAL R22 U17
+ADD R21 R22 R14
+GETUPVAL R22 U16
+GETTABLEKS R22 R22 K13 ['Y']
+CALLFB R19 3 1 [10]
+MUL R11 R18 R19
+ 1189: 		local worldOrientation = houseFrame * orientation
+GETUPVAL R18 U15
+MUL R14 R18 R13
+ 1190: 		local shift = ((top + bottom) / 2 - viewport.Y / 2) * cameraDistance / focal
+ADD R21 R4 R5
+DIVK R20 R21 K18 [2]
+GETTABLEKS R22 R2 K13 ['Y']
+DIVK R21 R22 K18 [2]
+SUB R19 R20 R21
+GETUPVAL R20 U11
+MUL R18 R19 R20
+DIV R13 R18 R3
+ 1191: 		local target = center + worldOrientation.UpVector * shift
+GETTABLEKS R19 R14 K65 ['UpVector']
+MUL R18 R19 R13
+ADD R10 R11 R18
+ 1193: 			CFrame.lookAt(target + houseFrame:VectorToWorldSpace(back) * cameraDistance, target, houseFrame.UpVector)
+GETIMPORT R18 45 [CFrame.lookAt]
+GETUPVAL R21 U15
+MOVE R23 R12
+NAMECALL R21 R21 K66 ['VectorToWorldSpace']
+CALLFB R21 2 1 [11]
+GETUPVAL R22 U11
+MUL R20 R21 R22
+ADD R19 R10 R20
+MOVE R20 R10
+GETUPVAL R21 U15
+GETTABLEKS R21 R21 K65 ['UpVector']
+CALLFB R18 3 1 [12]
+ 1192: 		camera.CFrame =
+SETTABLEKS R18 R1 K43 ['CFrame']
+ 1194: 		camera.Focus = CFrame.new(center)
+GETIMPORT R18 67 [CFrame.new]
+MOVE R19 R11
+CALLFB R18 1 1 [13]
+SETTABLEKS R18 R1 K68 ['Focus']
+ 1196: 		if held then
+GETUPVAL R18 U18
+JUMPIFNOT R18 L39
+ 1197: 			aim(if touch then Vector2.new(touch.Position.X, touch.Position.Y) else mousePosition())
+GETUPVAL R18 U19
+GETUPVAL R20 U20
+JUMPIFNOT R20 L37
+GETIMPORT R19 59 [Vector2.new]
+GETUPVAL R20 U20
+GETTABLEKS R20 R20 K69 ['Position']
+GETTABLEKS R20 R20 K12 ['X']
+GETUPVAL R21 U20
+GETTABLEKS R21 R21 K69 ['Position']
+GETTABLEKS R21 R21 K13 ['Y']
+CALLFB R19 2 1 [14]
+JUMP L38
+L37: GETUPVAL R19 U21
+CALLFB R19 0 1 [15]
+L38: CALLFB R18 1 0 [16]
+ 1199: 		if structures then
+L39: GETUPVAL R18 U9
+JUMPIFNOT R18 L42
+ 1200: 			structures:step(if touch then Vector2.new(touch.Position.X, touch.Position.Y) else mousePosition())
+GETUPVAL R18 U9
+GETUPVAL R21 U20
+JUMPIFNOT R21 L40
+GETIMPORT R20 59 [Vector2.new]
+GETUPVAL R21 U20
+GETTABLEKS R21 R21 K69 ['Position']
+GETTABLEKS R21 R21 K12 ['X']
+GETUPVAL R22 U20
+GETTABLEKS R22 R22 K69 ['Position']
+GETTABLEKS R22 R22 K13 ['Y']
+CALLFB R20 2 1 [17]
+JUMP L41
+L40: GETUPVAL R20 U21
+CALLFB R20 0 1 [18]
+L41: NAMECALL R18 R18 K70 ['step']
+CALLFB R18 2 0 [19]
+ 1202: 	end
+L42: RETURN R0 0
+
+Function 50 (??):
+ 1274: 			local ok, result = pcall(request.InvokeServer, request, "Get")
+GETUPVAL R1 U0
+GETTABLEKS R1 R1 K0 ['InvokeServer']
+GETUPVAL R2 U0
+LOADK R3 K1 ['Get']
+FASTPCALL pcall L0
+GETIMPORT R0 3 [pcall]
+CALL R0 3 2
+ 1275: 			if ok and type(result) == "table" and result.State then
+L0: JUMPIFNOT R0 L2
+REMARK builtin type/1
+FASTCALL1 40 R1 L1
+MOVE R3 R1
+GETIMPORT R2 5 [type]
+CALL R2 1 1
+L1: JUMPXEQKS R2 K6 L2 NOT ['table']
+GETTABLEKS R2 R1 K7 ['State']
+JUMPIFNOT R2 L2
+ 1276: 				state = result.State
+GETTABLEKS R2 R1 K7 ['State']
+SETUPVAL R2 U1
+ 1277: 				render()
+GETUPVAL R2 U2
+CALLFB R2 0 0 [0]
+ 1279: 		end)
+L2: RETURN R0 0
+
+Function 51 (enter):
+ 1206: 		if active or not atHome() then
+GETUPVAL R0 U0
+JUMPIF R0 L0
+GETUPVAL R0 U1
+CALLFB R0 0 1 [0]
+JUMPIF R0 L2
+ 1207: 			if not active then
+L0: GETUPVAL R0 U0
+JUMPIF R0 L1
+ 1208: 				notice("Go home to your base, or to your company island's plot, to use build mode.")
+GETUPVAL R0 U2
+LOADK R1 K0 ['Go home to your base, or to your'...]
+CALLFB R0 1 0 [1]
+ 1210: 			return
+L1: RETURN R0 0
+ 1212: 		local model, frame, where = currentSite()
+L2: GETUPVAL R0 U3
+CALLFB R0 0 3 [2]
+ 1213: 		local camera = workspace.CurrentCamera
+GETIMPORT R3 3 [workspace.CurrentCamera]
+ 1214: 		if not camera or not model or not frame then
+JUMPIFNOT R3 L3
+JUMPIFNOT R0 L3
+JUMPIF R1 L4
+ 1215: 			return
+L3: RETURN R0 0
+ 1217: 		if not freezeCharacter() then
+L4: GETUPVAL R4 U4
+CALLFB R4 0 1 [3]
+JUMPIF R4 L5
+ 1218: 			return
+RETURN R0 0
+ 1220: 		Freecam.stop()
+L5: GETUPVAL R4 U5
+GETTABLEKS R4 R4 K4 ['stop']
+CALLFB R4 0 0 [4]
+ 1221: 		active, house, houseFrame, site = true, model, frame, where
+LOADB R4 1
+SETUPVAL R4 U0
+SETUPVAL R0 U6
+SETUPVAL R1 U7
+SETUPVAL R2 U8
+ 1222: 		floorY = if where == "Company" then 0 else FLOOR_Y
+JUMPXEQKS R2 K5 L6 NOT ['Company']
+LOADN R4 0
+JUMP L7
+L6: LOADK R4 K6 [0.16]
+L7: SETUPVAL R4 U9
+ 1223: 		clearNavigation()
+GETUPVAL R4 U10
+CALLFB R4 0 0 [5]
+ 1224: 		pan, zoom, yaw = Vector2.zero, 1, 0
+GETIMPORT R4 9 [Vector2.zero]
+LOADN R5 1
+LOADN R6 0
+SETUPVAL R4 U11
+SETUPVAL R5 U12
+SETUPVAL R6 U13
+REMARK allocation: table template 5
+ 1225: 		saved = {
+DUPTABLE R4 15
+ 1226: 			Type = camera.CameraType,
+GETTABLEKS R5 R3 K16 ['CameraType']
+SETTABLEKS R5 R4 K10 ['Type']
+ 1227: 			FieldOfView = camera.FieldOfView,
+GETTABLEKS R5 R3 K11 ['FieldOfView']
+SETTABLEKS R5 R4 K11 ['FieldOfView']
+ 1228: 			FieldOfViewMode = camera.FieldOfViewMode,
+GETTABLEKS R5 R3 K12 ['FieldOfViewMode']
+SETTABLEKS R5 R4 K12 ['FieldOfViewMode']
+ 1229: 			Frame = camera.CFrame,
+GETTABLEKS R5 R3 K17 ['CFrame']
+SETTABLEKS R5 R4 K13 ['Frame']
+ 1230: 			Focus = camera.Focus,
+GETTABLEKS R5 R3 K14 ['Focus']
+SETTABLEKS R5 R4 K14 ['Focus']
+ 1225: 		saved = {
+SETUPVAL R4 U14
+ 1232: 		camera.CameraType = Enum.CameraType.Scriptable
+GETIMPORT R4 20 [Enum.CameraType.Scriptable]
+SETTABLEKS R4 R3 K16 ['CameraType']
+ 1233: 		camera.FieldOfView = 50
+LOADN R4 50
+SETTABLEKS R4 R3 K11 ['FieldOfView']
+ 1234: 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+GETUPVAL R4 U15
+GETIMPORT R5 23 [Enum.MouseBehavior.Default]
+SETTABLEKS R5 R4 K21 ['MouseBehavior']
+ 1235: 		UserInputService.MouseIconEnabled = true
+GETUPVAL R4 U15
+LOADB R5 1
+SETTABLEKS R5 R4 K24 ['MouseIconEnabled']
+ 1236: 		controls(false)
+GETUPVAL R4 U16
+LOADB R5 0
+CALLFB R4 1 0 [6]
+ 1237: 		hideHotbar()
+GETUPVAL R4 U17
+CALLFB R4 0 0 [7]
+ 1238: 		ContextActionService:BindActionAtPriority(
+GETUPVAL R4 U18
+ 1239: 			"FurnitureBuildMovement",
+LOADK R6 K25 ['FurnitureBuildMovement']
+ 1240: 			cameraInput,
+GETUPVAL R7 U19
+ 1241: 			false,
+LOADB R8 0
+ 1242: 			Enum.ContextActionPriority.High.Value + 1,
+GETIMPORT R10 29 [Enum.ContextActionPriority.High]
+GETTABLEKS R10 R10 K30 ['Value']
+ADDK R9 R10 K26 [1]
+ 1243: 			Enum.KeyCode.W,
+GETIMPORT R10 33 [Enum.KeyCode.W]
+ 1244: 			Enum.KeyCode.A,
+GETIMPORT R11 35 [Enum.KeyCode.A]
+ 1245: 			Enum.KeyCode.S,
+GETIMPORT R12 37 [Enum.KeyCode.S]
+ 1246: 			Enum.KeyCode.D,
+GETIMPORT R13 39 [Enum.KeyCode.D]
+ 1247: 			Enum.KeyCode.Up,
+GETIMPORT R14 41 [Enum.KeyCode.Up]
+ 1248: 			Enum.KeyCode.Down,
+GETIMPORT R15 43 [Enum.KeyCode.Down]
+ 1249: 			Enum.KeyCode.Left,
+GETIMPORT R16 45 [Enum.KeyCode.Left]
+ 1250: 			Enum.KeyCode.Right,
+GETIMPORT R17 47 [Enum.KeyCode.Right]
+ 1251: 			Enum.KeyCode.Q,
+GETIMPORT R18 49 [Enum.KeyCode.Q]
+ 1252: 			Enum.KeyCode.E,
+GETIMPORT R19 51 [Enum.KeyCode.E]
+ 1253: 			Enum.KeyCode.Space
+GETIMPORT R20 53 [Enum.KeyCode.Space]
+ 1238: 		ContextActionService:BindActionAtPriority(
+NAMECALL R4 R4 K54 ['BindActionAtPriority']
+CALLFB R4 16 0 [8]
+ 1255: 		for key, axis in PAN_KEYS do
+GETUPVAL R4 U20
+LOADNIL R5
+LOADNIL R6
+FORGPREP R4 L9
+ 1256: 			if UserInputService:IsKeyDown(key) then
+L8: GETUPVAL R9 U15
+MOVE R11 R7
+NAMECALL R9 R9 K55 ['IsKeyDown']
+CALLFB R9 2 1 [9]
+JUMPIFNOT R9 L9
+ 1257: 				panKeys[key] = axis
+GETUPVAL R9 U21
+SETTABLE R8 R9 R7
+ 1255: 		for key, axis in PAN_KEYS do
+L9: FORGLOOP R4 L8 2
+ 1260: 		for key, direction in TURN_KEYS do
+GETUPVAL R4 U22
+LOADNIL R5
+LOADNIL R6
+FORGPREP R4 L11
+ 1261: 			if UserInputService:IsKeyDown(key) then
+L10: GETUPVAL R9 U15
+MOVE R11 R7
+NAMECALL R9 R9 K55 ['IsKeyDown']
+CALLFB R9 2 1 [10]
+JUMPIFNOT R9 L11
+ 1262: 				turnKeys[key] = direction
+GETUPVAL R9 U23
+SETTABLE R8 R9 R7
+ 1260: 		for key, direction in TURN_KEYS do
+L11: FORGLOOP R4 L10 2
+ 1265: 		hideRoof()
+GETUPVAL R4 U24
+CALLFB R4 0 0 [11]
+ 1266: 		showGrid()
+GETUPVAL R4 U25
+CALLFB R4 0 0 [12]
+ 1267: 		panel.Visible, navigation.Visible, toggle.Visible = true, true, false
+GETUPVAL R4 U26
+GETUPVAL R5 U27
+GETUPVAL R6 U28
+LOADB R7 1
+LOADB R8 1
+LOADB R9 0
+SETTABLEKS R7 R4 K56 ['Visible']
+SETTABLEKS R8 R5 K56 ['Visible']
+SETTABLEKS R9 R6 K56 ['Visible']
+ 1268: 		structures:enter(model, frame, where)
+GETUPVAL R4 U29
+MOVE R6 R0
+MOVE R7 R1
+MOVE R8 R2
+NAMECALL R4 R4 K57 ['enter']
+CALLFB R4 4 0 [13]
+ 1269: 		player:SetAttribute("BuildModeOpen", true)
+GETUPVAL R4 U30
+LOADK R6 K58 ['BuildModeOpen']
+LOADB R7 1
+NAMECALL R4 R4 K59 ['SetAttribute']
+CALLFB R4 3 0 [14]
+ 1270: 		updateCamera()
+GETUPVAL R4 U31
+CALLFB R4 0 0 [15]
+ 1271: 		RunService:BindToRenderStep("FurnitureBuildCamera", Enum.RenderPriority.Camera.Value + 1, updateCamera)
+GETUPVAL R4 U32
+LOADK R6 K60 ['FurnitureBuildCamera']
+GETIMPORT R8 63 [Enum.RenderPriority.Camera]
+GETTABLEKS R8 R8 K30 ['Value']
+ADDK R7 R8 K26 [1]
+GETUPVAL R8 U31
+NAMECALL R4 R4 K64 ['BindToRenderStep']
+CALLFB R4 4 0 [16]
+ 1272: 		render()
+GETUPVAL R4 U33
+CALLFB R4 0 0 [17]
+ 1273: 		task.spawn(function()
+GETIMPORT R4 67 [task.spawn]
+REMARK allocation: closure with 3 upvalues
+NEWCLOSURE R5 P0
+CAPTURE UPVAL U34
+CAPTURE UPVAL U35
+CAPTURE UPVAL U33
+CALLFB R4 1 0 [18]
+ 1280: 	end
+RETURN R0 0
+
+Function 52 (exit):
+ 1282: 		if not active then
+GETUPVAL R0 U0
+JUMPIF R0 L0
+ 1283: 			return
+RETURN R0 0
+ 1285: 		active = false
+L0: LOADB R0 0
+SETUPVAL R0 U0
+ 1286: 		structures:exit()
+GETUPVAL R0 U1
+NAMECALL R0 R0 K0 ['exit']
+CALLFB R0 1 0 [0]
+ 1287: 		clearNavigation()
+GETUPVAL R0 U2
+CALLFB R0 0 0 [1]
+ 1288: 		ContextActionService:UnbindAction("FurnitureBuildMovement")
+GETUPVAL R0 U3
+LOADK R2 K1 ['FurnitureBuildMovement']
+NAMECALL R0 R0 K2 ['UnbindAction']
+CALLFB R0 2 0 [2]
+ 1289: 		drop()
+GETUPVAL R0 U4
+CALLFB R0 0 0 [3]
+ 1290: 		choose(nil)
+GETUPVAL R0 U5
+LOADNIL R1
+CALLFB R0 1 0 [4]
+ 1291: 		RunService:UnbindFromRenderStep("FurnitureBuildCamera")
+GETUPVAL R0 U6
+LOADK R2 K3 ['FurnitureBuildCamera']
+NAMECALL R0 R0 K4 ['UnbindFromRenderStep']
+CALLFB R0 2 0 [5]
+ 1292: 		showRoof()
+GETUPVAL R0 U7
+CALLFB R0 0 0 [6]
+ 1293: 		if grid then
+GETUPVAL R0 U8
+JUMPIFNOT R0 L1
+ 1294: 			grid:Destroy()
+GETUPVAL R0 U8
+NAMECALL R0 R0 K5 ['Destroy']
+CALLFB R0 1 0 [7]
+ 1295: 			grid = nil
+LOADNIL R0
+SETUPVAL R0 U8
+ 1297: 		local camera = workspace.CurrentCamera
+L1: GETIMPORT R0 8 [workspace.CurrentCamera]
+ 1298: 		if saved and camera then
+GETUPVAL R1 U9
+JUMPIFNOT R1 L2
+JUMPIFNOT R0 L2
+ 1299: 			camera.CameraType = saved.Type
+GETUPVAL R1 U9
+GETTABLEKS R1 R1 K9 ['Type']
+SETTABLEKS R1 R0 K10 ['CameraType']
+ 1300: 			camera.FieldOfViewMode = saved.FieldOfViewMode
+GETUPVAL R1 U9
+GETTABLEKS R1 R1 K11 ['FieldOfViewMode']
+SETTABLEKS R1 R0 K11 ['FieldOfViewMode']
+ 1301: 			camera.FieldOfView = saved.FieldOfView
+GETUPVAL R1 U9
+GETTABLEKS R1 R1 K12 ['FieldOfView']
+SETTABLEKS R1 R0 K12 ['FieldOfView']
+ 1302: 			camera.CFrame = saved.Frame
+GETUPVAL R1 U9
+GETTABLEKS R1 R1 K13 ['Frame']
+SETTABLEKS R1 R0 K14 ['CFrame']
+ 1303: 			camera.Focus = saved.Focus
+GETUPVAL R1 U9
+GETTABLEKS R1 R1 K15 ['Focus']
+SETTABLEKS R1 R0 K15 ['Focus']
+ 1307: 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+L2: GETUPVAL R1 U10
+GETIMPORT R2 19 [Enum.MouseBehavior.Default]
+SETTABLEKS R2 R1 K17 ['MouseBehavior']
+ 1308: 		UserInputService.MouseIconEnabled = true
+GETUPVAL R1 U10
+LOADB R2 1
+SETTABLEKS R2 R1 K20 ['MouseIconEnabled']
+ 1309: 		releaseCharacter()
+GETUPVAL R1 U11
+CALLFB R1 0 0 [8]
+ 1310: 		controls(true)
+GETUPVAL R1 U12
+LOADB R2 1
+CALLFB R1 1 0 [9]
+ 1311: 		restoreHotbar()
+GETUPVAL R1 U13
+CALLFB R1 0 0 [10]
+ 1312: 		panel.Visible, navigation.Visible = false, false
+GETUPVAL R1 U14
+GETUPVAL R2 U15
+LOADB R3 0
+LOADB R4 0
+SETTABLEKS R3 R1 K21 ['Visible']
+SETTABLEKS R4 R2 K21 ['Visible']
+ 1313: 		player:SetAttribute("BuildModeOpen", false)
+GETUPVAL R1 U16
+LOADK R3 K22 ['BuildModeOpen']
+LOADB R4 0
+NAMECALL R1 R1 K23 ['SetAttribute']
+CALLFB R1 3 0 [11]
+ 1314: 	end
+RETURN R0 0
+
+Function 53 (OnExit):
+ 1318: 		OnExit = function() exit() end,
+GETUPVAL R0 U0
+CALLFB R0 0 0 [0]
+RETURN R0 0
+
+Function 54 (OnModeChanged):
+ 1320: 			drop()
+GETUPVAL R1 U0
+CALLFB R1 0 0 [0]
+ 1321: 			choose(nil)
+GETUPVAL R1 U1
+LOADNIL R2
+CALLFB R1 1 0 [1]
+ 1322: 			editingRack, rackEditor.Visible = false, false
+GETUPVAL R1 U3
+LOADB R2 0
+LOADB R3 0
+SETUPVAL R2 U2
+SETTABLEKS R3 R1 K0 ['Visible']
+ 1323: 			panel.Visible = active and not enabled
+GETUPVAL R1 U4
+GETUPVAL R2 U5
+JUMPIFNOT R2 L0
+NOT R2 R0
+L0: SETTABLEKS R2 R1 K0 ['Visible']
+ 1324: 			if structures and structures:roofVisible() then showRoof() else hideRoof() end
+GETUPVAL R1 U6
+JUMPIFNOT R1 L1
+GETUPVAL R1 U6
+NAMECALL R1 R1 K1 ['roofVisible']
+CALLFB R1 1 1 [2]
+JUMPIFNOT R1 L1
+GETUPVAL R1 U7
+CALLFB R1 0 0 [3]
+JUMP L2
+L1: GETUPVAL R1 U8
+CALLFB R1 0 0 [4]
+ 1325: 			if active and structures then
+L2: GETUPVAL R1 U5
+JUMPIFNOT R1 L4
+GETUPVAL R1 U6
+JUMPIFNOT R1 L4
+ 1326: 				if grid then grid:Destroy(); grid = nil end
+GETUPVAL R1 U9
+JUMPIFNOT R1 L3
+GETUPVAL R1 U9
+NAMECALL R1 R1 K2 ['Destroy']
+CALLFB R1 1 0 [5]
+LOADNIL R1
+SETUPVAL R1 U9
+ 1327: 				showGrid()
+L3: GETUPVAL R1 U10
+CALLFB R1 0 0 [6]
+ 1329: 		end,
+L4: RETURN R0 0
+
+Function 55 (??):
+ 1333: 			if active and not pending then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R0 U1
+JUMPIF R0 L0
+ 1334: 				furnitureCategory = id
+GETUPVAL R0 U3
+SETUPVAL R0 U2
+ 1335: 				catalogue.CanvasPosition = Vector2.zero
+GETUPVAL R0 U4
+GETIMPORT R1 2 [Vector2.zero]
+SETTABLEKS R1 R0 K3 ['CanvasPosition']
+ 1336: 				render()
+GETUPVAL R0 U5
+CALLFB R0 0 0 [0]
+ 1338: 		end)
+L0: RETURN R0 0
+
+Function 56 (??):
+ 1343: 			if active and item.Active then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L2
+GETUPVAL R0 U1
+GETTABLEKS R0 R0 K0 ['Active']
+JUMPIFNOT R0 L2
+ 1344: 				choose(nil)
+GETUPVAL R0 U2
+LOADNIL R1
+CALLFB R0 1 0 [0]
+ 1345: 				hold(id, id, if held then held.R else 0)
+GETUPVAL R0 U3
+GETUPVAL R1 U4
+GETUPVAL R2 U4
+GETUPVAL R4 U5
+JUMPIFNOT R4 L0
+GETUPVAL R3 U5
+GETTABLEKS R3 R3 K1 ['R']
+JUMP L1
+L0: LOADN R3 0
+L1: CALLFB R0 3 0 [1]
+ 1347: 		end)
+L2: RETURN R0 0
+
+Function 57 (??):
+ 1350: 		if held then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+ 1351: 			held.R = (held.R + 1) % 4
+GETUPVAL R0 U0
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K2 ['R']
+ADDK R2 R3 K1 [1]
+MODK R1 R2 K0 [4]
+SETTABLEKS R1 R0 K2 ['R']
+ 1352: 			aim(mousePosition())
+GETUPVAL R0 U1
+GETUPVAL R1 U2
+CALL R1 0 -1
+CALL R0 -1 0
+ 1354: 	end)
+L0: RETURN R0 0
+
+Function 58 (??):
+ 1356: 		drop()
+GETUPVAL R0 U0
+CALLFB R0 0 0 [0]
+ 1357: 		choose(nil)
+GETUPVAL R0 U1
+LOADNIL R1
+CALLFB R0 1 0 [1]
+ 1358: 	end)
+RETURN R0 0
+
+Function 59 (??):
+ 1360: 		local entry = selected and placed()[selected]
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R1 U1
+CALLFB R1 0 1 [0]
+GETUPVAL R2 U0
+GETTABLE R0 R1 R2
+ 1361: 		if entry and not pending then
+L0: JUMPIFNOT R0 L1
+GETUPVAL R1 U2
+JUMPIF R1 L1
+ 1362: 			hold(entry.ItemId, selected, entry.R)
+GETUPVAL R1 U3
+GETTABLEKS R2 R0 K0 ['ItemId']
+GETUPVAL R3 U0
+GETTABLEKS R4 R0 K1 ['R']
+CALLFB R1 3 0 [1]
+ 1364: 	end)
+L1: RETURN R0 0
+
+Function 60 (??):
+ 1366: 		if selected and not pending and send("PickUp", selected, site) then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R0 U1
+JUMPIF R0 L0
+GETUPVAL R0 U2
+LOADK R1 K0 ['PickUp']
+GETUPVAL R2 U0
+GETUPVAL R3 U3
+CALLFB R0 3 1 [0]
+JUMPIFNOT R0 L0
+ 1367: 			choose(nil)
+GETUPVAL R0 U4
+LOADNIL R1
+CALLFB R0 1 0 [1]
+ 1369: 	end)
+L0: RETURN R0 0
+
+Function 61 (??):
+ 1371: 		if selected and not pending then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R0 U1
+JUMPIF R0 L0
+ 1372: 			editingRack = not editingRack
+GETUPVAL R1 U2
+NOT R0 R1
+SETUPVAL R0 U2
+ 1373: 			render()
+GETUPVAL R0 U3
+CALLFB R0 0 0 [0]
+ 1375: 	end)
+L0: RETURN R0 0
+
+Function 62 (??):
+ 1378: 			if selected and not pending then send("EditRack", selected, action, site) end
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+GETUPVAL R0 U1
+JUMPIF R0 L0
+GETUPVAL R0 U2
+LOADK R1 K0 ['EditRack']
+GETUPVAL R2 U0
+GETUPVAL R3 U3
+GETUPVAL R4 U4
+CALLFB R0 4 0 [0]
+ 1379: 		end)
+L0: RETURN R0 0
+
+Function 63 (??):
+ 1384: 		changeZoom(1)
+GETUPVAL R0 U0
+LOADN R1 1
+CALLFB R0 1 0 [0]
+ 1385: 	end)
+RETURN R0 0
+
+Function 64 (??):
+ 1387: 		changeZoom(-1)
+GETUPVAL R0 U0
+LOADN R1 -1
+CALLFB R0 1 0 [0]
+ 1388: 	end)
+RETURN R0 0
+
+Function 65 (??):
+ 1390: 		pan, zoom, yaw, turnVelocity = Vector2.zero, 1, 0, 0
+GETIMPORT R0 2 [Vector2.zero]
+LOADN R1 1
+LOADN R2 0
+LOADN R3 0
+SETUPVAL R0 U0
+SETUPVAL R1 U1
+SETUPVAL R2 U2
+SETUPVAL R3 U3
+ 1391: 	end)
+RETURN R0 0
+
+Function 66 (clickWorld):
+ 1397: 		if structures and structures:isActive() then
+GETUPVAL R1 U0
+JUMPIFNOT R1 L0
+GETUPVAL R1 U0
+NAMECALL R1 R1 K0 ['isActive']
+CALLFB R1 1 1 [0]
+JUMPIFNOT R1 L0
+ 1398: 			structures:click(position)
+GETUPVAL R1 U0
+MOVE R3 R0
+NAMECALL R1 R1 K1 ['click']
+CALLFB R1 2 0 [1]
+RETURN R0 0
+ 1399: 		elseif held then
+L0: GETUPVAL R1 U1
+JUMPIFNOT R1 L1
+ 1400: 			aim(position)
+GETUPVAL R1 U2
+MOVE R2 R0
+CALLFB R1 1 0 [2]
+ 1401: 			placeHeld()
+GETUPVAL R1 U3
+CALLFB R1 0 0 [3]
+RETURN R0 0
+ 1403: 			clickFurniture(position)
+L1: GETUPVAL R1 U4
+MOVE R2 R0
+CALLFB R1 1 0 [4]
+ 1405: 	end
+RETURN R0 0
+
+Function 67 (??):
+ 1408: 		if processed or UserInputService:GetFocusedTextBox() then
+JUMPIF R1 L0
+GETUPVAL R2 U0
+NAMECALL R2 R2 K0 ['GetFocusedTextBox']
+CALLFB R2 1 1 [0]
+JUMPIFNOT R2 L1
+ 1409: 			return
+L0: RETURN R0 0
+ 1411: 		if input.KeyCode == Enum.KeyCode.B then
+L1: GETTABLEKS R2 R0 K1 ['KeyCode']
+GETIMPORT R3 4 [Enum.KeyCode.B]
+JUMPIFNOTEQ R2 R3 L3
+ 1412: 			if active then
+GETUPVAL R2 U1
+JUMPIFNOT R2 L2
+ 1413: 				exit()
+GETUPVAL R2 U2
+CALLFB R2 0 0 [1]
+RETURN R0 0
+ 1415: 				enter()
+L2: GETUPVAL R2 U3
+CALLFB R2 0 0 [2]
+RETURN R0 0
+ 1417: 		elseif not active then
+L3: GETUPVAL R2 U1
+JUMPIF R2 L4
+ 1418: 			return
+RETURN R0 0
+ 1419: 		elseif structures and structures:key(input) then
+L4: GETUPVAL R2 U4
+JUMPIFNOT R2 L5
+GETUPVAL R2 U4
+MOVE R4 R0
+NAMECALL R2 R2 K5 ['key']
+CALLFB R2 2 1 [3]
+JUMPIFNOT R2 L5
+ 1420: 			return
+RETURN R0 0
+ 1421: 		elseif input.KeyCode == Enum.KeyCode.R and held then
+L5: GETTABLEKS R2 R0 K1 ['KeyCode']
+GETIMPORT R3 7 [Enum.KeyCode.R]
+JUMPIFNOTEQ R2 R3 L6
+GETUPVAL R2 U5
+JUMPIFNOT R2 L6
+ 1422: 			held.R = (held.R + 1) % 4
+GETUPVAL R2 U5
+GETUPVAL R5 U5
+GETTABLEKS R5 R5 K6 ['R']
+ADDK R4 R5 K9 [1]
+MODK R3 R4 K8 [4]
+SETTABLEKS R3 R2 K6 ['R']
+ 1423: 			aim(mousePosition())
+GETUPVAL R2 U6
+GETUPVAL R3 U7
+CALL R3 0 -1
+CALL R2 -1 0
+RETURN R0 0
+ 1424: 		elseif input.KeyCode == Enum.KeyCode.X then
+L6: GETTABLEKS R2 R0 K1 ['KeyCode']
+GETIMPORT R3 11 [Enum.KeyCode.X]
+JUMPIFNOTEQ R2 R3 L7
+ 1425: 			drop()
+GETUPVAL R2 U8
+CALLFB R2 0 0 [4]
+ 1426: 			choose(nil)
+GETUPVAL R2 U9
+LOADNIL R3
+CALLFB R2 1 0 [5]
+RETURN R0 0
+ 1427: 		elseif input.KeyCode == Enum.KeyCode.Home then
+L7: GETTABLEKS R2 R0 K1 ['KeyCode']
+GETIMPORT R3 13 [Enum.KeyCode.Home]
+JUMPIFNOTEQ R2 R3 L8
+ 1428: 			pan, zoom, yaw, turnVelocity = Vector2.zero, 1, 0, 0
+GETIMPORT R2 16 [Vector2.zero]
+LOADN R3 1
+LOADN R4 0
+LOADN R5 0
+SETUPVAL R2 U10
+SETUPVAL R3 U11
+SETUPVAL R4 U12
+SETUPVAL R5 U13
+RETURN R0 0
+ 1429: 		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+L8: GETTABLEKS R2 R0 K17 ['UserInputType']
+GETIMPORT R3 19 [Enum.UserInputType.MouseButton2]
+JUMPIFNOTEQ R2 R3 L9
+ 1430: 			dragging = true
+LOADB R2 1
+SETUPVAL R2 U14
+ 1431: 			dragPosition = mousePosition()
+GETUPVAL R2 U7
+CALLFB R2 0 1 [6]
+SETUPVAL R2 U15
+RETURN R0 0
+ 1432: 		elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+L9: GETTABLEKS R2 R0 K17 ['UserInputType']
+GETIMPORT R3 21 [Enum.UserInputType.MouseButton1]
+JUMPIFNOTEQ R2 R3 L10
+ 1433: 			clickWorld(mousePosition())
+GETUPVAL R2 U16
+GETUPVAL R3 U7
+CALL R3 0 -1
+CALL R2 -1 0
+RETURN R0 0
+ 1434: 		elseif input.UserInputType == Enum.UserInputType.Touch and not touch then
+L10: GETTABLEKS R2 R0 K17 ['UserInputType']
+GETIMPORT R3 23 [Enum.UserInputType.Touch]
+JUMPIFNOTEQ R2 R3 L11
+GETUPVAL R2 U17
+JUMPIF R2 L11
+ 1435: 			touch = input
+SETUPVAL R0 U17
+ 1436: 			touchStart = Vector2.new(input.Position.X, input.Position.Y)
+GETIMPORT R2 25 [Vector2.new]
+GETTABLEKS R3 R0 K26 ['Position']
+GETTABLEKS R3 R3 K10 ['X']
+GETTABLEKS R4 R0 K26 ['Position']
+GETTABLEKS R4 R4 K27 ['Y']
+CALLFB R2 2 1 [7]
+SETUPVAL R2 U18
+ 1437: 			dragPosition, touchDragged = touchStart, false
+GETUPVAL R2 U18
+LOADB R3 0
+SETUPVAL R2 U15
+SETUPVAL R3 U19
+ 1439: 	end)
+L11: RETURN R0 0
+
+Function 68 (??):
+ 1441: 		if not active then
+GETUPVAL R2 U0
+JUMPIF R2 L0
+ 1442: 			return
+RETURN R0 0
+ 1444: 		if input.UserInputType == Enum.UserInputType.MouseWheel and not processed then
+L0: GETTABLEKS R2 R0 K0 ['UserInputType']
+GETIMPORT R3 3 [Enum.UserInputType.MouseWheel]
+JUMPIFNOTEQ R2 R3 L1
+JUMPIF R1 L1
+ 1445: 			changeZoom(input.Position.Z)
+GETUPVAL R2 U1
+GETTABLEKS R3 R0 K4 ['Position']
+GETTABLEKS R3 R3 K5 ['Z']
+CALLFB R2 1 0 [0]
+RETURN R0 0
+ 1446: 		elseif dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+L1: GETUPVAL R2 U2
+JUMPIFNOT R2 L3
+GETTABLEKS R2 R0 K0 ['UserInputType']
+GETIMPORT R3 7 [Enum.UserInputType.MouseMovement]
+JUMPIFNOTEQ R2 R3 L3
+ 1447: 			local position = mousePosition()
+GETUPVAL R2 U3
+CALLFB R2 0 1 [1]
+ 1448: 			if dragPosition then
+GETUPVAL R3 U4
+JUMPIFNOT R3 L2
+ 1449: 				dragView(dragPosition, position)
+GETUPVAL R3 U5
+GETUPVAL R4 U4
+MOVE R5 R2
+CALLFB R3 2 0 [2]
+ 1451: 			dragPosition = position
+L2: SETUPVAL R2 U4
+RETURN R0 0
+ 1452: 		elseif input == touch then
+L3: GETUPVAL R2 U6
+JUMPIFNOTEQ R0 R2 L6
+ 1453: 			local position = Vector2.new(input.Position.X, input.Position.Y)
+GETIMPORT R2 10 [Vector2.new]
+GETTABLEKS R3 R0 K4 ['Position']
+GETTABLEKS R3 R3 K11 ['X']
+GETTABLEKS R4 R0 K4 ['Position']
+GETTABLEKS R4 R4 K12 ['Y']
+CALLFB R2 2 1 [3]
+ 1454: 			if (position - touchStart).Magnitude > 8 then
+GETUPVAL R4 U7
+SUB R3 R2 R4
+GETTABLEKS R3 R3 K13 ['Magnitude']
+LOADN R4 8
+JUMPIFNOTLT R4 R3 L4
+ 1455: 				touchDragged = true
+LOADB R3 1
+SETUPVAL R3 U8
+ 1457: 			if touchDragged and dragPosition then
+L4: GETUPVAL R3 U8
+JUMPIFNOT R3 L5
+GETUPVAL R3 U4
+JUMPIFNOT R3 L5
+ 1458: 				dragView(dragPosition, position)
+GETUPVAL R3 U5
+GETUPVAL R4 U4
+MOVE R5 R2
+CALLFB R3 2 0 [4]
+ 1460: 			dragPosition = position
+L5: SETUPVAL R2 U4
+ 1462: 	end)
+L6: RETURN R0 0
+
+Function 69 (??):
+ 1464: 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+GETTABLEKS R1 R0 K0 ['UserInputType']
+GETIMPORT R2 3 [Enum.UserInputType.MouseButton2]
+JUMPIFNOTEQ R1 R2 L0
+ 1465: 			dragging, dragPosition = false, nil
+LOADB R1 0
+LOADNIL R2
+SETUPVAL R1 U0
+SETUPVAL R2 U1
+RETURN R0 0
+ 1466: 		elseif input == touch then
+L0: GETUPVAL R1 U2
+JUMPIFNOTEQ R0 R1 L2
+ 1467: 			if active and not touchDragged and input.UserInputState ~= Enum.UserInputState.Cancel then
+GETUPVAL R1 U3
+JUMPIFNOT R1 L1
+GETUPVAL R1 U4
+JUMPIF R1 L1
+GETTABLEKS R1 R0 K4 ['UserInputState']
+GETIMPORT R2 6 [Enum.UserInputState.Cancel]
+JUMPIFEQ R1 R2 L1
+ 1468: 				clickWorld(Vector2.new(input.Position.X, input.Position.Y))
+GETUPVAL R1 U5
+GETIMPORT R2 9 [Vector2.new]
+GETTABLEKS R3 R0 K10 ['Position']
+GETTABLEKS R3 R3 K11 ['X']
+GETTABLEKS R4 R0 K10 ['Position']
+GETTABLEKS R4 R4 K12 ['Y']
+CALL R2 2 -1
+CALL R1 -1 0
+ 1470: 			touch, dragPosition = nil, nil
+L1: LOADNIL R1
+LOADNIL R2
+SETUPVAL R1 U2
+SETUPVAL R2 U1
+ 1471: 			touchDragged = false
+LOADB R1 0
+SETUPVAL R1 U4
+ 1473: 	end)
+L2: RETURN R0 0
+
+Function 70 (??):
+ 1475: 		if kind == "State" and type(payload) == "table" then
+JUMPXEQKS R0 K0 L4 NOT ['State']
+REMARK builtin type/1
+FASTCALL1 40 R1 L0
+MOVE R3 R1
+GETIMPORT R2 2 [type]
+CALL R2 1 1
+L0: JUMPXEQKS R2 K3 L4 NOT ['table']
+ 1476: 			state = payload
+SETUPVAL R1 U0
+ 1477: 			if selected then
+GETUPVAL R2 U1
+JUMPIFNOT R2 L3
+ 1478: 				choose(if placed()[selected] then selected else nil)
+GETUPVAL R2 U2
+GETUPVAL R5 U3
+CALLFB R5 0 1 [0]
+GETUPVAL R6 U1
+GETTABLE R4 R5 R6
+JUMPIFNOT R4 L1
+GETUPVAL R3 U1
+JUMP L2
+L1: LOADNIL R3
+L2: CALLFB R2 1 0 [1]
+ 1480: 			render()
+L3: GETUPVAL R2 U4
+CALLFB R2 0 0 [2]
+ 1482: 	end)
+L4: RETURN R0 0
+
+Function 71 (??):
+ 1488: 			task.wait(0.5)
+L0: GETIMPORT R0 2 [task.wait]
+LOADK R1 K3 [0.5]
+CALLFB R0 1 0 [0]
+ 1489: 			local home = atHome()
+GETUPVAL R0 U0
+CALLFB R0 0 1 [1]
+ 1490: 			toggle.Visible = home and not active
+GETUPVAL R1 U1
+MOVE R2 R0
+JUMPIFNOT R2 L1
+GETUPVAL R3 U2
+NOT R2 R3
+L1: SETTABLEKS R2 R1 K4 ['Visible']
+ 1491: 			if active then
+GETUPVAL R1 U2
+JUMPIFNOT R1 L5
+ 1492: 				local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+GETUPVAL R1 U3
+GETTABLEKS R1 R1 K5 ['Character']
+JUMPIFNOT R1 L2
+GETUPVAL R1 U3
+GETTABLEKS R1 R1 K5 ['Character']
+LOADK R3 K6 ['Humanoid']
+NAMECALL R1 R1 K7 ['FindFirstChildOfClass']
+CALLFB R1 2 1 [2]
+ 1493: 				if not home or not humanoid or humanoid.Health <= 0 then
+L2: JUMPIFNOT R0 L3
+JUMPIFNOT R1 L3
+GETTABLEKS R2 R1 K8 ['Health']
+LOADN R3 0
+JUMPIFNOTLE R2 R3 L4
+ 1494: 					exit()
+L3: GETUPVAL R2 U4
+CALLFB R2 0 0 [3]
+JUMP L5
+ 1496: 					hideHotbar()
+L4: GETUPVAL R2 U5
+CALLFB R2 0 0 [4]
+ 1497: 					hideRoof()
+GETUPVAL R2 U6
+CALLFB R2 0 0 [5]
+ 1499: 					if selected and highlight and not highlight.Parent then
+GETUPVAL R2 U7
+JUMPIFNOT R2 L5
+GETUPVAL R2 U8
+JUMPIFNOT R2 L5
+GETUPVAL R2 U8
+GETTABLEKS R2 R2 K9 ['Parent']
+JUMPIF R2 L5
+ 1500: 						setHighlight(placedModel(selected))
+GETUPVAL R2 U9
+GETUPVAL R3 U10
+GETUPVAL R4 U7
+CALL R3 1 -1
+CALL R2 -1 0
+ 1487: 		while true do
+L5: JUMPBACK L0
+ 1505: 	end)
+RETURN R0 0
+
+Function 72 (start):
+   91: 	if started then
+GETUPVAL R0 U0
+JUMPIFNOT R0 L0
+   92: 		return
+RETURN R0 0
+   94: 	started = true
+L0: LOADB R0 1
+SETUPVAL R0 U0
+   95: 	local player = Players.LocalPlayer
+GETUPVAL R0 U1
+GETTABLEKS R0 R0 K0 ['LocalPlayer']
+   96: 	local remotes = ReplicatedStorage:WaitForChild("Furniture")
+GETUPVAL R1 U2
+LOADK R3 K1 ['Furniture']
+NAMECALL R1 R1 K2 ['WaitForChild']
+CALLFB R1 2 1 [0]
+   97: 	local request = remotes:WaitForChild("Request") :: RemoteFunction
+LOADK R4 K3 ['Request']
+NAMECALL R2 R1 K2 ['WaitForChild']
+CALLFB R2 2 1 [1]
+   98: 	local update = remotes:WaitForChild("Update") :: RemoteEvent
+LOADK R5 K4 ['Update']
+NAMECALL R3 R1 K2 ['WaitForChild']
+CALLFB R3 2 1 [2]
+  100: 	local state = nil
+LOADNIL R4
+  101: 	local active = false
+LOADB R5 0
+  102: 	local house: Model? = nil -- the base house, or the company island on its plot
+LOADNIL R6
+  103: 	local houseFrame = CFrame.identity
+GETIMPORT R7 7 [CFrame.identity]
+  104: 	local site: string? = nil -- nil at home, "Company" on the island plot
+LOADNIL R8
+  105: 	local floorY = FLOOR_Y
+LOADK R9 K8 [0.16]
+REMARK allocation: table hash 0
+  106: 	local hidden: { [BasePart]: number } = {}
+NEWTABLE R10 0 0
+  107: 	local roofConnection: RBXScriptConnection? = nil
+LOADNIL R11
+  108: 	local frozen = nil
+LOADNIL R12
+  109: 	local held = nil -- { ItemId, From (item id or placed index), R }
+LOADNIL R13
+  110: 	local selected: number? = nil
+LOADNIL R14
+  111: 	local editingRack = false
+LOADB R15 0
+  112: 	local spot = nil -- { X, Z, Reason }
+LOADNIL R16
+  113: 	local pending = false
+LOADB R17 0
+  114: 	local saved = nil
+LOADNIL R18
+  115: 	local preview: Model? = nil
+LOADNIL R19
+  116: 	local highlight: Highlight? = nil
+LOADNIL R20
+  117: 	local grid: Folder? = nil
+LOADNIL R21
+  118: 	local pan = Vector2.zero
+GETIMPORT R22 11 [Vector2.zero]
+  119: 	local zoom = 1
+LOADN R23 1
+  120: 	local cameraDistance = 60
+LOADN R24 60
+REMARK allocation: table hash 0
+  121: 	local panKeys = {}
+NEWTABLE R25 0 0
+REMARK allocation: table hash 0
+  122: 	local turnKeys = {}
+NEWTABLE R26 0 0
+  123: 	local yaw, turnVelocity = 0, 0
+LOADN R27 0
+LOADN R28 0
+  124: 	local dragging = false
+LOADB R29 0
+  125: 	local dragPosition: Vector2? = nil
+LOADNIL R30
+  126: 	local touch: InputObject? = nil
+LOADNIL R31
+  127: 	local touchStart = Vector2.zero
+GETIMPORT R32 11 [Vector2.zero]
+  128: 	local touchDragged = false
+LOADB R33 0
+  129: 	local structures = nil
+LOADNIL R34
+  130: 	local furnitureCategory = "All"
+LOADK R35 K12 ['All']
+REMARK allocation: table hash 0
+  131: 	local ghostParts = {}
+NEWTABLE R36 0 0
+  134: 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
+GETUPVAL R37 U3
+LOADK R38 K13 ['ScreenGui']
+LOADK R41 K14 ['PlayerGui']
+NAMECALL R39 R0 K2 ['WaitForChild']
+CALLFB R39 2 1 [3]
+REMARK allocation: table template 4
+DUPTABLE R40 22
+  138: 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+GETIMPORT R41 25 [Enum.ZIndexBehavior.Sibling]
+SETTABLEKS R41 R40 K21 ['ZIndexBehavior']
+  134: 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
+CALLFB R37 3 1 [4]
+  140: 	local toggle = make("TextButton", gui, {
+GETUPVAL R38 U3
+LOADK R39 K26 ['TextButton']
+MOVE R40 R37
+REMARK allocation: table template 6
+DUPTABLE R41 35
+  144: 		Position = UDim2.new(1, -126, 1, -146),
+GETIMPORT R42 38 [UDim2.new]
+LOADN R43 1
+LOADN R44 -126
+LOADN R45 1
+LOADN R46 -146
+CALLFB R42 4 1 [5]
+SETTABLEKS R42 R41 K32 ['Position']
+  145: 		Size = UDim2.fromOffset(112, 38),
+GETIMPORT R42 40 [UDim2.fromOffset]
+LOADN R43 112
+LOADN R44 38
+CALLFB R42 2 1 [6]
+SETTABLEKS R42 R41 K33 ['Size']
+  140: 	local toggle = make("TextButton", gui, {
+CALLFB R38 3 1 [7]
+  148: 	Theme.button(toggle)
+GETUPVAL R39 U4
+GETTABLEKS R39 R39 K41 ['button']
+MOVE R40 R38
+CALLFB R39 1 0 [8]
+  149: 	local panel = make("Frame", gui, {
+GETUPVAL R39 U3
+LOADK R40 K42 ['Frame']
+MOVE R41 R37
+REMARK allocation: table template 6
+DUPTABLE R42 47
+  152: 		AnchorPoint = Vector2.new(0.5, 1),
+GETIMPORT R43 48 [Vector2.new]
+LOADK R44 K49 [0.5]
+LOADN R45 1
+CALLFB R43 2 1 [9]
+SETTABLEKS R43 R42 K46 ['AnchorPoint']
+  153: 		Position = UDim2.new(0.5, 0, 1, -12),
+GETIMPORT R43 38 [UDim2.new]
+LOADK R44 K49 [0.5]
+LOADN R45 0
+LOADN R46 1
+LOADN R47 -12
+CALLFB R43 4 1 [10]
+SETTABLEKS R43 R42 K32 ['Position']
+  154: 		Size = UDim2.new(1, -24, 0, 190),
+GETIMPORT R43 38 [UDim2.new]
+LOADN R44 1
+LOADN R45 -24
+LOADN R46 0
+LOADN R47 190
+CALLFB R43 4 1 [11]
+SETTABLEKS R43 R42 K33 ['Size']
+  149: 	local panel = make("Frame", gui, {
+CALLFB R39 3 1 [12]
+  157: 	make("UISizeConstraint", panel, { MaxSize = Vector2.new(1020, 190) })
+GETUPVAL R40 U3
+LOADK R41 K50 ['UISizeConstraint']
+MOVE R42 R39
+REMARK allocation: table template 1
+DUPTABLE R43 52
+GETIMPORT R44 48 [Vector2.new]
+LOADN R45 1020
+LOADN R46 190
+CALLFB R44 2 1 [13]
+SETTABLEKS R44 R43 K51 ['MaxSize']
+CALLFB R40 3 0 [14]
+  158: 	StructureEditor.stylePanel(panel)
+GETUPVAL R40 U5
+GETTABLEKS R40 R40 K53 ['stylePanel']
+MOVE R41 R39
+CALLFB R40 1 0 [15]
+REMARK allocation: closure with 5 upvalues
+  159: 	local function label(parent: Instance, text: string, props: { [string]: any }): TextLabel
+NEWCLOSURE R40 P0
+CAPTURE UPVAL U3
+CAPTURE VAL R39
+CAPTURE UPVAL U5
+CAPTURE UPVAL U4
+CAPTURE UPVAL U6
+REMARK allocation: closure with 4 upvalues
+  176: 	local function button(parent: Instance, text: string, props: { [string]: any }): TextButton
+NEWCLOSURE R41 P1
+CAPTURE UPVAL U3
+CAPTURE VAL R39
+CAPTURE UPVAL U5
+CAPTURE UPVAL U4
+  184: 	local inventoryTitle = label(panel, "Unplaced furniture", {
+MOVE R42 R40
+MOVE R43 R39
+LOADK R44 K54 ['Unplaced furniture']
+REMARK allocation: table template 3
+DUPTABLE R45 56
+  185: 		Position = UDim2.fromOffset(16, 6),
+GETIMPORT R46 40 [UDim2.fromOffset]
+LOADN R47 16
+LOADN R48 6
+CALLFB R46 2 1 [16]
+SETTABLEKS R46 R45 K32 ['Position']
+  186: 		Size = UDim2.new(1, -32, 0, 22),
+GETIMPORT R46 38 [UDim2.new]
+LOADN R47 1
+LOADN R48 -32
+LOADN R49 0
+LOADN R50 22
+CALLFB R46 4 1 [17]
+SETTABLEKS R46 R45 K33 ['Size']
+  184: 	local inventoryTitle = label(panel, "Unplaced furniture", {
+CALLFB R42 3 1 [18]
+  189: 	local hint = label(panel, "", {
+MOVE R43 R40
+MOVE R44 R39
+LOADK R45 K57 ['']
+REMARK allocation: table template 7
+DUPTABLE R46 63
+  190: 		Position = UDim2.fromOffset(16, 28),
+GETIMPORT R47 40 [UDim2.fromOffset]
+LOADN R48 16
+LOADN R49 28
+CALLFB R47 2 1 [19]
+SETTABLEKS R47 R46 K32 ['Position']
+  191: 		Size = UDim2.new(1, -32, 0, 15),
+GETIMPORT R47 38 [UDim2.new]
+LOADN R48 1
+LOADN R49 -32
+LOADN R50 0
+LOADN R51 15
+CALLFB R47 4 1 [20]
+SETTABLEKS R47 R46 K33 ['Size']
+  194: 		TextTruncate = Enum.TextTruncate.AtEnd,
+GETIMPORT R47 65 [Enum.TextTruncate.AtEnd]
+SETTABLEKS R47 R46 K60 ['TextTruncate']
+  195: 		Font = Enum.Font.Gotham,
+GETIMPORT R47 67 [Enum.Font.Gotham]
+SETTABLEKS R47 R46 K61 ['Font']
+  196: 		TextColor3 = Theme.Colors.Muted,
+GETUPVAL R47 U4
+GETTABLEKS R47 R47 K68 ['Colors']
+GETTABLEKS R47 R47 K69 ['Muted']
+SETTABLEKS R47 R46 K62 ['TextColor3']
+  189: 	local hint = label(panel, "", {
+CALLFB R43 3 1 [21]
+REMARK allocation: closure with 3 upvalues
+  198: 	local function horizontalStrip(name: string, y: number, height: number): ScrollingFrame
+NEWCLOSURE R44 P2
+CAPTURE UPVAL U3
+CAPTURE VAL R39
+CAPTURE UPVAL U4
+  218: 	local categoryStrip = horizontalStrip("FurnitureCategories", 46, 27)
+MOVE R45 R44
+LOADK R46 K70 ['FurnitureCategories']
+LOADN R47 46
+LOADN R48 27
+CALLFB R45 3 1 [22]
+REMARK allocation: table hash 0
+  219: 	local categoryButtons = {}
+NEWTABLE R46 0 0
+  220: 	for index, category in Furniture.Categories do
+GETUPVAL R47 U7
+GETTABLEKS R47 R47 K71 ['Categories']
+LOADNIL R48
+LOADNIL R49
+FORGPREP R47 L4
+  221: 		categoryButtons[category.Id] = button(categoryStrip, category.Name, {
+L1: GETTABLEKS R52 R51 K72 ['Id']
+MOVE R53 R41
+MOVE R54 R45
+GETTABLEKS R55 R51 K15 ['Name']
+REMARK allocation: table template 4
+DUPTABLE R56 74
+  222: 			Name = "FurnitureCategory" .. category.Id, LayoutOrder = index,
+LOADK R58 K75 ['FurnitureCategory']
+GETTABLEKS R59 R51 K72 ['Id']
+CONCAT R57 R58 R59
+SETTABLEKS R57 R56 K15 ['Name']
+SETTABLEKS R50 R56 K73 ['LayoutOrder']
+  223: 			Size = UDim2.fromOffset(if #category.Name > 12 then 164 else 126, 22), TextSize = 11,
+GETIMPORT R57 40 [UDim2.fromOffset]
+GETTABLEKS R60 R51 K15 ['Name']
+LENGTH R59 R60
+LOADN R60 12
+JUMPIFNOTLT R60 R59 L2
+LOADN R58 164
+JUMP L3
+L2: LOADN R58 126
+L3: LOADN R59 22
+CALLFB R57 2 1 [23]
+SETTABLEKS R57 R56 K33 ['Size']
+  221: 		categoryButtons[category.Id] = button(categoryStrip, category.Name, {
+CALLFB R53 3 1 [24]
+SETTABLE R53 R46 R52
+  220: 	for index, category in Furniture.Categories do
+L4: FORGLOOP R47 L1 2
+  226: 	local catalogue = horizontalStrip("Placeables", 78, 62)
+MOVE R47 R44
+LOADK R48 K76 ['Placeables']
+LOADN R49 78
+LOADN R50 62
+CALLFB R47 3 1 [25]
+MOVE R45 R47
+  227: 	local actions = horizontalStrip("BuildActions", 144, 36)
+MOVE R47 R44
+LOADK R48 K77 ['BuildActions']
+LOADN R49 144
+LOADN R50 36
+CALLFB R47 3 1 [26]
+REMARK allocation: table hash 0
+  228: 	local itemButtons = {}
+NEWTABLE R44 0 0
+REMARK allocation: table hash 0
+  229: 	local stockLabels = {}
+NEWTABLE R48 0 0
+REMARK allocation: table hash 0
+  230: 	local itemViews, previewStarted = {}, {}
+NEWTABLE R49 0 0
+REMARK allocation: table hash 0
+NEWTABLE R50 0 0
+  231: 	for index, id in ITEMS do
+GETUPVAL R51 U8
+LOADNIL R52
+LOADNIL R53
+FORGPREP R51 L6
+  232: 		local card = button(catalogue, "", {
+L5: MOVE R56 R41
+MOVE R57 R45
+LOADK R58 K57 ['']
+REMARK allocation: table template 5
+DUPTABLE R59 78
+  233: 			Name = "Hold" .. id,
+LOADK R61 K79 ['Hold']
+MOVE R62 R55
+CONCAT R60 R61 R62
+SETTABLEKS R60 R59 K15 ['Name']
+  234: 			LayoutOrder = index,
+SETTABLEKS R54 R59 K73 ['LayoutOrder']
+  235: 			Size = UDim2.fromOffset(232, 56),
+GETIMPORT R60 40 [UDim2.fromOffset]
+LOADN R61 232
+LOADN R62 56
+CALLFB R60 2 1 [27]
+SETTABLEKS R60 R59 K33 ['Size']
+  232: 		local card = button(catalogue, "", {
+CALLFB R56 3 1 [28]
+  239: 		itemButtons[id] = card
+SETTABLE R56 R44 R55
+  240: 		local view = make("ViewportFrame", card, {
+GETUPVAL R57 U3
+LOADK R58 K80 ['ViewportFrame']
+MOVE R59 R56
+REMARK allocation: table template 6
+DUPTABLE R60 86
+  243: 			Position = UDim2.fromOffset(4, 2),
+GETIMPORT R61 40 [UDim2.fromOffset]
+LOADN R62 4
+LOADN R63 2
+CALLFB R61 2 1 [29]
+SETTABLEKS R61 R60 K32 ['Position']
+  244: 			Size = UDim2.fromOffset(92, 52),
+GETIMPORT R61 40 [UDim2.fromOffset]
+LOADN R62 92
+LOADN R63 52
+CALLFB R61 2 1 [30]
+SETTABLEKS R61 R60 K33 ['Size']
+  240: 		local view = make("ViewportFrame", card, {
+CALLFB R57 3 1 [31]
+  248: 		itemViews[id] = view
+SETTABLE R57 R49 R55
+  249: 		label(card, Furniture.Items[id].Name, {
+MOVE R58 R40
+MOVE R59 R56
+GETUPVAL R61 U7
+GETTABLEKS R61 R61 K87 ['Items']
+GETTABLE R60 R61 R55
+GETTABLEKS R60 R60 K15 ['Name']
+REMARK allocation: table template 4
+DUPTABLE R61 90
+  250: 			Position = UDim2.fromOffset(102, 4),
+GETIMPORT R62 40 [UDim2.fromOffset]
+LOADN R63 102
+LOADN R64 4
+CALLFB R62 2 1 [32]
+SETTABLEKS R62 R61 K32 ['Position']
+  251: 			Size = UDim2.fromOffset(124, 28),
+GETIMPORT R62 40 [UDim2.fromOffset]
+LOADN R63 124
+LOADN R64 28
+CALLFB R62 2 1 [33]
+SETTABLEKS R62 R61 K33 ['Size']
+  249: 		label(card, Furniture.Items[id].Name, {
+CALLFB R58 3 0 [34]
+  255: 		stockLabels[id] = label(card, "", {
+MOVE R58 R40
+MOVE R59 R56
+LOADK R60 K57 ['']
+REMARK allocation: table template 5
+DUPTABLE R61 91
+  256: 			Position = UDim2.fromOffset(102, 35),
+GETIMPORT R62 40 [UDim2.fromOffset]
+LOADN R63 102
+LOADN R64 35
+CALLFB R62 2 1 [35]
+SETTABLEKS R62 R61 K32 ['Position']
+  257: 			Size = UDim2.fromOffset(124, 16),
+GETIMPORT R62 40 [UDim2.fromOffset]
+LOADN R63 124
+LOADN R64 16
+CALLFB R62 2 1 [36]
+SETTABLEKS R62 R61 K33 ['Size']
+  260: 			TextColor3 = Theme.Colors.Muted,
+GETUPVAL R62 U4
+GETTABLEKS R62 R62 K68 ['Colors']
+GETTABLEKS R62 R62 K69 ['Muted']
+SETTABLEKS R62 R61 K62 ['TextColor3']
+  255: 		stockLabels[id] = label(card, "", {
+CALLFB R58 3 1 [37]
+SETTABLE R58 R48 R55
+  231: 	for index, id in ITEMS do
+L6: FORGLOOP R51 L5 2
+  263: 	local emptyInventory = label(panel, "Loading your furniture…", {
+MOVE R51 R40
+MOVE R52 R39
+LOADK R53 K92 ['Loading your furniture…']
+REMARK allocation: table template 5
+DUPTABLE R54 95
+  265: 		Position = UDim2.fromOffset(16, 80),
+GETIMPORT R55 40 [UDim2.fromOffset]
+LOADN R56 16
+LOADN R57 80
+CALLFB R55 2 1 [38]
+SETTABLEKS R55 R54 K32 ['Position']
+  266: 		Size = UDim2.new(1, -32, 0, 52),
+GETIMPORT R55 38 [UDim2.new]
+LOADN R56 1
+LOADN R57 -32
+LOADN R58 0
+LOADN R59 52
+CALLFB R55 4 1 [39]
+SETTABLEKS R55 R54 K33 ['Size']
+  268: 		TextColor3 = Theme.Colors.Muted,
+GETUPVAL R55 U4
+GETTABLEKS R55 R55 K68 ['Colors']
+GETTABLEKS R55 R55 K69 ['Muted']
+SETTABLEKS R55 R54 K62 ['TextColor3']
+  263: 	local emptyInventory = label(panel, "Loading your furniture…", {
+CALLFB R51 3 1 [40]
+  270: 	local rotate = button(actions, "Rotate [R]", {
+MOVE R52 R41
+MOVE R53 R47
+LOADK R54 K96 ['Rotate [R]']
+REMARK allocation: table template 3
+DUPTABLE R55 98
+  273: 		Size = UDim2.fromOffset(110, 30),
+GETIMPORT R56 40 [UDim2.fromOffset]
+LOADN R57 110
+LOADN R58 30
+CALLFB R56 2 1 [41]
+SETTABLEKS R56 R55 K33 ['Size']
+  270: 	local rotate = button(actions, "Rotate [R]", {
+CALLFB R52 3 1 [42]
+  275: 	local cancel = button(actions, "Cancel [X]", {
+MOVE R53 R41
+MOVE R54 R47
+LOADK R55 K99 ['Cancel [X]']
+REMARK allocation: table template 3
+DUPTABLE R56 101
+  278: 		Size = UDim2.fromOffset(110, 30),
+GETIMPORT R57 40 [UDim2.fromOffset]
+LOADN R58 110
+LOADN R59 30
+CALLFB R57 2 1 [43]
+SETTABLEKS R57 R56 K33 ['Size']
+  275: 	local cancel = button(actions, "Cancel [X]", {
+CALLFB R53 3 1 [44]
+  280: 	local move = button(actions, "Move", {
+MOVE R54 R41
+MOVE R55 R47
+LOADK R56 K102 ['Move']
+REMARK allocation: table template 3
+DUPTABLE R57 104
+  283: 		Size = UDim2.fromOffset(90, 30),
+GETIMPORT R58 40 [UDim2.fromOffset]
+LOADN R59 90
+LOADN R60 30
+CALLFB R58 2 1 [45]
+SETTABLEKS R58 R57 K33 ['Size']
+  280: 	local move = button(actions, "Move", {
+CALLFB R54 3 1 [46]
+  285: 	local pickUp = button(actions, "Pick up", {
+MOVE R55 R41
+MOVE R56 R47
+LOADK R57 K105 ['Pick up']
+REMARK allocation: table template 3
+DUPTABLE R58 108
+  288: 		Size = UDim2.fromOffset(90, 30),
+GETIMPORT R59 40 [UDim2.fromOffset]
+LOADN R60 90
+LOADN R61 30
+CALLFB R59 2 1 [47]
+SETTABLEKS R59 R58 K33 ['Size']
+  285: 	local pickUp = button(actions, "Pick up", {
+CALLFB R55 3 1 [48]
+  290: 	local editRack = button(actions, "Edit rack", { Name = "EditRack", LayoutOrder = 0, Size = UDim2.fromOffset(110, 30) })
+MOVE R56 R41
+MOVE R57 R47
+LOADK R58 K109 ['Edit rack']
+REMARK allocation: table template 3
+DUPTABLE R59 112
+GETIMPORT R60 40 [UDim2.fromOffset]
+LOADN R61 110
+LOADN R62 30
+CALLFB R60 2 1 [49]
+SETTABLEKS R60 R59 K33 ['Size']
+CALLFB R56 3 1 [50]
+  291: 	local rackEditor = make("Frame", gui, {
+GETUPVAL R57 U3
+LOADK R58 K42 ['Frame']
+MOVE R59 R37
+REMARK allocation: table template 6
+DUPTABLE R60 114
+  292: 		Name = "RackEditor", Active = true, AnchorPoint = Vector2.new(0.5, 1),
+GETIMPORT R61 48 [Vector2.new]
+LOADK R62 K49 [0.5]
+LOADN R63 1
+CALLFB R61 2 1 [51]
+SETTABLEKS R61 R60 K46 ['AnchorPoint']
+  293: 		Position = UDim2.new(0.5, 0, 1, -210), Size = UDim2.new(1, -24, 0, 164), Visible = false,
+GETIMPORT R61 38 [UDim2.new]
+LOADK R62 K49 [0.5]
+LOADN R63 0
+LOADN R64 1
+LOADN R65 -210
+CALLFB R61 4 1 [52]
+SETTABLEKS R61 R60 K32 ['Position']
+GETIMPORT R61 38 [UDim2.new]
+LOADN R62 1
+LOADN R63 -24
+LOADN R64 0
+LOADN R65 164
+CALLFB R61 4 1 [53]
+SETTABLEKS R61 R60 K33 ['Size']
+  291: 	local rackEditor = make("Frame", gui, {
+CALLFB R57 3 1 [54]
+  295: 	make("UISizeConstraint", rackEditor, { MaxSize = Vector2.new(520, 164) })
+GETUPVAL R58 U3
+LOADK R59 K50 ['UISizeConstraint']
+MOVE R60 R57
+REMARK allocation: table template 1
+DUPTABLE R61 52
+GETIMPORT R62 48 [Vector2.new]
+LOADN R63 520
+LOADN R64 164
+CALLFB R62 2 1 [55]
+SETTABLEKS R62 R61 K51 ['MaxSize']
+CALLFB R58 3 0 [56]
+  296: 	Theme.glassWindow(rackEditor)
+GETUPVAL R58 U4
+GETTABLEKS R58 R58 K115 ['glassWindow']
+MOVE R59 R57
+CALLFB R58 1 0 [57]
+  297: 	label(rackEditor, "Edit storage rack", { Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 24), TextSize = 17 })
+MOVE R58 R40
+MOVE R59 R57
+LOADK R60 K116 ['Edit storage rack']
+REMARK allocation: table template 3
+DUPTABLE R61 118
+GETIMPORT R62 40 [UDim2.fromOffset]
+LOADN R63 12
+LOADN R64 8
+CALLFB R62 2 1 [58]
+SETTABLEKS R62 R61 K32 ['Position']
+GETIMPORT R62 38 [UDim2.new]
+LOADN R63 1
+LOADN R64 -24
+LOADN R65 0
+LOADN R66 24
+CALLFB R62 4 1 [59]
+SETTABLEKS R62 R61 K33 ['Size']
+CALLFB R58 3 0 [60]
+  298: 	local rackStatus = label(rackEditor, "", { Position = UDim2.fromOffset(12, 35), Size = UDim2.new(1, -24, 0, 28), TextSize = 12, TextColor3 = Theme.Colors.Muted })
+MOVE R58 R40
+MOVE R59 R57
+LOADK R60 K57 ['']
+REMARK allocation: table template 4
+DUPTABLE R61 119
+GETIMPORT R62 40 [UDim2.fromOffset]
+LOADN R63 12
+LOADN R64 35
+CALLFB R62 2 1 [61]
+SETTABLEKS R62 R61 K32 ['Position']
+GETIMPORT R62 38 [UDim2.new]
+LOADN R63 1
+LOADN R64 -24
+LOADN R65 0
+LOADN R66 28
+CALLFB R62 4 1 [62]
+SETTABLEKS R62 R61 K33 ['Size']
+GETUPVAL R62 U4
+GETTABLEKS R62 R62 K68 ['Colors']
+GETTABLEKS R62 R62 K69 ['Muted']
+SETTABLEKS R62 R61 K62 ['TextColor3']
+CALLFB R58 3 1 [63]
+  299: 	local rackMode = button(rackEditor, "Mode: Fish", { Name = "RackMode", Position = UDim2.fromOffset(12, 66), Size = UDim2.new(1, -24, 0, 32) })
+MOVE R59 R41
+MOVE R60 R57
+LOADK R61 K120 ['Mode: Fish']
+REMARK allocation: table template 3
+DUPTABLE R62 122
+GETIMPORT R63 40 [UDim2.fromOffset]
+LOADN R64 12
+LOADN R65 66
+CALLFB R63 2 1 [64]
+SETTABLEKS R63 R62 K32 ['Position']
+GETIMPORT R63 38 [UDim2.new]
+LOADN R64 1
+LOADN R65 -24
+LOADN R66 0
+LOADN R67 32
+CALLFB R63 4 1 [65]
+SETTABLEKS R63 R62 K33 ['Size']
+CALLFB R59 3 1 [66]
+  300: 	local addCage = button(rackEditor, "+ Cage", { Name = "RackAddCage", Position = UDim2.new(0, 12, 0, 108), Size = UDim2.new(0.25, -15, 0, 36), TextSize = 12 })
+MOVE R60 R41
+MOVE R61 R57
+LOADK R62 K123 ['+ Cage']
+REMARK allocation: table template 4
+DUPTABLE R63 125
+GETIMPORT R64 38 [UDim2.new]
+LOADN R65 0
+LOADN R66 12
+LOADN R67 0
+LOADN R68 108
+CALLFB R64 4 1 [67]
+SETTABLEKS R64 R63 K32 ['Position']
+GETIMPORT R64 38 [UDim2.new]
+LOADK R65 K126 [0.25]
+LOADN R66 -15
+LOADN R67 0
+LOADN R68 36
+CALLFB R64 4 1 [68]
+SETTABLEKS R64 R63 K33 ['Size']
+CALLFB R60 3 1 [69]
+  301: 	local takeCage = button(rackEditor, "− Cage", { Name = "RackTakeCage", Position = UDim2.new(0.25, 4, 0, 108), Size = UDim2.new(0.25, -15, 0, 36), TextSize = 12 })
+MOVE R61 R41
+MOVE R62 R57
+LOADK R63 K127 ['− Cage']
+REMARK allocation: table template 4
+DUPTABLE R64 129
+GETIMPORT R65 38 [UDim2.new]
+LOADK R66 K126 [0.25]
+LOADN R67 4
+LOADN R68 0
+LOADN R69 108
+CALLFB R65 4 1 [70]
+SETTABLEKS R65 R64 K32 ['Position']
+GETIMPORT R65 38 [UDim2.new]
+LOADK R66 K126 [0.25]
+LOADN R67 -15
+LOADN R68 0
+LOADN R69 36
+CALLFB R65 4 1 [71]
+SETTABLEKS R65 R64 K33 ['Size']
+CALLFB R61 3 1 [72]
+  302: 	local addNet = button(rackEditor, "+ Net", { Name = "RackAddNet", Position = UDim2.new(0.5, -4, 0, 108), Size = UDim2.new(0.25, -15, 0, 36), TextSize = 12 })
+MOVE R62 R41
+MOVE R63 R57
+LOADK R64 K130 ['+ Net']
+REMARK allocation: table template 4
+DUPTABLE R65 132
+GETIMPORT R66 38 [UDim2.new]
+LOADK R67 K49 [0.5]
+LOADN R68 -4
+LOADN R69 0
+LOADN R70 108
+CALLFB R66 4 1 [73]
+SETTABLEKS R66 R65 K32 ['Position']
+GETIMPORT R66 38 [UDim2.new]
+LOADK R67 K126 [0.25]
+LOADN R68 -15
+LOADN R69 0
+LOADN R70 36
+CALLFB R66 4 1 [74]
+SETTABLEKS R66 R65 K33 ['Size']
+CALLFB R62 3 1 [75]
+  303: 	local takeNet = button(rackEditor, "− Net", { Name = "RackTakeNet", Position = UDim2.new(0.75, -12, 0, 108), Size = UDim2.new(0.25, -15, 0, 36), TextSize = 12 })
+MOVE R63 R41
+MOVE R64 R57
+LOADK R65 K133 ['− Net']
+REMARK allocation: table template 4
+DUPTABLE R66 135
+GETIMPORT R67 38 [UDim2.new]
+LOADK R68 K136 [0.75]
+LOADN R69 -12
+LOADN R70 0
+LOADN R71 108
+CALLFB R67 4 1 [76]
+SETTABLEKS R67 R66 K32 ['Position']
+GETIMPORT R67 38 [UDim2.new]
+LOADK R68 K126 [0.25]
+LOADN R69 -15
+LOADN R70 0
+LOADN R71 36
+CALLFB R67 4 1 [77]
+SETTABLEKS R67 R66 K33 ['Size']
+CALLFB R63 3 1 [78]
+  304: 	local done = button(actions, "Done [B]", {
+MOVE R64 R41
+MOVE R65 R47
+LOADK R66 K137 ['Done [B]']
+REMARK allocation: table template 3
+DUPTABLE R67 140
+  307: 		Size = UDim2.fromOffset(100, 30),
+GETIMPORT R68 40 [UDim2.fromOffset]
+LOADN R69 100
+LOADN R70 30
+CALLFB R68 2 1 [79]
+SETTABLEKS R68 R67 K33 ['Size']
+  304: 	local done = button(actions, "Done [B]", {
+CALLFB R64 3 1 [80]
+  309: 	local navigation = make("Frame", gui, {
+GETUPVAL R65 U3
+LOADK R66 K42 ['Frame']
+MOVE R67 R37
+REMARK allocation: table template 6
+DUPTABLE R68 142
+  312: 		AnchorPoint = Vector2.new(1, 0),
+GETIMPORT R69 48 [Vector2.new]
+LOADN R70 1
+LOADN R71 0
+CALLFB R69 2 1 [81]
+SETTABLEKS R69 R68 K46 ['AnchorPoint']
+  313: 		Position = UDim2.new(1, -12, 0, 12),
+GETIMPORT R69 38 [UDim2.new]
+LOADN R70 1
+LOADN R71 -12
+LOADN R72 0
+LOADN R73 12
+CALLFB R69 4 1 [82]
+SETTABLEKS R69 R68 K32 ['Position']
+  314: 		Size = UDim2.new(1, -24, 0, 54),
+GETIMPORT R69 38 [UDim2.new]
+LOADN R70 1
+LOADN R71 -24
+LOADN R72 0
+LOADN R73 54
+CALLFB R69 4 1 [83]
+SETTABLEKS R69 R68 K33 ['Size']
+  309: 	local navigation = make("Frame", gui, {
+CALLFB R65 3 1 [84]
+MOVE R47 R65
+  317: 	make("UISizeConstraint", navigation, { MaxSize = Vector2.new(600, 54) })
+GETUPVAL R65 U3
+LOADK R66 K50 ['UISizeConstraint']
+MOVE R67 R47
+REMARK allocation: table template 1
+DUPTABLE R68 52
+GETIMPORT R69 48 [Vector2.new]
+LOADN R70 600
+LOADN R71 54
+CALLFB R69 2 1 [85]
+SETTABLEKS R69 R68 K51 ['MaxSize']
+CALLFB R65 3 0 [86]
+  318: 	Theme.glassWindow(navigation)
+GETUPVAL R65 U4
+GETTABLEKS R65 R65 K115 ['glassWindow']
+MOVE R66 R47
+CALLFB R65 1 0 [87]
+  319: 	label(
+MOVE R65 R40
+  320: 		navigation,
+MOVE R66 R47
+  321: 		if UserInputService.TouchEnabled
+GETUPVAL R68 U9
+GETTABLEKS R68 R68 K143 ['TouchEnabled']
+JUMPIFNOT R68 L7
+  322: 			then "Drag to pan · Tap to select / place"
+LOADK R67 K144 ['Drag to pan · Tap to select / p'...]
+JUMP L8
+  323: 			else "WASD / arrows: pan · Q / E: turn\nRight-drag: pan · Wheel: zoom",
+L7: LOADK R67 K145 ['WASD / arrows: pan · Q / E: tur'...]
+REMARK allocation: table template 4
+  324: 		{
+L8: DUPTABLE R68 147
+  325: 			Position = UDim2.fromOffset(12, 7),
+GETIMPORT R69 40 [UDim2.fromOffset]
+LOADN R70 12
+LOADN R71 7
+CALLFB R69 2 1 [88]
+SETTABLEKS R69 R68 K32 ['Position']
+  326: 			Size = UDim2.new(1, -186, 1, -14),
+GETIMPORT R69 38 [UDim2.new]
+LOADN R70 1
+LOADN R71 -186
+LOADN R72 1
+LOADN R73 -14
+CALLFB R69 4 1 [89]
+SETTABLEKS R69 R68 K33 ['Size']
+  328: 			TextYAlignment = Enum.TextYAlignment.Center,
+GETIMPORT R69 149 [Enum.TextYAlignment.Center]
+SETTABLEKS R69 R68 K146 ['TextYAlignment']
+  319: 	label(
+CALLFB R65 3 0 [90]
+  331: 	local zoomOut = button(navigation, "−", {
+MOVE R65 R41
+MOVE R66 R47
+LOADK R67 K150 ['−']
+REMARK allocation: table template 3
+DUPTABLE R68 152
+  333: 		Position = UDim2.new(1, -168, 0, 10),
+GETIMPORT R69 38 [UDim2.new]
+LOADN R70 1
+LOADN R71 -168
+LOADN R72 0
+LOADN R73 10
+CALLFB R69 4 1 [91]
+SETTABLEKS R69 R68 K32 ['Position']
+  334: 		Size = UDim2.fromOffset(36, 34),
+GETIMPORT R69 40 [UDim2.fromOffset]
+LOADN R70 36
+LOADN R71 34
+CALLFB R69 2 1 [92]
+SETTABLEKS R69 R68 K33 ['Size']
+  331: 	local zoomOut = button(navigation, "−", {
+CALLFB R65 3 1 [93]
+MOVE R40 R65
+  336: 	local zoomIn = button(navigation, "+", {
+MOVE R65 R41
+MOVE R66 R47
+LOADK R67 K153 ['+']
+REMARK allocation: table template 3
+DUPTABLE R68 155
+  338: 		Position = UDim2.new(1, -126, 0, 10),
+GETIMPORT R69 38 [UDim2.new]
+LOADN R70 1
+LOADN R71 -126
+LOADN R72 0
+LOADN R73 10
+CALLFB R69 4 1 [94]
+SETTABLEKS R69 R68 K32 ['Position']
+  339: 		Size = UDim2.fromOffset(36, 34),
+GETIMPORT R69 40 [UDim2.fromOffset]
+LOADN R70 36
+LOADN R71 34
+CALLFB R69 2 1 [95]
+SETTABLEKS R69 R68 K33 ['Size']
+  336: 	local zoomIn = button(navigation, "+", {
+CALLFB R65 3 1 [96]
+  341: 	local recenter = button(navigation, "Home", {
+MOVE R66 R41
+MOVE R67 R47
+LOADK R68 K156 ['Home']
+REMARK allocation: table template 3
+DUPTABLE R69 158
+  343: 		Position = UDim2.new(1, -84, 0, 10),
+GETIMPORT R70 38 [UDim2.new]
+LOADN R71 1
+LOADN R72 -84
+LOADN R73 0
+LOADN R74 10
+CALLFB R70 4 1 [97]
+SETTABLEKS R70 R69 K32 ['Position']
+  344: 		Size = UDim2.fromOffset(72, 34),
+GETIMPORT R70 40 [UDim2.fromOffset]
+LOADN R71 72
+LOADN R72 34
+CALLFB R70 2 1 [98]
+SETTABLEKS R70 R69 K33 ['Size']
+  341: 	local recenter = button(navigation, "Home", {
+CALLFB R66 3 1 [99]
+REMARK allocation: closure with 2 upvalues
+  347: 	local function ownHouse(): (Model?, CFrame?)
+NEWCLOSURE R41 P3
+CAPTURE UPVAL U10
+CAPTURE VAL R0
+REMARK allocation: closure with 3 upvalues
+  360: 	local function currentSite(): (Model?, CFrame?, string?)
+NEWCLOSURE R67 P4
+CAPTURE VAL R0
+CAPTURE UPVAL U10
+CAPTURE VAL R41
+REMARK allocation: closure with 1 upvalues
+  382: 	local function atHome(): boolean
+NEWCLOSURE R68 P5
+CAPTURE VAL R67
+REMARK allocation: closure with 2 upvalues
+  387: 	local function placed()
+NEWCLOSURE R69 P6
+CAPTURE REF R4
+CAPTURE REF R8
+REMARK allocation: closure with 2 upvalues
+  393: 	local function furnitureFolder(): Instance?
+NEWCLOSURE R70 P7
+CAPTURE REF R6
+CAPTURE REF R8
+REMARK allocation: closure with 3 upvalues
+  397: 	local function setButton(item: TextButton, text: string, enabled: boolean, chosen: boolean?)
+NEWCLOSURE R71 P8
+CAPTURE VAL R39
+CAPTURE UPVAL U5
+CAPTURE UPVAL U4
+REMARK allocation: closure with 35 upvalues
+  403: 	local function render()
+NEWCLOSURE R72 P9
+CAPTURE UPVAL U8
+CAPTURE UPVAL U7
+CAPTURE REF R4
+CAPTURE REF R8
+CAPTURE VAL R69
+CAPTURE REF R35
+CAPTURE VAL R44
+CAPTURE REF R17
+CAPTURE VAL R48
+CAPTURE VAL R50
+CAPTURE UPVAL U11
+CAPTURE VAL R49
+CAPTURE VAL R1
+CAPTURE VAL R71
+CAPTURE REF R13
+CAPTURE VAL R46
+CAPTURE VAL R42
+CAPTURE VAL R51
+CAPTURE VAL R52
+CAPTURE VAL R53
+CAPTURE REF R14
+CAPTURE VAL R54
+CAPTURE VAL R55
+CAPTURE VAL R56
+CAPTURE REF R15
+CAPTURE VAL R57
+CAPTURE REF R5
+CAPTURE VAL R58
+CAPTURE VAL R59
+CAPTURE VAL R60
+CAPTURE VAL R61
+CAPTURE VAL R62
+CAPTURE VAL R63
+CAPTURE VAL R43
+CAPTURE REF R16
+REMARK allocation: closure with 2 upvalues
+  475: 	local function clearPreview()
+NEWCLOSURE R73 P10
+CAPTURE REF R36
+CAPTURE REF R19
+REMARK allocation: closure with 3 upvalues
+  482: 	local function setHighlight(model: Instance?)
+NEWCLOSURE R74 P11
+CAPTURE REF R20
+CAPTURE UPVAL U3
+CAPTURE UPVAL U6
+REMARK allocation: closure with 2 upvalues
+  495: 	local function placedModel(index: number): Model?
+NEWCLOSURE R75 P12
+CAPTURE VAL R69
+CAPTURE VAL R70
+REMARK allocation: closure with 5 upvalues
+  513: 	local function choose(index: number?)
+NEWCLOSURE R76 P13
+CAPTURE REF R14
+CAPTURE REF R15
+CAPTURE VAL R74
+CAPTURE VAL R75
+CAPTURE VAL R72
+REMARK allocation: closure with 2 upvalues
+  521: 	local function plate(parent: Instance, area: { number }, y: number, color: Color3, transparency: number): Part
+NEWCLOSURE R77 P14
+CAPTURE UPVAL U3
+CAPTURE REF R7
+REMARK allocation: closure with 14 upvalues
+  535: 	local function buildPreview()
+NEWCLOSURE R78 P15
+CAPTURE VAL R73
+CAPTURE REF R13
+CAPTURE UPVAL U3
+CAPTURE UPVAL U7
+CAPTURE REF R8
+CAPTURE VAL R77
+CAPTURE UPVAL U12
+CAPTURE UPVAL U13
+CAPTURE UPVAL U14
+CAPTURE UPVAL U11
+CAPTURE VAL R1
+CAPTURE REF R36
+CAPTURE UPVAL U6
+CAPTURE REF R19
+REMARK allocation: closure with 10 upvalues
+  634: 	local function updatePreview()
+NEWCLOSURE R79 P16
+CAPTURE REF R19
+CAPTURE REF R13
+CAPTURE REF R16
+CAPTURE UPVAL U7
+CAPTURE REF R7
+CAPTURE REF R8
+CAPTURE UPVAL U13
+CAPTURE UPVAL U15
+CAPTURE UPVAL U14
+CAPTURE REF R36
+  681: 	local function mousePosition(): Vector2
+DUPCLOSURE R80 K159 ['mousePosition']
+CAPTURE UPVAL U9
+CAPTURE UPVAL U16
+REMARK allocation: closure with 5 upvalues
+  686: 	local function pointerFloor(position: Vector2): Vector3?
+NEWCLOSURE R81 P18
+CAPTURE REF R34
+CAPTURE UPVAL U17
+CAPTURE REF R8
+CAPTURE REF R9
+CAPTURE REF R7
+REMARK allocation: closure with 4 upvalues
+  707: 	local function pointerSpot(position: Vector2)
+NEWCLOSURE R82 P19
+CAPTURE VAL R81
+CAPTURE REF R13
+CAPTURE UPVAL U7
+CAPTURE UPVAL U18
+REMARK allocation: closure with 9 upvalues
+  720: 	local function aim(position: Vector2)
+NEWCLOSURE R83 P20
+CAPTURE REF R13
+CAPTURE REF R4
+CAPTURE VAL R82
+CAPTURE UPVAL U7
+CAPTURE VAL R69
+CAPTURE REF R8
+CAPTURE REF R16
+CAPTURE VAL R79
+CAPTURE VAL R72
+REMARK allocation: closure with 6 upvalues
+  736: 	local function hold(itemId: string, from: any, r: number)
+NEWCLOSURE R84 P21
+CAPTURE REF R13
+CAPTURE REF R16
+CAPTURE VAL R78
+CAPTURE VAL R83
+CAPTURE VAL R80
+CAPTURE VAL R72
+REMARK allocation: closure with 4 upvalues
+  743: 	local function drop()
+NEWCLOSURE R85 P22
+CAPTURE REF R13
+CAPTURE REF R16
+CAPTURE VAL R73
+CAPTURE VAL R72
+REMARK allocation: closure with 5 upvalues
+  749: 	local function send(action: string, ...): boolean
+NEWCLOSURE R86 P23
+CAPTURE REF R17
+CAPTURE VAL R72
+CAPTURE VAL R2
+CAPTURE REF R4
+CAPTURE UPVAL U19
+REMARK allocation: closure with 8 upvalues
+  767: 	local function placeHeld()
+NEWCLOSURE R87 P24
+CAPTURE REF R13
+CAPTURE REF R16
+CAPTURE REF R17
+CAPTURE UPVAL U19
+CAPTURE VAL R86
+CAPTURE REF R8
+CAPTURE VAL R85
+CAPTURE VAL R76
+REMARK allocation: closure with 5 upvalues
+  782: 	local function clickFurniture(position: Vector2)
+NEWCLOSURE R88 P25
+CAPTURE VAL R70
+CAPTURE REF R4
+CAPTURE REF R7
+CAPTURE VAL R76
+CAPTURE VAL R69
+REMARK allocation: closure with 4 upvalues
+  815: 	local function hideRoofPart(part: Instance)
+NEWCLOSURE R89 P26
+CAPTURE REF R6
+CAPTURE REF R8
+CAPTURE REF R7
+CAPTURE REF R10
+REMARK allocation: closure with 6 upvalues
+  834: 	local function hideRoof()
+NEWCLOSURE R90 P27
+CAPTURE REF R6
+CAPTURE REF R34
+CAPTURE REF R8
+CAPTURE REF R11
+CAPTURE REF R5
+CAPTURE VAL R89
+REMARK allocation: closure with 2 upvalues
+  858: 	local function showRoof()
+NEWCLOSURE R91 P28
+CAPTURE REF R11
+CAPTURE REF R10
+REMARK allocation: closure with 12 upvalues
+  870: 	local function showGrid()
+NEWCLOSURE R92 P29
+CAPTURE UPVAL U3
+CAPTURE REF R21
+CAPTURE REF R34
+CAPTURE UPVAL U17
+CAPTURE REF R8
+CAPTURE REF R7
+CAPTURE UPVAL U6
+CAPTURE UPVAL U7
+CAPTURE UPVAL U18
+CAPTURE VAL R77
+CAPTURE REF R9
+CAPTURE REF R6
+REMARK allocation: closure with 3 upvalues
+ 1017: 	local function panBy(delta: Vector2)
+NEWCLOSURE R93 P30
+CAPTURE REF R8
+CAPTURE UPVAL U20
+CAPTURE REF R22
+REMARK allocation: closure with 2 upvalues
+ 1024: 	local function dragView(from: Vector2, to: Vector2)
+NEWCLOSURE R94 P31
+CAPTURE VAL R81
+CAPTURE VAL R93
+REMARK allocation: closure with 1 upvalues
+ 1030: 	local function changeZoom(steps: number)
+NEWCLOSURE R95 P32
+CAPTURE REF R23
+REMARK allocation: closure with 7 upvalues
+ 1033: 	local function clearNavigation()
+NEWCLOSURE R96 P33
+CAPTURE VAL R25
+CAPTURE VAL R26
+CAPTURE REF R28
+CAPTURE REF R29
+CAPTURE REF R30
+CAPTURE REF R31
+CAPTURE REF R33
+REMARK allocation: closure with 5 upvalues
+ 1040: 	local function cameraInput(_, inputState: Enum.UserInputState, input: InputObject)
+NEWCLOSURE R97 P34
+CAPTURE VAL R25
+CAPTURE VAL R26
+CAPTURE UPVAL U9
+CAPTURE UPVAL U21
+CAPTURE UPVAL U22
+REMARK allocation: closure with 3 upvalues
+ 1054: 	local function freezeCharacter(): boolean
+NEWCLOSURE R98 P35
+CAPTURE VAL R0
+CAPTURE UPVAL U19
+CAPTURE REF R12
+REMARK allocation: closure with 1 upvalues
+ 1072: 	local function releaseCharacter()
+NEWCLOSURE R99 P36
+CAPTURE REF R12
+REMARK allocation: closure with 1 upvalues
+ 1085: 	local function controls(enabled: boolean)
+NEWCLOSURE R100 P37
+CAPTURE VAL R0
+ 1106: 	local hotbarBefore: boolean? = nil
+LOADNIL R101
+REMARK allocation: closure with 2 upvalues
+ 1107: 	local function hideHotbar()
+NEWCLOSURE R102 P38
+CAPTURE REF R101
+CAPTURE UPVAL U23
+REMARK allocation: closure with 2 upvalues
+ 1114: 	local function restoreHotbar()
+NEWCLOSURE R103 P39
+CAPTURE REF R101
+CAPTURE UPVAL U23
+REMARK allocation: closure with 22 upvalues
+ 1121: 	local function updateCamera(dt: number?)
+NEWCLOSURE R104 P40
+CAPTURE UPVAL U16
+CAPTURE VAL R47
+CAPTURE VAL R39
+CAPTURE UPVAL U9
+CAPTURE VAL R26
+CAPTURE UPVAL U24
+CAPTURE REF R27
+CAPTURE REF R28
+CAPTURE UPVAL U25
+CAPTURE REF R34
+CAPTURE REF R8
+CAPTURE REF R24
+CAPTURE REF R23
+CAPTURE VAL R25
+CAPTURE VAL R93
+CAPTURE REF R7
+CAPTURE REF R22
+CAPTURE REF R9
+CAPTURE REF R13
+CAPTURE VAL R83
+CAPTURE REF R31
+CAPTURE VAL R80
+ 1204: 	local exit
+LOADNIL R105
+REMARK allocation: closure with 36 upvalues
+ 1205: 	local function enter()
+NEWCLOSURE R106 P41
+CAPTURE REF R5
+CAPTURE VAL R68
+CAPTURE UPVAL U19
+CAPTURE VAL R67
+CAPTURE VAL R98
+CAPTURE UPVAL U26
+CAPTURE REF R6
+CAPTURE REF R7
+CAPTURE REF R8
+CAPTURE REF R9
+CAPTURE VAL R96
+CAPTURE REF R22
+CAPTURE REF R23
+CAPTURE REF R27
+CAPTURE REF R18
+CAPTURE UPVAL U9
+CAPTURE VAL R100
+CAPTURE VAL R102
+CAPTURE UPVAL U27
+CAPTURE VAL R97
+CAPTURE UPVAL U21
+CAPTURE VAL R25
+CAPTURE UPVAL U22
+CAPTURE VAL R26
+CAPTURE VAL R90
+CAPTURE VAL R92
+CAPTURE VAL R39
+CAPTURE VAL R47
+CAPTURE VAL R38
+CAPTURE REF R34
+CAPTURE VAL R0
+CAPTURE VAL R104
+CAPTURE UPVAL U28
+CAPTURE VAL R72
+CAPTURE VAL R2
+CAPTURE REF R4
+REMARK allocation: closure with 17 upvalues
+ 1281: 	function exit()
+NEWCLOSURE R105 P42
+CAPTURE REF R5
+CAPTURE REF R34
+CAPTURE VAL R96
+CAPTURE UPVAL U27
+CAPTURE VAL R85
+CAPTURE VAL R76
+CAPTURE UPVAL U28
+CAPTURE VAL R91
+CAPTURE REF R21
+CAPTURE REF R18
+CAPTURE UPVAL U9
+CAPTURE VAL R99
+CAPTURE VAL R100
+CAPTURE VAL R103
+CAPTURE VAL R39
+CAPTURE VAL R47
+CAPTURE VAL R0
+ 1315: 	structures = StructureEditor.new({
+GETUPVAL R107 U5
+GETTABLEKS R107 R107 K37 ['new']
+REMARK allocation: table template 4
+DUPTABLE R108 164
+ 1316: 		Gui = gui,
+SETTABLEKS R37 R108 K160 ['Gui']
+ 1317: 		Notice = notice,
+GETUPVAL R109 U19
+SETTABLEKS R109 R108 K161 ['Notice']
+REMARK allocation: closure with 1 upvalues
+ 1318: 		OnExit = function() exit() end,
+NEWCLOSURE R109 P43
+CAPTURE REF R105
+SETTABLEKS R109 R108 K162 ['OnExit']
+REMARK allocation: closure with 11 upvalues
+ 1319: 		OnModeChanged = function(enabled)
+NEWCLOSURE R109 P44
+CAPTURE VAL R85
+CAPTURE VAL R76
+CAPTURE REF R15
+CAPTURE VAL R57
+CAPTURE VAL R39
+CAPTURE REF R5
+CAPTURE REF R34
+CAPTURE VAL R91
+CAPTURE VAL R90
+CAPTURE REF R21
+CAPTURE VAL R92
+SETTABLEKS R109 R108 K163 ['OnModeChanged']
+ 1315: 	structures = StructureEditor.new({
+CALLFB R107 1 1 [100]
+MOVE R34 R107
+ 1331: 	for id, categoryButton in categoryButtons do
+MOVE R107 R46
+LOADNIL R108
+LOADNIL R109
+FORGPREP R107 L10
+ 1332: 		categoryButton.Activated:Connect(function()
+L9: GETTABLEKS R112 R111 K165 ['Activated']
+REMARK allocation: closure with 6 upvalues
+NEWCLOSURE R114 P45
+CAPTURE REF R5
+CAPTURE REF R17
+CAPTURE REF R35
+CAPTURE VAL R110
+CAPTURE VAL R45
+CAPTURE VAL R72
+NAMECALL R112 R112 K166 ['Connect']
+CALLFB R112 2 0 [101]
+ 1331: 	for id, categoryButton in categoryButtons do
+L10: FORGLOOP R107 L9 2
+ 1341: 	for id, item in itemButtons do
+MOVE R107 R44
+LOADNIL R108
+LOADNIL R109
+FORGPREP R107 L12
+ 1342: 		item.Activated:Connect(function()
+L11: GETTABLEKS R112 R111 K165 ['Activated']
+REMARK allocation: closure with 6 upvalues
+NEWCLOSURE R114 P46
+CAPTURE REF R5
+CAPTURE VAL R111
+CAPTURE VAL R76
+CAPTURE VAL R84
+CAPTURE VAL R110
+CAPTURE REF R13
+NAMECALL R112 R112 K166 ['Connect']
+CALLFB R112 2 0 [102]
+ 1341: 	for id, item in itemButtons do
+L12: FORGLOOP R107 L11 2
+ 1349: 	rotate.Activated:Connect(function()
+GETTABLEKS R107 R52 K165 ['Activated']
+REMARK allocation: closure with 3 upvalues
+NEWCLOSURE R109 P47
+CAPTURE REF R13
+CAPTURE VAL R83
+CAPTURE VAL R80
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [103]
+ 1355: 	cancel.Activated:Connect(function()
+GETTABLEKS R107 R53 K165 ['Activated']
+REMARK allocation: closure with 2 upvalues
+NEWCLOSURE R109 P48
+CAPTURE VAL R85
+CAPTURE VAL R76
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [104]
+ 1359: 	move.Activated:Connect(function()
+GETTABLEKS R107 R54 K165 ['Activated']
+REMARK allocation: closure with 4 upvalues
+NEWCLOSURE R109 P49
+CAPTURE REF R14
+CAPTURE VAL R69
+CAPTURE REF R17
+CAPTURE VAL R84
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [105]
+ 1365: 	pickUp.Activated:Connect(function()
+GETTABLEKS R107 R55 K165 ['Activated']
+REMARK allocation: closure with 5 upvalues
+NEWCLOSURE R109 P50
+CAPTURE REF R14
+CAPTURE REF R17
+CAPTURE VAL R86
+CAPTURE REF R8
+CAPTURE VAL R76
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [106]
+ 1370: 	editRack.Activated:Connect(function()
+GETTABLEKS R107 R56 K165 ['Activated']
+REMARK allocation: closure with 4 upvalues
+NEWCLOSURE R109 P51
+CAPTURE REF R14
+CAPTURE REF R17
+CAPTURE REF R15
+CAPTURE VAL R72
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [107]
+REMARK allocation: table hash 5
+ 1376: 	for item, action in { [rackMode] = "Mode", [addCage] = "AddCage", [takeCage] = "TakeCage", [addNet] = "AddNet", [takeNet] = "TakeNet" } do
+NEWTABLE R107 8 0
+LOADK R110 K167 ['Mode']
+SETTABLE R110 R107 R59
+LOADK R110 K168 ['AddCage']
+SETTABLE R110 R107 R60
+LOADK R110 K169 ['TakeCage']
+SETTABLE R110 R107 R61
+LOADK R110 K170 ['AddNet']
+SETTABLE R110 R107 R62
+LOADK R110 K171 ['TakeNet']
+SETTABLE R110 R107 R63
+LOADNIL R108
+LOADNIL R109
+FORGPREP R107 L14
+ 1377: 		item.Activated:Connect(function()
+L13: GETTABLEKS R112 R110 K165 ['Activated']
+REMARK allocation: closure with 5 upvalues
+NEWCLOSURE R114 P52
+CAPTURE REF R14
+CAPTURE REF R17
+CAPTURE VAL R86
+CAPTURE VAL R111
+CAPTURE REF R8
+NAMECALL R112 R112 K166 ['Connect']
+CALLFB R112 2 0 [108]
+ 1376: 	for item, action in { [rackMode] = "Mode", [addCage] = "AddCage", [takeCage] = "TakeCage", [addNet] = "AddNet", [takeNet] = "TakeNet" } do
+L14: FORGLOOP R107 L13 2
+ 1381: 	done.Activated:Connect(exit)
+GETTABLEKS R107 R64 K165 ['Activated']
+MOVE R109 R105
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [109]
+ 1382: 	toggle.Activated:Connect(enter)
+GETTABLEKS R107 R38 K165 ['Activated']
+MOVE R109 R106
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [110]
+ 1383: 	zoomIn.Activated:Connect(function()
+GETTABLEKS R107 R65 K165 ['Activated']
+REMARK allocation: closure with 1 upvalues
+NEWCLOSURE R109 P53
+CAPTURE VAL R95
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [111]
+ 1386: 	zoomOut.Activated:Connect(function()
+GETTABLEKS R107 R40 K165 ['Activated']
+REMARK allocation: closure with 1 upvalues
+NEWCLOSURE R109 P54
+CAPTURE VAL R95
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [112]
+ 1389: 	recenter.Activated:Connect(function()
+GETTABLEKS R107 R66 K165 ['Activated']
+REMARK allocation: closure with 4 upvalues
+NEWCLOSURE R109 P55
+CAPTURE REF R22
+CAPTURE REF R23
+CAPTURE REF R27
+CAPTURE REF R28
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [113]
+ 1392: 	UserInputService.WindowFocusReleased:Connect(clearNavigation)
+GETUPVAL R107 U9
+GETTABLEKS R107 R107 K172 ['WindowFocusReleased']
+MOVE R109 R96
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [114]
+ 1393: 	UserInputService.TextBoxFocused:Connect(clearNavigation)
+GETUPVAL R107 U9
+GETTABLEKS R107 R107 K173 ['TextBoxFocused']
+MOVE R109 R96
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [115]
+ 1394: 	GuiService.MenuOpened:Connect(clearNavigation)
+GETUPVAL R107 U16
+GETTABLEKS R107 R107 K174 ['MenuOpened']
+MOVE R109 R96
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [116]
+REMARK allocation: closure with 5 upvalues
+ 1396: 	local function clickWorld(position: Vector2)
+NEWCLOSURE R66 P56
+CAPTURE REF R34
+CAPTURE REF R13
+CAPTURE VAL R83
+CAPTURE VAL R87
+CAPTURE VAL R88
+ 1407: 	UserInputService.InputBegan:Connect(function(input, processed)
+GETUPVAL R107 U9
+GETTABLEKS R107 R107 K175 ['InputBegan']
+REMARK allocation: closure with 20 upvalues
+NEWCLOSURE R109 P57
+CAPTURE UPVAL U9
+CAPTURE REF R5
+CAPTURE REF R105
+CAPTURE VAL R106
+CAPTURE REF R34
+CAPTURE REF R13
+CAPTURE VAL R83
+CAPTURE VAL R80
+CAPTURE VAL R85
+CAPTURE VAL R76
+CAPTURE REF R22
+CAPTURE REF R23
+CAPTURE REF R27
+CAPTURE REF R28
+CAPTURE REF R29
+CAPTURE REF R30
+CAPTURE VAL R66
+CAPTURE REF R31
+CAPTURE REF R32
+CAPTURE REF R33
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [117]
+ 1440: 	UserInputService.InputChanged:Connect(function(input, processed)
+GETUPVAL R107 U9
+GETTABLEKS R107 R107 K176 ['InputChanged']
+REMARK allocation: closure with 9 upvalues
+NEWCLOSURE R109 P58
+CAPTURE REF R5
+CAPTURE VAL R95
+CAPTURE REF R29
+CAPTURE VAL R80
+CAPTURE REF R30
+CAPTURE VAL R94
+CAPTURE REF R31
+CAPTURE REF R32
+CAPTURE REF R33
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [118]
+ 1463: 	UserInputService.InputEnded:Connect(function(input)
+GETUPVAL R107 U9
+GETTABLEKS R107 R107 K177 ['InputEnded']
+REMARK allocation: closure with 6 upvalues
+NEWCLOSURE R109 P59
+CAPTURE REF R29
+CAPTURE REF R30
+CAPTURE REF R31
+CAPTURE REF R5
+CAPTURE REF R33
+CAPTURE VAL R66
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [119]
+ 1474: 	update.OnClientEvent:Connect(function(kind, payload)
+GETTABLEKS R107 R3 K178 ['OnClientEvent']
+REMARK allocation: closure with 5 upvalues
+NEWCLOSURE R109 P60
+CAPTURE REF R4
+CAPTURE REF R14
+CAPTURE VAL R76
+CAPTURE VAL R69
+CAPTURE VAL R72
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [120]
+ 1484: 	player.CharacterAdded:Connect(exit)
+GETTABLEKS R107 R0 K179 ['CharacterAdded']
+MOVE R109 R105
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [121]
+ 1485: 	player.CharacterRemoving:Connect(exit)
+GETTABLEKS R107 R0 K180 ['CharacterRemoving']
+MOVE R109 R105
+NAMECALL R107 R107 K166 ['Connect']
+CALLFB R107 2 0 [122]
+ 1486: 	task.spawn(function()
+GETIMPORT R107 183 [task.spawn]
+REMARK allocation: closure with 11 upvalues
+NEWCLOSURE R108 P61
+CAPTURE VAL R68
+CAPTURE VAL R38
+CAPTURE REF R5
+CAPTURE VAL R0
+CAPTURE REF R105
+CAPTURE VAL R102
+CAPTURE VAL R90
+CAPTURE REF R14
+CAPTURE REF R20
+CAPTURE VAL R74
+CAPTURE VAL R75
+CALLFB R107 1 0 [123]
+ 1506: end
+CLOSEUPVALS R4
+RETURN R0 0
+
+Function 73 (??):
+    9: local CollectionService = game:GetService("CollectionService")
+GETIMPORT R0 1 [game]
+LOADK R2 K2 ['CollectionService']
+NAMECALL R0 R0 K3 ['GetService']
+CALL R0 2 1
+   10: local ContextActionService = game:GetService("ContextActionService")
+GETIMPORT R1 1 [game]
+LOADK R3 K4 ['ContextActionService']
+NAMECALL R1 R1 K3 ['GetService']
+CALL R1 2 1
+   11: local GuiService = game:GetService("GuiService")
+GETIMPORT R2 1 [game]
+LOADK R4 K5 ['GuiService']
+NAMECALL R2 R2 K3 ['GetService']
+CALL R2 2 1
+   12: local Players = game:GetService("Players")
+GETIMPORT R3 1 [game]
+LOADK R5 K6 ['Players']
+NAMECALL R3 R3 K3 ['GetService']
+CALL R3 2 1
+   13: local ReplicatedStorage = game:GetService("ReplicatedStorage")
+GETIMPORT R4 1 [game]
+LOADK R6 K7 ['ReplicatedStorage']
+NAMECALL R4 R4 K3 ['GetService']
+CALL R4 2 1
+   14: local RunService = game:GetService("RunService")
+GETIMPORT R5 1 [game]
+LOADK R7 K8 ['RunService']
+NAMECALL R5 R5 K3 ['GetService']
+CALL R5 2 1
+   15: local StarterGui = game:GetService("StarterGui")
+GETIMPORT R6 1 [game]
+LOADK R8 K9 ['StarterGui']
+NAMECALL R6 R6 K3 ['GetService']
+CALL R6 2 1
+   16: local UserInputService = game:GetService("UserInputService")
+GETIMPORT R7 1 [game]
+LOADK R9 K10 ['UserInputService']
+NAMECALL R7 R7 K3 ['GetService']
+CALL R7 2 1
+   18: local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
+GETIMPORT R8 12 [require]
+GETTABLEKS R9 R4 K13 ['Shared']
+GETTABLEKS R9 R9 K14 ['FurnitureCatalog']
+CALL R8 1 1
+   19: local BaseGrid = require(ReplicatedStorage.Shared.BaseGrid)
+GETIMPORT R9 12 [require]
+GETTABLEKS R10 R4 K13 ['Shared']
+GETTABLEKS R10 R10 K15 ['BaseGrid']
+CALL R9 1 1
+   20: local Building = require(ReplicatedStorage.Shared.BuildingCatalog)
+GETIMPORT R10 12 [require]
+GETTABLEKS R11 R4 K13 ['Shared']
+GETTABLEKS R11 R11 K16 ['BuildingCatalog']
+CALL R10 1 1
+   21: local FurniturePreview = require(script.Parent.FurniturePreview)
+GETIMPORT R11 12 [require]
+GETIMPORT R12 20 [script.Parent.FurniturePreview]
+CALL R11 1 1
+   22: local StructureEditor = require(script.Parent.StructureEditor)
+GETIMPORT R12 12 [require]
+GETIMPORT R13 22 [script.Parent.StructureEditor]
+CALL R12 1 1
+   23: local Freecam = require(script.Parent.Freecam)
+GETIMPORT R13 12 [require]
+GETIMPORT R14 24 [script.Parent.Freecam]
+CALL R13 1 1
+   24: local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
+GETIMPORT R14 12 [require]
+GETIMPORT R15 1 [game]
+LOADK R17 K25 ['ReplicatedFirst']
+NAMECALL R15 R15 K3 ['GetService']
+CALL R15 2 1
+LOADK R17 K26 ['UITheme']
+NAMECALL R15 R15 K27 ['WaitForChild']
+CALL R15 2 -1
+CALL R14 -1 1
+REMARK allocation: table hash 1
+   26: local BuildMode = {}
+NEWTABLE R15 1 0
+   27: local rgb = Color3.fromRGB
+GETIMPORT R16 30 [Color3.fromRGB]
+   28: local FITS = rgb(84, 192, 92)
+MOVE R17 R16
+LOADN R18 84
+LOADN R19 192
+LOADN R20 92
+CALL R17 3 1
+   29: local BLOCKED = rgb(226, 72, 60)
+MOVE R18 R16
+LOADN R19 226
+LOADN R20 72
+LOADN R21 60
+CALL R18 3 1
+   30: local ROOM = rgb(96, 200, 120)
+MOVE R19 R16
+LOADN R20 96
+LOADN R21 200
+LOADN R22 120
+CALL R19 3 1
+REMARK allocation: table template 12
+   36: local HEIGHTS = {
+DUPTABLE R20 54
+   51: local ITEMS = table.clone(Furniture.Order)
+GETIMPORT R21 57 [table.clone]
+GETTABLEKS R22 R8 K58 ['Order']
+CALL R21 1 1
+   52: table.move(Furniture.KitOrder, 1, #Furniture.KitOrder, #ITEMS + 1, ITEMS)
+GETIMPORT R22 60 [table.move]
+GETTABLEKS R23 R8 K61 ['KitOrder']
+LOADN R24 1
+GETTABLEKS R26 R8 K61 ['KitOrder']
+LENGTH R25 R26
+LENGTH R27 R21
+ADDK R26 R27 K62 [1]
+MOVE R27 R21
+CALL R22 5 0
+REMARK builtin math.rad/1
+   53: local CAMERA_PITCH = math.rad(55)
+LOADN R23 55
+FASTCALL1 22 R23 L0
+GETIMPORT R22 65 [math.rad]
+CALL R22 1 1
+REMARK builtin math.rad/1
+   54: local TURN_SPEED = math.rad(90)
+L0: LOADN R24 90
+FASTCALL1 22 R24 L1
+GETIMPORT R23 65 [math.rad]
+CALL R23 1 1
+REMARK allocation: table hash 2
+   56: local TURN_KEYS = {
+L1: NEWTABLE R24 2 0
+   57: 	[Enum.KeyCode.Q] = -1,
+GETIMPORT R25 69 [Enum.KeyCode.Q]
+LOADN R26 -1
+SETTABLE R26 R24 R25
+   58: 	[Enum.KeyCode.E] = 1,
+GETIMPORT R25 71 [Enum.KeyCode.E]
+LOADN R26 1
+SETTABLE R26 R24 R25
+   60: local PAN_LIMIT = Vector2.new(38, 100)
+GETIMPORT R25 74 [Vector2.new]
+LOADN R26 38
+LOADN R27 100
+CALL R25 2 1
+REMARK allocation: table hash 8
+   61: local PAN_KEYS = {
+NEWTABLE R26 8 0
+   62: 	[Enum.KeyCode.W] = Vector2.new(0, -1),
+GETIMPORT R27 76 [Enum.KeyCode.W]
+GETIMPORT R28 74 [Vector2.new]
+LOADN R29 0
+LOADN R30 -1
+CALL R28 2 1
+SETTABLE R28 R26 R27
+   63: 	[Enum.KeyCode.Up] = Vector2.new(0, -1),
+GETIMPORT R27 78 [Enum.KeyCode.Up]
+GETIMPORT R28 74 [Vector2.new]
+LOADN R29 0
+LOADN R30 -1
+CALL R28 2 1
+SETTABLE R28 R26 R27
+   64: 	[Enum.KeyCode.S] = Vector2.new(0, 1),
+GETIMPORT R27 80 [Enum.KeyCode.S]
+GETIMPORT R28 74 [Vector2.new]
+LOADN R29 0
+LOADN R30 1
+CALL R28 2 1
+SETTABLE R28 R26 R27
+   65: 	[Enum.KeyCode.Down] = Vector2.new(0, 1),
+GETIMPORT R27 82 [Enum.KeyCode.Down]
+GETIMPORT R28 74 [Vector2.new]
+LOADN R29 0
+LOADN R30 1
+CALL R28 2 1
+SETTABLE R28 R26 R27
+   66: 	[Enum.KeyCode.A] = Vector2.new(-1, 0),
+GETIMPORT R27 84 [Enum.KeyCode.A]
+GETIMPORT R28 74 [Vector2.new]
+LOADN R29 -1
+LOADN R30 0
+CALL R28 2 1
+SETTABLE R28 R26 R27
+   67: 	[Enum.KeyCode.Left] = Vector2.new(-1, 0),
+GETIMPORT R27 86 [Enum.KeyCode.Left]
+GETIMPORT R28 74 [Vector2.new]
+LOADN R29 -1
+LOADN R30 0
+CALL R28 2 1
+SETTABLE R28 R26 R27
+   68: 	[Enum.KeyCode.D] = Vector2.new(1, 0),
+GETIMPORT R27 88 [Enum.KeyCode.D]
+GETIMPORT R28 74 [Vector2.new]
+LOADN R29 1
+LOADN R30 0
+CALL R28 2 1
+SETTABLE R28 R26 R27
+   69: 	[Enum.KeyCode.Right] = Vector2.new(1, 0),
+GETIMPORT R27 90 [Enum.KeyCode.Right]
+GETIMPORT R28 74 [Vector2.new]
+LOADN R29 1
+LOADN R30 0
+CALL R28 2 1
+SETTABLE R28 R26 R27
+   71: local started = false
+LOADB R27 0
+   73: local function make(class: string, parent: Instance?, props: { [string]: any }): any
+DUPCLOSURE R28 K91 ['make']
+   82: local function notice(message: string)
+DUPCLOSURE R29 K92 ['notice']
+CAPTURE VAL R6
+REMARK allocation: closure with 29 upvalues
+   90: function BuildMode.start()
+NEWCLOSURE R30 P2
+CAPTURE REF R27
+CAPTURE VAL R3
+CAPTURE VAL R4
+CAPTURE VAL R28
+CAPTURE VAL R14
+CAPTURE VAL R12
+CAPTURE VAL R16
+CAPTURE VAL R8
+CAPTURE VAL R21
+CAPTURE VAL R7
+CAPTURE VAL R0
+CAPTURE VAL R11
+CAPTURE VAL R19
+CAPTURE VAL R18
+CAPTURE VAL R20
+CAPTURE VAL R17
+CAPTURE VAL R2
+CAPTURE VAL R10
+CAPTURE VAL R9
+CAPTURE VAL R29
+CAPTURE VAL R25
+CAPTURE VAL R26
+CAPTURE VAL R24
+CAPTURE VAL R6
+CAPTURE VAL R23
+CAPTURE VAL R22
+CAPTURE VAL R13
+CAPTURE VAL R1
+CAPTURE VAL R5
+SETTABLEKS R30 R15 K93 ['start']
+ 1508: return BuildMode
+CLOSEUPVALS R27
+RETURN R15 1
+

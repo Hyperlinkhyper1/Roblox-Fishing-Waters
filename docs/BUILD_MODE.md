@@ -4,7 +4,9 @@ Go to your own base or company island and press **B**, or use the **Build** butt
 
 The menu uses dark panels and light labels. Build mode hides the equipment hotbar while editing and restores its previous visibility when you leave.
 
-The Build tab has separate categories for **Walls**, **Rooms**, **Doors**, **Windows**, **Floors**, **Roofs**, and **Stairs**. Selection, painting, and removal sit with the editing actions below those categories. Returning from Decorate to Build restores the last construction category.
+Furniture is grouped into **All**, **Shop counters**, **Kitchen**, **Storage**, **Tables & seating**, **Lighting**, **Plants**, **Nautical**, and **Decorations** catalogues. Category counts show your unplaced stock. Cards use the actual furniture models; choosing a category filters your inventory without changing which items you own.
+
+The Build tab has separate catalogues for **Walls**, **Rooms**, **Doors**, **Windows**, **Floors**, and **Roofs**. Each catalogue shows 3D item cards and prices. Selection, painting, and removal sit with the editing actions below those categories. Returning from Decorate to Build restores the last construction category. Stairs are no longer offered for new placement; existing saved stairs remain intact.
 
 Decorate keeps its material and color palettes with a short Select / Paint / Remove toolbar. Moving, reshaping, and applying a finish appear when a selected object can use them. Undo and Redo stay in the compact header, and the pointer tooltip explains the next action without repeating instructions throughout the panel.
 
@@ -15,10 +17,9 @@ Decorate keeps its material and color palettes with a short Select / Paint / Rem
 | Wall | Click a start point and an end point. Walls follow the horizontal or vertical grid. |
 | Room | Click two opposite corners to build four walls and a floor together. The complete room saves as one edit. |
 | Floor | Click two opposite corners to cover a rectangular area. |
-| Roof | Click two opposite corners, then choose Gable, Flat, or Shed. Existing roofs become visible while using this tool. |
-| Stairs | Click two opposite corners to draw a staircase. Use R to choose North, East, South, or West as its climb direction. |
-| Window | Point at a wall and click to fit a Picture or Classic window. |
-| Door | Point at a wall and click to fit an Open doorway or a Panel door held open. |
+| Roof | Choose a Gable, Flat, or Sloped roof card and click two opposite corners. Existing roofs become visible while using this tool. |
+| Window | Choose Classic, Picture, Tall, Wide, Arched, or Round, then point at a wall and click to fit the window. |
+| Door | Choose an Open, Timber, or Double doorway card, then point at a wall and click. |
 | Select | Click an existing surface. Use Apply finish, or Move / Reshape for pieces you built yourself. |
 | Paint | Choose a material and color, then click a surface to apply them. |
 | Remove | Click a structural piece to remove it. Removing a wall also removes its attached doors and windows. |
@@ -27,11 +28,11 @@ Doors and windows create actual holes in their host wall. Window glass is transp
 
 Painting or removing any original roof piece edits that building's complete roof together, including its gables, tile courses, gutters, and edge boards. The house and shop roofs are separate groups. One Undo restores the complete roof. New roofs also select and edit as complete assemblies.
 
-Stairs have 16 treads and connect the current floor to the next one. They need at least 3.5 studs of width and 8 studs of run in their climb direction. The floor above automatically gets a matching opening; removing or moving the stairs repairs that opening. Keep the stair footprint and upper landing clear, and remove any roof across its climb. North climbs toward local −Z, South toward +Z, East toward +X, and West toward −X.
+Painting changes the clicked surface immediately. You can continue painting other surfaces while earlier clicks save. The editor combines queued clicks into bounded batches and keeps the latest chosen finish for each target. Other edits wait for preceding paint to save. If a save is rejected, the affected surface returns to its saved finish and the editor shows a notice; newer queued paint remains visible and still saves.
 
 Choose textures using the material buttons: plaster, brick, wood planks, wood, concrete, slate, marble, ceramic tiles, cobblestone, metal, shingles, smooth plastic, or glass. Pick a color swatch or enter a custom **#RRGGBB** color and click **Set color**. The selected finish applies to the next placement, to the Paint tool, or to **Apply finish** on a selected surface.
 
-The translucent preview shows the proposed geometry and its price. Invalid positions show a red preview and an explanation. The server checks ownership, plot boundaries, openings, overlap, furniture, important equipment access, and available cash before saving anything.
+The placement preview shows the actual shape, material, and color with a translucent finish and outline. Furniture previews also show the footprint and facing direction. Window and door previews temporarily hide the original wall and show its proposed cutout, so an uncut wall does not obscure the new opening. Cancelling or leaving build mode restores the original wall visibility. Invalid positions show a red outline and an explanation. The server checks ownership, plot boundaries, openings, overlap, furniture, important equipment access, and available cash before saving anything.
 
 The lavender construction grid follows the selected floor and grid size. Wall endpoints snap to its intersections, and the wall centerline follows the horizontal or vertical grid line between them. Pointer drawing uses that same visible grid plane, including from an angled camera. Surface picking follows the selected floor too, so editing an upper storey does not select walls underneath it.
 
@@ -44,7 +45,7 @@ The lavender construction grid follows the selected floor and grid size. Wall en
 | Right mouse drag | Pan the camera |
 | Mouse wheel / + / − | Zoom |
 | Touch drag / tap | Pan / select or place |
-| R | Cycle the current roof, window, or door style, or turn the staircase |
+| R | Rotate the current furniture or construction preview by 90°; choose styles using catalogue cards |
 | G | Cycle grid sizes: 4.5, 2.25, or 1.125 studs |
 | Page Up / Page Down, or Floor + / − | Change the construction level, from floor 1 through 4 |
 | Show roof / Hide roof | Toggle roof visibility while editing |
@@ -54,7 +55,7 @@ The lavender construction grid follows the selected floor and grid size. Wall en
 | Home | Recenter the camera |
 | B / Done | Exit build mode |
 
-New walls cost **$12 per 4.5 studs**; floors cost **$6 per grid square**, roofs **$10 per grid square**, stairs **$20 per grid square**, windows **$45**, and doors **$60**. Partial lengths/areas round up. Painting is free. Moving or enlarging a piece charges any increase in its construction price. Removing a piece gives no refund; undoing a purchase reverses its original cash charge. Undo/redo history holds the last 20 structural edits for each property during the current server session.
+New walls cost **$12 per 4.5 studs**; floors cost **$6 per grid square**, roofs **$10 per grid square**, windows **$45–85**, and doors **$60–100** depending on style. Partial lengths/areas round up. Painting is free. Moving or enlarging a piece charges any increase in its construction price. Removing a piece gives no refund; undoing a purchase reverses its original cash charge. Undo/redo history holds the last 20 structural edits for each property during the current server session. A saved paint batch is one history entry.
 
 ## Saving and compatibility
 
@@ -74,10 +75,11 @@ node scripts/check-building.mjs
 
 This executes the production construction rules and renderer with recording Roblox doubles. It checks finite remote input, material/color validation, plot boundaries, road separation, overlaps, real hosted cutouts, stair direction and floor openings, pristine-shell restoration, stable IDs across rotated plots, and preview collision. It also checks round trips through the real AnglerData and BoatData decoders and parses the complete service, renderer, editor, and BuildMode modules.
 
-The editor interaction and authoritative service have separate behavioral checks. Editor checks cover bottom category navigation and wall drawing from an angled camera on rotated properties, at every grid size on both sites:
+The editor interaction, asynchronous paint queue, and authoritative service have separate behavioral checks. Editor checks cover category navigation, catalogue previews, quarter-turn rotation, and wall drawing from an angled camera on rotated properties. Controlled delayed saves verify immediate painting, queued clicks, stale replication protection, rollback, batching, and paint ordering before Undo:
 
 ```powershell
 node scripts/check-structure-editor.mjs
+node scripts/check-build-paint-queue.mjs
 node scripts/check-building-service.mjs
 ```
 

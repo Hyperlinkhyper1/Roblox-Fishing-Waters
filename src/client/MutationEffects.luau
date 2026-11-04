@@ -13,6 +13,18 @@ local STEP_SECONDS = 1 / 20
 local parts: { [Model]: { BasePart } } = setmetatable({}, { __mode = "k" }) :: any
 local voids: { [Model]: any } = setmetatable({}, { __mode = "k" }) :: any
 local started = false
+-- Recolouring rewrites every painted part, and the renderer pays for each one.
+-- Fish in the world past this range (stocked freezers and shop displays across
+-- the harbour) hold their colours; viewports and held fish always animate.
+local ANIMATE_DISTANCE = 160
+
+local function outOfView(list: { BasePart }, eye: Vector3?): boolean
+	local first = list[1]
+	return eye ~= nil
+		and first ~= nil
+		and first:IsDescendantOf(workspace)
+		and (first.Position - eye).Magnitude > ANIMATE_DISTANCE
+end
 
 local function painted(model: Model): { BasePart }
 	local list = parts[model]
@@ -103,9 +115,15 @@ function MutationEffects.start()
 		end
 		elapsed = 0
 		local shift = os.clock() / CYCLE_SECONDS
+		local camera = workspace.CurrentCamera
+		local eye = camera and camera.CFrame.Position
 		for _, model in CollectionService:GetTagged(FishModels.RAINBOW_TAG) do
 			if model:IsA("Model") and not model:HasTag(FishModels.VOID_TAG) then
-				for _, item in painted(model) do
+				local list = painted(model)
+				if outOfView(list, eye) then
+					continue
+				end
+				for _, item in list do
 					item.Color = Color3.fromHSV(
 						(item:GetAttribute("RainbowHue") + shift) % 1,
 						item:GetAttribute("RainbowSaturation") or 0.6,
@@ -115,9 +133,10 @@ function MutationEffects.start()
 			end
 		end
   for _, model in CollectionService:GetTagged(FishModels.GLITCH_TAG) do
-   if model:IsA("Model") then
+   local list = if model:IsA("Model") then paintedGlitch(model) else nil
+   if list and not outOfView(list, eye) then
     local tick = math.floor(os.clock() * 13)
-    for index, item in paintedGlitch(model) do
+    for index, item in list do
      local phase = (tick + index * 7) % 11
      item.Color = if phase < 2 then Color3.fromRGB(255, 30, 180) elseif phase == 2 then Color3.new(1, 1, 1) else item:GetAttribute("GlitchBaseColor")
      item.Transparency = if phase == 3 then 0.55 else item:GetAttribute("GlitchBaseTransparency")

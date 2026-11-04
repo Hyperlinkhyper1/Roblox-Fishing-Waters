@@ -34,6 +34,13 @@ local FADE_FROM, FADE_HEIGHT = 0.05, 0.35
 local HULL_CLEARANCE = 0.3
 local HULL_MARGIN = 1.5
 local SUNKEN = -2
+-- A vertex whose swell is weaker than this can't rise to FADE_FROM, so it is fully
+-- transparent: it is written flat once and then left alone. Sheltered water (the
+-- harbour, the lake) otherwise rewrote and re-uploaded the whole mesh every frame.
+local FLAT_AMPLITUDE = 0.03
+-- Hull boxes are rigid with the root; GetBoundingBox walks every part, so it is
+-- redone this often rather than every frame for every boat in range.
+local HULL_BOX_REFRESH = 2
 local started = false
 
 local function smoothstep(t: number): number
@@ -140,6 +147,24 @@ function SwellSurface.start()
 		-- World grid cells, kept while inside the sheet: wet probe and swell strength.
 		local cells = {}
 		local alphas = table.create(size * size, -1)
+		-- Vertices already written flat since the sheet last moved.
+		local flat = table.create(size * size, false)
+		local hullBoxes: { [Model]: { root: BasePart, offset: CFrame, extents: Vector3, at: number } } =
+			setmetatable({}, { __mode = "k" }) :: any
+		local function hullBox(boat: Model): (CFrame, Vector3)
+			local root = boat.PrimaryPart
+			if not root then
+				return boat:GetBoundingBox()
+			end
+			local clock = os.clock()
+			local cached = hullBoxes[boat]
+			if not cached or cached.root ~= root or clock - cached.at > HULL_BOX_REFRESH then
+				local frame, extents = boat:GetBoundingBox()
+				cached = { root = root, offset = root.CFrame:ToObjectSpace(frame), extents = extents, at = clock }
+				hullBoxes[boat] = cached
+			end
+			return root.CFrame * cached.offset, cached.extents
+		end
 		local originX, originZ = math.huge, math.huge
 		local probeCursor, probeDue = 0, 0
 		local refreshCursor, refreshDue = 0, 0
@@ -194,6 +219,7 @@ function SwellSurface.start()
 				originX, originZ = firstX, firstZ
 				unprobed = true
 				part.CFrame = CFrame.new(centerX * SPACING, Biomes.WaterLevel, centerZ * SPACING)
+				table.clear(flat)
 				-- Forget cells the sheet left; keep a shore-reach border for the taper.
 				for k, cell in cells do
 					if
@@ -265,7 +291,7 @@ function SwellSurface.start()
 					if not boat:IsA("Model") then
 						continue
 					end
-					local frame, extents = boat:GetBoundingBox()
+					local frame, extents = hullBox(boat)
 					local reach = extents.Magnitude / 2 + HULL_MARGIN
 					if (frame.Position - cameraPosition).Magnitude > HALF * 1.5 + reach then
 						continue
@@ -310,6 +336,20 @@ function SwellSurface.start()
 					cell.shown += (cell.shore - cell.shown) * ease
 					local edge = smoothstep(math.min(edgeZ, HALF - math.abs(column * SPACING - HALF)) / EDGE_FADE)
 					local amplitude = cell.amplitude * cell.shown * edge
+					if amplitude < FLAT_AMPLITUDE then
+						if not flat[index] then
+							flat[index] = true
+							local y = if cell.shown < 0.01 then SUNKEN else 0
+							mesh:SetPosition(vertices[index], Vector3.new(column * SPACING - HALF, y, row * SPACING - HALF))
+							mesh:SetNormal(normals[index], Vector3.yAxis)
+							if alphas[index] ~= 0 then
+								alphas[index] = 0
+								mesh:SetColorAlpha(colors[index], 0)
+							end
+						end
+						continue
+					end
+					flat[index] = false
 					local x, z = cell.x * SPACING, cell.z * SPACING
 					local unit, sx, sz = Weather.swell(x, z, now, direction)
 					local height = unit * amplitude

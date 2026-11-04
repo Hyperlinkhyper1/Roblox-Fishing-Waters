@@ -33,8 +33,22 @@ Building.Bounds = {
 	Home = { {-24.75,-33.75,24.75,15.75}, {-24.75,65.25,24.75,83.25} },
 	Company = { {-54,-31.5,54,31.5} },
 }
+-- Catalogues show actual shapes; R controls orientation independently of style.
+Building.Variants = {
+	Wall = {{Id="Solid",Name="Wall",Style="Solid",Price=12}},
+	Room = {{Id="Room",Name="Room",Style="Solid",Price=54}},
+	Floor = {{Id="Tile",Name="Floor tile",Style="Tile",Price=6}},
+	Roof = {{Id="Gable",Name="Gable roof",Style="Gable",Price=10},{Id="Flat",Name="Flat roof",Style="Flat",Price=10},{Id="Shed",Name="Sloped roof",Style="Shed",Price=10}},
+	Window = {
+		{Id="Classic",Name="Classic window",Style="Classic",Price=45}, {Id="Picture",Name="Picture window",Style="Picture",Price=50},
+		{Id="Tall",Name="Tall window",Style="Tall",Price=65}, {Id="Wide",Name="Wide window",Style="Wide",Price=80},
+		{Id="Arched",Name="Arched window",Style="Arched",Price=85}, {Id="Round",Name="Round window",Style="Round",Price=75},
+	},
+	Door = {{Id="Open",Name="Open doorway",Style="Open",Price=60},{Id="Panel",Name="Timber door",Style="Panel",Price=75},{Id="Double",Name="Double doorway",Style="Double",Price=100}},
+}
 local kinds = {Wall=true,Floor=true,Roof=true,Window=true,Door=true,Stairs=true}
-local styles = {Roof={Flat=true,Gable=true,Shed=true},Window={Picture=true,Classic=true},Door={Open=true,Panel=true},Stairs={North=true,East=true,South=true,West=true}}
+local styles = {Wall={Solid=true},Floor={Tile=true},Roof={Flat=true,Gable=true,Shed=true},Window={Picture=true,Classic=true,Tall=true,Wide=true,Arched=true,Round=true},Door={Open=true,Panel=true,Double=true},Stairs={North=true,East=true,South=true,West=true}}
+local defaultStyles = {Wall="Solid",Floor="Tile",Roof="Gable",Window="Classic",Door="Open",Stairs="North"}
 local defaults = {Wall="Plaster",Floor="WoodPlanks",Roof="RoofShingles",Window="Wood",Door="Wood",Stairs="WoodPlanks"}
 local function finite(n)
 	return type(n)=="number" and n==n and math.abs(n)<10000
@@ -62,12 +76,15 @@ function Building.normalize(raw)
 	local level=raw.Level or 0
 	if not finite(level) or level%1~=0 or level<0 or level>Building.MAX_LEVEL then return nil,"Choose a floor from 1 to 4." end
 	local clean={Kind=kind,Material=material,Color=color,Level=level}
+	local rotation=raw.R or 0
+	if not finite(rotation) or rotation%1~=0 or rotation<0 or rotation>3 then return nil,"Rotation must be a quarter turn." end
+	clean.R=rotation
 	if raw.Id~=nil then
 		if not Building.id(raw.Id) then return nil,"Invalid piece ID." end
 		clean.Id=raw.Id
 	end
 	if styles[kind] then
-		local style=raw.Style or (if kind=="Roof" then "Gable" elseif kind=="Window" then "Classic" elseif kind=="Stairs" then "North" else "Open")
+		local style=raw.Style or defaultStyles[kind]
 		if not styles[kind][style] then return nil,"Choose a valid style." end
 		clean.Style=style
 	end
@@ -97,9 +114,22 @@ end
 function Building.length(entry)
 	return math.sqrt((entry.X2-entry.X1)^2+(entry.Z2-entry.Z1)^2)
 end
-function Building.opening(entry)
-	-- Each opening fits one 4.5 stud cell with a solid post on either side.
+function Building.baseOpening(entry)
+	if entry.Kind=="Window" then
+		if entry.Style=="Tall" then return 3.5,1.5,9.5 end
+		if entry.Style=="Wide" then return 7.5,3,8.5 end
+		if entry.Style=="Arched" then return 3.5,2,9 end
+		if entry.Style=="Round" then return 3.5,3,6.5 end
+	elseif entry.Style=="Double" then return 7.5,0,8.8 end
 	return 3.5, (if entry.Kind=="Door" then 0 else 3), (if entry.Kind=="Door" then 8.8 else 8.5)
+end
+function Building.opening(entry)
+	local width,bottom,top=Building.baseOpening(entry)
+	if entry.Kind=="Window" and (entry.R or 0)%2==1 then
+		local middle=(bottom+top)/2
+		return top-bottom,middle-width/2,middle+width/2
+	end
+	return width,bottom,top
 end
 local function areaOverlap(a,b)
 	return math.min(a.X2,b.X2)>math.max(a.X1,b.X1)+0.02 and math.min(a.Z2,b.Z2)>math.max(a.Z1,b.Z1)+0.02
@@ -188,7 +218,10 @@ function Building.check(pieces,entry,site,builtins,skipId)
 	return nil
 end
 function Building.price(entry)
-	if entry.Kind=="Window" then return 45 elseif entry.Kind=="Door" then return 60 end
+	if entry.Kind=="Window" or entry.Kind=="Door" then
+		for _,variant in Building.Variants[entry.Kind] do if variant.Style==entry.Style then return variant.Price end end
+		return if entry.Kind=="Window" then 45 else 60
+	end
 	local units=if entry.Kind=="Wall" then Building.length(entry)/Building.GRID else math.abs((entry.X2-entry.X1)*(entry.Z2-entry.Z1))/(Building.GRID^2)
 	return math.max(1,math.ceil(units*(if entry.Kind=="Wall" then 12 elseif entry.Kind=="Roof" then 10 elseif entry.Kind=="Stairs" then 20 else 6)))
 end

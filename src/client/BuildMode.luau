@@ -127,6 +127,8 @@ function BuildMode.start()
 	local touchStart = Vector2.zero
 	local touchDragged = false
 	local structures = nil
+	local furnitureCategory = "All"
+	local ghostParts = {}
 
 	-- HUD
 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
@@ -180,14 +182,16 @@ function BuildMode.start()
 		return item
 	end
 	local inventoryTitle = label(panel, "Unplaced furniture", {
-		Position = UDim2.fromOffset(16, 12),
-		Size = UDim2.new(1, -32, 0, 26),
-		TextSize = 20,
+		Position = UDim2.fromOffset(16, 6),
+		Size = UDim2.new(1, -32, 0, 22),
+		TextSize = 18,
 	})
 	local hint = label(panel, "", {
-		Position = UDim2.fromOffset(16, 38),
-		Size = UDim2.new(1, -32, 0, 32),
-		TextSize = 12,
+		Position = UDim2.fromOffset(16, 28),
+		Size = UDim2.new(1, -32, 0, 15),
+		TextSize = 11,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Font = Enum.Font.Gotham,
 		TextColor3 = Theme.Colors.Muted,
 	})
@@ -211,7 +215,15 @@ function BuildMode.start()
 		})
 		return strip
 	end
-	local catalogue = horizontalStrip("Placeables", 76, 60)
+	local categoryStrip = horizontalStrip("FurnitureCategories", 46, 27)
+	local categoryButtons = {}
+	for index, category in Furniture.Categories do
+		categoryButtons[category.Id] = button(categoryStrip, category.Name, {
+			Name = "FurnitureCategory" .. category.Id, LayoutOrder = index,
+			Size = UDim2.fromOffset(if #category.Name > 12 then 164 else 126, 22), TextSize = 11,
+		})
+	end
+	local catalogue = horizontalStrip("Placeables", 78, 62)
 	local actions = horizontalStrip("BuildActions", 144, 36)
 	local itemButtons = {}
 	local stockLabels = {}
@@ -220,7 +232,7 @@ function BuildMode.start()
 		local card = button(catalogue, "", {
 			Name = "Hold" .. id,
 			LayoutOrder = index,
-			Size = UDim2.fromOffset(196, 52),
+			Size = UDim2.fromOffset(232, 56),
 			TextWrapped = true,
 			Visible = false,
 		})
@@ -228,21 +240,21 @@ function BuildMode.start()
 		local view = make("ViewportFrame", card, {
 			Name = "FurnitureThumbnail",
 			BackgroundTransparency = 1,
-			Position = UDim2.fromOffset(4, 4),
-			Size = UDim2.fromOffset(64, 44),
+			Position = UDim2.fromOffset(4, 2),
+			Size = UDim2.fromOffset(92, 52),
 			Active = false,
 			ZIndex = 2,
 		})
 		itemViews[id] = view
 		label(card, Furniture.Items[id].Name, {
-			Position = UDim2.fromOffset(76, 4),
-			Size = UDim2.fromOffset(112, 26),
+			Position = UDim2.fromOffset(102, 4),
+			Size = UDim2.fromOffset(124, 28),
 			TextSize = 12,
 			ZIndex = 3,
 		})
 		stockLabels[id] = label(card, "", {
-			Position = UDim2.fromOffset(76, 32),
-			Size = UDim2.fromOffset(112, 16),
+			Position = UDim2.fromOffset(102, 35),
+			Size = UDim2.fromOffset(124, 16),
 			TextSize = 11,
 			ZIndex = 3,
 			TextColor3 = Theme.Colors.Muted,
@@ -389,25 +401,36 @@ function BuildMode.start()
 		if item:IsDescendantOf(panel) then StructureEditor.styleButton(item, appearance) else Theme.glassButton(item, appearance) end
 	end
 	local function render()
-		local total = 0
+		local total, matching = 0, 0
+		local categoryCounts = {}
 		for _, id in ITEMS do
 			local item = Furniture.Items[id]
 			local stock = if state and Furniture.allowedOn(id, site) then state.Stock[id] or 0 else 0
 			local full = state ~= nil and Furniture.count(placed(), id) >= item.MaxPlaced
 			total += stock
-			itemButtons[id].Visible = stock > 0
+			local category = Furniture.category(id)
+			categoryCounts[category] = (categoryCounts[category] or 0) + stock
+			local visible = Furniture.matchesCategory(id, furnitureCategory)
+			if visible then matching += stock end
+			itemButtons[id].Visible = stock > 0 and visible
 			itemButtons[id].Selectable = stock > 0 and not full and not pending
 			stockLabels[id].Text = string.format("%d unplaced", stock)
-			if stock > 0 and not previewStarted[id] then
+			if stock > 0 and visible and not previewStarted[id] then
 				previewStarted[id] = true
 				FurniturePreview.show(itemViews[id], remotes, id)
 			end
 			setButton(itemButtons[id], "", stock > 0 and not full and not pending, held ~= nil and held.From == id)
 		end
+		for _, category in Furniture.Categories do
+			local count = if category.Id == "All" then total else categoryCounts[category.Id] or 0
+			setButton(categoryButtons[category.Id], string.format("%s · %d", category.Name, count), not pending, furnitureCategory == category.Id)
+		end
 		inventoryTitle.Text = string.format("Unplaced furniture · %d", total)
-		emptyInventory.Visible = total == 0
+		emptyInventory.Visible = matching == 0
 		emptyInventory.Text = if not state
 			then "Loading your furniture…"
+			elseif total > 0 and furnitureCategory ~= "All"
+			then "No unplaced furniture in this catalogue. Choose another category."
 			elseif site == "Company"
 			then "Nothing to place here. Racks, kitchen storage, the radar and decorations from Harbour Home can go on your plot."
 			else "No unplaced furniture. Buy items at Harbour Home, or pick up furniture in your house."
@@ -450,6 +473,7 @@ function BuildMode.start()
 	end
 
 	local function clearPreview()
+		ghostParts = {}
 		if preview then
 			preview:Destroy()
 			preview = nil
@@ -534,22 +558,39 @@ function BuildMode.start()
 			end
 		end
 		local height = HEIGHTS[held.ItemId] or 3
-		make("Part", model, {
-			Name = "Body",
-			Anchored = true,
-			CanCollide = false,
-			CanQuery = false,
-			CastShadow = false,
-			Material = Enum.Material.SmoothPlastic,
-			Transparency = 0.35,
-			Size = Vector3.new(item.Width, height, item.Depth),
-		})
+		local ghost = FurniturePreview.clone(remotes, held.ItemId)
+		if ghost then
+			ghost.Name = "ItemGhost"
+			ghost:SetAttribute("TemplatePivot", ghost:GetPivot())
+			for _, part in ghost:GetDescendants() do
+				if part:IsA("BasePart") then
+					table.insert(ghostParts, { Part = part, Color = part.Color })
+					part.Anchored, part.CanCollide, part.CanQuery, part.CanTouch, part.CastShadow = true, false, false, false, false
+					part.Transparency = math.max(0.3, part.Transparency)
+				elseif part:IsA("ProximityPrompt") or part:IsA("LayerCollector") or part:IsA("Light") or part:IsA("ParticleEmitter")
+					or part:IsA("Beam") or part:IsA("Trail") then
+					part.Enabled = false
+				end
+			end
+			ghost.Parent = model
+			make("Highlight", model, {
+				Name = "GhostOutline", Adornee = ghost, FillTransparency = 0.94, OutlineTransparency = 0,
+				DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+			})
+		else
+			-- The authoritative templates may still be arriving on a fresh join.
+			make("Part", model, {
+				Name = "Body", Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false,
+				Material = Enum.Material.SmoothPlastic, Transparency = 0.7, Size = Vector3.new(item.Width, height, item.Depth),
+			})
+		end
 		-- The grid cells the item fills, and the strips people stand in beside them.
 		make("Part", model, {
 			Name = "Access",
 			Anchored = true,
 			CanCollide = false,
 			CanQuery = false,
+			CanTouch = false,
 			CastShadow = false,
 			Material = Enum.Material.SmoothPlastic,
 			Transparency = 0.6,
@@ -561,6 +602,7 @@ function BuildMode.start()
 				Anchored = true,
 				CanCollide = false,
 				CanQuery = false,
+				CanTouch = false,
 				CastShadow = false,
 				Material = Enum.Material.SmoothPlastic,
 				Transparency = 0.85,
@@ -573,11 +615,19 @@ function BuildMode.start()
 			Anchored = true,
 			CanCollide = false,
 			CanQuery = false,
+			CanTouch = false,
 			CastShadow = false,
 			Material = Enum.Material.Neon,
 			Color = rgb(250, 240, 200),
 			Size = Vector3.new(0.5, 0.12, math.max(item.Front, 1) * 0.8),
 		})
+		for _, side in { -1, 1 } do
+			make("Part", model, {
+				Name = if side == -1 then "FacingLeft" else "FacingRight", Anchored = true, CanCollide = false,
+				CanQuery = false, CanTouch = false, CastShadow = false, Material = Enum.Material.Neon,
+				Color = rgb(250, 240, 200), Size = Vector3.new(0.16, 0.12, 0.8),
+			})
+		end
 		model.Parent = workspace
 		preview = model
 	end
@@ -589,11 +639,21 @@ function BuildMode.start()
 		local frame = Furniture.frame(houseFrame, { ItemId = held.ItemId, X = spot.X, Z = spot.Z, R = held.R }, site)
 		local color = if spot.Reason then BLOCKED else FITS
 		local height = HEIGHTS[held.ItemId] or 3
-		local body = preview:FindFirstChild("Body") :: BasePart
+		local body = preview:FindFirstChild("Body") :: BasePart?
+		local ghost = preview:FindFirstChild("ItemGhost") :: Model?
 		local access = preview:FindFirstChild("Access") :: BasePart
 		local arrow = preview:FindFirstChild("FacingArrow") :: BasePart
-		body.Color, access.Color = color, color
-		body.CFrame = frame * CFrame.new(0, height / 2, 0)
+		access.Color = color
+		if body then
+			body.Color = color
+			body.CFrame = frame * CFrame.new(0, height / 2, 0)
+		end
+		if ghost then
+			ghost:PivotTo(frame * ghost:GetAttribute("TemplatePivot"))
+			for _, entry in ghostParts do entry.Part.Color = entry.Color:Lerp(color, 0.18) end
+			local outline = preview:FindFirstChild("GhostOutline") :: Highlight
+			outline.OutlineColor, outline.FillColor = color, color
+		end
 		local floor = Furniture.floor(held.ItemId, site)
 		local function lay(part: BasePart, area: { number }, y: number)
 			part.Size = Vector3.new(area[3] - area[1] - 0.1, part.Size.Y, area[4] - area[2] - 0.1)
@@ -607,7 +667,13 @@ function BuildMode.start()
 				lay(clearance, strip, 0.1)
 			end
 		end
-		arrow.CFrame = frame * CFrame.new(0, height + 0.2, item.Depth / 2)
+		local arrowZ = item.Depth / 2 + 0.85
+		arrow.Size = Vector3.new(0.16, 0.12, 1.25)
+		arrow.CFrame = frame * CFrame.new(0, 0.22, arrowZ)
+		for _, side in { -1, 1 } do
+			local wing = preview:FindFirstChild(if side == -1 then "FacingLeft" else "FacingRight") :: BasePart
+			wing.CFrame = frame * CFrame.new(side * 0.24, 0.22, arrowZ + 0.35) * CFrame.Angles(0, side * math.rad(45), 0)
+		end
 	end
 
 	-- ScreenPointToRay expects coordinates below the top bar, like InputObject.Position.
@@ -660,7 +726,9 @@ function BuildMode.start()
 			return
 		end
 		local skip = if type(held.From) == "number" then held.From else nil
-		spot = { X = x, Z = z, Reason = Furniture.check(placed(), held.ItemId, x, z, held.R, skip, site) }
+		local reason = Furniture.check(placed(), held.ItemId, x, z, held.R, skip, site)
+		if spot and spot.X == x and spot.Z == z and spot.R == held.R and spot.Reason == reason then return end
+		spot = { X = x, Z = z, R = held.R, Reason = reason }
 		updatePreview()
 		render()
 	end
@@ -1260,6 +1328,15 @@ function BuildMode.start()
 			end
 		end,
 	})
+	for id, categoryButton in categoryButtons do
+		categoryButton.Activated:Connect(function()
+			if active and not pending then
+				furnitureCategory = id
+				catalogue.CanvasPosition = Vector2.zero
+				render()
+			end
+		end)
+	end
 
 	for id, item in itemButtons do
 		item.Activated:Connect(function()

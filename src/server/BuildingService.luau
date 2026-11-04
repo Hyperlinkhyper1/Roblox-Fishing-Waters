@@ -12,6 +12,7 @@ local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local Service = {}
 local started = false
 local requests, busy, histories = {}, {}, {}
+local paintRequests = {}
 local watched, queued, applied = {}, {}, {}
 local update: RemoteEvent
 local HISTORY_LIMIT = 20
@@ -227,6 +228,31 @@ local function builtinTargets(builtins, id)
 	return result
 end
 
+local function paint(data, payload, builtins): string?
+	if type(payload) ~= "table" or not validId(payload.Id) then return "Select a building piece first." end
+	local custom, index = find(data.Pieces, payload.Id)
+	local target = custom or builtins[payload.Id]
+	if not target or (data.Overrides[payload.Id] and data.Overrides[payload.Id].Removed) then return "That building piece is no longer there." end
+	local previous = data.Overrides[payload.Id] or {}
+	local sample = clone(custom or {Kind="Wall",X1=0,Z1=0,X2=Building.GRID,Z2=0,Level=0})
+	sample.Color = payload.Color or previous.Color or target.Color
+	sample.Material = payload.Material or previous.Material or target.Material
+	if payload.Style ~= nil and payload.Style ~= sample.Style then return "Choose a shape from its catalogue to replace this piece." end
+	local normalized, problem = Building.normalize(sample)
+	if not normalized then return problem or "Choose a valid material and color." end
+	if custom then
+		normalized.Id = custom.Id
+		data.Pieces[index] = normalized
+	else
+		for _, id in builtinTargets(builtins, payload.Id) do
+			local override = data.Overrides[id] or {}
+			override.Material, override.Color = normalized.Material, clone(normalized.Color)
+			data.Overrides[id] = override
+		end
+	end
+	return nil
+end
+
 -- Pure transformation used once for rejection before a save and again against
 -- the newest profile inside the atomic wallet update.
 local function change(profile, site, action, payload, builtins, record)
@@ -252,32 +278,24 @@ local function change(profile, site, action, payload, builtins, record)
 			end
 			local entry, problem = Building.normalize(raw)
 			if not entry then return nil, problem or "Invalid building piece." end
+			if entry.Kind == "Stairs" then return nil, "Stairs are no longer in the build catalogue." end
 			entry.Id = "p" .. tostring(data.NextId)
 			data.NextId += 1
 			table.insert(data.Pieces, entry)
 			cost += Building.price(entry)
 		end
-	elseif action == "Paint" then
-		if not validId(payload.Id) then return nil, "Select a building piece first." end
-		local custom, index = find(data.Pieces, payload.Id)
-		local target = custom or builtins[payload.Id]
-		if not target or (data.Overrides[payload.Id] and data.Overrides[payload.Id].Removed) then return nil, "That building piece is no longer there." end
-		local previous = data.Overrides[payload.Id] or {}
-		local color = payload.Color or previous.Color or target.Color
-		local material = payload.Material or previous.Material or target.Material
-		local sample = clone(custom or { Kind = "Wall", X1 = 0, Z1 = 0, X2 = Building.GRID, Z2 = 0, Level = 0 })
-		sample.Color, sample.Material = color, material
-		if payload.Style ~= nil then sample.Style = payload.Style end
-		local normalized, problem = Building.normalize(sample)
-		if not normalized then return nil, problem or "Choose a valid material and color." end
-		if custom then
-			normalized.Id = custom.Id
-			data.Pieces[index] = normalized
+	elseif action == "Paint" or action == "PaintBatch" then
+		if action == "Paint" then
+			local problem = paint(data, payload, builtins)
+			if problem then return nil, problem end
 		else
-			for _, id in builtinTargets(builtins, payload.Id) do
-				local override = data.Overrides[id] or {}
-				override.Material, override.Color = normalized.Material, clone(normalized.Color)
-				data.Overrides[id] = override
+			if type(payload.Entries) ~= "table" or #payload.Entries < 1 or #payload.Entries > BATCH_LIMIT then return nil, "Paint up to 64 surfaces at a time." end
+			local count = 0
+			for index, entry in payload.Entries do
+				count += 1
+				if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > #payload.Entries or count > BATCH_LIMIT then return nil, "Invalid painting selection." end
+				local problem = paint(data, entry, builtins)
+				if problem then return nil, problem end
 			end
 		end
 	elseif action == "Remove" then
@@ -311,7 +329,10 @@ local function change(profile, site, action, payload, builtins, record)
 	else
 		return nil, "That building tool is unavailable."
 	end
-	if same(before, data) then return nil, "That surface already has this finish." end
+	if same(before, data) then
+		if action == "Paint" or action == "PaintBatch" then return {Before=clone(before),After=clone(data),Cost=0,Noop=true},nil end
+		return nil, "That surface already has this finish."
+	end
 	local problem = validate(profile, site, data, builtins)
 	if problem then return nil, problem end
 	if profile.Cash < cost then return nil, string.format("You need $%d for this build.", cost) end
@@ -330,8 +351,9 @@ local function edit(player: Player, action: string, payload, site: string): (boo
 	if not profile then return false, "Your progress is still loading." end
 	local builtins = Renderer.capture(model, frame, site)
 	local record = history(player, site, siteData(profile, site))
-	local _, reason = change(profile, site, action, payload, builtins, record)
+	local proposed, reason = change(profile, site, action, payload, builtins, record)
 	if reason then return false, reason end
+	if proposed.Noop then return true, "Saved." end
 	busy[player] = true
 	local committed
 	local ok, message = BoatService.updateProgress(player, function(current)
@@ -343,6 +365,7 @@ local function edit(player: Player, action: string, payload, site: string): (boo
 	end)
 	busy[player] = nil
 	if not ok then return false, message end
+	if committed.Noop then syncPlayer(player); return true, "Saved." end
 	if action == "Undo" then
 		local item = table.remove(record.Undo)
 		table.insert(record.Redo, item)
@@ -377,10 +400,20 @@ function Service.start()
 		if site ~= "Home" and site ~= "Company" then return { Ok = false, Message = "Unknown building plot." } end
 		if action == "Get" then return { Ok = true, State = state(player, site) } end
 		if type(action) ~= "string" or type(payload or {}) ~= "table" then return { Ok = false, Message = "Invalid building request." } end
-		if os.clock() - (requests[player] or -math.huge) < 0.3 then
-			return { Ok = false, Message = "Please wait a moment before using another tool.", State = state(player, site) }
+		if action == "PaintBatch" then
+			local now = os.clock()
+			local bucket = paintRequests[player] or {Tokens=4,At=now}
+			bucket.Tokens = math.min(4, bucket.Tokens + math.max(0, now - bucket.At) * 10)
+			bucket.At = now
+			paintRequests[player] = bucket
+			if bucket.Tokens < 1 then return {Ok=false,RetryAfter=0.1,Message="Painting is saving. Try again in a moment.",State=state(player,site)} end
+			bucket.Tokens -= 1
+		else
+			if os.clock() - (requests[player] or -math.huge) < 0.3 then
+				return { Ok = false, Message = "Please wait a moment before using another tool.", State = state(player, site) }
+			end
+			requests[player] = os.clock()
 		end
-		requests[player] = os.clock()
 		local ok, message = edit(player, action, payload or {}, site)
 		return { Ok = ok, Message = message, State = state(player, site) }
 	end
@@ -397,7 +430,7 @@ function Service.start()
 	Players.PlayerAdded:Connect(bindPlayer)
 	for _, player in Players:GetPlayers() do bindPlayer(player) end
 	Players.PlayerRemoving:Connect(function(player)
-		requests[player], busy[player], histories[player] = nil, nil, nil
+		requests[player], busy[player], histories[player], paintRequests[player] = nil, nil, nil, nil
 	end)
 	local function watch(plot: Instance, site: string)
 		if not plot:IsA("Model") or watched[plot] then return end

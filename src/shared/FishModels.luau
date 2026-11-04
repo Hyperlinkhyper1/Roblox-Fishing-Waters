@@ -556,19 +556,28 @@ local function carp(b, p)
 	b:edgeFin(0.02, -0.06, { 0.06, 0.05 }, fin, true)
 	b:forkTail(0.15, 0.05, fin)
 	b:pectoral(0.2, -0.08, 0.1, 0.04, fin)
-	-- On the smooth skin scales overlap like shingles; spaced ones read as spots.
-	local rowStep, columnStep = if p.mesh then 0.03 else 0.04, if p.mesh then 0.032 else 0.045
-	local scaleWidth, scaleHeight = if p.mesh then 0.04 else 0.036, if p.mesh then 0.034 else 0.03
+	-- Scale discs belong to the sphere body, where they hide its seams, so they
+	-- are laid on its spheres and hidden with it. On the smooth skin they read
+	-- as studs; its back-to-belly bands carry the colour instead.
+	local loft = b.loft
+	local existing = {}
+	for _, item in b.model:GetChildren() do
+		existing[item] = true
+	end
+	b.loft = nil
 	local row = 0
-	for y = -0.1, if p.mesh then 0.14 else 0.105, rowStep do
+	for y = -0.1, 0.105, 0.04 do
 		row += 1
-		for x = 0.2 - (row % 2) * columnStep / 2, -0.32, -columnStep do
-			local color = if (row + math.floor(x * 40)) % 3 == 0 then p.scale else p.scaleAlt
-			if p.mesh then
-				-- Scales darken into the back instead of stopping at an edge.
-				color = color:Lerp(colors.back, math.clamp((y - 0.03) / 0.09, 0, 0.8))
+		for x = 0.2 - (row % 2) * 0.022, -0.32, -0.045 do
+			b:marks(x, y, 0.036, 0.03, if (row + math.floor(x * 40)) % 3 == 0 then p.scale else p.scaleAlt)
+		end
+	end
+	b.loft = loft
+	if loft then
+		for _, item in b.model:GetChildren() do
+			if not existing[item] then
+				item:SetAttribute("LoftFallback", true)
 			end
-			b:marks(x, y, scaleWidth, scaleHeight, color)
 		end
 	end
 	for _, side in { 1, -1 } do

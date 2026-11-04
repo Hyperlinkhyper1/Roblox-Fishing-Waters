@@ -31,6 +31,12 @@ end
 for _, level in {-1, 0.5, Building.MAX_LEVEL+1} do
 	check(Building.normalize(piece('Floor', {Level=level})) == nil, 'Invalid level accepted')
 end
+for _,rotation in {0,1,2,3} do
+	check(Building.normalize(piece('Roof',{R=rotation})).R==rotation,'Rotation must retain all four quarter turns')
+end
+for _,rotation in {-1,0.5,4,0/0,math.huge,'1'} do
+	check(Building.normalize(piece('Roof',{R=rotation}))==nil,'Invalid rotation reached the construction save')
+end
 for _, color in {{-1,0,0}, {0,256,0}, {1.5,2,3}, {1,2}, {0/0,1,2}, 'red'} do
 	check(Building.normalize(piece('Wall', {Color=color})) == nil, 'Invalid RGB accepted')
 end
@@ -89,6 +95,18 @@ local builtin = table.clone(wall); builtin.Id='b:Shell/Wall'; builtin.Height=Bui
 check(valid({Kind='Window',HostId=builtin.Id,Offset=9}, {}, nil, {[builtin.Id]=builtin}), 'Existing base walls must accept real openings')
 builtin.Height=5
 check(not valid({Kind='Door',HostId=builtin.Id,Offset=9}, {}, nil, {[builtin.Id]=builtin}), 'Door exceeded existing wall height')
+for _,kind in {'Window','Door'} do
+	for _,variant in Building.Variants[kind] do
+		local entry=assert(Building.normalize({Kind=kind,Style=variant.Style,HostId='p1',Offset=9,Color={210,220,230}}))
+		check(valid(entry,{wall}),variant.Name..' catalogue shape must fit a complete host wall')
+		check(Building.price(entry)==variant.Price,variant.Name..' catalogue must show its authoritative construction price')
+	end
+end
+check(#Building.Variants.Window>=6 and #Building.Variants.Door>=3,'Opening catalogues must offer distinct window and door shapes')
+check(Building.Variants.Stairs==nil,'Removed stairs must not have a new-placement catalogue')
+local pictureWidth=Building.opening({Kind='Window',Style='Picture',R=0})
+local wideWidth=Building.opening({Kind='Window',Style='Wide',R=0})
+check(wideWidth>pictureWidth,'Wide windows must change geometry rather than only their catalogue title')
 
 -- Save decoding preserves independent sites and stable IDs without aliasing source tables.
 wall.Id='p8'
@@ -96,6 +114,8 @@ local source={Home={NextId=20,Pieces={wall,wall,piece('MeshPart')},Overrides={['
 local decoded=Building.decode(source)
 check(#decoded.Home.Pieces == 1 and decoded.Home.Pieces[1].Id == 'p8', 'Decode lost a valid piece or duplicated its ID')
 check(decoded.Home.NextId == 20 and decoded.Company.NextId >= 3, 'Decode must never reuse stable IDs')
+local turned=Building.decode({Home={Pieces={piece('Roof',{Id='p91',Style='Shed',R=3})}}})
+check(turned.Home.Pieces[1].R==3 and turned.Home.Pieces[1].Style=='Shed','Saving must preserve style and rotation independently')
 check(#decoded.Company.Pieces == 1 and decoded.Company.Pieces[1].Kind == 'Roof', 'Home and company buildings mixed')
 check(decoded.Home.Overrides['b:Shell/Wall'].Removed == true and decoded.Home.Overrides['b:Shell/Wall'].Material == 'Brick', 'Existing shell edits were lost')
 decoded.Home.Pieces[1].Color[1]=0

@@ -3041,8 +3041,22 @@ Building.Bounds = {
 	Home = { {-24.75,-33.75,24.75,15.75}, {-24.75,65.25,24.75,83.25} },
 	Company = { {-54,-31.5,54,31.5} },
 }
+-- Catalogues show actual shapes; R controls orientation independently of style.
+Building.Variants = {
+	Wall = {{Id="Solid",Name="Wall",Style="Solid",Price=12}},
+	Room = {{Id="Room",Name="Room",Style="Solid",Price=54}},
+	Floor = {{Id="Tile",Name="Floor tile",Style="Tile",Price=6}},
+	Roof = {{Id="Gable",Name="Gable roof",Style="Gable",Price=10},{Id="Flat",Name="Flat roof",Style="Flat",Price=10},{Id="Shed",Name="Sloped roof",Style="Shed",Price=10}},
+	Window = {
+		{Id="Classic",Name="Classic window",Style="Classic",Price=45}, {Id="Picture",Name="Picture window",Style="Picture",Price=50},
+		{Id="Tall",Name="Tall window",Style="Tall",Price=65}, {Id="Wide",Name="Wide window",Style="Wide",Price=80},
+		{Id="Arched",Name="Arched window",Style="Arched",Price=85}, {Id="Round",Name="Round window",Style="Round",Price=75},
+	},
+	Door = {{Id="Open",Name="Open doorway",Style="Open",Price=60},{Id="Panel",Name="Timber door",Style="Panel",Price=75},{Id="Double",Name="Double doorway",Style="Double",Price=100}},
+}
 local kinds = {Wall=true,Floor=true,Roof=true,Window=true,Door=true,Stairs=true}
-local styles = {Roof={Flat=true,Gable=true,Shed=true},Window={Picture=true,Classic=true},Door={Open=true,Panel=true},Stairs={North=true,East=true,South=true,West=true}}
+local styles = {Wall={Solid=true},Floor={Tile=true},Roof={Flat=true,Gable=true,Shed=true},Window={Picture=true,Classic=true,Tall=true,Wide=true,Arched=true,Round=true},Door={Open=true,Panel=true,Double=true},Stairs={North=true,East=true,South=true,West=true}}
+local defaultStyles = {Wall="Solid",Floor="Tile",Roof="Gable",Window="Classic",Door="Open",Stairs="North"}
 local defaults = {Wall="Plaster",Floor="WoodPlanks",Roof="RoofShingles",Window="Wood",Door="Wood",Stairs="WoodPlanks"}
 local function finite(n)
 	return type(n)=="number" and n==n and math.abs(n)<10000
@@ -3070,12 +3084,15 @@ function Building.normalize(raw)
 	local level=raw.Level or 0
 	if not finite(level) or level%1~=0 or level<0 or level>Building.MAX_LEVEL then return nil,"Choose a floor from 1 to 4." end
 	local clean={Kind=kind,Material=material,Color=color,Level=level}
+	local rotation=raw.R or 0
+	if not finite(rotation) or rotation%1~=0 or rotation<0 or rotation>3 then return nil,"Rotation must be a quarter turn." end
+	clean.R=rotation
 	if raw.Id~=nil then
 		if not Building.id(raw.Id) then return nil,"Invalid piece ID." end
 		clean.Id=raw.Id
 	end
 	if styles[kind] then
-		local style=raw.Style or (if kind=="Roof" then "Gable" elseif kind=="Window" then "Classic" elseif kind=="Stairs" then "North" else "Open")
+		local style=raw.Style or defaultStyles[kind]
 		if not styles[kind][style] then return nil,"Choose a valid style." end
 		clean.Style=style
 	end
@@ -3105,9 +3122,22 @@ end
 function Building.length(entry)
 	return math.sqrt((entry.X2-entry.X1)^2+(entry.Z2-entry.Z1)^2)
 end
-function Building.opening(entry)
-	-- Each opening fits one 4.5 stud cell with a solid post on either side.
+function Building.baseOpening(entry)
+	if entry.Kind=="Window" then
+		if entry.Style=="Tall" then return 3.5,1.5,9.5 end
+		if entry.Style=="Wide" then return 7.5,3,8.5 end
+		if entry.Style=="Arched" then return 3.5,2,9 end
+		if entry.Style=="Round" then return 3.5,3,6.5 end
+	elseif entry.Style=="Double" then return 7.5,0,8.8 end
 	return 3.5, (if entry.Kind=="Door" then 0 else 3), (if entry.Kind=="Door" then 8.8 else 8.5)
+end
+function Building.opening(entry)
+	local width,bottom,top=Building.baseOpening(entry)
+	if entry.Kind=="Window" and (entry.R or 0)%2==1 then
+		local middle=(bottom+top)/2
+		return top-bottom,middle-width/2,middle+width/2
+	end
+	return width,bottom,top
 end
 local function areaOverlap(a,b)
 	return math.min(a.X2,b.X2)>math.max(a.X1,b.X1)+0.02 and math.min(a.Z2,b.Z2)>math.max(a.Z1,b.Z1)+0.02
@@ -3196,7 +3226,10 @@ function Building.check(pieces,entry,site,builtins,skipId)
 	return nil
 end
 function Building.price(entry)
-	if entry.Kind=="Window" then return 45 elseif entry.Kind=="Door" then return 60 end
+	if entry.Kind=="Window" or entry.Kind=="Door" then
+		for _,variant in Building.Variants[entry.Kind] do if variant.Style==entry.Style then return variant.Price end end
+		return if entry.Kind=="Window" then 45 else 60
+	end
 	local units=if entry.Kind=="Wall" then Building.length(entry)/Building.GRID else math.abs((entry.X2-entry.X1)*(entry.Z2-entry.Z1))/(Building.GRID^2)
 	return math.max(1,math.ceil(units*(if entry.Kind=="Wall" then 12 elseif entry.Kind=="Roof" then 10 elseif entry.Kind=="Stairs" then 20 else 6)))
 end
@@ -3248,6 +3281,7 @@ return Building
 local Catalog = require(script.Parent.BuildingCatalog)
 local Renderer = {}
 local captures = setmetatable({}, {__mode="k"})
+local layouts = setmetatable({}, {__mode="k"})
 local UP = Vector3.new(0,1,0)
 local function color(value)
 	return Color3.fromRGB(value[1],value[2],value[3])
@@ -3377,6 +3411,33 @@ local function drawWall(parent,frame,host,openings)
 		slab(cursor,left,0,height)
 		slab(left,right,0,bottom)
 		slab(left,right,top,height)
+		if opening.Kind=="Window" and (opening.Style=="Round" or opening.Style=="Arched") then
+			local baseWidth,baseBottom,baseTop=Catalog.baseOpening(opening)
+			local radius=baseWidth/2
+			local middle=(baseBottom+baseTop)/2
+			local spring=baseTop-radius-middle
+			local r=(opening.R or 0)%4
+			for row=0,23 do
+				local y1=bottom+(top-bottom)*row/24
+				local y2=bottom+(top-bottom)*(row+1)/24
+				local y=(y1+y2)/2-middle
+				local low,high=-radius,radius
+				if opening.Style=="Round" then
+					local reach=math.sqrt(math.max(0,radius^2-y^2));low,high=-reach,reach
+				elseif r%2==0 then
+					local originalY=if r==0 then y else -y
+					if originalY>spring then
+						local reach=math.sqrt(math.max(0,radius^2-(originalY-spring)^2));low,high=-reach,reach
+					end
+				else
+					local cap=spring+math.sqrt(math.max(0,radius^2-y^2))
+					local base=baseBottom-middle
+					low,high=if r==1 then -cap else base,if r==1 then -base else cap
+				end
+				slab(left,opening.Offset+low,y1,y2)
+				slab(opening.Offset+high,right,y1,y2)
+			end
+		end
 		cursor=right
 	end
 	slab(cursor,length,0,height)
@@ -3384,34 +3445,83 @@ end
 local function drawOpening(parent,frame,entry,host)
 	if not host then return end
 	local cf=hostFrame(frame,host)
+	if entry.Kind=="Window" and (entry.R or 0)~=0 then
+		local upright=table.clone(entry)
+		upright.R=0
+		local group=Instance.new("Model")
+		group.Name="RotatedWindow"
+		drawOpening(group,frame,upright,host)
+		local _,bottom,top=Catalog.baseOpening(entry)
+		local pivot=cf*CFrame.new(entry.Offset,(bottom+top)/2,0)
+		for _,piece in group:GetDescendants() do
+			if piece:IsA("BasePart") then piece.CFrame=pivot*CFrame.Angles(0,0,entry.R*math.pi/2)*pivot:ToObjectSpace(piece.CFrame) end
+		end
+		group.Parent=parent
+		return
+	end
 	local width,bottom,top=Catalog.opening(entry)
 	local t=math.max(0.6,host.Thickness or 0.45)
-	local function piece(name,size,x,y,z)
-		return part(parent,name,size,cf*CFrame.new(entry.Offset+x,y,z or 0),entry)
+	local function piece(name,size,x,y,z,rotation)
+		return part(parent,name,size,cf*CFrame.new(entry.Offset+x,y,z or 0)*(rotation or CFrame.identity),entry)
 	end
 	local trim=0.14
-	for _,side in {-1,1} do
-		piece("Frame",Vector3.new(trim,top-bottom+trim,t),side*(width-trim)/2,(bottom+top)/2)
+	local function glass(size,x,y,rotation)
+		local pane=piece("Glass",size,x,y,0,rotation)
+		pane.Material=Enum.Material.Glass
+		pane.Color=Color3.fromRGB(163,205,215)
+		pane.Transparency,pane.Reflectance,pane.CanCollide=0.6,0.1,false
+		pane:SetAttribute("BuildingFixedFinish",true)
+		return pane
 	end
-	piece("Header",Vector3.new(width,trim,t),0,top-trim/2)
+	local function arc(centerY,radius,startAngle,endAngle,count)
+		for index=0,count-1 do
+			local a=startAngle+(endAngle-startAngle)*index/count
+			local b=startAngle+(endAngle-startAngle)*(index+1)/count
+			local mid=(a+b)/2
+			piece("CurvedFrame",Vector3.new(2*radius*math.sin((b-a)/2)+0.04,trim,t),radius*math.cos(mid),centerY+radius*math.sin(mid),0,CFrame.Angles(0,0,mid+math.pi/2))
+		end
+	end
+	if entry.Kind=="Window" and entry.Style=="Round" then
+		local mid=(bottom+top)/2
+		arc(mid,width/2-trim/2,0,math.pi*2,32)
+		local pane=glass(Vector3.new(0.1,width-trim*2,width-trim*2),0,mid,CFrame.Angles(0,math.pi/2,0))
+		pane.Shape=Enum.PartType.Cylinder
+		piece("Mullion",Vector3.new(0.1,top-bottom-trim,0.2),0,mid)
+		piece("Rail",Vector3.new(width-trim,0.1,0.2),0,mid)
+		return
+	end
+	local spring=if entry.Style=="Arched" then top-width/2 else top
+	for _,side in {-1,1} do
+		piece("Frame",Vector3.new(trim,spring-bottom+trim,t),side*(width-trim)/2,(bottom+spring)/2)
+	end
+	if entry.Style=="Arched" then
+		arc(spring,width/2-trim/2,0,math.pi,24)
+		for row=0,15 do
+			local radius=width/2-trim
+			local y=radius*(row+0.5)/16
+			local reach=math.sqrt(math.max(0,radius^2-y^2))
+			glass(Vector3.new(math.max(0.05,reach*2),radius/16+0.01,0.1),0,spring+y)
+		end
+	else piece("Header",Vector3.new(width,trim,t),0,top-trim/2) end
 	if entry.Kind=="Window" then
 		piece("Sill",Vector3.new(width+0.2,trim,t+0.15),0,bottom+trim/2)
-		local glass=piece("Glass",Vector3.new(width-trim*2,top-bottom-trim*2,0.1),0,(bottom+top)/2)
-		glass.Material=Enum.Material.Glass
-		glass.Color=Color3.fromRGB(163,205,215)
-		glass.Transparency=0.6
-		glass.Reflectance=0.1
-		glass.CanCollide=false
-		if entry.Style=="Classic" then
+		glass(Vector3.new(width-trim*2,spring-bottom-trim*2,0.1),0,(bottom+spring)/2)
+		if entry.Style=="Classic" or entry.Style=="Arched" or entry.Style=="Wide" then
 			piece("Mullion",Vector3.new(0.1,top-bottom,0.2),0,(bottom+top)/2)
 			piece("Rail",Vector3.new(width,0.1,0.2),0,(bottom+top)/2)
 		end
-	elseif entry.Style=="Panel" then
+	elseif entry.Style=="Panel" or entry.Style=="Double" then
 		-- The panel is held open, leaving a walkable 3.2-stud opening without scripts.
-		local panel=piece("OpenDoor",Vector3.new(0.18,top-0.2,width-0.3),-width/2,top/2,(width-0.3)/2)
-		panel.CanCollide=false
-		local handle=piece("Handle",Vector3.new(0.12,0.16,0.35),-width/2+0.15,4,width-0.7)
-		handle.Material=Enum.Material.Metal
+		local facing=if (entry.R or 0)%2==0 then 1 else -1
+		local hinge=if (entry.R or 0)<2 then -1 else 1
+		local panelWidth=if entry.Style=="Double" then width/2-0.2 else width-0.3
+		for _,side in if entry.Style=="Double" then {-1,1} else {hinge} do
+			local panel=piece("OpenDoor",Vector3.new(0.18,top-0.2,panelWidth),side*width/2,top/2,facing*panelWidth/2)
+			panel.CanCollide=false
+			local handle=piece("Handle",Vector3.new(0.12,0.16,0.35),side*width/2-side*0.15,4,facing*(panelWidth-0.4))
+			handle.Material=Enum.Material.Metal
+			handle:SetAttribute("BuildingFixedFinish",true)
+		end
 	end
 end
 local function floorRectangles(entry,pieces)
@@ -3440,8 +3550,10 @@ end
 local function drawFloor(parent,frame,entry,pieces,y,thickness,original)
 	local rectangles=floorRectangles(entry,pieces)
 	for _,rect in rectangles do
-		local floor=part(parent,"Floor",Vector3.new(rect[3]-rect[1],thickness,rect[4]-rect[2]),
-			frame*CFrame.new((rect[1]+rect[3])/2,y,(rect[2]+rect[4])/2),entry)
+		local r=entry.R or 0
+		local width,depth=rect[3]-rect[1],rect[4]-rect[2]
+		local floor=part(parent,"Floor",Vector3.new(if r%2==0 then width else depth,thickness,if r%2==0 then depth else width),
+			frame*CFrame.new((rect[1]+rect[3])/2,y,(rect[2]+rect[4])/2)*CFrame.Angles(0,r*math.pi/2,0),entry)
 		if original then
 			floor.Transparency=original.Transparency
 			floor.CanCollide,floor.CanQuery,floor.CanTouch=original.CanCollide,original.CanQuery,original.CanTouch
@@ -3490,6 +3602,11 @@ local function drawPiece(parent,frame,entry,pieces,builtins,site)
 			-- New finishes sit just above the original floor, avoiding coplanar flicker.
 			drawFloor(parent,frame,entry,pieces,floor+0.07,0.12)
 		else
+			local rotation=entry.R or 0
+			if rotation~=0 then
+				frame=frame*CFrame.new(x,0,z)*CFrame.Angles(0,rotation*math.pi/2,0)*CFrame.new(-x,0,-z)
+				if rotation%2==1 then width,depth=depth,width end
+			end
 			local eave=floor+Catalog.WALL_HEIGHT+0.15
 			if entry.Style=="Flat" then
 				part(parent,"FlatRoof",Vector3.new(width,0.3,depth),frame*CFrame.new(x,eave,z),entry)
@@ -3517,9 +3634,40 @@ local function drawPiece(parent,frame,entry,pieces,builtins,site)
 		end
 	end
 end
+local function layoutKey(data,builtins)
+	local rows={}
+	for id in builtins do table.insert(rows,"b:"..id) end
+	for id,edit in data.Overrides do if edit.Removed then table.insert(rows,"removed:"..id) end end
+	for _,entry in data.Pieces do
+		local fields={}
+		for _,key in {"Id","Kind","X1","Z1","X2","Z2","Level","Style","R","HostId","Offset"} do table.insert(fields,tostring(entry[key])) end
+		table.insert(rows,table.concat(fields,"|"))
+	end
+	table.sort(rows)
+	return table.concat(rows,"\n")
+end
+function Renderer.paint(model,data)
+	local finishes={}
+	for _,entry in data.Pieces do finishes[entry.Id]=entry end
+	for id,record in captures[model] or {} do
+		local edit=data.Overrides[id] or {}
+		finishes[id]={Material=edit.Material or record.Descriptor.Material,Color=edit.Color or record.Descriptor.Color}
+	end
+	for _,piece in model:GetDescendants() do
+		if not piece:IsA("BasePart") or piece:GetAttribute("BuildingFixedFinish") then continue end
+		local finish=finishes[piece:GetAttribute("BuildingId")]
+		if finish then piece.Color=color(finish.Color);piece.Material=Enum.Material[finish.Material] end
+	end
+end
 function Renderer.sync(model,frame,site,data)
 	local builtins=Renderer.capture(model,frame,site)
 	local folder=model:FindFirstChild("BuildingPieces")
+	local key=layoutKey(data,builtins)
+	local previous=layouts[model]
+	if previous and previous.Key==key and previous.Frame==frame and previous.Folder==folder and folder then
+		Renderer.paint(model,data)
+		return
+	end
 	if folder then folder:Destroy() end
 	folder=Instance.new("Folder")
 	folder.Name="BuildingPieces"
@@ -3564,6 +3712,7 @@ function Renderer.sync(model,frame,site,data)
 		drawPiece(folder,frame,entry,data.Pieces,builtins,site)
 	end
 	folder.Parent=model
+	layouts[model]={Key=key,Frame=frame,Folder=folder}
 end
 function Renderer.preview(parent,frame,entry,pieces,builtins,valid,site)
 	local model=Instance.new("Model")
@@ -3571,18 +3720,81 @@ function Renderer.preview(parent,frame,entry,pieces,builtins,valid,site)
 	local clean=Catalog.normalize(entry)
 	if not clean then model.Parent=parent return model end
 	clean.Id=clean.Id or "preview"
-	drawPiece(model,frame,clean,pieces or {},builtins or {},site)
+	local shape=Instance.new("Model")
+	shape.Name="PlacementShape"
+	drawPiece(shape,frame,clean,pieces or {},builtins or {},site)
+	shape.Parent=model
+	if clean.HostId then
+		local host=Catalog.host(pieces or {},builtins or {},clean.HostId)
+		if host then
+			host=table.clone(host)
+			host.BaseY=host.BaseY or (if site=="Company" then 0 else 0.16)+(host.Level or 0)*Catalog.LEVEL_HEIGHT
+			local walls=Instance.new("Model")
+			walls.Name="PreviewWallOpening"
+			drawWall(walls,frame,host,{clean})
+			for _,wall in walls:GetDescendants() do if wall:IsA("BasePart") then wall:SetAttribute("BuildingPreviewHost",true) end end
+			walls.Parent=model
+		end
+	end
 	for _,piece in model:GetDescendants() do
 		if piece:IsA("BasePart") then
-			piece.Color=if valid then Color3.fromRGB(193,153,235) else Color3.fromRGB(239,87,94)
-			piece.Material=Enum.Material.SmoothPlastic
-			piece.Transparency=0.5
+			if not piece:GetAttribute("BuildingPreviewHost") then
+				if not valid then piece.Color=Color3.fromRGB(239,87,94) end
+				piece.Transparency=math.max(piece.Transparency,0.35)
+			end
 			piece.CanCollide,piece.CanQuery,piece.CanTouch=false,false,false
 			piece.CastShadow=false
 		end
 	end
+	local outline=Instance.new("Highlight")
+	outline.Name="PlacementOutline"
+	outline.Adornee=shape
+	outline.FillTransparency=1
+	outline.OutlineColor=if valid then Color3.fromRGB(193,153,235) else Color3.fromRGB(239,87,94)
+	outline.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+	outline.Parent=model
 	model.Parent=parent
 	return model
+end
+function Renderer.thumbnail(view,raw)
+	if not view.Parent then return end
+	local old=view:FindFirstChild("BuildingThumbnail")
+	if old then old:Destroy() end
+	local entry=table.clone(raw)
+	entry.Level,entry.R,entry.Id=0,0,"thumbnail"
+	entry.X1,entry.Z1,entry.X2,entry.Z2=-4.5,-3,4.5,3
+	if entry.Kind=="Room" then entry.Kind,entry.Style="Wall","Solid" end
+	if entry.Kind=="Wall" then entry.Z1,entry.Z2=0,0 end
+	local hosts={}
+	if entry.Kind=="Window" or entry.Kind=="Door" then
+		entry.HostId,entry.Offset="thumbnail-wall",9
+		hosts[entry.HostId]={Id=entry.HostId,Kind="Wall",X1=-9,Z1=0,X2=9,Z2=0,Level=0,Height=Catalog.WALL_HEIGHT,Thickness=0.45}
+	end
+	local clean=Catalog.normalize(entry)
+	if not clean then return end
+	local world=Instance.new("WorldModel")
+	world.Name="BuildingThumbnail"
+	world.Parent=view
+	local model=Instance.new("Model")
+	drawPiece(model,CFrame.identity,clean,{},hosts,nil)
+	model.Parent=world
+	local box,size=model:GetBoundingBox()
+	local camera=Instance.new("Camera")
+	camera.FieldOfView=32
+	camera.Parent=world
+	view.CurrentCamera=camera
+	view.Ambient=Color3.fromRGB(200,200,210)
+	view.LightColor=Color3.fromRGB(255,245,230)
+	view.LightDirection=Vector3.new(-1,-2,-3)
+	local function fit()
+		local aspect=math.max(0.2,view.AbsoluteSize.X/math.max(1,view.AbsoluteSize.Y))
+		local fov=math.atan(math.tan(math.rad(16))*math.min(1,aspect))
+		local distance=math.max(1,size.Magnitude/2)/math.sin(fov)*1.06
+		local direction=if clean.HostId then Vector3.new(0.25,0.12,1).Unit else Vector3.new(1,0.7,1).Unit
+		camera.CFrame=CFrame.lookAt(box.Position+direction*distance,box.Position)
+	end
+	view:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+	fit()
 end
 return Renderer
 ]]></string>
@@ -4252,6 +4464,16 @@ function DayNight.clockTime(serverTime: number?): number
 		return override % 24
 	end
 	return DayNight.clockAt(DayNight.elapsed(serverTime))
+end
+
+-- Lighting.ClockTime moves the sun, and every move re-renders the shadow maps and
+-- relights the scene. Stepping it once per in-game minute (one real second, a
+-- quarter of a degree of sun) looks continuous instead of costing that every frame.
+DayNight.LIGHTING_STEP_HOURS = 1 / 60
+
+function DayNight.lightingClock(serverTime: number?): number
+	local step = DayNight.LIGHTING_STEP_HOURS
+	return math.floor(DayNight.clockTime(serverTime) / step) * step
 end
 
 function DayNight.isNight(clock: number): boolean
@@ -8455,19 +8677,28 @@ local function carp(b, p)
 	b:edgeFin(0.02, -0.06, { 0.06, 0.05 }, fin, true)
 	b:forkTail(0.15, 0.05, fin)
 	b:pectoral(0.2, -0.08, 0.1, 0.04, fin)
-	-- On the smooth skin scales overlap like shingles; spaced ones read as spots.
-	local rowStep, columnStep = if p.mesh then 0.03 else 0.04, if p.mesh then 0.032 else 0.045
-	local scaleWidth, scaleHeight = if p.mesh then 0.04 else 0.036, if p.mesh then 0.034 else 0.03
+	-- Scale discs belong to the sphere body, where they hide its seams, so they
+	-- are laid on its spheres and hidden with it. On the smooth skin they read
+	-- as studs; its back-to-belly bands carry the colour instead.
+	local loft = b.loft
+	local existing = {}
+	for _, item in b.model:GetChildren() do
+		existing[item] = true
+	end
+	b.loft = nil
 	local row = 0
-	for y = -0.1, if p.mesh then 0.14 else 0.105, rowStep do
+	for y = -0.1, 0.105, 0.04 do
 		row += 1
-		for x = 0.2 - (row % 2) * columnStep / 2, -0.32, -columnStep do
-			local color = if (row + math.floor(x * 40)) % 3 == 0 then p.scale else p.scaleAlt
-			if p.mesh then
-				-- Scales darken into the back instead of stopping at an edge.
-				color = color:Lerp(colors.back, math.clamp((y - 0.03) / 0.09, 0, 0.8))
+		for x = 0.2 - (row % 2) * 0.022, -0.32, -0.045 do
+			b:marks(x, y, 0.036, 0.03, if (row + math.floor(x * 40)) % 3 == 0 then p.scale else p.scaleAlt)
+		end
+	end
+	b.loft = loft
+	if loft then
+		for _, item in b.model:GetChildren() do
+			if not existing[item] then
+				item:SetAttribute("LoftFallback", true)
 			end
-			b:marks(x, y, scaleWidth, scaleHeight, color)
 		end
 	end
 	for _, side in { 1, -1 } do
@@ -11270,6 +11501,35 @@ Furniture.Order = {
 }
 -- Supplied with a company island (AnglerData.COMPANY_KIT) instead of sold.
 Furniture.KitOrder = { "CompanyPrep", "CompanyDesk" }
+-- Catalogue groups describe the existing inventory; they do not change purchase
+-- rules, placement rooms, or ownership.
+Furniture.Categories = {
+	{ Id = "All", Name = "All" },
+	{ Id = "Shop", Name = "Shop counters" },
+	{ Id = "Kitchen", Name = "Kitchen" },
+	{ Id = "Storage", Name = "Storage" },
+	{ Id = "Seating", Name = "Tables & seating" },
+	{ Id = "Lighting", Name = "Lighting" },
+	{ Id = "Plants", Name = "Plants" },
+	{ Id = "Nautical", Name = "Nautical" },
+	{ Id = "Decor", Name = "Decorations" },
+}
+local CATEGORY_BY_ITEM = {
+	Freezer = "Shop", Register = "Shop", FoodCase = "Shop",
+	GrillStation = "Kitchen", Smoker = "Kitchen", SushiBar = "Kitchen", CompanyPrep = "Kitchen",
+	StorageRack = "Storage", KitchenStorage = "Storage", Bookcase = "Storage", WallShelf = "Storage",
+	DiningTable = "Seating", WoodenBench = "Seating", CompanyDesk = "Seating",
+	FloorLamp = "Lighting", PottedPlant = "Plants", FlowerPlanter = "Plants",
+	BarrelDisplay = "Nautical", CrateStack = "Nautical", RopeBasket = "Nautical", LifeRingStand = "Nautical",
+	AnchorDisplay = "Nautical", FishingNetDisplay = "Nautical", NauticalSign = "Nautical", ShipWheelDisplay = "Nautical",
+	WeatherRadar = "Decor", FishStatue = "Decor", Aquarium = "Decor", Rug = "Decor", CoatRack = "Decor",
+}
+function Furniture.category(itemId: string): string
+	return CATEGORY_BY_ITEM[itemId] or "Decor"
+end
+function Furniture.matchesCategory(itemId: string, category: string): boolean
+	return category == "All" or Furniture.category(itemId) == category
+end
 local DECORATION_ROOMS = { "Shop", "Storage", "Processing" }
 
 Furniture.Items = {
@@ -12314,6 +12574,17 @@ end
       </Item>
       <Item class="ModuleScript" referent="107">
         <Properties>
+          <string name="Name">MeshFeatures</string>
+          <string name="Source"><![CDATA[-- Enable only after allowing Mesh & Image APIs in the experience security settings.
+-- The ordinary fish bodies and terrain water remain available when this is off.
+return {
+	EditableMeshesEnabled = false,
+}
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="108">
+        <Properties>
           <string name="Name">MetroSchedule</string>
           <string name="Source"><![CDATA[-- One absolute clock drives both termini, doors, indicators and passenger journeys.
 local Schedule = {}
@@ -12376,7 +12647,7 @@ return Schedule
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="108">
+      <Item class="ModuleScript" referent="109">
         <Properties>
           <string name="Name">MetroTrain</string>
           <string name="Source"><![CDATA[-- Three walk-through cars. The server builds a small invisible collision hull;
@@ -12550,7 +12821,7 @@ return Train
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="109">
+      <Item class="ModuleScript" referent="110">
         <Properties>
           <string name="Name">MusselNets</string>
           <string name="Source"><![CDATA[-- Shared rules for mussel nets, saved in dock-local coordinates like crab cages.
@@ -12707,7 +12978,7 @@ return MusselNets
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="110">
+      <Item class="ModuleScript" referent="111">
         <Properties>
           <string name="Name">MutationContext</string>
           <string name="Source"><![CDATA[-- Server-side catch context from the validated location and catch owner.
@@ -12731,7 +13002,7 @@ return MutationContext
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="111">
+      <Item class="ModuleScript" referent="112">
         <Properties>
           <string name="Name">Paths</string>
           <string name="Source"><![CDATA[-- Business paths shown on the Home ▸ Paths tab. A player starts as a fish shop and
@@ -13006,7 +13277,7 @@ return Paths
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="112">
+      <Item class="ModuleScript" referent="113">
         <Properties>
           <string name="Name">PirateCove</string>
           <string name="Source"><![CDATA[-- Pirate Cove: a tropical trading island in the Coral Shallows, between home and the lagoon. Its
@@ -13474,7 +13745,7 @@ return PirateCove
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="113">
+      <Item class="ModuleScript" referent="114">
         <Properties>
           <string name="Name">Recipes</string>
           <string name="Source"><![CDATA[-- Kitchen recipes for the Supermarket path. A dish is cooked from one carried fish
@@ -13621,7 +13892,7 @@ return Recipes
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="114">
+      <Item class="ModuleScript" referent="115">
         <Properties>
           <string name="Name">RodDynamics</string>
           <string name="Source"><![CDATA[-- Exact damped springs keep the visual rod and its hanging float stable at
@@ -13695,7 +13966,7 @@ return RodDynamics
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="115">
+      <Item class="ModuleScript" referent="116">
         <Properties>
           <string name="Name">RodSkins</string>
           <string name="Source"><![CDATA[-- Rod skins won from crates at the Tide & Tackle counter. A skin restyles the
@@ -14021,7 +14292,7 @@ return RodSkins
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="116">
+      <Item class="ModuleScript" referent="117">
         <Properties>
           <string name="Name">RodUpgrades</string>
           <string name="Source"><![CDATA[-- Rod upgrades sold by Finn at the Tide & Tackle counter. Each stat has its own
@@ -14121,7 +14392,7 @@ return RodUpgrades
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="117">
+      <Item class="ModuleScript" referent="118">
         <Properties>
           <string name="Name">Seasons</string>
           <string name="Source"><![CDATA[-- The season follows the in-game calendar's months (meteorological seasons: spring is March to
@@ -14180,7 +14451,7 @@ return Seasons
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="118">
+      <Item class="ModuleScript" referent="119">
         <Properties>
           <string name="Name">SharkDrops</string>
           <string name="Source"><![CDATA[-- Each roll is independent; every eligible contributor gets 2 to 5 rolls.
@@ -14212,7 +14483,7 @@ return SharkDrops
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="119">
+      <Item class="ModuleScript" referent="120">
         <Properties>
           <string name="Name">ShopUpgrades</string>
           <string name="Source"><![CDATA[-- Shared shop upgrade prices and customer arrival settings.
@@ -14242,7 +14513,7 @@ return Upgrades
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="120">
+      <Item class="ModuleScript" referent="121">
         <Properties>
           <string name="Name">SpearSkins</string>
           <string name="Source"><![CDATA[-- Shark spear crate rewards. Colors are RGB triplets so this catalog can also
@@ -14483,7 +14754,7 @@ return SpearSkins
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="121">
+      <Item class="ModuleScript" referent="122">
         <Properties>
           <string name="Name">Spears</string>
           <string name="Source"><![CDATA[-- Rules and the replicated hotbar tool for the shark-hunting spear.
@@ -14681,7 +14952,7 @@ return Spears
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="122">
+      <Item class="ModuleScript" referent="123">
         <Properties>
           <string name="Name">StaffCatalog</string>
           <string name="Source"><![CDATA[-- One permanent hire per role; prices are charged by the server once.
@@ -14833,7 +15104,7 @@ return Staff
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="123">
+      <Item class="ModuleScript" referent="124">
         <Properties>
           <string name="Name">TrawlerNet</string>
           <string name="Source"><![CDATA[-- Pure catch rules for the trawler's purchased stern net. The net only lands
@@ -14908,7 +15179,7 @@ return TrawlerNet
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="124">
+      <Item class="ModuleScript" referent="125">
         <Properties>
           <string name="Name">Tutorial</string>
           <string name="Source"><![CDATA[-- The island tutorial: a chain of locals round the plaza who each explain one part of the game.
@@ -15215,7 +15486,7 @@ return Tutorial
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="125">
+      <Item class="ModuleScript" referent="126">
         <Properties>
           <string name="Name">Weather</string>
           <string name="Source"><![CDATA[-- One server clock drives weather, visible swells and boat buoyancy on every client.
@@ -15875,11 +16146,11 @@ return Weather
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="126">
+  <Item class="ServerScriptService" referent="127">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="127">
+    <Item class="Script" referent="128">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -16038,7 +16309,7 @@ if not ok then
 end
 ]]></string>
       </Properties>
-      <Item class="ModuleScript" referent="128">
+      <Item class="ModuleScript" referent="129">
         <Properties>
           <string name="Name">AdminCommands</string>
           <string name="Source"><![CDATA[-- Private command replies and permission checks live on the server.
@@ -16218,7 +16489,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="129">
+      <Item class="ModuleScript" referent="130">
         <Properties>
           <string name="Name">AnglerData</string>
           <string name="Source"><![CDATA[-- Pure, copy-on-write progress stored inside the existing wallet profile.
@@ -18006,7 +18277,7 @@ return Data
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="130">
+      <Item class="ModuleScript" referent="131">
         <Properties>
           <string name="Name">AnglerService</string>
           <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -18468,7 +18739,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="131">
+      <Item class="ModuleScript" referent="132">
         <Properties>
           <string name="Name">BackpackService</string>
           <string name="Source"><![CDATA[-- Plaza purchases use the same wallet transaction as all other progress.
@@ -18622,7 +18893,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="132">
+      <Item class="ModuleScript" referent="133">
         <Properties>
           <string name="Name">BaseService</string>
           <string name="Source"><![CDATA[-- Gives each player one of the harbour bases for as long as they're in the server
@@ -18786,7 +19057,7 @@ return BaseService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="133">
+      <Item class="ModuleScript" referent="134">
         <Properties>
           <string name="Name">BoatData</string>
           <string name="Source"><![CDATA[-- Wallet/boat transactions are pure so the same rules run inside UpdateAsync and tests.
@@ -19395,7 +19666,7 @@ return BoatData
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="134">
+      <Item class="ModuleScript" referent="135">
         <Properties>
           <string name="Name">BoatLaunchCollision</string>
           <string name="Source"><![CDATA[-- Temporary launch filtering leaves island ground solid while docks, players,
@@ -19492,7 +19763,7 @@ return BoatLaunchCollision
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="135">
+      <Item class="ModuleScript" referent="136">
         <Properties>
           <string name="Name">BoatRefitService</string>
           <string name="Source"><![CDATA[-- Refits on the drydock lift. Owners sail their launched boat over the underwater
@@ -19897,7 +20168,7 @@ return BoatRefitService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="136">
+      <Item class="ModuleScript" referent="137">
         <Properties>
           <string name="Name">BoatService</string>
           <string name="Source"><![CDATA[-- Server-owned wallet transactions, dock permissions, and one active boat per player.
@@ -21389,7 +21660,7 @@ return BoatService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="137">
+      <Item class="ModuleScript" referent="138">
         <Properties>
           <string name="Name">BuildingService</string>
           <string name="Source"><![CDATA[-- Owner-authoritative structural editing. Geometry is only changed after the
@@ -21406,6 +21677,7 @@ local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local Service = {}
 local started = false
 local requests, busy, histories = {}, {}, {}
+local paintRequests = {}
 local watched, queued, applied = {}, {}, {}
 local update: RemoteEvent
 local HISTORY_LIMIT = 20
@@ -21621,6 +21893,31 @@ local function builtinTargets(builtins, id)
 	return result
 end
 
+local function paint(data, payload, builtins): string?
+	if type(payload) ~= "table" or not validId(payload.Id) then return "Select a building piece first." end
+	local custom, index = find(data.Pieces, payload.Id)
+	local target = custom or builtins[payload.Id]
+	if not target or (data.Overrides[payload.Id] and data.Overrides[payload.Id].Removed) then return "That building piece is no longer there." end
+	local previous = data.Overrides[payload.Id] or {}
+	local sample = clone(custom or {Kind="Wall",X1=0,Z1=0,X2=Building.GRID,Z2=0,Level=0})
+	sample.Color = payload.Color or previous.Color or target.Color
+	sample.Material = payload.Material or previous.Material or target.Material
+	if payload.Style ~= nil and payload.Style ~= sample.Style then return "Choose a shape from its catalogue to replace this piece." end
+	local normalized, problem = Building.normalize(sample)
+	if not normalized then return problem or "Choose a valid material and color." end
+	if custom then
+		normalized.Id = custom.Id
+		data.Pieces[index] = normalized
+	else
+		for _, id in builtinTargets(builtins, payload.Id) do
+			local override = data.Overrides[id] or {}
+			override.Material, override.Color = normalized.Material, clone(normalized.Color)
+			data.Overrides[id] = override
+		end
+	end
+	return nil
+end
+
 -- Pure transformation used once for rejection before a save and again against
 -- the newest profile inside the atomic wallet update.
 local function change(profile, site, action, payload, builtins, record)
@@ -21646,32 +21943,24 @@ local function change(profile, site, action, payload, builtins, record)
 			end
 			local entry, problem = Building.normalize(raw)
 			if not entry then return nil, problem or "Invalid building piece." end
+			if entry.Kind == "Stairs" then return nil, "Stairs are no longer in the build catalogue." end
 			entry.Id = "p" .. tostring(data.NextId)
 			data.NextId += 1
 			table.insert(data.Pieces, entry)
 			cost += Building.price(entry)
 		end
-	elseif action == "Paint" then
-		if not validId(payload.Id) then return nil, "Select a building piece first." end
-		local custom, index = find(data.Pieces, payload.Id)
-		local target = custom or builtins[payload.Id]
-		if not target or (data.Overrides[payload.Id] and data.Overrides[payload.Id].Removed) then return nil, "That building piece is no longer there." end
-		local previous = data.Overrides[payload.Id] or {}
-		local color = payload.Color or previous.Color or target.Color
-		local material = payload.Material or previous.Material or target.Material
-		local sample = clone(custom or { Kind = "Wall", X1 = 0, Z1 = 0, X2 = Building.GRID, Z2 = 0, Level = 0 })
-		sample.Color, sample.Material = color, material
-		if payload.Style ~= nil then sample.Style = payload.Style end
-		local normalized, problem = Building.normalize(sample)
-		if not normalized then return nil, problem or "Choose a valid material and color." end
-		if custom then
-			normalized.Id = custom.Id
-			data.Pieces[index] = normalized
+	elseif action == "Paint" or action == "PaintBatch" then
+		if action == "Paint" then
+			local problem = paint(data, payload, builtins)
+			if problem then return nil, problem end
 		else
-			for _, id in builtinTargets(builtins, payload.Id) do
-				local override = data.Overrides[id] or {}
-				override.Material, override.Color = normalized.Material, clone(normalized.Color)
-				data.Overrides[id] = override
+			if type(payload.Entries) ~= "table" or #payload.Entries < 1 or #payload.Entries > BATCH_LIMIT then return nil, "Paint up to 64 surfaces at a time." end
+			local count = 0
+			for index, entry in payload.Entries do
+				count += 1
+				if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > #payload.Entries or count > BATCH_LIMIT then return nil, "Invalid painting selection." end
+				local problem = paint(data, entry, builtins)
+				if problem then return nil, problem end
 			end
 		end
 	elseif action == "Remove" then
@@ -21705,7 +21994,10 @@ local function change(profile, site, action, payload, builtins, record)
 	else
 		return nil, "That building tool is unavailable."
 	end
-	if same(before, data) then return nil, "That surface already has this finish." end
+	if same(before, data) then
+		if action == "Paint" or action == "PaintBatch" then return {Before=clone(before),After=clone(data),Cost=0,Noop=true},nil end
+		return nil, "That surface already has this finish."
+	end
 	local problem = validate(profile, site, data, builtins)
 	if problem then return nil, problem end
 	if profile.Cash < cost then return nil, string.format("You need $%d for this build.", cost) end
@@ -21724,8 +22016,9 @@ local function edit(player: Player, action: string, payload, site: string): (boo
 	if not profile then return false, "Your progress is still loading." end
 	local builtins = Renderer.capture(model, frame, site)
 	local record = history(player, site, siteData(profile, site))
-	local _, reason = change(profile, site, action, payload, builtins, record)
+	local proposed, reason = change(profile, site, action, payload, builtins, record)
 	if reason then return false, reason end
+	if proposed.Noop then return true, "Saved." end
 	busy[player] = true
 	local committed
 	local ok, message = BoatService.updateProgress(player, function(current)
@@ -21737,6 +22030,7 @@ local function edit(player: Player, action: string, payload, site: string): (boo
 	end)
 	busy[player] = nil
 	if not ok then return false, message end
+	if committed.Noop then syncPlayer(player); return true, "Saved." end
 	if action == "Undo" then
 		local item = table.remove(record.Undo)
 		table.insert(record.Redo, item)
@@ -21771,10 +22065,20 @@ function Service.start()
 		if site ~= "Home" and site ~= "Company" then return { Ok = false, Message = "Unknown building plot." } end
 		if action == "Get" then return { Ok = true, State = state(player, site) } end
 		if type(action) ~= "string" or type(payload or {}) ~= "table" then return { Ok = false, Message = "Invalid building request." } end
-		if os.clock() - (requests[player] or -math.huge) < 0.3 then
-			return { Ok = false, Message = "Please wait a moment before using another tool.", State = state(player, site) }
+		if action == "PaintBatch" then
+			local now = os.clock()
+			local bucket = paintRequests[player] or {Tokens=4,At=now}
+			bucket.Tokens = math.min(4, bucket.Tokens + math.max(0, now - bucket.At) * 10)
+			bucket.At = now
+			paintRequests[player] = bucket
+			if bucket.Tokens < 1 then return {Ok=false,RetryAfter=0.1,Message="Painting is saving. Try again in a moment.",State=state(player,site)} end
+			bucket.Tokens -= 1
+		else
+			if os.clock() - (requests[player] or -math.huge) < 0.3 then
+				return { Ok = false, Message = "Please wait a moment before using another tool.", State = state(player, site) }
+			end
+			requests[player] = os.clock()
 		end
-		requests[player] = os.clock()
 		local ok, message = edit(player, action, payload or {}, site)
 		return { Ok = ok, Message = message, State = state(player, site) }
 	end
@@ -21791,7 +22095,7 @@ function Service.start()
 	Players.PlayerAdded:Connect(bindPlayer)
 	for _, player in Players:GetPlayers() do bindPlayer(player) end
 	Players.PlayerRemoving:Connect(function(player)
-		requests[player], busy[player], histories[player] = nil, nil, nil
+		requests[player], busy[player], histories[player], paintRequests[player] = nil, nil, nil, nil
 	end)
 	local function watch(plot: Instance, site: string)
 		if not plot:IsA("Model") or watched[plot] then return end
@@ -21823,7 +22127,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="138">
+      <Item class="ModuleScript" referent="139">
         <Properties>
           <string name="Name">CargoService</string>
           <string name="Source"><![CDATA[-- The angler's hand, backpack, and launched boat's cargo hold. The backpack is
@@ -22219,7 +22523,7 @@ return CargoService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="139">
+      <Item class="ModuleScript" referent="140">
         <Properties>
           <string name="Name">CatchService</string>
           <string name="Source"><![CDATA[-- Server-authoritative casting. The server validates each cast, decides when a
@@ -22542,7 +22846,7 @@ return CatchService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="140">
+      <Item class="ModuleScript" referent="141">
         <Properties>
           <string name="Name">ChefService</string>
           <string name="Source"><![CDATA[-- Hired chefs work independently at the owner's existing kitchen stations. Fish,
@@ -22827,7 +23131,7 @@ return ChefService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="141">
+      <Item class="ModuleScript" referent="142">
         <Properties>
           <string name="Name">CompanyIslandAccess</string>
           <string name="Source"><![CDATA[-- Small read-only interface; property ownership is assigned by CompanyIslandService.
@@ -22866,7 +23170,7 @@ return Access
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="142">
+      <Item class="ModuleScript" referent="143">
         <Properties>
           <string name="Name">CompanyIslandPorter</string>
           <string name="Source"><![CDATA[-- The island branch of a hired porter walks catches up the terrace stairs to the
@@ -23051,7 +23355,7 @@ return Porter
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="143">
+      <Item class="ModuleScript" referent="144">
         <Properties>
           <string name="Name">CompanyIslandService</string>
           <string name="Source"><![CDATA[-- Saved property entitlement, exclusive server plots, and the island's look: plain
@@ -23245,7 +23549,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="144">
+      <Item class="ModuleScript" referent="145">
         <Properties>
           <string name="Name">CompanyService</string>
           <string name="Source"><![CDATA[-- The Company path's hired fisherman. He takes the boat the owner assigned (Home ▸
@@ -23735,7 +24039,7 @@ return CompanyService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="145">
+      <Item class="ModuleScript" referent="146">
         <Properties>
           <string name="Name">CrabCageService</string>
           <string name="Source"><![CDATA[-- Crab cages at the angler's own dock. Cages bought at Tide & Tackle (FishingService)
@@ -24471,7 +24775,7 @@ return CrabCageService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="146">
+      <Item class="ModuleScript" referent="147">
         <Properties>
           <string name="Name">CustomerService</string>
           <string name="Source"><![CDATA[-- Shop customers. Owners carry fish individually to their base freezers; a customer
@@ -26191,7 +26495,7 @@ return CustomerService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="147">
+      <Item class="ModuleScript" referent="148">
         <Properties>
           <string name="Name">DashboardService</string>
           <string name="Source"><![CDATA[-- Reports this server's players and weather to the luma admin dashboard
@@ -26462,7 +26766,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="148">
+      <Item class="ModuleScript" referent="149">
         <Properties>
           <string name="Name">DrydockLaunch</string>
           <string name="Source"><![CDATA[-- A server reservation spans the saved purchase and the complete launch.
@@ -26821,7 +27125,7 @@ return DrydockLaunch
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="149">
+      <Item class="ModuleScript" referent="150">
         <Properties>
           <string name="Name">FishingBoat</string>
           <string name="Source"><![CDATA[-- A small working fisher, shared by the drydock display and owned boats.
@@ -27337,7 +27641,7 @@ return FishingBoat
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="150">
+      <Item class="ModuleScript" referent="151">
         <Properties>
           <string name="Name">FishingService</string>
           <string name="Source"><![CDATA[-- Server-authorized shop transactions and one restored Tool per rod owner.
@@ -28414,7 +28718,7 @@ return FishingService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="151">
+      <Item class="ModuleScript" referent="152">
         <Properties>
           <string name="Name">FurnitureService</string>
           <string name="Source"><![CDATA[-- Furniture bought at the plaza shop and placed in a base house from build mode, or
@@ -29277,7 +29581,7 @@ return FurnitureService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="152">
+      <Item class="ModuleScript" referent="153">
         <Properties>
           <string name="Name">GamepassService</string>
           <string name="Source"><![CDATA[-- Ownership is checked by the server, cached per session and refreshed after purchases.
@@ -29394,7 +29698,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="153">
+      <Item class="ModuleScript" referent="154">
         <Properties>
           <string name="Name">GuideCostume</string>
           <string name="Source"><![CDATA[-- Part-built clothes for the tutorial guides. Limb colours make the shirt, trousers, boots and
@@ -29950,7 +30254,7 @@ return Costume
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="154">
+      <Item class="ModuleScript" referent="155">
         <Properties>
           <string name="Name">HalloweenService</string>
           <string name="Source"><![CDATA[-- The Halloween party across Harbour Isle. On 31 October (in-game) the server puts up the
@@ -30734,7 +31038,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="155">
+      <Item class="ModuleScript" referent="156">
         <Properties>
           <string name="Name">Hovercraft</string>
           <string name="Source"><![CDATA[-- Navy skirted hovercraft with a ducted stern fan. Waterline origin; local -Z is the bow.
@@ -31035,7 +31339,7 @@ return Hovercraft
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="156">
+      <Item class="ModuleScript" referent="157">
         <Properties>
           <string name="Name">HullDamage</string>
           <string name="Source"><![CDATA[-- Shark bites leave lasting marks where the shark struck the hull: a splintered
@@ -31386,7 +31690,7 @@ return HullDamage
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="157">
+      <Item class="ModuleScript" referent="158">
         <Properties>
           <string name="Name">KitchenService</string>
           <string name="Source"><![CDATA[-- The Supermarket path's kitchen. Two prep benches stand in every unlocked
@@ -31890,7 +32194,7 @@ return KitchenService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="158">
+      <Item class="ModuleScript" referent="159">
         <Properties>
           <string name="Name">LeaderboardService</string>
           <string name="Source"><![CDATA[-- Saved profiles are authoritative. Ordered stores are retryable, monotonic
@@ -32096,7 +32400,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="159">
+      <Item class="ModuleScript" referent="160">
         <Properties>
           <string name="Name">Map</string>
           <string name="Source"><![CDATA[-- Generates the whole world: ocean, seabed, lighting and the five biomes.
@@ -32427,7 +32731,7 @@ end
 return Map
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="160">
+        <Item class="ModuleScript" referent="161">
           <Properties>
             <string name="Name">BackpackShop</string>
             <string name="Source"><![CDATA[-- A dedicated backpack stand takes the northern stall in the plaza market row.
@@ -32535,7 +32839,7 @@ return Shop
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="161">
+        <Item class="ModuleScript" referent="162">
           <Properties>
             <string name="Name">BaseHouse</string>
             <string name="Source"><![CDATA[-- Empty player-base shell. Local +Z is the front; the deck is y=0.
@@ -33351,7 +33655,7 @@ return BaseHouse
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="162">
+        <Item class="ModuleScript" referent="163">
           <Properties>
             <string name="Name">BeachDetails</string>
             <string name="Source"><![CDATA[-- Small, walk-through details that follow the beach mesh rather than a flat sand plane.
@@ -33507,7 +33811,7 @@ return BeachDetails
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="163">
+        <Item class="ModuleScript" referent="164">
           <Properties>
             <string name="Name">CashRegisterGeometry</string>
             <string name="Source"><![CDATA[-- Generated by scripts/import-tinkercad.cjs from Cash Register.zip.
@@ -35549,7 +35853,7 @@ return {
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="164">
+        <Item class="ModuleScript" referent="165">
           <Properties>
             <string name="Name">ChartCatalog</string>
             <string name="Source"><![CDATA[-- Lightweight chart records replicate independently of Workspace streaming.
@@ -35613,7 +35917,7 @@ return Catalog
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="165">
+        <Item class="ModuleScript" referent="166">
           <Properties>
             <string name="Name">CityBuildings</string>
             <string name="Source"><![CDATA[-- Contemporary Berlin-inspired mixed-use buildings. The lot origin is at
@@ -35938,7 +36242,7 @@ return CityBuildings
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="166">
+        <Item class="ModuleScript" referent="167">
           <Properties>
             <string name="Name">CityLand</string>
             <string name="Source"><![CDATA[-- Mainland geometry for the distant city: an irregular coastline cut by a long estuary.
@@ -36147,7 +36451,7 @@ return CityLand
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="167">
+        <Item class="ModuleScript" referent="168">
           <Properties>
             <string name="Name">CityLandmark</string>
             <string name="Source"><![CDATA[-- A contemporary civic landmark: a glass addition rises above masonry wings,
@@ -36297,7 +36601,7 @@ return CityLandmark
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="168">
+        <Item class="ModuleScript" referent="169">
           <Properties>
             <string name="Name">CityMetro</string>
             <string name="Source"><![CDATA[-- Hafen Mitte, the city's underground station, built like a London tube station under the
@@ -37180,7 +37484,7 @@ return CityMetro
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="169">
+        <Item class="ModuleScript" referent="170">
           <Properties>
             <string name="Name">CityPort</string>
             <string name="Source"><![CDATA[-- The city's docks, laid out like Southampton's at the head of a long estuary. Ships come
@@ -37692,7 +37996,7 @@ return CityPort
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="170">
+        <Item class="ModuleScript" referent="171">
           <Properties>
             <string name="Name">CityRefinery</string>
             <string name="Source"><![CDATA[-- An oil refinery on the western hinterland, set back behind the container terminal: a tank
@@ -38047,7 +38351,7 @@ return CityRefinery
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="171">
+        <Item class="ModuleScript" referent="172">
           <Properties>
             <string name="Name">CityStation</string>
             <string name="Source"><![CDATA[-- An open, glass-roofed transit hall between the port and the city centre.
@@ -38157,7 +38461,7 @@ return CityStation
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="172">
+        <Item class="ModuleScript" referent="173">
           <Properties>
             <string name="Name">CompanyIslands</string>
             <string name="Source"><![CDATA[-- Company islands. Local -Z faces Gullhaven.
@@ -39203,7 +39507,7 @@ return Islands
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="173">
+        <Item class="ModuleScript" referent="174">
           <Properties>
             <string name="Name">Decorations</string>
             <string name="Source"><![CDATA[-- Decorative, floor-placed furniture shared by the showroom, previews and bases.
@@ -39583,7 +39887,7 @@ return Decorations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="174">
+        <Item class="ModuleScript" referent="175">
           <Properties>
             <string name="Name">DiningRoom</string>
             <string name="Source"><![CDATA[-- The Restaurant path's dining room: an extension built onto the back of a base
@@ -39783,7 +40087,7 @@ return DiningRoom
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="175">
+        <Item class="ModuleScript" referent="176">
           <Properties>
             <string name="Name">Drydock</string>
             <string name="Source"><![CDATA[-- Walk-in industrial boatyard and launch controls. Versioned construction also
@@ -40147,7 +40451,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 		end
 		local npc = existing:FindFirstChild("Shipwright")
 		if npc and npc:IsA("Model") then
-			Shipwright.ensureAppearance(npc)
+			Shipwright.scheduleAppearance(npc)
 			Shipwright.ensureInteraction(npc)
 		end
 		DrydockInterior.ensure(existing, plazaFrame * CFrame.new(0, 0, 82))
@@ -40348,9 +40652,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	)
 	local npc = Shipwright.build(at(12, 2, -0.5))
 	npc.Parent = shop
-	-- build applies the outfit before the model is in the DataModel; retry here
-	-- for the rare case where a slow asset request failed the first time.
-	Shipwright.ensureAppearance(npc)
+	Shipwright.scheduleAppearance(npc)
 	part("WorkshopBench", Vector3.new(8, 0.5, 3), 13.5, 5.1, 9, STEEL, M.DiamondPlate)
 	for _, x in { 10.3, 16.7 } do
 		part("BenchLeg", Vector3.new(0.6, 3, 2), x, 3.5, 9, STEEL)
@@ -40475,7 +40777,7 @@ return Drydock
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="176">
+        <Item class="ModuleScript" referent="177">
           <Properties>
             <string name="Name">DrydockInterior</string>
             <string name="Source"><![CDATA[-- Fixed, hand-placed workshop dressing. Coordinates share Drydock's floor frame:
@@ -41216,7 +41518,7 @@ return Interior
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="177">
+        <Item class="ModuleScript" referent="178">
           <Properties>
             <string name="Name">FishFreezer</string>
             <string name="Source"><![CDATA[-- Supplied Tinkercad freezer, scaled for a comfortable shop counter height.
@@ -41291,7 +41593,7 @@ return FishFreezer
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="178">
+        <Item class="ModuleScript" referent="179">
           <Properties>
             <string name="Name">FishFreezerGeometry</string>
             <string name="Source"><![CDATA[-- Generated by node scripts/import-fish-freezer.cjs; edit the source OBJ/MTL instead.
@@ -41877,7 +42179,7 @@ return {
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="179">
+        <Item class="ModuleScript" referent="180">
           <Properties>
             <string name="Name">FurnitureShop</string>
             <string name="Source"><![CDATA[-- Harbour Home's plaza door leads to a furnished showroom away from the map.
@@ -42344,7 +42646,7 @@ return FurnitureShop
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="180">
+        <Item class="ModuleScript" referent="181">
           <Properties>
             <string name="Name">Harbour</string>
             <string name="Source"><![CDATA[-- The home island: a horseshoe of land wrapped around a sheltered bay that opens to the west.
@@ -44719,7 +45021,7 @@ return Harbour
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="181">
+        <Item class="ModuleScript" referent="182">
           <Properties>
             <string name="Name">ImportedModel</string>
             <string name="Source"><![CDATA[-- Native geometry shared by the supplied shop fixtures.
@@ -44859,7 +45161,7 @@ return ImportedModel
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="182">
+        <Item class="ModuleScript" referent="183">
           <Properties>
             <string name="Name">Islands</string>
             <string name="Source"><![CDATA[-- Faceted islands built as radial heightmaps: a center fan plus rings of quads,
@@ -45048,7 +45350,7 @@ return Islands
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="183">
+        <Item class="ModuleScript" referent="184">
           <Properties>
             <string name="Name">Kitchen</string>
             <string name="Source"><![CDATA[-- Kitchen fixtures for the Supermarket path: the processing room's cooking stations,
@@ -45559,7 +45861,7 @@ return Kitchen
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="184">
+        <Item class="ModuleScript" referent="185">
           <Properties>
             <string name="Name">Leaderboards</string>
             <string name="Source"><![CDATA[-- Six compact harbour noticeboards, arranged in pairs around the plaza.
@@ -45758,7 +46060,7 @@ return Boards
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="185">
+        <Item class="ModuleScript" referent="186">
           <Properties>
             <string name="Name">Lod</string>
             <string name="Source"><![CDATA[-- Far-away stand-ins for every island. Islands stream in piece by piece; until one has
@@ -46533,7 +46835,7 @@ return Lod
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="186">
+        <Item class="ModuleScript" referent="187">
           <Properties>
             <string name="Name">LowPoly</string>
             <string name="Source"><![CDATA[-- Flat-shaded geometry built from WedgeParts. Every triangle is two wedges,
@@ -46647,7 +46949,7 @@ return LowPoly
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="187">
+        <Item class="ModuleScript" referent="188">
           <Properties>
             <string name="Name">Mediterranean</string>
             <string name="Source"><![CDATA[-- Mediterranean set dressing for Harbour Isle: whitewashed cube houses, pastel townhouses, villas,
@@ -48135,7 +48437,7 @@ return Med
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="188">
+        <Item class="ModuleScript" referent="189">
           <Properties>
             <string name="Name">MetroStations</string>
             <string name="Source"><![CDATA[-- Walkable termini, including the migration of the old plaza stair and static train.
@@ -48529,7 +48831,7 @@ return Stations
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="189">
+        <Item class="ModuleScript" referent="190">
           <Properties>
             <string name="Name">ModernCity</string>
             <string name="Source"><![CDATA[-- A distant port city on its own stretch of mainland. Ships reach it up a long estuary, like
@@ -49091,7 +49393,7 @@ return City
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="190">
+        <Item class="ModuleScript" referent="191">
           <Properties>
             <string name="Name">PirateCove</string>
             <string name="Source"><![CDATA[-- Pirate Cove: a low tropical island in the Coral Shallows with a rocky headland, a long pier
@@ -49693,7 +49995,7 @@ return Cove
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="191">
+        <Item class="ModuleScript" referent="192">
           <Properties>
             <string name="Name">PlazaHouses</string>
             <string name="Source"><![CDATA[-- Rows of detailed two-tone townhouses closing in the piazza on its west, north and east sides:
@@ -50302,7 +50604,7 @@ return PlazaHouses
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="192">
+        <Item class="ModuleScript" referent="193">
           <Properties>
             <string name="Name">Props</string>
             <string name="Source"><![CDATA[-- Set dressing: trees, buildings, harbour clutter, rocks and effects, all using Roblox's textured materials.
@@ -52300,7 +52602,7 @@ return Props
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="193">
+        <Item class="ModuleScript" referent="194">
           <Properties>
             <string name="Name">Regions</string>
             <string name="Source"><![CDATA[-- Island layouts and set dressing for each biome, plus the open sea between them.
@@ -52920,7 +53222,7 @@ return Regions
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="194">
+        <Item class="ModuleScript" referent="195">
           <Properties>
             <string name="Name">RodShop</string>
             <string name="Source"><![CDATA[-- Tide & Tackle, the rod store on the west side of the piazza. Outside it is one of the plaza's
@@ -53868,7 +54170,7 @@ return RodShop
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="195">
+        <Item class="ModuleScript" referent="196">
           <Properties>
             <string name="Name">Seabed</string>
             <string name="Source"><![CDATA[-- Continuous underwater slopes, ending inside the sea floor.
@@ -53987,7 +54289,7 @@ return Seabed
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="196">
+        <Item class="ModuleScript" referent="197">
           <Properties>
             <string name="Name">SeabedDetails</string>
             <string name="Source"><![CDATA[-- Small, independently streamed underwater gardens. Sample the finished ground so
@@ -54557,7 +54859,7 @@ return SeabedDetails
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="197">
+        <Item class="ModuleScript" referent="198">
           <Properties>
             <string name="Name">SeabedLife</string>
             <string name="Source"><![CDATA[-- Static marine life built from the same textured, low-poly parts as the islands.
@@ -54696,7 +54998,7 @@ return SeabedLife
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="198">
+        <Item class="ModuleScript" referent="199">
           <Properties>
             <string name="Name">Shipwright</string>
             <string name="Source"><![CDATA[-- Mara is a locally built R6 rig dressed in genuine Roblox Marketplace items.
@@ -54707,6 +55009,7 @@ return SeabedLife
 -- present even when an asset request is slow or unavailable.
 
 local Shipwright = {}
+local scheduled: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
 local COSMETICS_VERSION = 3
 local SKIN = Color3.fromRGB(216, 164, 119)
@@ -54823,6 +55126,9 @@ function Shipwright.ensureAppearance(model: Model): boolean
 	if model:GetAttribute("CosmeticsVersion") == COSMETICS_VERSION then
 		return true
 	end
+	if not model:IsDescendantOf(game) then
+		return false
+	end
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		return false
@@ -54876,6 +55182,34 @@ function Shipwright.ensureAppearance(model: Model): boolean
 
 	model:SetAttribute("CosmeticsVersion", COSMETICS_VERSION)
 	return true
+end
+
+-- Asset loading may yield, and generated maps can be built outside the DataModel.
+-- Wait for parenting without holding up world generation or calling the avatar API early.
+function Shipwright.scheduleAppearance(model: Model)
+	if scheduled[model] or model:GetAttribute("CosmeticsVersion") == COSMETICS_VERSION then
+		return
+	end
+	scheduled[model] = true
+	local connection: RBXScriptConnection? = nil
+	local function tryStart()
+		if not model:IsDescendantOf(game) then
+			return
+		end
+		if connection then
+			connection:Disconnect()
+			connection = nil
+		end
+		task.spawn(function()
+			local ok, reason = pcall(Shipwright.ensureAppearance, model)
+			scheduled[model] = nil
+			if not ok then
+				warn("Shipwright appearance setup failed: " .. tostring(reason))
+			end
+		end)
+	end
+	connection = model.AncestryChanged:Connect(tryStart)
+	tryStart()
 end
 
 -- frame is at the soles of the boots. The rig looks along its local -Z axis.
@@ -54973,7 +55307,7 @@ function Shipwright.build(frame: CFrame): Model
 	humanoid.Parent = model
 
 	model.PrimaryPart = root
-	Shipwright.ensureAppearance(model)
+	ensureFace(model)
 	Shipwright.ensureInteraction(model)
 	return model
 end
@@ -54982,7 +55316,7 @@ return Shipwright
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="199">
+        <Item class="ModuleScript" referent="200">
           <Properties>
             <string name="Name">ShopDesk</string>
             <string name="Source"><![CDATA[local ImportedModel = require(script.Parent.ImportedModel)
@@ -55134,7 +55468,7 @@ return ShopDesk
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="200">
+        <Item class="ModuleScript" referent="201">
           <Properties>
             <string name="Name">ShopDeskGeometry</string>
             <string name="Source"><![CDATA[-- Generated by scripts/import-tinkercad.cjs from Ingenious Lappi.zip.
@@ -55351,7 +55685,7 @@ return {
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="201">
+        <Item class="ModuleScript" referent="202">
           <Properties>
             <string name="Name">StorageRack</string>
             <string name="Source"><![CDATA[-- Galvanised shelving for a base's storage room. Local +Z is the open front; the
@@ -55456,7 +55790,7 @@ return StorageRack
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="202">
+        <Item class="ModuleScript" referent="203">
           <Properties>
             <string name="Name">WeatherRadar</string>
             <string name="Source"><![CDATA[-- The weather radar: a round radar table on a pedestal, bought at the furniture
@@ -55550,7 +55884,7 @@ return WeatherRadar
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="203">
+      <Item class="ModuleScript" referent="204">
         <Properties>
           <string name="Name">MetroService</string>
           <string name="Source"><![CDATA[-- The server owns boarding, riders and transfers. Train visuals use the same
@@ -55779,7 +56113,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="204">
+      <Item class="ModuleScript" referent="205">
         <Properties>
           <string name="Name">MscPreziosa</string>
           <string name="Source"><![CDATA[-- A 1:1 model of the cruise ship MSC Preziosa (Fantasia class, STX France, 2013): 333.3 m long,
@@ -58091,7 +58425,7 @@ return MscPreziosa
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="205">
+      <Item class="ModuleScript" referent="206">
         <Properties>
           <string name="Name">MusselNetService</string>
           <string name="Source"><![CDATA[-- Mussel nets bought at Tide & Tackle are placed by the owner's dock. The server
@@ -58812,7 +59146,7 @@ return MusselNetService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="206">
+      <Item class="ModuleScript" referent="207">
         <Properties>
           <string name="Name">NpcCollision</string>
           <string name="Source"><![CDATA[-- Moving NPCs share a collision group so they can pass one another without
@@ -58858,7 +59192,7 @@ return NpcCollision
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="207">
+      <Item class="ModuleScript" referent="208">
         <Properties>
           <string name="Name">NpcNavigation</string>
           <string name="Source"><![CDATA[-- Shared server-side navigation for customers and staff.
@@ -59390,7 +59724,7 @@ return NpcNavigation
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="208">
+      <Item class="ModuleScript" referent="209">
         <Properties>
           <string name="Name">OxygenService</string>
           <string name="Source"><![CDATA[-- Owns a player's breath while their head is below the ocean surface.  The
@@ -59528,7 +59862,7 @@ return OxygenService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="209">
+      <Item class="ModuleScript" referent="210">
         <Properties>
           <string name="Name">PatrolBoat</string>
           <string name="Source"><![CDATA[-- Gray coastal patrol cruiser inspired by a long-bow, rear-wheelhouse launch.
@@ -60156,7 +60490,7 @@ return PatrolBoat
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="210">
+      <Item class="ModuleScript" referent="211">
         <Properties>
           <string name="Name">PirateCoveService</string>
           <string name="Source"><![CDATA[-- Pirate Cove's crew (Shared.PirateCove): quest givers, Gunner Flint who sells rods outright, and
@@ -60541,7 +60875,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="211">
+      <Item class="ModuleScript" referent="212">
         <Properties>
           <string name="Name">RacingSpeedboat</string>
           <string name="Source"><![CDATA[-- Long, low white racing launch with a charcoal cockpit and stern outboard. Waterline origin; local -Z is the bow.
@@ -61143,7 +61477,7 @@ return RacingSpeedboat
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="212">
+      <Item class="ModuleScript" referent="213">
         <Properties>
           <string name="Name">RestaurantService</string>
           <string name="Source"><![CDATA[-- The Restaurant path. Unlocking it builds a dining room onto the back of the
@@ -61562,7 +61896,7 @@ return RestaurantService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="213">
+      <Item class="ModuleScript" referent="214">
         <Properties>
           <string name="Name">RodSerials</string>
           <string name="Source"><![CDATA[-- One durable counter per skin, shared by every server in the experience.
@@ -61626,7 +61960,7 @@ return RodSerials
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="214">
+      <Item class="ModuleScript" referent="215">
         <Properties>
           <string name="Name">Rowboat</string>
           <string name="Source"><![CDATA[-- Native geometry shared by the drydock display and each player's working boat.
@@ -61973,7 +62307,7 @@ return Rowboat
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="215">
+      <Item class="ModuleScript" referent="216">
         <Properties>
           <string name="Name">ScaleModels</string>
           <string name="Source"><![CDATA[-- Admin-only showcase of full-size models, reached only with /tp models. It floats in its own patch
@@ -62203,7 +62537,7 @@ return ScaleModels
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="216">
+      <Item class="ModuleScript" referent="217">
         <Properties>
           <string name="Name">ServerUpdates</string>
           <string name="Source"><![CDATA[-- A newer running place version announces itself across servers. The durable
@@ -62495,7 +62829,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="217">
+      <Item class="ModuleScript" referent="218">
         <Properties>
           <string name="Name">SharkLootService</string>
           <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -62547,7 +62881,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="218">
+      <Item class="ModuleScript" referent="219">
         <Properties>
           <string name="Name">SharkModel</string>
           <string name="Source"><![CDATA[-- The attack shark, built from mesh ellipsoids and wedge-pair triangle fins like
@@ -62770,7 +63104,7 @@ return SharkModel
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="219">
+      <Item class="ModuleScript" referent="220">
         <Properties>
           <string name="Name">SharkService</string>
           <string name="Source"><![CDATA[-- Sharks are server-controlled so every crew member sees the same attacks.
@@ -63052,6 +63386,28 @@ local function spawnPack(folder: Folder, owner: Player, root: BasePart, params: 
 	return pack
 end
 
+-- Only the root replicates on most steps: each client's SharkSwim lays every
+-- visible piece out from it every frame, so pivoting the whole model sent ~40
+-- part CFrames per shark ten times a second. The pieces follow with a full pivot
+-- once the root has drifted this far, so the server's copy (which decides
+-- streaming) stays where the shark is.
+local RESYNC_DISTANCE = 30
+local function placeShark(shark, pose: CFrame)
+	local root = shark.model.PrimaryPart
+	local placed = shark.placedFrame
+	if root and placed and (pose.Position - placed.Position).Magnitude < RESYNC_DISTANCE then
+		root.CFrame = pose
+		return
+	end
+	-- PivotTo carries every piece by the root's move, so return the root to where
+	-- the pieces were last laid out first.
+	if root and placed then
+		root.CFrame = placed
+	end
+	shark.model:PivotTo(pose)
+	shark.placedFrame = pose
+end
+
 local function moveShark(shark, goal: Vector3, speed: number, params: RaycastParams, keepDistance: number)
 	local offset = Vector3.new(goal.X - shark.position.X, 0, goal.Z - shark.position.Z)
 	local distance = offset.Magnitude
@@ -63264,7 +63620,7 @@ function SharkService.start()
 					local biteAge = now - shark.lastBite
 					local lunge = if target and biteAge < 0.6 then math.sin(biteAge / 0.6 * math.pi) * 1.5 else 0
 					local direction = shark.direction
-					shark.model:PivotTo(CFrame.lookAt(surface + direction * lunge, surface + direction * (lunge + 1)))
+					placeShark(shark, CFrame.lookAt(surface + direction * lunge, surface + direction * (lunge + 1)))
 				end
 			end
 			task.wait(STEP)
@@ -63276,7 +63632,7 @@ return SharkService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="220">
+      <Item class="ModuleScript" referent="221">
         <Properties>
           <string name="Name">Speedboat</string>
           <string name="Source"><![CDATA[-- Blue-and-white sport cruiser. Waterline origin; local -Z is the bow.
@@ -63690,7 +64046,7 @@ return Speedboat
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="221">
+      <Item class="ModuleScript" referent="222">
         <Properties>
           <string name="Name">Trawler</string>
           <string name="Source"><![CDATA[-- Traditional teal stern trawler. Waterline origin; local -Z is the bow.
@@ -64226,7 +64582,7 @@ return Trawler
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="222">
+      <Item class="ModuleScript" referent="223">
         <Properties>
           <string name="Name">TrawlerNetService</string>
           <string name="Source"><![CDATA[-- The teal trawler's purchased stern net. Owns the visible gear welded behind the
@@ -64607,7 +64963,7 @@ return TrawlerNetService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="223">
+      <Item class="ModuleScript" referent="224">
         <Properties>
           <string name="Name">Tugboat</string>
           <string name="Source"><![CDATA[-- Stocky black harbour tug. Waterline origin; local -Z is the bow.
@@ -65279,7 +65635,7 @@ return Tugboat
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="224">
+      <Item class="ModuleScript" referent="225">
         <Properties>
           <string name="Name">TutorialService</string>
           <string name="Source"><![CDATA[-- The island tutorial: guides round the home plaza, each dressed for their job (GuideCostume),
@@ -65626,7 +65982,7 @@ return Service
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="225">
+      <Item class="ModuleScript" referent="226">
         <Properties>
           <string name="Name">WeatherService</string>
           <string name="Source"><![CDATA[-- Replicate a small deterministic forecast, never per-frame rain or wave instances.
@@ -65656,7 +66012,7 @@ function WeatherService.start()
 		elapsed %= 0.25
 		local now = workspace:GetServerTimeNow()
 		local state = Weather.getState(now)
-		Lighting.ClockTime = DayNight.clockTime(now)
+		Lighting.ClockTime = DayNight.lightingClock(now)
 		workspace.GlobalWind = state.windDirection * state.windSpeed
 		workspace:SetAttribute("WeatherKind", state.kind)
 		workspace:SetAttribute("WeatherRain", state.rain)
@@ -65672,21 +66028,21 @@ return WeatherService
       </Item>
     </Item>
   </Item>
-  <Item class="SoundService" referent="226">
+  <Item class="SoundService" referent="227">
     <Properties>
       <string name="Name">SoundService</string>
       <bool name="RespectFilteringEnabled">true</bool>
     </Properties>
   </Item>
-  <Item class="StarterPlayer" referent="227">
+  <Item class="StarterPlayer" referent="228">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="228">
+    <Item class="StarterPlayerScripts" referent="229">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="229">
+      <Item class="LocalScript" referent="230">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[-- Map streaming must not block shop input or equipment initialization.
@@ -65772,7 +66128,7 @@ for _, name in modules do
 end
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="230">
+        <Item class="ModuleScript" referent="231">
           <Properties>
             <string name="Name">AdminFly</string>
             <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -65841,7 +66197,7 @@ return Fly
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="231">
+        <Item class="ModuleScript" referent="232">
           <Properties>
             <string name="Name">AmbientFish</string>
             <string name="Source"><![CDATA[-- Cosmetic schools of fish swimming just under the surface around the camera,
@@ -65881,13 +66237,17 @@ local BEHIND_DOT = 0.15
 -- Depth of a fish's top below the calm surface; body size and swell add to it.
 local DEPTH = NumberRange.new(3, 6.5)
 local SWELL_MARGIN = 1.5 -- wave crests rise this many amplitudes above the calm level
+-- Water kept above the highest point of every model (dorsal fins, sails).
+local SURFACE_CLEARANCE = 1.5
 local MIN_CLEARANCE = 3 -- studs of water kept beneath a school
--- Studs per second: a lazy cruise, so schools drift past rather than dart.
-local SPEED = NumberRange.new(1, 2.2)
-local FLEE_BOOST = 4 -- brief startled dart away from a swimmer
-local FLEE_RADIUS = 14
-local FLEE_TIME = 1.6
-local FLEE_TURN = 6 -- radians per second while turning to escape
+-- Studs per second. Schools barely drift; anything quicker read as darting.
+local SPEED = 0.1
+-- Radians per second. A school's formation does not spin with its heading, so
+-- turning only re-aims the fish instead of swinging them round the school.
+local WANDER_TURN = 0.03
+local SHORE_TURN = 0.15
+local BOB_HEIGHT, BOB_RATE = 0.06, 0.4
+local TAIL_SWING, TAIL_RATE = 0.05, 2
 local PROBE_INTERVAL = 0.5
 local PROBE_AHEAD = 14
 -- Bottom dwellers, shellfish, plants and junk never swim in open water.
@@ -65965,6 +66325,10 @@ local function build(id: string): (Model?, BasePart?)
 	root.CFrame = CFrame.new(model:GetPivot().Position)
 	root.Transparency = 1
 	root.Anchored = true
+	-- Highest point above the root. Swimming only yaws the fish, so this holds
+	-- at any heading and keeps tall fins under the surface.
+	local box, size = model:GetBoundingBox()
+	root:SetAttribute("SwimTop", box.Position.Y + size.Y / 2 - root.Position.Y)
 	for _, item in model:GetDescendants() do
 		if item:IsA("BasePart") then
 			item.Anchored = false
@@ -66053,10 +66417,8 @@ function AmbientFish.start()
 		-- Clear the body, the school's vertical spread, the bob and rough swell so
 		-- fins and backs never break the surface.
 		local spread = if count == 1 then 0 else spacing * 0.3
-		local depth = between(DEPTH, rng)
-			+ length * 0.5
-			+ spread
-			+ Weather.getState(now, origin).waveAmplitude * SWELL_MARGIN
+		local swell = Weather.getState(now, origin).waveAmplitude * SWELL_MARGIN
+		local depth = between(DEPTH, rng) + length * 0.5 + spread + swell
 		local floor = floorAt(origin)
 		if not floor or floor > Biomes.WaterLevel - depth - MIN_CLEARANCE then
 			return
@@ -66069,17 +66431,14 @@ function AmbientFish.start()
 			solo = count == 1,
 			center = center,
 			depth = depth,
+			floor = floor,
+			ceiling = Biomes.WaterLevel - SURFACE_CLEARANCE - swell,
 			heading = rng:NextNumber(0, TAU),
 			turn = 0,
 			turnTarget = 0,
 			nextTurn = 0,
 			nextProbe = 0,
-			speed = between(SPEED, rng),
-			currentSpeed = 0,
-			fleeUntil = 0,
-			fleeHeading = 0,
 			blockedUntil = 0,
-			blockedDirection = Vector3.xAxis,
 			members = {},
 		}
 		table.insert(schools, school)
@@ -66141,20 +66500,33 @@ function AmbientFish.start()
 			if school.solo then
 				offset = Vector3.zero
 			end
-			-- Start in the slot the school will hold, not swinging into it.
-			local position = school.center + CFrame.Angles(0, -school.heading, 0) * offset
-			root.CFrame = CFrame.new(position)
+			-- A model that reaches higher than the school's depth allowed for sinks
+			-- the whole school, or drops it when the seabed leaves no room.
+			local top = school.center.Y + offset.Y + (root:GetAttribute("SwimTop") or 0) + BOB_HEIGHT
+			if top > school.ceiling then
+				local sunk = school.center - Vector3.yAxis * (top - school.ceiling)
+				if sunk.Y - MIN_CLEARANCE < school.floor then
+					table.insert(retired, { id = school.id, model = model, root = root })
+					school.remaining = 0
+					if #school.members == 0 then
+						despawn(school)
+					end
+					debug.profileend()
+					return
+				end
+				school.center = sunk
+			end
+			local position = school.center + offset
+			local forward = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading))
+			root.CFrame = CFrame.lookAt(position, position + forward) * CFrame.Angles(0, math.pi / 2, 0)
 			model.Parent = folder
 			table.insert(school.members, {
 				model = model,
 				root = root,
 				offset = offset,
 				position = position,
-				direction = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading)),
+				direction = forward,
 				phase = rng:NextNumber(0, TAU),
-				-- How tightly a fish holds its slot; loose springs sloshed fish back and
-				-- forth through the school whenever it sped up, slowed or turned.
-				lag = rng:NextNumber(4, 6),
 			})
 			debug.profileend()
 			return
@@ -66196,20 +66568,13 @@ function AmbientFish.start()
 		end
 
 		local now = os.clock()
-		local character = player.Character
-		local body = character and character:FindFirstChild("HumanoidRootPart")
-		local threat = if body
-				and body:IsA("BasePart")
-				and body.Position.Y < Biomes.WaterLevel + 4
-			then body.Position
-			else nil
 		local roots, frames = {}, {}
 		for index = #schools, 1, -1 do
 			local school = schools[index]
 			-- Wander with slow, smoothed turns.
 			if now >= school.nextTurn then
-				school.nextTurn = now + rng:NextNumber(2, 6)
-				school.turnTarget = rng:NextNumber(-0.5, 0.5)
+				school.nextTurn = now + rng:NextNumber(4, 10)
+				school.turnTarget = rng:NextNumber(-WANDER_TURN, WANDER_TURN)
 			end
 			local forward = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading))
 			if now >= school.nextProbe then
@@ -66222,72 +66587,35 @@ function AmbientFish.start()
 				end
 				local floor = floorAt(school.center + forward * PROBE_AHEAD)
 				if not floor or floor > school.center.Y - MIN_CLEARANCE then
-					-- Shallows, a beach or the map edge ahead: swing round, and never
-					-- flee that way, so a swimmer can't chase fish ashore.
-					school.turnTarget = if school.turnTarget >= 0 then 1.6 else -1.6
-					school.nextTurn = now + 1.5
-					school.blockedUntil = now + 1.5
-					school.blockedDirection = forward
+					-- Shallows, a beach or the map edge ahead: ease round.
+					school.turnTarget = if school.turnTarget >= 0 then SHORE_TURN else -SHORE_TURN
+					school.nextTurn = now + 3
+					school.blockedUntil = now + 3
 				end
 			end
-			local blocked = now < school.blockedUntil
-			if threat then
-				local away = Vector3.new(school.center.X - threat.X, 0, school.center.Z - threat.Z)
-				local towardShore = blocked and away:Dot(school.blockedDirection) > 0
-				if away.Magnitude < FLEE_RADIUS and away.Magnitude > 0.01 and not towardShore then
-					school.fleeUntil = now + FLEE_TIME
-					school.fleeHeading = math.atan2(away.Z, away.X)
-				end
-			end
-			local fleeHeading = Vector3.new(math.cos(school.fleeHeading), 0, math.sin(school.fleeHeading))
-			local fleeing = now < school.fleeUntil
-				and not (blocked and fleeHeading:Dot(school.blockedDirection) > 0)
-			if fleeing then
-				-- Steer onto the escape line quickly but continuously; snapping the
-				-- heading swung every member across the school each frame.
-				local delta = (school.fleeHeading - school.heading + math.pi) % TAU - math.pi
-				school.heading += math.clamp(delta, -FLEE_TURN * dt, FLEE_TURN * dt)
-				school.turn = 0
-			else
-				school.turn += (school.turnTarget - school.turn) * (1 - math.exp(-dt * 1.5))
-				school.heading += school.turn * dt
-			end
-			-- Ease speed changes too, and slow right down while turning off a shore.
-			local targetSpeed = school.speed * (if fleeing then FLEE_BOOST elseif blocked then 0.4 else 1)
-			-- A startle bolts at once; settling back to a cruise is gradual.
-			local ease = if targetSpeed > school.currentSpeed then 8 else 2
-			school.currentSpeed += (targetSpeed - school.currentSpeed) * (1 - math.exp(-dt * ease))
-			local speed = school.currentSpeed
+			school.turn += (school.turnTarget - school.turn) * (1 - math.exp(-dt * 0.5))
+			school.heading += school.turn * dt
+			local speed = if now < school.blockedUntil then SPEED * 0.5 else SPEED
 			forward = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading))
 			school.center += forward * speed * dt
-			local spin = CFrame.Angles(0, -school.heading, 0)
 			local toSchool = school.center - eye
 			local distance = toSchool.Magnitude
-			local shown = fleeing
-				or distance < FLEE_RADIUS
-				or (look:Dot(toSchool / distance) > BEHIND_DOT and (distance < NEAR_DISTANCE or (frame + index) % FAR_STRIDE == 0))
+			local shown = look:Dot(toSchool / distance) > BEHIND_DOT
+				and (distance < NEAR_DISTANCE or (frame + index) % FAR_STRIDE == 0)
 			for _, fish in school.members do
-				local bob = Vector3.yAxis * math.sin(now * 0.8 + fish.phase) * 0.25
-				local target = school.center + spin * fish.offset + bob
-				local step = target - fish.position
-				fish.position += step * (1 - math.exp(-dt * fish.lag))
-				local heading = (forward * speed + step * 0.6)
-				if heading.Magnitude > 0.05 then
-					fish.direction = fish.direction:Lerp(heading.Unit, 1 - math.exp(-dt * 4))
-				end
+				-- The formation translates with the school but never rotates, so a
+				-- fish only ever moves at the school's own crawl plus a slight bob.
+				local bob = math.sin(now * BOB_RATE + fish.phase) * BOB_HEIGHT
+				fish.position = school.center + fish.offset + Vector3.yAxis * bob
+				fish.direction = fish.direction:Lerp(forward, 1 - math.exp(-dt * 0.5)).Unit
 				if not shown then
 					continue
 				end
-				local direction = Vector3.new(fish.direction.X, fish.direction.Y * 0.3, fish.direction.Z)
-				if direction.Magnitude < 0.01 then
-					direction = forward
-				end
-				-- A body yaw at swimming frequency reads as a tail beat at this range.
-				local wiggle = math.sin(now * (2.5 + speed) + fish.phase) * 0.07
+				local tail = math.sin(now * TAIL_RATE + fish.phase) * TAIL_SWING
 				table.insert(roots, fish.root)
 				table.insert(
 					frames,
-					CFrame.lookAt(fish.position, fish.position + direction) * CFrame.Angles(0, math.pi / 2 + wiggle, 0)
+					CFrame.lookAt(fish.position, fish.position + fish.direction) * CFrame.Angles(0, math.pi / 2 + tail, 0)
 				)
 			end
 		end
@@ -66303,7 +66631,7 @@ return AmbientFish
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="232">
+        <Item class="ModuleScript" referent="233">
           <Properties>
             <string name="Name">BackgroundMusic</string>
             <string name="Source"><![CDATA[-- Background music: a warm harbor playlist while on land and a calmer, more open
@@ -66482,7 +66810,7 @@ return BackgroundMusic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="233">
+        <Item class="ModuleScript" referent="234">
           <Properties>
             <string name="Name">BackpackShop</string>
             <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -66686,7 +67014,7 @@ return Shop
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="234">
+        <Item class="ModuleScript" referent="235">
           <Properties>
             <string name="Name">BiomeAtmosphere</string>
             <string name="Source"><![CDATA[-- Blends water colour, fog and colour grading toward whichever biome the camera is in,
@@ -66800,8 +67128,37 @@ function BiomeAtmosphere.start()
 			tween:Cancel()
 		end
 		table.clear(activeTweens)
+		-- This runs every half second. Tweening values that barely moved kept Lighting,
+		-- Atmosphere and grading changing on every frame, and each change relights the
+		-- scene; drift below these thresholds waits until it adds up.
 		local function blend(instance: Instance, properties: { [string]: any })
-			local tween = TweenService:Create(instance, transition, properties)
+			local changed = {}
+			local any = false
+			for name, target in properties do
+				local current = (instance :: any)[name]
+				local differs
+				if typeof(current) ~= typeof(target) then
+					differs = true
+				elseif typeof(target) == "Color3" then
+					differs = math.max(
+						math.abs(current.R - target.R),
+						math.abs(current.G - target.G),
+						math.abs(current.B - target.B)
+					) > 1.5 / 255
+				elseif type(target) == "number" then
+					differs = math.abs(current - target) > 0.004
+				else
+					differs = current ~= target
+				end
+				if differs then
+					changed[name] = target
+					any = true
+				end
+			end
+			if not any then
+				return
+			end
+			local tween = TweenService:Create(instance, transition, changed)
 			table.insert(activeTweens, tween)
 			tween:Play()
 		end
@@ -66916,6 +67273,7 @@ function BiomeAtmosphere.start()
 	local underwater = false
 	local biomeElapsed = 0.5
 	local weatherElapsed = 0.5
+	local lastClock: number? = nil
 	-- Follow the camera (including third-person/free cameras), not the avatar.
 	RunService:BindToRenderStep("BiomeAtmosphere", Enum.RenderPriority.Camera.Value + 1, function(dt: number)
 		local camera = workspace.CurrentCamera
@@ -66923,7 +67281,13 @@ function BiomeAtmosphere.start()
 			PlayerSettings.setUnderwater(false)
 			return
 		end
-		Lighting.ClockTime = DayNight.clockTime()
+		-- Stepped, and only written when the step changes (see DayNight.lightingClock).
+		-- Compare with what we wrote: ClockTime reads back rounded.
+		local clock = DayNight.lightingClock()
+		if clock ~= lastClock then
+			lastClock = clock
+			Lighting.ClockTime = clock
+		end
 		local position = camera.CFrame.Position
 		biomeElapsed += dt
 		weatherElapsed += dt
@@ -66957,7 +67321,7 @@ return BiomeAtmosphere
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="235">
+        <Item class="ModuleScript" referent="236">
           <Properties>
             <string name="Name">BlackHoleWeather</string>
             <string name="Source"><![CDATA[-- A client-only singularity and three rotating water spirals. The server owns
@@ -67093,7 +67457,7 @@ return Controller
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="236">
+        <Item class="ModuleScript" referent="237">
           <Properties>
             <string name="Name">BoatAudio</string>
             <string name="Source"><![CDATA[-- Each client mixes positional engines for every boat it has streamed in.
@@ -67174,7 +67538,7 @@ return BoatAudio
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="237">
+        <Item class="ModuleScript" referent="238">
           <Properties>
             <string name="Name">BoatCamera</string>
             <string name="Source"><![CDATA[-- Helm camera views. Trailing restores Roblox's follow camera; the other modes
@@ -67393,7 +67757,7 @@ return BoatCamera
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="238">
+        <Item class="ModuleScript" referent="239">
           <Properties>
             <string name="Name">BoatDriving</string>
             <string name="Source"><![CDATA[-- Drives the local player's own hull. While they are at the helm the server hands this
@@ -67508,7 +67872,7 @@ return BoatDriving
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="239">
+        <Item class="ModuleScript" referent="240">
           <Properties>
             <string name="Name">BoatHealth</string>
             <string name="Source"><![CDATA[-- Shows the health of the boat the local player is riding or standing on.
@@ -67697,7 +68061,7 @@ return BoatHealth
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="240">
+        <Item class="ModuleScript" referent="241">
           <Properties>
             <string name="Name">BoatPreview</string>
             <string name="Source"><![CDATA[-- Uses replicated copies of the real builders, independent of world streaming.
@@ -67815,7 +68179,7 @@ return BoatPreview
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="241">
+        <Item class="ModuleScript" referent="242">
           <Properties>
             <string name="Name">BoatRefit</string>
             <string name="Source"><![CDATA[-- The drydock refit menu. Slowing your own boat over the underwater lift behind
@@ -68487,7 +68851,7 @@ return BoatRefit
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="242">
+        <Item class="ModuleScript" referent="243">
           <Properties>
             <string name="Name">BoatSpray</string>
             <string name="Source"><![CDATA[-- Local stern spray for streamed-in, motor-powered player boats.
@@ -68636,7 +69000,7 @@ return BoatSpray
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="243">
+        <Item class="ModuleScript" referent="244">
           <Properties>
             <string name="Name">Boating</string>
             <string name="Source"><![CDATA[-- Drydock shop and owner-only dock prompts. Cash and ownership come from the server.
@@ -69919,7 +70283,7 @@ return Boating
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="244">
+        <Item class="ModuleScript" referent="245">
           <Properties>
             <string name="Name">BuildMode</string>
             <string name="Source"><![CDATA[-- Build mode: at home, press B (or the Build button) for an angled building view
@@ -70051,6 +70415,8 @@ function BuildMode.start()
 	local touchStart = Vector2.zero
 	local touchDragged = false
 	local structures = nil
+	local furnitureCategory = "All"
+	local ghostParts = {}
 
 	-- HUD
 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
@@ -70104,14 +70470,16 @@ function BuildMode.start()
 		return item
 	end
 	local inventoryTitle = label(panel, "Unplaced furniture", {
-		Position = UDim2.fromOffset(16, 12),
-		Size = UDim2.new(1, -32, 0, 26),
-		TextSize = 20,
+		Position = UDim2.fromOffset(16, 6),
+		Size = UDim2.new(1, -32, 0, 22),
+		TextSize = 18,
 	})
 	local hint = label(panel, "", {
-		Position = UDim2.fromOffset(16, 38),
-		Size = UDim2.new(1, -32, 0, 32),
-		TextSize = 12,
+		Position = UDim2.fromOffset(16, 28),
+		Size = UDim2.new(1, -32, 0, 15),
+		TextSize = 11,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Font = Enum.Font.Gotham,
 		TextColor3 = Theme.Colors.Muted,
 	})
@@ -70135,7 +70503,15 @@ function BuildMode.start()
 		})
 		return strip
 	end
-	local catalogue = horizontalStrip("Placeables", 76, 60)
+	local categoryStrip = horizontalStrip("FurnitureCategories", 46, 27)
+	local categoryButtons = {}
+	for index, category in Furniture.Categories do
+		categoryButtons[category.Id] = button(categoryStrip, category.Name, {
+			Name = "FurnitureCategory" .. category.Id, LayoutOrder = index,
+			Size = UDim2.fromOffset(if #category.Name > 12 then 164 else 126, 22), TextSize = 11,
+		})
+	end
+	local catalogue = horizontalStrip("Placeables", 78, 62)
 	local actions = horizontalStrip("BuildActions", 144, 36)
 	local itemButtons = {}
 	local stockLabels = {}
@@ -70144,7 +70520,7 @@ function BuildMode.start()
 		local card = button(catalogue, "", {
 			Name = "Hold" .. id,
 			LayoutOrder = index,
-			Size = UDim2.fromOffset(196, 52),
+			Size = UDim2.fromOffset(232, 56),
 			TextWrapped = true,
 			Visible = false,
 		})
@@ -70152,21 +70528,21 @@ function BuildMode.start()
 		local view = make("ViewportFrame", card, {
 			Name = "FurnitureThumbnail",
 			BackgroundTransparency = 1,
-			Position = UDim2.fromOffset(4, 4),
-			Size = UDim2.fromOffset(64, 44),
+			Position = UDim2.fromOffset(4, 2),
+			Size = UDim2.fromOffset(92, 52),
 			Active = false,
 			ZIndex = 2,
 		})
 		itemViews[id] = view
 		label(card, Furniture.Items[id].Name, {
-			Position = UDim2.fromOffset(76, 4),
-			Size = UDim2.fromOffset(112, 26),
+			Position = UDim2.fromOffset(102, 4),
+			Size = UDim2.fromOffset(124, 28),
 			TextSize = 12,
 			ZIndex = 3,
 		})
 		stockLabels[id] = label(card, "", {
-			Position = UDim2.fromOffset(76, 32),
-			Size = UDim2.fromOffset(112, 16),
+			Position = UDim2.fromOffset(102, 35),
+			Size = UDim2.fromOffset(124, 16),
 			TextSize = 11,
 			ZIndex = 3,
 			TextColor3 = Theme.Colors.Muted,
@@ -70313,25 +70689,36 @@ function BuildMode.start()
 		if item:IsDescendantOf(panel) then StructureEditor.styleButton(item, appearance) else Theme.glassButton(item, appearance) end
 	end
 	local function render()
-		local total = 0
+		local total, matching = 0, 0
+		local categoryCounts = {}
 		for _, id in ITEMS do
 			local item = Furniture.Items[id]
 			local stock = if state and Furniture.allowedOn(id, site) then state.Stock[id] or 0 else 0
 			local full = state ~= nil and Furniture.count(placed(), id) >= item.MaxPlaced
 			total += stock
-			itemButtons[id].Visible = stock > 0
+			local category = Furniture.category(id)
+			categoryCounts[category] = (categoryCounts[category] or 0) + stock
+			local visible = Furniture.matchesCategory(id, furnitureCategory)
+			if visible then matching += stock end
+			itemButtons[id].Visible = stock > 0 and visible
 			itemButtons[id].Selectable = stock > 0 and not full and not pending
 			stockLabels[id].Text = string.format("%d unplaced", stock)
-			if stock > 0 and not previewStarted[id] then
+			if stock > 0 and visible and not previewStarted[id] then
 				previewStarted[id] = true
 				FurniturePreview.show(itemViews[id], remotes, id)
 			end
 			setButton(itemButtons[id], "", stock > 0 and not full and not pending, held ~= nil and held.From == id)
 		end
+		for _, category in Furniture.Categories do
+			local count = if category.Id == "All" then total else categoryCounts[category.Id] or 0
+			setButton(categoryButtons[category.Id], string.format("%s · %d", category.Name, count), not pending, furnitureCategory == category.Id)
+		end
 		inventoryTitle.Text = string.format("Unplaced furniture · %d", total)
-		emptyInventory.Visible = total == 0
+		emptyInventory.Visible = matching == 0
 		emptyInventory.Text = if not state
 			then "Loading your furniture…"
+			elseif total > 0 and furnitureCategory ~= "All"
+			then "No unplaced furniture in this catalogue. Choose another category."
 			elseif site == "Company"
 			then "Nothing to place here. Racks, kitchen storage, the radar and decorations from Harbour Home can go on your plot."
 			else "No unplaced furniture. Buy items at Harbour Home, or pick up furniture in your house."
@@ -70374,6 +70761,7 @@ function BuildMode.start()
 	end
 
 	local function clearPreview()
+		ghostParts = {}
 		if preview then
 			preview:Destroy()
 			preview = nil
@@ -70458,22 +70846,39 @@ function BuildMode.start()
 			end
 		end
 		local height = HEIGHTS[held.ItemId] or 3
-		make("Part", model, {
-			Name = "Body",
-			Anchored = true,
-			CanCollide = false,
-			CanQuery = false,
-			CastShadow = false,
-			Material = Enum.Material.SmoothPlastic,
-			Transparency = 0.35,
-			Size = Vector3.new(item.Width, height, item.Depth),
-		})
+		local ghost = FurniturePreview.clone(remotes, held.ItemId)
+		if ghost then
+			ghost.Name = "ItemGhost"
+			ghost:SetAttribute("TemplatePivot", ghost:GetPivot())
+			for _, part in ghost:GetDescendants() do
+				if part:IsA("BasePart") then
+					table.insert(ghostParts, { Part = part, Color = part.Color })
+					part.Anchored, part.CanCollide, part.CanQuery, part.CanTouch, part.CastShadow = true, false, false, false, false
+					part.Transparency = math.max(0.3, part.Transparency)
+				elseif part:IsA("ProximityPrompt") or part:IsA("LayerCollector") or part:IsA("Light") or part:IsA("ParticleEmitter")
+					or part:IsA("Beam") or part:IsA("Trail") then
+					part.Enabled = false
+				end
+			end
+			ghost.Parent = model
+			make("Highlight", model, {
+				Name = "GhostOutline", Adornee = ghost, FillTransparency = 0.94, OutlineTransparency = 0,
+				DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+			})
+		else
+			-- The authoritative templates may still be arriving on a fresh join.
+			make("Part", model, {
+				Name = "Body", Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false,
+				Material = Enum.Material.SmoothPlastic, Transparency = 0.7, Size = Vector3.new(item.Width, height, item.Depth),
+			})
+		end
 		-- The grid cells the item fills, and the strips people stand in beside them.
 		make("Part", model, {
 			Name = "Access",
 			Anchored = true,
 			CanCollide = false,
 			CanQuery = false,
+			CanTouch = false,
 			CastShadow = false,
 			Material = Enum.Material.SmoothPlastic,
 			Transparency = 0.6,
@@ -70485,6 +70890,7 @@ function BuildMode.start()
 				Anchored = true,
 				CanCollide = false,
 				CanQuery = false,
+				CanTouch = false,
 				CastShadow = false,
 				Material = Enum.Material.SmoothPlastic,
 				Transparency = 0.85,
@@ -70497,11 +70903,19 @@ function BuildMode.start()
 			Anchored = true,
 			CanCollide = false,
 			CanQuery = false,
+			CanTouch = false,
 			CastShadow = false,
 			Material = Enum.Material.Neon,
 			Color = rgb(250, 240, 200),
 			Size = Vector3.new(0.5, 0.12, math.max(item.Front, 1) * 0.8),
 		})
+		for _, side in { -1, 1 } do
+			make("Part", model, {
+				Name = if side == -1 then "FacingLeft" else "FacingRight", Anchored = true, CanCollide = false,
+				CanQuery = false, CanTouch = false, CastShadow = false, Material = Enum.Material.Neon,
+				Color = rgb(250, 240, 200), Size = Vector3.new(0.16, 0.12, 0.8),
+			})
+		end
 		model.Parent = workspace
 		preview = model
 	end
@@ -70513,11 +70927,21 @@ function BuildMode.start()
 		local frame = Furniture.frame(houseFrame, { ItemId = held.ItemId, X = spot.X, Z = spot.Z, R = held.R }, site)
 		local color = if spot.Reason then BLOCKED else FITS
 		local height = HEIGHTS[held.ItemId] or 3
-		local body = preview:FindFirstChild("Body") :: BasePart
+		local body = preview:FindFirstChild("Body") :: BasePart?
+		local ghost = preview:FindFirstChild("ItemGhost") :: Model?
 		local access = preview:FindFirstChild("Access") :: BasePart
 		local arrow = preview:FindFirstChild("FacingArrow") :: BasePart
-		body.Color, access.Color = color, color
-		body.CFrame = frame * CFrame.new(0, height / 2, 0)
+		access.Color = color
+		if body then
+			body.Color = color
+			body.CFrame = frame * CFrame.new(0, height / 2, 0)
+		end
+		if ghost then
+			ghost:PivotTo(frame * ghost:GetAttribute("TemplatePivot"))
+			for _, entry in ghostParts do entry.Part.Color = entry.Color:Lerp(color, 0.18) end
+			local outline = preview:FindFirstChild("GhostOutline") :: Highlight
+			outline.OutlineColor, outline.FillColor = color, color
+		end
 		local floor = Furniture.floor(held.ItemId, site)
 		local function lay(part: BasePart, area: { number }, y: number)
 			part.Size = Vector3.new(area[3] - area[1] - 0.1, part.Size.Y, area[4] - area[2] - 0.1)
@@ -70531,7 +70955,13 @@ function BuildMode.start()
 				lay(clearance, strip, 0.1)
 			end
 		end
-		arrow.CFrame = frame * CFrame.new(0, height + 0.2, item.Depth / 2)
+		local arrowZ = item.Depth / 2 + 0.85
+		arrow.Size = Vector3.new(0.16, 0.12, 1.25)
+		arrow.CFrame = frame * CFrame.new(0, 0.22, arrowZ)
+		for _, side in { -1, 1 } do
+			local wing = preview:FindFirstChild(if side == -1 then "FacingLeft" else "FacingRight") :: BasePart
+			wing.CFrame = frame * CFrame.new(side * 0.24, 0.22, arrowZ + 0.35) * CFrame.Angles(0, side * math.rad(45), 0)
+		end
 	end
 
 	-- ScreenPointToRay expects coordinates below the top bar, like InputObject.Position.
@@ -70584,7 +71014,9 @@ function BuildMode.start()
 			return
 		end
 		local skip = if type(held.From) == "number" then held.From else nil
-		spot = { X = x, Z = z, Reason = Furniture.check(placed(), held.ItemId, x, z, held.R, skip, site) }
+		local reason = Furniture.check(placed(), held.ItemId, x, z, held.R, skip, site)
+		if spot and spot.X == x and spot.Z == z and spot.R == held.R and spot.Reason == reason then return end
+		spot = { X = x, Z = z, R = held.R, Reason = reason }
 		updatePreview()
 		render()
 	end
@@ -71184,6 +71616,15 @@ function BuildMode.start()
 			end
 		end,
 	})
+	for id, categoryButton in categoryButtons do
+		categoryButton.Activated:Connect(function()
+			if active and not pending then
+				furnitureCategory = id
+				catalogue.CanvasPosition = Vector2.zero
+				render()
+			end
+		end)
+	end
 
 	for id, item in itemButtons do
 		item.Activated:Connect(function()
@@ -71356,7 +71797,82 @@ return BuildMode
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="245">
+        <Item class="ModuleScript" referent="246">
+          <Properties>
+            <string name="Name">BuildPaintQueue</string>
+            <string name="Source"><![CDATA[-- Paint stays responsive while the network saves. One writer batches/coalesces
+-- clicks, and later commands can wait for a complete paint stroke to commit.
+local Queue = {}
+function Queue.new(options)
+	local self = { Outstanding = {}, Waiting = {}, Order = {}, Running = false, Serial = 0, Listeners = {} }
+	local lastSend = -math.huge
+	local function report()
+		if options.Changed then options.Changed(self.Outstanding) end
+	end
+	local function run()
+		if self.Running then return end
+		self.Running = true
+		task.spawn(function()
+			while #self.Order > 0 do
+				local pause = (options.Interval or 0.1) - (os.clock() - lastSend)
+				if pause > 0 then task.wait(pause) end
+				local batch, serials = {}, {}
+				while #self.Order > 0 and #batch < 64 do
+					local id = table.remove(self.Order, 1)
+					local record = self.Waiting[id]
+					self.Waiting[id] = nil
+					if record then
+						table.insert(batch, record.Patch)
+						serials[id] = record.Serial
+					end
+				end
+				if #batch > 0 then
+					local ok, result
+					for attempt = 1, 6 do
+						lastSend = os.clock()
+						ok, result = pcall(options.Send, batch)
+						local delay = ok and type(result) == "table" and result.RetryAfter
+						if ok and type(result) == "table" and result.Ok == false and type(delay) == "number" and delay == delay and delay >= 0.05 and delay <= 1 and attempt < 6 then
+							task.wait(delay)
+						else break end
+					end
+					if not ok then result = { Ok = false, Message = "Painting could not be saved. Please try again." } end
+					for id, serial in serials do
+						local latest = self.Outstanding[id]
+						if latest and latest.Serial == serial then self.Outstanding[id] = nil end
+					end
+					if options.Result then options.Result(result, self.Outstanding) end
+					report()
+				end
+			end
+			self.Running = false
+			local listeners = self.Listeners
+			self.Listeners = {}
+			for _, callback in listeners do callback() end
+		end)
+	end
+	function self:paint(patch)
+		self.Serial += 1
+		local record = { Patch = { Id = patch.Id, Material = patch.Material, Color = table.clone(patch.Color) }, Serial = self.Serial }
+		if not self.Waiting[patch.Id] then table.insert(self.Order, patch.Id) end
+		self.Waiting[patch.Id], self.Outstanding[patch.Id] = record, record
+		report()
+		run()
+	end
+	function self:drain(callback)
+		if not self.Running and #self.Order == 0 then callback()
+		else table.insert(self.Listeners, callback); run() end
+	end
+	function self:busy()
+		return self.Running or #self.Order > 0
+	end
+	return self
+end
+return Queue
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="247">
           <Properties>
             <string name="Name">CargoHold</string>
             <string name="Source"><![CDATA[-- Shared tile inventory for your backpack, your hand, and your launched boat.
@@ -72595,7 +73111,7 @@ return CargoHold
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="246">
+        <Item class="ModuleScript" referent="248">
           <Properties>
             <string name="Name">CastAnimation</string>
             <string name="Source"><![CDATA[-- Procedural casting and two-handed reeling for R6 and R15. Other anglers use
@@ -72831,7 +73347,7 @@ return CastAnimation
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="247">
+        <Item class="ModuleScript" referent="249">
           <Properties>
             <string name="Name">Casting</string>
             <string name="Source"><![CDATA[-- Hold to charge a cast, release to throw. The server owns the cast, the bite
@@ -73466,7 +73982,7 @@ return Casting
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="248">
+        <Item class="ModuleScript" referent="250">
           <Properties>
             <string name="Name">CatchPopup</string>
             <string name="Source"><![CDATA[-- The landed-catch popup: the fish pops in over a spinning burst of rays in its
@@ -73807,7 +74323,7 @@ return Popup
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="249">
+        <Item class="ModuleScript" referent="251">
           <Properties>
             <string name="Name">CharacterMeter</string>
             <string name="Source"><![CDATA[-- Position slim screen-space meters beside the local avatar at any zoom.
@@ -73851,7 +74367,7 @@ return CharacterMeter
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="250">
+        <Item class="ModuleScript" referent="252">
           <Properties>
             <string name="Name">CoastalAmbience</string>
             <string name="Source"><![CDATA[-- Recorded coastal ambience layered over EnvironmentAudio's synthetic wash: a
@@ -74079,7 +74595,7 @@ return CoastalAmbience
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="251">
+        <Item class="ModuleScript" referent="253">
           <Properties>
             <string name="Name">CompanyIslands</string>
             <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -74178,7 +74694,7 @@ return Islands
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="252">
+        <Item class="ModuleScript" referent="254">
           <Properties>
             <string name="Name">CrabCages</string>
             <string name="Source"><![CDATA[-- Crab cages on the client. While the hotbar cage is equipped, a ghost cage follows
@@ -74533,7 +75049,7 @@ return CrabCagesClient
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="253">
+        <Item class="ModuleScript" referent="255">
           <Properties>
             <string name="Name">DrydockCamera</string>
             <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -74664,7 +75180,7 @@ return DrydockCamera
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="254">
+        <Item class="ModuleScript" referent="256">
           <Properties>
             <string name="Name">EnvironmentAudio</string>
             <string name="Source"><![CDATA[-- Camera-local ambience and positional player splashes. PlayerSettings routes
@@ -74965,7 +75481,7 @@ return EnvironmentAudio
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="255">
+        <Item class="ModuleScript" referent="257">
           <Properties>
             <string name="Name">EquipmentBag</string>
             <string name="Source"><![CDATA[-- Collection presentation only. Equipping still goes through FishingService.
@@ -75775,7 +76291,7 @@ return Bag
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="256">
+        <Item class="ModuleScript" referent="258">
           <Properties>
             <string name="Name">FishMeshes</string>
             <string name="Source"><![CDATA[-- Gives loft fish (FishModels.LOFT_TAG) their smooth skin on this client,
@@ -75790,6 +76306,7 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
+local MeshFeatures = require(ReplicatedStorage.Shared.MeshFeatures)
 
 local FishMeshes = {}
 -- Angle steps from back to belly on one flank.
@@ -75915,8 +76432,11 @@ local function skin(fishId: string)
 	skins[fishId] = "building"
 	local bands = {}
 	for _, band in BANDS do
-		local part, center = buildBand(spec.rings, band)
-		if not part or not center then
+		local ok, part, center = pcall(buildBand, spec.rings, band)
+		if not ok or not part or not center then
+			for _, built in bands do
+				built.part:Destroy()
+			end
 			skins[fishId] = false
 			return false
 		end
@@ -76022,6 +76542,9 @@ function FishMeshes.start()
 		return
 	end
 	started = true
+	if not MeshFeatures.EditableMeshesEnabled then
+		return
+	end
 	CollectionService:GetInstanceAddedSignal(FishModels.LOFT_TAG):Connect(function(model)
 		task.spawn(FishMeshes.hydrate, model)
 	end)
@@ -76034,7 +76557,7 @@ return FishMeshes
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="257">
+        <Item class="ModuleScript" referent="259">
           <Properties>
             <string name="Name">Fishing</string>
             <string name="Source"><![CDATA[-- Fishing notices and the shared shop doorway fade.
@@ -76143,7 +76666,7 @@ return Fishing
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="258">
+        <Item class="ModuleScript" referent="260">
           <Properties>
             <string name="Name">FishingAudio</string>
             <string name="Source"><![CDATA[-- Fishing cues stay on the client: shared sounds parent to SoundService so
@@ -76298,7 +76821,7 @@ return FishingAudio
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="259">
+        <Item class="ModuleScript" referent="261">
           <Properties>
             <string name="Name">Freecam</string>
             <string name="Source"><![CDATA[-- A local, session-only camera that leaves the character in place.
@@ -76546,12 +77069,21 @@ return Freecam
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="260">
+        <Item class="ModuleScript" referent="262">
           <Properties>
             <string name="Name">FurniturePreview</string>
             <string name="Source"><![CDATA[-- Inventory thumbnails use the actual furniture builders' replicated templates,
 -- so buying an item does not require its showroom or a placed copy to be streamed in.
 local Preview = {}
+
+-- Non-yielding clone for a world-space placement ghost. All templates are built
+-- at the origin by the server, so their original pivot also retains that frame.
+function Preview.clone(remotes: Instance, itemId: string): Model?
+	local templates = remotes:FindFirstChild("Previews")
+	local template = templates and templates:FindFirstChild(itemId)
+	if not template or not template:IsA("Model") then return nil end
+	return template:Clone()
+end
 
 function Preview.show(view: ViewportFrame, remotes: Instance, itemId: string)
 	task.spawn(function()
@@ -76574,10 +77106,19 @@ function Preview.show(view: ViewportFrame, remotes: Instance, itemId: string)
 		view.LightDirection = Vector3.new(-1, -1, -2)
 		local function frame()
 			local aspect = math.max(0.1, view.AbsoluteSize.X / math.max(1, view.AbsoluteSize.Y))
-			local radius = size.Magnitude / 2
-			local halfFov = math.atan(math.tan(math.rad(camera.FieldOfView / 2)) * math.min(1, aspect))
-			local distance = radius / math.sin(halfFov) * 1.08
-			camera.CFrame = CFrame.lookAt(box.Position + Vector3.new(1, 0.7, 1).Unit * distance, box.Position)
+			local direction = Vector3.new(1, 0.65, 1).Unit
+			local orientation = CFrame.lookAt(Vector3.zero, -direction)
+			local tangent = math.tan(math.rad(camera.FieldOfView / 2))
+			local distance = 0.5
+			for _, x in { -size.X / 2, size.X / 2 } do
+				for _, y in { -size.Y / 2, size.Y / 2 } do
+					for _, z in { -size.Z / 2, size.Z / 2 } do
+						local corner = orientation:VectorToObjectSpace(box * Vector3.new(x, y, z) - box.Position)
+						distance = math.max(distance, corner.Z + math.abs(corner.X) / (tangent * aspect), corner.Z + math.abs(corner.Y) / tangent)
+					end
+				end
+			end
+			camera.CFrame = CFrame.lookAt(box.Position + direction * distance * 1.12, box.Position)
 		end
 		view:GetPropertyChangedSignal("AbsoluteSize"):Connect(frame)
 		frame()
@@ -76588,7 +77129,7 @@ return Preview
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="261">
+        <Item class="ModuleScript" referent="263">
           <Properties>
             <string name="Name">FurnitureShop</string>
             <string name="Source"><![CDATA[-- Harbour Home's catalogue, opened from showroom displays or the indoor counter. Bought
@@ -76906,7 +77447,7 @@ return FurnitureShop
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="262">
+        <Item class="ModuleScript" referent="264">
           <Properties>
             <string name="Name">HalloweenParty</string>
             <string name="Source"><![CDATA[-- The Halloween party on the client: the guests' speech bubbles (now and then on their own, and
@@ -77405,7 +77946,7 @@ return Client
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="263">
+        <Item class="ModuleScript" referent="265">
           <Properties>
             <string name="Name">Kitchen</string>
             <string name="Source"><![CDATA[-- Recipe picker for the Supermarket path's kitchen stations. Pressing Cook at a
@@ -77667,7 +78208,7 @@ return Kitchen
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="264">
+        <Item class="ModuleScript" referent="266">
           <Properties>
             <string name="Name">KitchenStorage</string>
             <string name="Source"><![CDATA[-- Kitchen storage configuration GUI. Opened from the "Configure" prompt on a
@@ -78011,7 +78552,7 @@ return KitchenStorage
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="265">
+        <Item class="ModuleScript" referent="267">
           <Properties>
             <string name="Name">Leaderboard</string>
             <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -78304,7 +78845,7 @@ return Leaderboard
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="266">
+        <Item class="ModuleScript" referent="268">
           <Properties>
             <string name="Name">Lod</string>
             <string name="Source"><![CDATA[-- Shows each island's coarse shell (server/Map/Lod) only while the real island is streamed out,
@@ -78334,6 +78875,9 @@ local RunService = game:GetService("RunService")
 local Lod = {}
 
 local FADE_TIME = 0.6
+-- A shell holds thousands of parts and every transparency write is paid for by the
+-- renderer, so the fade moves in a few steps rather than on every frame.
+local FADE_STEPS = 4
 local SURFACE_INSET = Vector3.new(0, 0.2, 0)
 local insetParts = setmetatable({}, { __mode = "k" })
 local PREFETCH_INTERVAL = 1
@@ -78354,7 +78898,7 @@ type Island = {
 	connections: { RBXScriptConnection },
 	groundConnections: { RBXScriptConnection },
 }
-type Visual = { parts: { BasePart }, hidden: boolean? }
+type Visual = { parts: { BasePart }, hidden: boolean?, fadeApplied: number? }
 type Tile = Visual & { expected: number, loaded: number, minX: number, minZ: number }
 type Grid = { size: number, x: number, z: number }
 type Shell = Visual & {
@@ -78510,6 +79054,7 @@ function Lod.start()
 		end
 		local first = visual.hidden == nil
 		visual.hidden = hidden
+		visual.fadeApplied = nil
 		if hidden and not first then
 			-- The real island is already drawn underneath, so the shell can melt away
 			fading[visual] = os.clock()
@@ -78567,10 +79112,15 @@ function Lod.start()
 		local now = os.clock()
 		for visual, started in fading do
 			local alpha = math.min((now - started) / FADE_TIME, 1)
-			for _, part in visual.parts do
-				part.LocalTransparencyModifier = alpha
+			local stepped = math.ceil(alpha * FADE_STEPS) / FADE_STEPS
+			if stepped ~= visual.fadeApplied then
+				visual.fadeApplied = stepped
+				for _, part in visual.parts do
+					part.LocalTransparencyModifier = stepped
+				end
 			end
 			if alpha >= 1 then
+				visual.fadeApplied = nil
 				fading[visual] = nil
 			end
 		end
@@ -78885,7 +79435,7 @@ return Lod
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="267">
+        <Item class="ModuleScript" referent="269">
           <Properties>
             <string name="Name">Metro</string>
             <string name="Source"><![CDATA[local CollectionService = game:GetService("CollectionService")
@@ -79060,7 +79610,7 @@ return Metro
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="268">
+        <Item class="ModuleScript" referent="270">
           <Properties>
             <string name="Name">MusselNets</string>
             <string name="Source"><![CDATA[-- Preview mussel net placement and animate placed nets' floats. The server
@@ -79419,7 +79969,7 @@ return MusselNetsClient
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="269">
+        <Item class="ModuleScript" referent="271">
           <Properties>
             <string name="Name">MutationEffects</string>
             <string name="Source"><![CDATA[-- Cycles the colours of Rainbow fish, wherever they are: in hands, freezers,
@@ -79437,6 +79987,18 @@ local STEP_SECONDS = 1 / 20
 local parts: { [Model]: { BasePart } } = setmetatable({}, { __mode = "k" }) :: any
 local voids: { [Model]: any } = setmetatable({}, { __mode = "k" }) :: any
 local started = false
+-- Recolouring rewrites every painted part, and the renderer pays for each one.
+-- Fish in the world past this range (stocked freezers and shop displays across
+-- the harbour) hold their colours; viewports and held fish always animate.
+local ANIMATE_DISTANCE = 160
+
+local function outOfView(list: { BasePart }, eye: Vector3?): boolean
+	local first = list[1]
+	return eye ~= nil
+		and first ~= nil
+		and first:IsDescendantOf(workspace)
+		and (first.Position - eye).Magnitude > ANIMATE_DISTANCE
+end
 
 local function painted(model: Model): { BasePart }
 	local list = parts[model]
@@ -79527,9 +80089,15 @@ function MutationEffects.start()
 		end
 		elapsed = 0
 		local shift = os.clock() / CYCLE_SECONDS
+		local camera = workspace.CurrentCamera
+		local eye = camera and camera.CFrame.Position
 		for _, model in CollectionService:GetTagged(FishModels.RAINBOW_TAG) do
 			if model:IsA("Model") and not model:HasTag(FishModels.VOID_TAG) then
-				for _, item in painted(model) do
+				local list = painted(model)
+				if outOfView(list, eye) then
+					continue
+				end
+				for _, item in list do
 					item.Color = Color3.fromHSV(
 						(item:GetAttribute("RainbowHue") + shift) % 1,
 						item:GetAttribute("RainbowSaturation") or 0.6,
@@ -79539,9 +80107,10 @@ function MutationEffects.start()
 			end
 		end
   for _, model in CollectionService:GetTagged(FishModels.GLITCH_TAG) do
-   if model:IsA("Model") then
+   local list = if model:IsA("Model") then paintedGlitch(model) else nil
+   if list and not outOfView(list, eye) then
     local tick = math.floor(os.clock() * 13)
-    for index, item in paintedGlitch(model) do
+    for index, item in list do
      local phase = (tick + index * 7) % 11
      item.Color = if phase < 2 then Color3.fromRGB(255, 30, 180) elseif phase == 2 then Color3.new(1, 1, 1) else item:GetAttribute("GlitchBaseColor")
      item.Transparency = if phase == 3 then 0.55 else item:GetAttribute("GlitchBaseTransparency")
@@ -79560,7 +80129,7 @@ return MutationEffects
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="270">
+        <Item class="ModuleScript" referent="272">
           <Properties>
             <string name="Name">Oxygen</string>
             <string name="Source"><![CDATA[-- Compact breath meter beside the avatar. The server supplies the state; this module only
@@ -79804,7 +80373,7 @@ return Oxygen
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="271">
+        <Item class="ModuleScript" referent="273">
           <Properties>
             <string name="Name">ParkedBoats</string>
             <string name="Source"><![CDATA[-- Parked hulls are anchored on the server so movers never fight people on deck.
@@ -79817,6 +80386,17 @@ local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local ParkedBoats = {}
 local started = false
+-- Rolling a hull rewrites every part in it, and the renderer pays per moved part
+-- (instanced clusters, shadow maps). A full harbour re-pivoted every hull every
+-- frame. Hulls close to the camera still roll every frame; farther ones step on a
+-- stride, distant ones hold their last pose, and the deck you stand on always moves.
+local NEAR_DISTANCE = 160
+local FAR_DISTANCE = 450
+local MID_STRIDE = 3
+-- Skip a move this small (studs at the root, or at 20 studs out for tilt): calm
+-- water or a sheltered berth would otherwise rewrite the hull for nothing.
+local MIN_MOVE = 0.005
+local TILT_ARM = 20
 
 function ParkedBoats.start()
 	if started then
@@ -79825,8 +80405,14 @@ function ParkedBoats.start()
 	started = true
 	local player = Players.LocalPlayer
 	local heldRoot, heldBoat, heldAt, heldPosition
+	local frame = 0
+	local slots: { [Instance]: number } = setmetatable({}, { __mode = "k" }) :: any
+	local nextSlot = 0
 	-- Before physics, so a local character standing on deck collides with this pose.
 	RunService.PreSimulation:Connect(function()
+		frame += 1
+		local camera = workspace.CurrentCamera
+		local eye = camera and camera.CFrame.Position
 		local folder = workspace:FindFirstChild("PlayerBoats")
 		if not folder then
 			heldRoot, heldBoat, heldAt, heldPosition = nil, nil, nil, nil
@@ -79878,21 +80464,45 @@ function ParkedBoats.start()
 				and typeof(rest) == "CFrame"
 				and type(parkedAt) == "number"
 			then
-				-- The hull is rigid, so its pivot keeps one offset from the root.
 				local before = root.CFrame
-				local pivot = rest * root.CFrame:ToObjectSpace(model:GetPivot())
-				model:PivotTo(
-					Weather.parkedOffset(
-						rest,
-						parkedAt,
-						now,
-						model:GetAttribute("DryFloorHeight"),
-						model:GetAttribute("DryFloorHalfBeam"),
-						model:GetAttribute("DryFloorHalfLength"),
-						model:GetAttribute("WaterlineRootOffset")
-					) * pivot
+				local riding = ground ~= nil and ground.Instance:IsDescendantOf(model)
+				local due = true
+				if not riding and eye then
+					local distance = (before.Position - eye).Magnitude
+					if distance > FAR_DISTANCE then
+						due = false
+					elseif distance > NEAR_DISTANCE then
+						local slot = slots[model]
+						if not slot then
+							nextSlot += 1
+							slot = nextSlot
+							slots[model] = slot
+						end
+						due = (frame + slot) % MID_STRIDE == 0
+					end
+				end
+				if not due then
+					continue
+				end
+				local offset = Weather.parkedOffset(
+					rest,
+					parkedAt,
+					now,
+					model:GetAttribute("DryFloorHeight"),
+					model:GetAttribute("DryFloorHalfBeam"),
+					model:GetAttribute("DryFloorHalfLength"),
+					model:GetAttribute("WaterlineRootOffset")
 				)
-				if ground and ground.Instance:IsDescendantOf(model) then
+				local goal = offset * rest
+				local change = (goal.Position - before.Position).Magnitude
+					+ ((goal.LookVector - before.LookVector).Magnitude + (goal.UpVector - before.UpVector).Magnitude)
+						* TILT_ARM
+				if change >= MIN_MOVE then
+					-- The hull is rigid, so its pivot keeps one offset from the root.
+					local pivot = rest * before:ToObjectSpace(model:GetPivot())
+					model:PivotTo(offset * pivot)
+				end
+				if riding then
 					local position = before:PointToObjectSpace(avatarRoot.Position)
 					if humanoid.MoveDirection.Magnitude < 0.01 then
 						-- CFrame animation supplies no platform velocity. Keep an idle
@@ -79929,7 +80539,7 @@ return ParkedBoats
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="272">
+        <Item class="ModuleScript" referent="274">
           <Properties>
             <string name="Name">PirateCove</string>
             <string name="Source"><![CDATA[-- Talking to Pirate Cove's crew (Shared.PirateCove): quest givers offer and take in their quests,
@@ -80269,7 +80879,7 @@ return Client
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="273">
+        <Item class="ModuleScript" referent="275">
           <Properties>
             <string name="Name">PlayerMenu</string>
             <string name="Source"><![CDATA[-- Left-side navigation and data-backed collection screens. Gameplay remains server-owned.
@@ -83503,7 +84113,7 @@ return Menu
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="274">
+        <Item class="ModuleScript" referent="276">
           <Properties>
             <string name="Name">PlayerSettings</string>
             <string name="Source"><![CDATA[-- Sound groups keep source volumes intact, including dynamically updated thunder.
@@ -83684,7 +84294,7 @@ return Settings
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="275">
+        <Item class="ModuleScript" referent="277">
           <Properties>
             <string name="Name">ReelMinigame</string>
             <string name="Source"><![CDATA[-- The hooked-fish panel: a needle sweeps one of two arc gauges and every Pull
@@ -84308,7 +84918,7 @@ return Reel
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="276">
+        <Item class="ModuleScript" referent="278">
           <Properties>
             <string name="Name">RodCaseOpening</string>
             <string name="Source"><![CDATA[-- The paid case remains in the player's inventory until the server opens it.
@@ -84643,7 +85253,7 @@ return RodCaseOpening
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="277">
+        <Item class="ModuleScript" referent="279">
           <Properties>
             <string name="Name">RodCrateReveal</string>
             <string name="Source"><![CDATA[-- Local shop animation: every angler sees their own saved reward emerge from the stand.
@@ -84837,7 +85447,7 @@ return Reveal
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="278">
+        <Item class="ModuleScript" referent="280">
           <Properties>
             <string name="Name">RodCrates</string>
             <string name="Source"><![CDATA[-- Rod and bobber cases in Tide & Tackle share the same catalog-driven window.
@@ -85697,7 +86307,7 @@ return RodCrates
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="279">
+        <Item class="ModuleScript" referent="281">
           <Properties>
             <string name="Name">RodPhysics</string>
             <string name="Source"><![CDATA[-- Each client derives bend from replicated handle movement, including rods held
@@ -85921,7 +86531,7 @@ return RodPhysics
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="280">
+        <Item class="ModuleScript" referent="282">
           <Properties>
             <string name="Name">RodWorkshop</string>
             <string name="Source"><![CDATA[-- Finn's rod upgrade counter in Tide & Tackle. The server charges, saves and
@@ -86326,7 +86936,7 @@ return RodWorkshop
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="281">
+        <Item class="ModuleScript" referent="283">
           <Properties>
             <string name="Name">RowingAnimation</string>
             <string name="Source"><![CDATA[-- Procedural strokes need no uploaded animation asset and support R6 and R15.
@@ -86429,7 +87039,7 @@ return RowingAnimation
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="282">
+        <Item class="ModuleScript" referent="284">
           <Properties>
             <string name="Name">SeasonFoliage</string>
             <string name="Source"><![CDATA[-- Recolours grass and tree foliage on this client to match the season. Summer is
@@ -86594,7 +87204,7 @@ return SeasonFoliage
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="283">
+        <Item class="ModuleScript" referent="285">
           <Properties>
             <string name="Name">ServerUpdates</string>
             <string name="Source"><![CDATA[local Players = game:GetService("Players")
@@ -86683,7 +87293,7 @@ return Service
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="284">
+        <Item class="ModuleScript" referent="286">
           <Properties>
             <string name="Name">SharkSwim</string>
             <string name="Source"><![CDATA[-- The invisible server-owned root remains the combat and navigation position.
@@ -86699,6 +87309,10 @@ local FLEX_PIVOT_INVERSE = FLEX_PIVOT:Inverse()
 local TAIL_PIVOT_INVERSE = TAIL_PIVOT:Inverse()
 local SMOOTHING = 22
 local REFRESH_INTERVAL = 0.5
+-- Every piece is rewritten when a shark moves; past this range the body wave
+-- can't be seen, so far sharks step every few frames.
+local NEAR_DISTANCE = 250
+local FAR_STRIDE = 4
 
 function SharkSwim.start()
 	local folder = workspace:WaitForChild("Sharks")
@@ -86716,7 +87330,11 @@ function SharkSwim.start()
 		states[model] = nil
 	end)
 
+	local frame = 0
 	RunService.RenderStepped:Connect(function(dt)
+		frame += 1
+		local camera = workspace.CurrentCamera
+		local eye = camera and camera.CFrame.Position
 		local now = workspace:GetServerTimeNow()
 		local alpha = 1 - math.exp(-SMOOTHING * math.min(dt, 0.25))
 		local moved, frames = {}, {}
@@ -86750,6 +87368,9 @@ function SharkSwim.start()
 				end
 				state.parts = parts
 			end
+			if eye and (state.frame.Position - eye).Magnitude > NEAR_DISTANCE and (frame + math.floor(state.phase * 10)) % FAR_STRIDE ~= 0 then
+				continue
+			end
 			-- The head swings against the tail, each joint lagging the one ahead.
 			local phase = now * 5 + state.phase
 			local body = state.frame * CFrame.Angles(0, math.sin(phase) * 0.03, math.sin(phase - 0.6) * 0.035)
@@ -86779,7 +87400,7 @@ return SharkSwim
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="285">
+        <Item class="ModuleScript" referent="287">
           <Properties>
             <string name="Name">ShopCustomers</string>
             <string name="Source"><![CDATA[-- Freezer and customer prompts belong to the base owner; everyone else never sees
@@ -86833,7 +87454,7 @@ return ShopCustomers
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="286">
+        <Item class="ModuleScript" referent="288">
           <Properties>
             <string name="Name">ShoreWaves</string>
             <string name="Source"><![CDATA[-- Short foam crests move from the shallows onto the sand, widen, then dissolve.
@@ -87013,7 +87634,7 @@ return ShoreWaves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="287">
+        <Item class="ModuleScript" referent="289">
           <Properties>
             <string name="Name">SpearCombat</string>
             <string name="Source"><![CDATA[-- The server owns shark health and validates every strike. This module supplies
@@ -87287,7 +87908,7 @@ return SpearCombat
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="288">
+        <Item class="ModuleScript" referent="290">
           <Properties>
             <string name="Name">Sprint</string>
             <string name="Source"><![CDATA[-- Hold Shift to move faster while on foot.
@@ -87357,7 +87978,7 @@ return Sprint
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="289">
+        <Item class="ModuleScript" referent="291">
           <Properties>
             <string name="Name">StaffPreview</string>
             <string name="Source"><![CDATA[-- Cached, local-only avatars. No preview model ever enters the live world.
@@ -87499,7 +88120,7 @@ return Preview
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="290">
+        <Item class="ModuleScript" referent="292">
           <Properties>
             <string name="Name">StreamOutLog</string>
             <string name="Source"><![CDATA[-- Temporary diagnostic: names what the client streams out when a frame hitches.
@@ -87644,7 +88265,7 @@ return StreamOutLog
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="291">
+        <Item class="ModuleScript" referent="293">
           <Properties>
             <string name="Name">StructureEditor</string>
             <string name="Source"><![CDATA[-- Structural tools share BuildMode's camera and pointer handling. The client only
@@ -87655,20 +88276,17 @@ local UserInputService = game:GetService("UserInputService")
 
 local Catalog = require(ReplicatedStorage.Shared.BuildingCatalog)
 local Renderer = require(ReplicatedStorage.Shared.BuildingRenderer)
+local PaintQueue = require(script.Parent.BuildPaintQueue)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local StructureEditor = {}
-local CATEGORIES = { "Wall", "Room", "Door", "Window", "Floor", "Roof", "Stairs" }
-local CATEGORY_NAMES = { Wall = "Walls", Room = "Rooms", Door = "Doors", Window = "Windows", Floor = "Floors", Roof = "Roofs", Stairs = "Stairs" }
+local CATEGORIES = { "Wall", "Room", "Door", "Window", "Floor", "Roof" }
+local CATEGORY_NAMES = { Wall = "Walls", Room = "Rooms", Door = "Doors", Window = "Windows", Floor = "Floors", Roof = "Roofs" }
 local MENU = {
 	Paper = Color3.fromRGB(18, 18, 20), Button = Color3.fromRGB(35, 36, 39), White = Color3.fromRGB(248, 248, 248),
 	Blue = Color3.fromRGB(47, 153, 225), BlueBorder = Color3.fromRGB(30, 121, 187),
 	Ink = Color3.fromRGB(233, 234, 237), Border = Color3.fromRGB(73, 75, 81),
 	Muted = Color3.fromRGB(146, 149, 157), Red = Color3.fromRGB(229, 88, 88),
-}
-local STYLES = {
-	Roof = { "Gable", "Flat", "Shed" }, Stairs = { "North", "East", "South", "West" },
-	Window = { "Picture", "Classic" }, Door = { "Open", "Panel" },
 }
 
 local function make(class: string, parent: Instance, properties): any
@@ -87723,6 +88341,12 @@ local function copy(entry)
 	if type(entry.Color) == "table" then result.Color = table.clone(entry.Color) end
 	return result
 end
+local function deep(value)
+	if type(value) ~= "table" then return value end
+	local result = {}
+	for key, child in value do result[key] = deep(child) end
+	return result
+end
 
 function StructureEditor.new(options)
 	local self = {}
@@ -87734,12 +88358,15 @@ function StructureEditor.new(options)
 	local tool, material = "Wall", "Plaster"
 	local section, lastBuildTool = "Furniture", "Wall"
 	local color = { 178, 150, 117 }
-	local styles = { Roof = "Gable", Stairs = "North", Window = "Picture", Door = "Open" }
+	local styles = { Wall = "Solid", Floor = "Tile", Roof = "Gable", Window = "Classic", Door = "Open" }
+	local rotation = 0
 	local level, gridSize = 0, Catalog.GRID
 	local selected, moving, reshaping = nil, nil, nil
 	local anchor, candidate, invalidReason = nil, nil, nil
 	local roomEntries = nil
 	local preview, previewKey, highlight = nil, nil, nil
+	local highlightedId = nil
+	local hiddenHost = {}
 	local previewFolder = make("Folder", workspace, { Name = "StructureEditorPreview" })
 	local targets, targetRefresh = {}, 0
 	local hovered, hoveredInstance, hoverPoint = nil, nil, nil
@@ -87747,6 +88374,9 @@ function StructureEditor.new(options)
 	local generation = 0
 	local statusMessage = ""
 	local remote, event
+	local paintSession = nil
+	local paintSessions = {}
+	local accept
 
 	local function label(parent, text, properties)
 		local item = make("TextLabel", parent, {
@@ -87786,8 +88416,6 @@ function StructureEditor.new(options)
 			block(8, 0, 2, 18); block(0, 8, 18, 2)
 		elseif kind == "Roof" then
 			block(0, 6, 11, 3, -35); block(8, 6, 11, 3, 35)
-		elseif kind == "Stairs" then
-			for index = 0, 3 do block(index * 4, 13 - index * 4, 6, 5 + index * 4) end
 		elseif kind == "Floor" then
 			for row = 0, 2 do for column = 0, 2 do block(column * 6, row * 6, 5, 5) end end
 		else
@@ -87834,6 +88462,7 @@ function StructureEditor.new(options)
 	local editStrip = strip(panel, "EditingTools", 39, 33)
 	local materialStrip = strip(panel, "SurfaceMaterials", 77, 31)
 	local colorStrip = strip(panel, "SurfaceColors", 112, 28)
+	local variantStrip = strip(panel, "StructureCatalogue", 77, 64)
 	local actionStrip = strip(panel, "ConstructionActions", 147, 34)
 	local tabs = make("Frame", options.Gui, {
 		Name = "BuildSections", Active = true, AnchorPoint = Vector2.new(0.5, 1),
@@ -87852,6 +88481,7 @@ function StructureEditor.new(options)
 	Theme.corner(tooltip, 6)
 	border(tooltip).Color = MENU.Border
 	local toolButtons, materialButtons, colorButtons = {}, {}, {}
+	local variantCards = {}
 	for index, name in CATEGORIES do
 		toolButtons[name] = button(toolStrip, CATEGORY_NAMES[name], {
 			Name = "Tool" .. name, LayoutOrder = index, Size = UDim2.fromOffset(if name == "Window" then 116 else 106, 29),
@@ -87868,6 +88498,25 @@ function StructureEditor.new(options)
 		toolButtons[name] = button(actionStrip, name, {
 			Name = "Tool" .. name, LayoutOrder = index - 10, Size = UDim2.fromOffset(76, 28),
 		})
+	end
+	for _, kind in CATEGORIES do
+		variantCards[kind] = {}
+		for index, variant in Catalog.Variants[if kind == "Room" then "Wall" else kind] or {} do
+			local card = button(variantStrip, "", {
+				Name = "Variant" .. kind .. variant.Id, LayoutOrder = index, Size = UDim2.fromOffset(164, 58), Visible = false,
+			})
+			local view = make("ViewportFrame", card, {
+				Name = "CatalogueThumbnail", BackgroundTransparency = 1, Position = UDim2.fromOffset(3, 3),
+				Size = UDim2.fromOffset(70, 52), Active = false,
+			})
+			label(card, if kind == "Room" then "Room" else variant.Name, {
+				Position = UDim2.fromOffset(78, 4), Size = UDim2.fromOffset(82, 28), TextSize = 11,
+			})
+			label(card, string.format("$%d", variant.Price or 0), {
+				Position = UDim2.fromOffset(78, 34), Size = UDim2.fromOffset(82, 18), TextSize = 12,
+			})
+			table.insert(variantCards[kind], { Button = card, View = view, Variant = variant, Started = false })
+		end
 	end
 	for index, name in Catalog.Materials do
 		materialButtons[name] = button(materialStrip, name:gsub("(%l)(%u)", "%1 %2"), {
@@ -87895,7 +88544,7 @@ function StructureEditor.new(options)
 	Theme.corner(hex, 4)
 	make("UIStroke", hex, { Color = MENU.Border, Thickness = 1 })
 	local hexApply = button(colorStrip, "Set color", { LayoutOrder = 101, Size = UDim2.fromOffset(80, 23) })
-	local styleButton = button(actionStrip, "Style: Gable [R]", { LayoutOrder = 1, Size = UDim2.fromOffset(142, 28) })
+	local styleButton = button(actionStrip, "Rotate [R]", { Name = "RotateStructure", LayoutOrder = 1, Size = UDim2.fromOffset(106, 28) })
 	local moveButton = button(actionStrip, "Move", { LayoutOrder = 2, Size = UDim2.fromOffset(70, 28) })
 	local reshapeButton = button(actionStrip, "Reshape", { LayoutOrder = 3, Size = UDim2.fromOffset(82, 28) })
 	local finishButton = button(actionStrip, "Apply finish", { LayoutOrder = 4, Size = UDim2.fromOffset(100, 28) })
@@ -87910,12 +88559,15 @@ function StructureEditor.new(options)
 		if options.Notice then options.Notice(message) end
 	end
 	local function clearPreview()
+		for part, modifier in hiddenHost do if part.Parent then part.LocalTransparencyModifier = modifier end end
+		hiddenHost = {}
 		if preview then preview:Destroy(); preview = nil end
 		previewKey, candidate, invalidReason, roomEntries = nil, nil, nil, nil
 		tooltip.Visible = false
 	end
 	local function clearHighlight()
 		if highlight then highlight:Destroy(); highlight = nil end
+		highlightedId = nil
 	end
 	local function entryById(id)
 		if not state or not id then return nil end
@@ -87936,6 +88588,23 @@ function StructureEditor.new(options)
 		setButton(decorateTab, true, section == "Decorate")
 		setButton(structureTab, true, section == "Build")
 		toolStrip.Visible, editStrip.Visible = section == "Build", section == "Decorate"
+		materialStrip.Visible, colorStrip.Visible = section == "Decorate", section == "Decorate"
+		variantStrip.Visible = section == "Build"
+		for kind, cards in variantCards do
+			for _, record in cards do
+				record.Button.Visible = kind == tool and section == "Build"
+				setButton(record.Button, not pending, styles[if kind == "Room" then "Wall" else kind] == record.Variant.Style)
+				if record.Button.Visible and not record.Started then
+					record.Started = true
+					Renderer.thumbnail(record.View, {
+						Kind = if kind == "Room" then "Wall" else kind, Style = record.Variant.Style,
+						Material = record.Variant.Material or (if kind == "Roof" then "RoofShingles" elseif kind == "Floor" then "WoodPlanks" elseif kind == "Window" or kind == "Door" then "Wood" else "Plaster"),
+						Color = record.Variant.Color or { 212, 215, 219 }, Level = 0, R = 0,
+						X1 = -4.5, Z1 = -4.5, X2 = 4.5, Z2 = 4.5,
+					})
+				end
+			end
+		end
 		for _, name in { "Select", "Paint", "Remove" } do
 			toolButtons[name].Parent = if section == "Decorate" then editStrip else actionStrip
 		end
@@ -87949,21 +88618,20 @@ function StructureEditor.new(options)
 		local selectedEntry = entryById(selected)
 		local selecting = tool == "Select" and moving == nil and reshaping == nil
 		moveButton.Visible = selecting and customSelection() and selectedEntry ~= nil
-		reshapeButton.Visible = moveButton.Visible and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor"
-			or selectedEntry.Kind == "Roof" or selectedEntry.Kind == "Stairs")
+		reshapeButton.Visible = moveButton.Visible and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor" or selectedEntry.Kind == "Roof")
 		finishButton.Visible = selecting and selectedEntry ~= nil
 		cancelButton.Visible = anchor ~= nil or moving ~= nil or reshaping ~= nil or selected ~= nil
 		gridButton.Visible = section == "Build"
 		setButton(moveButton, customSelection() and selectedEntry ~= nil and not pending, moving ~= nil)
 		setButton(reshapeButton, customSelection() and selectedEntry ~= nil
-			and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor" or selectedEntry.Kind == "Roof" or selectedEntry.Kind == "Stairs") and not pending, reshaping ~= nil)
+			and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor" or selectedEntry.Kind == "Roof") and not pending, reshaping ~= nil)
 		setButton(finishButton, selectedEntry ~= nil and not pending)
 		setButton(undoButton, state ~= nil and state.CanUndo == true and not pending)
 		setButton(redoButton, state ~= nil and state.CanRedo == true and not pending)
 		setButton(downButton, level > 0 and not pending)
 		setButton(upButton, level < Catalog.MAX_LEVEL and not pending)
-		styleButton.Visible = STYLES[tool] ~= nil
-		styleButton.Text = "Style: " .. (styles[tool] or "") .. " [R]"
+		styleButton.Visible = table.find(CATEGORIES, tool) ~= nil
+		styleButton.Text = string.format("Rotate %d° [R]", rotation * 90)
 		gridButton.Text = string.format("Grid: %g [G]", gridSize)
 		roofsButton.Text = if showRoofs then "Hide roof" else "Show roof"
 		status.Text = if pending then "Saving…" elseif statusMessage ~= "" then statusMessage
@@ -87983,13 +88651,117 @@ function StructureEditor.new(options)
 		statusMessage, targetRefresh = "", 0
 		setEnabled(value ~= "Furniture")
 	end
-	local function accept(nextState)
+	local function targetIds(data, id)
+		local entry = data and data.Builtins and data.Builtins[id]
+		local group = entry and entry.Kind == "Roof" and id:match("^(b:.+)/[^/]+$")
+		if not group then return { id } end
+		local ids = {}
+		for key, descriptor in data.Builtins do
+			local removed = data.Overrides and data.Overrides[key] and data.Overrides[key].Removed
+			if not removed and descriptor.Kind == "Roof" and key:match("^(b:.+)/[^/]+$") == group then table.insert(ids, key) end
+		end
+		table.sort(ids)
+		return ids
+	end
+	local function sourceEntry(data, id)
+		if not data then return nil end
+		for _, entry in data.Pieces or {} do if entry.Id == id then return entry end end
+		local original = data.Builtins and data.Builtins[id]
+		if not original then return nil end
+		local override = data.Overrides and data.Overrides[id]
+		if override and override.Removed then return nil end
+		return { Material = (override and override.Material) or original.Material, Color = (override and override.Color) or original.Color }
+	end
+	local replayPaint
+	local function scheduleReplay(session)
+		if session.ReplayQueued or session.Abandoned then return end
+		session.ReplayQueued = true
+		task.defer(function()
+			session.ReplayQueued = false
+			if not session.Abandoned then replayPaint(session, false) end
+		end)
+	end
+	local function worldPatch(session, id, patch, optimistic)
+		if session.Dirty then
+			session.Parts = {}
+			for _, part in session.House:GetDescendants() do
+				if part:IsA("BasePart") then
+					local key = part:GetAttribute("BuildingId")
+					if key then session.Parts[key] = session.Parts[key] or {}; table.insert(session.Parts[key], part) end
+				end
+			end
+			session.Dirty = false
+		end
+		for _, part in session.Parts[id] or {} do
+			if not part.Parent or part:GetAttribute("BuildingFixedFinish") then continue end
+			if not session.Watching[part] and part.GetPropertyChangedSignal then
+				session.Watching[part] = true
+				local function changed()
+					if session.Queue:busy() then scheduleReplay(session) end
+				end
+				part:GetPropertyChangedSignal("Color"):Connect(changed)
+				part:GetPropertyChangedSignal("Material"):Connect(changed)
+			end
+			if not session.Snapshots[part] then session.Snapshots[part] = { Material = part.Material, Color = part.Color } end
+			local finish = patch or session.Snapshots[part]
+			if finish.Material then
+				local value = if type(finish.Material) == "string" then Enum.Material[finish.Material] else finish.Material
+				if part.Material ~= value then part.Material = value end
+			end
+			if finish.Color then
+				local value = if type(finish.Color) == "table" and finish.Color[1] then Color3.fromRGB(finish.Color[1], finish.Color[2], finish.Color[3]) else finish.Color
+				if part.Color ~= value then part.Color = value end
+			end
+			if optimistic then session.Applied[part] = { Material = part.Material, Color = part.Color }
+			elseif patch then session.Snapshots[part] = { Material = part.Material, Color = part.Color } end
+		end
+	end
+	replayPaint = function(session, rebase)
+		if session.Abandoned then return end
+		local owner = session.House:GetAttribute("OwnerUserId") or (session.House.Parent and session.House.Parent:GetAttribute("OwnerUserId"))
+		if Players.LocalPlayer and owner and owner ~= Players.LocalPlayer.UserId then
+			-- Release local overrides once. Later replication belongs to the next owner.
+			session.Abandoned = true
+			for id in session.PendingIds do
+				for _, part in session.Parts[id] or {} do
+					local snapshot, applied = session.Snapshots[part], session.Applied[part]
+					if part.Parent and snapshot and applied then
+						if part.Material == applied.Material then part.Material = snapshot.Material end
+						if part.Color == applied.Color then part.Color = snapshot.Color end
+					end
+				end
+			end
+			return
+		end
+		if rebase then
+			for id in session.Touched do worldPatch(session, id, sourceEntry(session.State, id)) end
+		end
+		local records = {}
+		for _, record in session.Queue.Outstanding do table.insert(records, record) end
+		table.sort(records, function(a, b) return a.Serial < b.Serial end)
+		for _, record in records do
+			for _, id in targetIds(session.State, record.Patch.Id) do
+				session.Touched[id] = true
+				worldPatch(session, id, record.Patch, true)
+				if paintSession == session then
+					local entry = entriesById[id]
+					if entry then entry.Material, entry.Color = record.Patch.Material, table.clone(record.Patch.Color) end
+				end
+			end
+		end
+	end
+	accept = function(nextState)
 		if type(nextState) ~= "table" then return end
-		state = nextState
+		if paintSession then
+			local previous = paintSession.State
+			if previous and (nextState.Revision or 0) < (previous.Revision or 0) then return end
+			paintSession.State, paintSession.Dirty = nextState, true
+		end
+		state = deep(nextState)
 		builtins, entriesById = {}, {}
-		for _, entry in nextState.Pieces or {} do entriesById[entry.Id] = entry end
-		for id, entry in nextState.Builtins or {} do
-			local override = nextState.Overrides and nextState.Overrides[id]
+		for _, entry in state.Pieces or {} do entriesById[entry.Id] = entry end
+		for id, entry in state.Builtins or {} do
+			local override = state.Overrides and state.Overrides[id]
 			if override and override.Removed then continue end
 			local descriptor = copy(entry)
 			if override then descriptor.Material, descriptor.Color = override.Material or descriptor.Material, override.Color or descriptor.Color end
@@ -87998,7 +88770,53 @@ function StructureEditor.new(options)
 		targetRefresh = 0
 		if selected and not entryById(selected) then selected = nil; clearHighlight() end
 		previewKey = nil
+		if paintSession then replayPaint(paintSession, true) end
 		refresh()
+	end
+	local function openPaintSession(model, where)
+		local session = paintSessions[model]
+		if session and session.Site == where and not session.Abandoned then return session end
+		session = { House = model, Site = where, State = nil, Touched = {},
+			Snapshots = setmetatable({}, { __mode = "k" }), Watching = setmetatable({}, { __mode = "k" }),
+			Applied = setmetatable({}, { __mode = "k" }), PendingIds = {}, Parts = {}, Dirty = true }
+		session.Queue = PaintQueue.new({
+			Send = function(entries)
+				if not remote then return { Ok = false, Message = "Building tools are still connecting." } end
+				local ok, result = pcall(remote.InvokeServer, remote, "PaintBatch", { Entries = entries }, session.Site)
+				if ok and type(result) == "table" then return result end
+				local fetched, current = pcall(remote.InvokeServer, remote, "Get", {}, session.Site)
+				return { Ok = false, Message = "Painting could not be saved. Please try again.", State = fetched and current and current.State }
+			end,
+			Changed = function(outstanding)
+				session.PendingIds = {}
+				for _, record in outstanding do
+					for _, id in targetIds(session.State, record.Patch.Id) do session.PendingIds[id] = true end
+				end
+				replayPaint(session, false)
+			end,
+			Result = function(result)
+				if result and result.State and (not session.State or (result.State.Revision or 0) >= (session.State.Revision or 0)) then session.State = result.State end
+				session.Dirty = true
+				if paintSession == session and opened and session.State then accept(session.State) else replayPaint(session, true) end
+				if not result or result.Ok == false then
+					local message = result and result.Message or "Painting could not be saved. Please try again."
+					if paintSession == session and opened then notify(message); refresh() elseif options.Notice then options.Notice(message) end
+				end
+			end,
+		})
+		if model.DescendantAdded then
+			model.DescendantAdded:Connect(function()
+				session.Dirty = true
+				if session.Queue:busy() then scheduleReplay(session) end
+			end)
+		end
+		paintSessions[model] = session
+		return session
+	end
+	local function paint(id)
+		if not paintSession or not state then return end
+		local ids = targetIds(paintSession.State, id)
+		paintSession.Queue:paint({ Id = ids[1], Material = material, Color = table.clone(color) })
 	end
 	local function send(action, payload, onSuccess)
 		if pending or not opened then return end
@@ -88006,9 +88824,18 @@ function StructureEditor.new(options)
 		pending, statusMessage = true, ""
 		refresh()
 		local token, requestSite = generation, site
-		task.spawn(function()
+		local requestSession = paintSession
+		local function dispatch() task.spawn(function()
 			local ok, result = pcall(remote.InvokeServer, remote, action, payload, requestSite)
-			if token ~= generation then return end
+			if token ~= generation then
+				if ok and type(result) == "table" and type(result.State) == "table" and requestSession then
+					if not requestSession.State or (result.State.Revision or 0) >= (requestSession.State.Revision or 0) then
+						requestSession.State = result.State
+						if paintSession == requestSession and opened then accept(result.State) end
+					end
+				end
+				return
+			end
 			pending = false
 			if ok and type(result) == "table" then
 				if result.State then accept(result.State) end
@@ -88019,12 +88846,16 @@ function StructureEditor.new(options)
 				notify("Building could not be saved. Please try again.")
 			end
 			refresh()
-		end)
+		end) end
+		if paintSession then paintSession.Queue:drain(dispatch) else dispatch() end
 	end
 	local function changeTool(name)
 		if pending then return end
 		if table.find(CATEGORIES, name) then section, lastBuildTool = "Build", name
 		elseif name == "Paint" then section = "Decorate" end
+		if name ~= tool and table.find(CATEGORIES, name) then
+			material = if name == "Window" or name == "Door" then "Wood" elseif name == "Roof" then "RoofShingles" elseif name == "Floor" then "WoodPlanks" else "Plaster"
+		end
 		tool, anchor, moving, reshaping, statusMessage, targetRefresh = name, nil, nil, nil, "", 0
 		clearPreview()
 		if options.OnModeChanged then options.OnModeChanged(enabled) end
@@ -88083,7 +88914,7 @@ function StructureEditor.new(options)
 					local id = idOf(item)
 					local entry = entryById(id)
 					if entry and (entry.Level or 0) == level and not item:GetAttribute("BuildingRemoved")
-						and (item.LocalTransparencyModifier or 0) < 0.99 and (item.Transparency or 0) < 1
+						and ((item.LocalTransparencyModifier or 0) < 0.99 or hiddenHost[item] ~= nil) and (item.Transparency or 0) < 1
 						and (self:roofVisible() or entry.Kind ~= "Roof") then table.insert(targets, item) end
 				end
 			end
@@ -88131,6 +88962,7 @@ function StructureEditor.new(options)
 			local entry = if source then copy(source) else {
 				Kind = kind, Level = host.Level or level, Material = material, Color = table.clone(color), Style = styles[kind],
 			}
+			entry.R = rotation
 			local width = Catalog.opening(entry)
 			local minimum, maximum = width / 2 + 0.2, length - width / 2 - 0.2
 			local openingStep = gridSize / 2
@@ -88145,13 +88977,23 @@ function StructureEditor.new(options)
 		if source then
 			local entry = copy(source)
 			local cx, cz = (entry.X1 + entry.X2) / 2, (entry.Z1 + entry.Z2) / 2
+			if (rotation - (source.R or 0)) % 2 == 1 then
+				local dx1, dz1 = entry.X1 - cx, entry.Z1 - cz
+				local dx2, dz2 = entry.X2 - cx, entry.Z2 - cz
+				entry.X1, entry.Z1, entry.X2, entry.Z2 = cx - dz1, cz + dx1, cx - dz2, cz + dx2
+			end
 			local dx, dz = math.round((x - cx) / gridSize) * gridSize, math.round((z - cz) / gridSize) * gridSize
 			entry.X1, entry.Z1 = entry.X1 + dx, entry.Z1 + dz
 			entry.X2, entry.Z2, entry.Level = entry.X2 + dx, entry.Z2 + dz, level
+			entry.R = rotation
 			return entry
 		end
-		if kind ~= "Wall" and kind ~= "Room" and kind ~= "Floor" and kind ~= "Roof" and kind ~= "Stairs" then return nil end
+		if kind ~= "Wall" and kind ~= "Room" and kind ~= "Floor" and kind ~= "Roof" then return nil end
 		local first = anchor or Vector2.new(x, z)
+		local dx, dz = x - first.X, z - first.Y
+		if dx == 0 and dz == 0 then dx = gridSize; if kind ~= "Wall" then dz = gridSize end end
+		for _ = 1, rotation do dx, dz = -dz, dx end
+		x, z = first.X + dx, first.Y + dz
 		if kind == "Wall" then
 			if math.abs(x - first.X) >= math.abs(z - first.Y) then z = first.Y else x = first.X end
 			if x == first.X and z == first.Y then x += gridSize end
@@ -88161,7 +89003,7 @@ function StructureEditor.new(options)
 		end
 		return {
 			Kind = if kind == "Room" then "Floor" else kind, X1 = first.X, Z1 = first.Y, X2 = x, Z2 = z, Level = level,
-			Material = material, Color = table.clone(color), Style = styles[kind],
+			Material = material, Color = table.clone(color), Style = styles[if kind == "Room" then "Floor" else kind], R = rotation,
 		}
 	end
 	local function room(entry)
@@ -88171,7 +89013,7 @@ function StructureEditor.new(options)
 		for index, edge in edges do
 			table.insert(entries, {
 				Id = "room-preview-" .. index, Kind = "Wall", X1 = edge[1], Z1 = edge[2], X2 = edge[3], Z2 = edge[4],
-				Level = entry.Level, Material = entry.Material, Color = table.clone(entry.Color),
+				Level = entry.Level, Material = entry.Material, Color = table.clone(entry.Color), Style = styles.Wall, R = entry.R,
 			})
 		end
 		local floor = copy(entry)
@@ -88202,6 +89044,21 @@ function StructureEditor.new(options)
 					elseif tool == "Remove" then "Remove " .. hovered.Kind .. " · Undo available" else hovered.Kind
 				tooltip.Visible = true
 			end
+			if not selected and highlightedId ~= (hovered and hovered.Id) then
+				clearHighlight()
+				if hovered then
+					highlightedId = hovered.Id
+					highlight = make("Folder", previewFolder, { Name = "SurfacePreviewOutline" })
+					for _, part in house:GetDescendants() do
+						if part:IsA("BasePart") and part:GetAttribute("BuildingId") == hovered.Id then
+							make("Highlight", highlight, { Adornee = part, FillTransparency = 0.93,
+								FillColor = if tool == "Remove" then MENU.Red else MENU.Blue,
+								OutlineColor = if tool == "Remove" then MENU.Red else MENU.White,
+								DepthMode = Enum.HighlightDepthMode.Occluded })
+						end
+					end
+				end
+			end
 		elseif state then
 			local raw, reason = candidateAt(position)
 			local entry, normalizeReason
@@ -88227,14 +89084,24 @@ function StructureEditor.new(options)
 			local key = if entry then string.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
 				entry.Kind, tostring(entry.X1), tostring(entry.Z1), tostring(entry.X2), tostring(entry.Z2), tostring(entry.Level),
 				tostring(entry.HostId), tostring(entry.Offset), tostring(entry.Style), entry.Material or material,
-				tostring(color[1]), tostring(color[2]), tostring(color[3]), tostring(reason), tostring(reshaping or moving)) .. tool else "none"
+				tostring(color[1]), tostring(color[2]), tostring(color[3]), tostring(reason), tostring(reshaping or moving)) .. tool .. tostring(entry.R) else "none"
 			if key ~= previewKey then
+				for part, modifier in hiddenHost do if part.Parent then part.LocalTransparencyModifier = modifier end end
+				hiddenHost = {}
 				if preview then preview:Destroy(); preview = nil end
 				previewKey = key
 				if roomEntries then
 					preview = make("Model", previewFolder, { Name = "RoomPreview" })
 					for _, piece in roomEntries do Renderer.preview(preview, frame, piece, state.Pieces or {}, builtins, reason == nil, site) end
 				elseif entry then preview = Renderer.preview(previewFolder, frame, entry, state.Pieces or {}, builtins, reason == nil, site) end
+				if entry and entry.HostId and reason == nil then
+					for _, part in house:GetDescendants() do
+						if part:IsA("BasePart") and part:GetAttribute("BuildingId") == entry.HostId then
+							hiddenHost[part] = part.LocalTransparencyModifier or 0
+							part.LocalTransparencyModifier = 1
+						end
+					end
+				end
 			end
 			tooltip.Text = if reason then reason elseif entry then string.format("%s · $%d\n%s", if isRoom then "Room" else entry.Kind, cost,
 				if moving then "Click to move" elseif anchor or tool == "Door" or tool == "Window" then "Click to build" else "Click to start") else ""
@@ -88248,14 +89115,14 @@ function StructureEditor.new(options)
 		end
 	end
 	function self:click(position)
-		if not self:isActive() or pending or overInterface(position) then return end
+		if not self:isActive() or (pending and tool ~= "Paint") or overInterface(position) then return end
 		statusMessage = ""
 		self:step(position)
 		if tool == "Select" and not moving and not reshaping then selectHovered(); return end
 		if tool == "Paint" or tool == "Remove" then
 			if not hovered then return end
 			local id = hovered.Id
-			if tool == "Paint" then send("Paint", { Id = id, Material = material, Color = table.clone(color) })
+			if tool == "Paint" then paint(id)
 			else send("Remove", { Id = id }) end
 			return
 		end
@@ -88280,11 +89147,9 @@ function StructureEditor.new(options)
 		anchor, moving, reshaping, selected, statusMessage = nil, nil, nil, nil, ""
 		clearPreview(); clearHighlight(); refresh()
 	end
-	local function cycleStyle()
-		local list = STYLES[tool]
-		if not list then return end
-		local index = table.find(list, styles[tool]) or 1
-		styles[tool] = list[index % #list + 1]
+	local function rotate()
+		if not table.find(CATEGORIES, tool) then return end
+		rotation = (rotation + 1) % 4
 		previewKey = nil
 		refresh()
 	end
@@ -88301,7 +89166,7 @@ function StructureEditor.new(options)
 		if control and input.KeyCode == Enum.KeyCode.Z then send("Undo", {}); return true end
 		if control and input.KeyCode == Enum.KeyCode.Y then send("Redo", {}); return true end
 		if input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.Escape then cancel(); return true end
-		if input.KeyCode == Enum.KeyCode.R then cycleStyle(); return true end
+		if input.KeyCode == Enum.KeyCode.R then rotate(); return true end
 		if input.KeyCode == Enum.KeyCode.G then nextGrid(); return true end
 		if input.KeyCode == Enum.KeyCode.PageUp then changeLevel(1); return true end
 		if input.KeyCode == Enum.KeyCode.PageDown then changeLevel(-1); return true end
@@ -88311,7 +89176,8 @@ function StructureEditor.new(options)
 	function self:enter(model, houseFrame, where)
 		generation += 1
 		house, frame, site, opened, pending = model, houseFrame, where, true, false
-		state, level, statusMessage, targetRefresh = nil, 0, "", 0
+		paintSession = openPaintSession(model, where)
+		state, level, statusMessage, targetRefresh, rotation = nil, 0, "", 0, 0
 		setSection("Furniture")
 		send("Get", {})
 	end
@@ -88325,6 +89191,18 @@ function StructureEditor.new(options)
 		refresh()
 	end
 	for name, item in toolButtons do item.Activated:Connect(function() changeTool(name) end) end
+	for kind, cards in variantCards do
+		for _, record in cards do
+			record.Button.Activated:Connect(function()
+				if pending then return end
+				styles[if kind == "Room" then "Wall" else kind] = record.Variant.Style
+				if record.Variant.Material then material = record.Variant.Material end
+				if record.Variant.Color then color = table.clone(record.Variant.Color) end
+				previewKey, statusMessage = nil, ""
+				refresh()
+			end)
+		end
+	end
 	for name, item in materialButtons do item.Activated:Connect(function() material = name; statusMessage = ""; previewKey = nil; refresh() end) end
 	for item, swatch in colorButtons do
 		item.Activated:Connect(function()
@@ -88346,7 +89224,7 @@ function StructureEditor.new(options)
 	decorateTab.Activated:Connect(function() setSection("Decorate") end)
 	structureTab.Activated:Connect(function() setSection("Build") end)
 	done.Activated:Connect(function() if options.OnExit then options.OnExit() end end)
-	styleButton.Activated:Connect(cycleStyle)
+	styleButton.Activated:Connect(rotate)
 	cancelButton.Activated:Connect(cancel)
 	gridButton.Activated:Connect(nextGrid)
 	downButton.Activated:Connect(function() changeLevel(-1) end)
@@ -88359,13 +89237,13 @@ function StructureEditor.new(options)
 	undoButton.Activated:Connect(function() send("Undo", {}) end)
 	redoButton.Activated:Connect(function() send("Redo", {}) end)
 	finishButton.Activated:Connect(function()
-		if selected then send("Paint", { Id = selected, Material = material, Color = table.clone(color) }) end
+		if selected then paint(selected) end
 	end)
 	moveButton.Activated:Connect(function()
 		if not customSelection() or pending then return end
 		moving, reshaping, anchor, statusMessage = selected, nil, nil, ""
 		local entry = entryById(selected)
-		if entry then level = entry.Level or level; tool = entry.Kind end
+		if entry then level = entry.Level or level; tool = entry.Kind; rotation = entry.R or 0 end
 		clearPreview(); refresh()
 	end)
 	reshapeButton.Activated:Connect(function()
@@ -88374,6 +89252,7 @@ function StructureEditor.new(options)
 		if not entry then return end
 		reshaping, moving, anchor, tool, level, statusMessage = selected, nil, nil, entry.Kind, entry.Level or level, ""
 		styles[tool] = entry.Style or styles[tool]
+		rotation = entry.R or 0
 		clearPreview(); refresh()
 	end)
 	-- Wait outside BuildMode.start so a delayed service does not hold up its UI.
@@ -88394,7 +89273,7 @@ return StructureEditor
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="292">
+        <Item class="ModuleScript" referent="294">
           <Properties>
             <string name="Name">SupercellWeather</string>
             <string name="Source"><![CDATA[-- The supercell and its tornadoes, drawn from the shared deterministic forecast
@@ -88747,7 +89626,7 @@ return Controller
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="293">
+        <Item class="ModuleScript" referent="295">
           <Properties>
             <string name="Name">SwellSurface</string>
             <string name="Source"><![CDATA[-- A local water sheet shaped by the same swell field the boats ride. Terrain water
@@ -88760,6 +89639,7 @@ local RunService = game:GetService("RunService")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local MeshFeatures = require(ReplicatedStorage.Shared.MeshFeatures)
 
 local SwellSurface = {}
 -- World-fixed vertex grid around the camera: COUNT cells of SPACING studs a side.
@@ -88785,6 +89665,13 @@ local FADE_FROM, FADE_HEIGHT = 0.05, 0.35
 local HULL_CLEARANCE = 0.3
 local HULL_MARGIN = 1.5
 local SUNKEN = -2
+-- A vertex whose swell is weaker than this can't rise to FADE_FROM, so it is fully
+-- transparent: it is written flat once and then left alone. Sheltered water (the
+-- harbour, the lake) otherwise rewrote and re-uploaded the whole mesh every frame.
+local FLAT_AMPLITUDE = 0.03
+-- Hull boxes are rigid with the root; GetBoundingBox walks every part, so it is
+-- redone this often rather than every frame for every boat in range.
+local HULL_BOX_REFRESH = 2
 local started = false
 
 local function smoothstep(t: number): number
@@ -88801,6 +89688,9 @@ function SwellSurface.start()
 		return
 	end
 	started = true
+	if not MeshFeatures.EditableMeshesEnabled then
+		return
+	end
 	task.spawn(function()
 		local terrain = workspace.Terrain
 		local size = COUNT + 1
@@ -88888,6 +89778,24 @@ function SwellSurface.start()
 		-- World grid cells, kept while inside the sheet: wet probe and swell strength.
 		local cells = {}
 		local alphas = table.create(size * size, -1)
+		-- Vertices already written flat since the sheet last moved.
+		local flat = table.create(size * size, false)
+		local hullBoxes: { [Model]: { root: BasePart, offset: CFrame, extents: Vector3, at: number } } =
+			setmetatable({}, { __mode = "k" }) :: any
+		local function hullBox(boat: Model): (CFrame, Vector3)
+			local root = boat.PrimaryPart
+			if not root then
+				return boat:GetBoundingBox()
+			end
+			local clock = os.clock()
+			local cached = hullBoxes[boat]
+			if not cached or cached.root ~= root or clock - cached.at > HULL_BOX_REFRESH then
+				local frame, extents = boat:GetBoundingBox()
+				cached = { root = root, offset = root.CFrame:ToObjectSpace(frame), extents = extents, at = clock }
+				hullBoxes[boat] = cached
+			end
+			return root.CFrame * cached.offset, cached.extents
+		end
 		local originX, originZ = math.huge, math.huge
 		local probeCursor, probeDue = 0, 0
 		local refreshCursor, refreshDue = 0, 0
@@ -88942,6 +89850,7 @@ function SwellSurface.start()
 				originX, originZ = firstX, firstZ
 				unprobed = true
 				part.CFrame = CFrame.new(centerX * SPACING, Biomes.WaterLevel, centerZ * SPACING)
+				table.clear(flat)
 				-- Forget cells the sheet left; keep a shore-reach border for the taper.
 				for k, cell in cells do
 					if
@@ -89013,7 +89922,7 @@ function SwellSurface.start()
 					if not boat:IsA("Model") then
 						continue
 					end
-					local frame, extents = boat:GetBoundingBox()
+					local frame, extents = hullBox(boat)
 					local reach = extents.Magnitude / 2 + HULL_MARGIN
 					if (frame.Position - cameraPosition).Magnitude > HALF * 1.5 + reach then
 						continue
@@ -89058,6 +89967,20 @@ function SwellSurface.start()
 					cell.shown += (cell.shore - cell.shown) * ease
 					local edge = smoothstep(math.min(edgeZ, HALF - math.abs(column * SPACING - HALF)) / EDGE_FADE)
 					local amplitude = cell.amplitude * cell.shown * edge
+					if amplitude < FLAT_AMPLITUDE then
+						if not flat[index] then
+							flat[index] = true
+							local y = if cell.shown < 0.01 then SUNKEN else 0
+							mesh:SetPosition(vertices[index], Vector3.new(column * SPACING - HALF, y, row * SPACING - HALF))
+							mesh:SetNormal(normals[index], Vector3.yAxis)
+							if alphas[index] ~= 0 then
+								alphas[index] = 0
+								mesh:SetColorAlpha(colors[index], 0)
+							end
+						end
+						continue
+					end
+					flat[index] = false
 					local x, z = cell.x * SPACING, cell.z * SPACING
 					local unit, sx, sz = Weather.swell(x, z, now, direction)
 					local height = unit * amplitude
@@ -89084,7 +90007,7 @@ return SwellSurface
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="294">
+        <Item class="ModuleScript" referent="296">
           <Properties>
             <string name="Name">Tutorial</string>
             <string name="Source"><![CDATA[-- The island tutorial on the client: the guide dialogue, the goal tracker, and the arrows that lead
@@ -89591,7 +90514,7 @@ return Client
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="295">
+        <Item class="ModuleScript" referent="297">
           <Properties>
             <string name="Name">VolumetricClouds</string>
             <string name="Source"><![CDATA[-- Every rainy player gets an overlapping volumetric cloud deck overhead.
@@ -90619,7 +91542,7 @@ return Clouds
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="296">
+        <Item class="ModuleScript" referent="298">
           <Properties>
             <string name="Name">WaterWaves</string>
             <string name="Source"><![CDATA[-- Local, pooled swell ribbons follow the same water samples as the boats.
@@ -91052,7 +91975,7 @@ return WaterWaves
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="297">
+        <Item class="ModuleScript" referent="299">
           <Properties>
             <string name="Name">Weather</string>
             <string name="Source"><![CDATA[-- Camera-local precipitation keeps the whole ocean affordable. The shared clock
@@ -91402,7 +92325,7 @@ return WeatherController
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="298">
+        <Item class="ModuleScript" referent="300">
           <Properties>
             <string name="Name">WeatherRadar</string>
             <string name="Source"><![CDATA[-- Paints the live picture on every weather radar table near the camera (placed
@@ -91856,7 +92779,7 @@ return Radar
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="299">
+        <Item class="ModuleScript" referent="301">
           <Properties>
             <string name="Name">WorldMap</string>
             <string name="Source"><![CDATA[-- North-up sea chart. Only the player marker updates while the chart is open.
@@ -92146,7 +93069,7 @@ return WorldMap
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="300">
+  <Item class="Workspace" referent="302">
     <Properties>
       <string name="Name">Workspace</string>
       <bool name="FilteringEnabled">true</bool>

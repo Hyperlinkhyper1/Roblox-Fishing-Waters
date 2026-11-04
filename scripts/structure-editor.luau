@@ -19,9 +19,10 @@ local identity = { UpVector = Vector3.new(0, 1, 0) }
 function identity:PointToObjectSpace(point) return point end
 setmetatable(identity, { __mul = function(_, point) return point end })
 local CFrame = { identity = identity }
+local colorEquality={__eq=function(a,b) return a.R==b.R and a.G==b.G and a.B==b.B end}
 local Color3 = {
-	new = function(r, g, b) return { R = r, G = g, B = b } end,
-	fromRGB = function(r, g, b) return { R = r / 255, G = g / 255, B = b / 255 } end,
+	new = function(r, g, b) return setmetatable({ R = r, G = g, B = b },colorEquality) end,
+	fromRGB = function(r, g, b) return setmetatable({ R = r / 255, G = g / 255, B = b / 255 },colorEquality) end,
 }
 local UDim = { new = function(...) return { ... } end }
 local UDim2 = { new = UDim.new, fromOffset = UDim.new, fromScale = UDim.new }
@@ -44,6 +45,10 @@ function methods:FindFirstChild(name)
 	return nil
 end
 function methods:WaitForChild(name) return assert(self:FindFirstChild(name), "Missing mock child " .. name) end
+function methods:GetPropertyChangedSignal(name)
+	local signals=self._properties.PropertySignals or {};self._properties.PropertySignals=signals
+	signals[name]=signals[name] or signal();return signals[name]
+end
 function methods:GetChildren()
 	local found = {}
 	for _, item in instances do if item.Parent == self then table.insert(found, item) end end
@@ -84,7 +89,11 @@ function Instance.new(class)
 			if key == "Parent" then return nil end
 			return methods.FindFirstChild(self, key)
 		end,
-		__newindex = function(self, key, value) self._properties[key] = value end,
+		__newindex = function(self, key, value)
+			local old=self._properties[key];self._properties[key] = value
+			local events=self._properties.PropertySignals
+			if old~=value and events and events[key] then events[key]:Fire() end
+		end,
 	})
 	table.insert(instances, item)
 	return item
@@ -97,12 +106,14 @@ end
 local Theme = { Colors = { Inset = Color3.new(0, 0, 0) } }
 for _, method in { "text", "glassButton", "glassWindow", "corner", "scroll" } do Theme[method] = function() end end
 local previewCalls = {}
+local PaintQueue
 local expectedFrame = identity
 local Renderer = { preview = function(parent, frame, entry, pieces, builtins, valid, site)
 	check(frame == expectedFrame, "The public colon API must preserve the house frame")
 	table.insert(previewCalls, { Entry = entry, Valid = valid, Site = site, Builtins = builtins })
 	return named("Model", "Preview", parent)
 end }
+Renderer.thumbnail = function(view, entry) view.PreviewStyle = entry.Style end
 local replicated = named("Folder", "ReplicatedStorage")
 replicated.Shared = { BuildingCatalog = "catalog", BuildingRenderer = "renderer" }
 local network = named("Folder", "Building", replicated)
@@ -114,8 +125,9 @@ local input = { GetFocusedTextBox = function() return nil end, IsKeyDown = funct
 local services = { Players = {}, ReplicatedStorage = replicated, UserInputService = input, ReplicatedFirst = first }
 local game = { GetService = function(_, name) return assert(services[name], name) end }
 local function require(token)
-	if token == "catalog" then return Catalog elseif token == "renderer" then return Renderer else return Theme end
+	if token == "catalog" then return Catalog elseif token == "renderer" then return Renderer elseif token == "paintQueue" then return PaintQueue else return Theme end
 end
+local script = { Parent = { BuildPaintQueue = "paintQueue" } }
 local rayHit = nil
 local workspace = named("Folder", "Workspace")
 workspace.CurrentCamera = {
@@ -128,13 +140,26 @@ workspace.Raycast = function(_, _, _, parameters)
 	return nil
 end
 local RaycastParams = { new = function() return {} end }
-local task = { spawn = function(callback) callback() end }
+local task = {}
+local clock=0
+local os={clock=function() return clock end}
+function task.wait(seconds) clock+=seconds or 0;return seconds end
+function task.spawn(callback,...)
+	local thread=if type(callback)=='thread' then callback else coroutine.create(callback)
+	local ok,reason=coroutine.resume(thread,...);assert(ok,reason)
+	return thread
+end
+task.defer=task.spawn
+PaintQueue=(function()
+-- BUILD_PAINT_QUEUE --
+end)()
 local serverState = { Cash = 10000, Pieces = {}, Overrides = {}, Builtins = {}, CanUndo = false, CanRedo = false }
 local calls, nextId, pieceInstances = {}, 1, {}
 local house = named("Model", "Home", workspace)
 local wall = named("Part", "ExistingWall", house)
 wall:SetAttribute("BuildingId", "b:fixture")
 wall:SetAttribute("BuildingKind", "Wall")
+wall.Material, wall.Color = Enum.Material.Plaster, Color3.fromRGB(235,229,211)
 serverState.Builtins["b:fixture"] = {
 	Id = "b:fixture", Kind = "Wall", X1 = -20, Z1 = -20.25, X2 = 20, Z2 = -20.25,
 	BaseY = 0.16, Height = 11.5, Thickness = 0.45, Level = 0, Material = "Plaster", Color = { 235, 229, 211 },
@@ -145,8 +170,18 @@ local function deep(value)
 	for key, child in value do result[key] = deep(child) end
 	return result
 end
+local delayPaint, waitingPaint = false, {}
+local function acknowledgePaint(index, accepted)
+	local record=assert(waitingPaint[index],'No paint acknowledgement is waiting')
+	local ok,reason=coroutine.resume(record.Thread,accepted~=false)
+	assert(ok,reason)
+end
 function request:InvokeServer(action, payload, site)
 	table.insert(calls, { Action = action, Payload = deep(payload), Site = site })
+	if action == "PaintBatch" and delayPaint then
+		table.insert(waitingPaint,{Thread=coroutine.running(),Payload=deep(payload),Site=site})
+		if coroutine.yield('paint save pending')==false then return {Ok=false,Message='Save rejected',State=deep(serverState)} end
+	end
 	if action == "Place" then
 		for _, raw in payload.Entries do
 			local entry = deep(raw); entry.Id = "p" .. nextId; nextId += 1
@@ -162,6 +197,14 @@ function request:InvokeServer(action, payload, site)
 		end
 	elseif action == "Remove" then
 		serverState.Overrides[payload.Id] = { Removed = true }
+	elseif action == "PaintBatch" then
+		for _, patch in payload.Entries do
+			local custom=false
+			for _,entry in serverState.Pieces do
+				if entry.Id==patch.Id then entry.Material,entry.Color=patch.Material,deep(patch.Color);custom=true end
+			end
+			if not custom then serverState.Overrides[patch.Id]={Material=patch.Material,Color=deep(patch.Color)} end
+		end
 	end
 	if action ~= "Get" then serverState.CanUndo = true end
 	return { Ok = true, State = deep(serverState) }
@@ -245,9 +288,26 @@ for _, item in instances do
 end
 byName("BuildTab").Activated:Fire()
 check(blue(byName("ToolWall")), "Build must restore its latest construction category")
-for _, name in { "ToolWall", "ToolRoom", "ToolDoor", "ToolWindow", "ToolFloor", "ToolRoof", "ToolStairs" } do
+check(not visible(byName('SurfaceMaterials')) and not visible(byName('SurfaceColors')),
+	'Construction catalogues must replace the paint palettes rather than crowd the same rows')
+byName('ToolWindow').Activated:Fire()
+for _,variant in Catalog.Variants.Window do
+	local card=byName('VariantWindow'..variant.Id)
+	local thumbnail=card:FindFirstChild('CatalogueThumbnail')
+	check(visible(card) and thumbnail and thumbnail.PreviewStyle==variant.Style,
+		'Each window catalogue card must show the matching rendered shape')
+end
+check(not visible(byName('VariantRoofFlat')),'A window catalogue must not include unrelated roof cards')
+byName('VariantWindowTall').Activated:Fire()
+check(blue(byName('VariantWindowTall')),'A catalogue card must select its own shape')
+byName('VariantWindowClassic').Activated:Fire()
+byName('ToolWall').Activated:Fire()
+for _, name in { "ToolWall", "ToolRoom", "ToolDoor", "ToolWindow", "ToolFloor", "ToolRoof" } do
 	check(byName(name).Parent == byName("ConstructionTools"), "Construction categories must stay together in their tab row")
 end
+local hasStairs=false
+for _,item in instances do if item.Name=='ToolStairs' then hasStairs=true end end
+check(not hasStairs,'Stairs must no longer appear as a construction tool')
 for _, name in { "ToolSelect", "ToolPaint", "ToolRemove" } do
 	check(byName(name).Parent == byName("ConstructionActions"), "Editing utilities must stay separate from building categories")
 end
@@ -290,6 +350,7 @@ editor:click(Vector2.new(-6.75, 2.25))
 check(calls[#calls].Action == "Place" and #calls[#calls].Payload.Entries == 5, "Room tool must submit four walls and a floor atomically")
 byName("ToolRoof").Activated:Fire()
 check(editor:roofVisible(), "Roof tool must show roof surfaces")
+byName("VariantRoofFlat").Activated:Fire()
 editor:key({ KeyCode = Enum.KeyCode.R })
 editor:key({ KeyCode = Enum.KeyCode.PageUp })
 check(editor:elevation() == 12, "PageUp must raise the working level and camera focus")
@@ -303,14 +364,9 @@ rayHit = nil
 editor:click(Vector2.new(2.25, -15.75))
 editor:click(Vector2.new(11.25, -6.75))
 check(calls[#calls].Payload.Entries[1].Kind == "Roof" and calls[#calls].Payload.Entries[1].Level == 1
-	and calls[#calls].Payload.Entries[1].Style == "Flat", "Roof style and level must reach the server")
+	and calls[#calls].Payload.Entries[1].Style == "Flat" and calls[#calls].Payload.Entries[1].R==1,
+	"R must rotate independently of the catalogue roof style, and both must reach the server")
 editor:key({ KeyCode = Enum.KeyCode.PageDown })
-byName("ToolStairs").Activated:Fire()
-editor:key({ KeyCode = Enum.KeyCode.R })
-editor:click(Vector2.new(6.75, -29.25))
-editor:click(Vector2.new(20.25, -24.75))
-check(calls[#calls].Action == "Place" and calls[#calls].Payload.Entries[1].Kind == "Stairs"
-	and calls[#calls].Payload.Entries[1].Style == "East", "Stairs must draw a rectangle and rotate their ascent direction")
 byName("ToolPaint").Activated:Fire()
 check(not visible(textButton("Move")) and not visible(textButton("Reshape")) and not visible(textButton("Apply finish")),
 	"Painting must hide object actions even when a previous selection still exists")
@@ -318,9 +374,14 @@ byName("CustomHexColor").Text = "#123ABC"
 pressText("Set color")
 rayHit = { Instance = wall, Position = Vector3.new(2.25, 4, -20) }
 editor:click(Vector2.new(2.25, -20))
-check(calls[#calls].Action == "Paint" and calls[#calls].Payload.Id == "b:fixture", "Paint must target the stable structural ID")
-check(calls[#calls].Payload.Color[1] == 18 and calls[#calls].Payload.Color[2] == 58 and calls[#calls].Payload.Color[3] == 188, "Custom hex color must submit exact RGB bytes")
+check(calls[#calls].Action == "PaintBatch" and calls[#calls].Payload.Entries[1].Id == "b:fixture", "Paint must target the stable structural ID through the batched writer")
+local sentFinish=calls[#calls].Payload.Entries[1]
+check(sentFinish.Color[1] == 18 and sentFinish.Color[2] == 58 and sentFinish.Color[3] == 188, "Custom hex color must submit exact RGB bytes")
 byName("ToolWindow").Activated:Fire()
+editor:step(Vector2.new(2.25,-20))
+check(wall.LocalTransparencyModifier==1,'An opening preview must temporarily hide its uncut host so the proposed window is visible')
+editor:key({KeyCode=Enum.KeyCode.X})
+check((wall.LocalTransparencyModifier or 0)==0,'Cancelling an opening preview must restore the original wall visibility')
 editor:click(Vector2.new(2.25, -20))
 check(calls[#calls].Action == "Place" and calls[#calls].Payload.Entries[1].HostId == "b:fixture", "Window must attach to the pointed wall")
 check(calls[#calls].Payload.Entries[1].Offset > 0, "Opening offset must be a stud distance along its host")
@@ -360,6 +421,85 @@ check(previewCalls[#previewCalls].Site == "Company", "Company ghosts must receiv
 -- Aim oblique rays near a snap boundary on the visible grid. A ground-plane
 -- projection is lower than that grid and would select its neighbouring line.
 editor:exit()
+
+-- Delayed authoritative saves must not stall input or erase newer local paint.
+expectedFrame=identity
+workspace.CurrentCamera.ScreenPointToRay=function(_,x,z)
+	return {Origin=Vector3.new(x,100,z),Direction=Vector3.new(0,-1,0)}
+end
+local rapidHouse=named('Model','RapidHome',workspace)
+local rapidParts={}
+serverState.Pieces,serverState.Builtins,serverState.Overrides={}, {}, {}
+for index=1,2 do
+	local id='b:rapid'..index
+	local part=named('Part','RapidWall'..index,rapidHouse)
+	part:SetAttribute('BuildingId',id);part:SetAttribute('BuildingKind','Wall')
+	part.Material,part.Color=Enum.Material.Plaster,Color3.fromRGB(235,229,211)
+	rapidParts[index]=part
+	serverState.Builtins[id]={Id=id,Kind='Wall',X1=-9,Z1=index*4.5,X2=9,Z2=index*4.5,
+		BaseY=0.16,Height=11.5,Thickness=0.45,Level=0,Material='Plaster',Color={235,229,211}}
+end
+local fixedGlass=named('Part','FixedGlass',rapidHouse)
+fixedGlass:SetAttribute('BuildingId','b:rapid1');fixedGlass:SetAttribute('BuildingKind','Wall')
+fixedGlass:SetAttribute('BuildingFixedFinish',true)
+fixedGlass.Material,fixedGlass.Color=Enum.Material.Glass,Color3.fromRGB(163,205,215)
+editor:enter(rapidHouse,identity,nil)
+byName('DecorateTab').Activated:Fire()
+byName('MaterialBrick').Activated:Fire()
+local function rapidClick(index,hexColor)
+	byName('CustomHexColor').Text=hexColor;pressText('Set color')
+	rayHit={Instance=rapidParts[index],Position=Vector3.new(0,4,index*4.5)}
+	editor:click(Vector2.new(0,index*4.5))
+end
+delayPaint=true
+local firstWait=#waitingPaint+1
+rapidClick(1,'#113355')
+check(#waitingPaint==firstWait and rapidParts[1].Color==Color3.fromRGB(17,51,85),
+	'The first clicked wall must paint immediately before its server save returns')
+check(fixedGlass.Material==Enum.Material.Glass and fixedGlass.Color==Color3.fromRGB(163,205,215),
+	'Immediate local painting must preserve fixed glass finishes')
+rapidClick(2,'#224466')
+check(#waitingPaint==firstWait and rapidParts[2].Color==Color3.fromRGB(34,68,102),
+	'A different wall must paint immediately while another paint request remains in flight')
+rapidClick(1,'#335577')
+check(rapidParts[1].Color==Color3.fromRGB(51,85,119),
+	'A newer finish on the first wall must stay responsive during its older save')
+rapidParts[1].Material=Enum.Material.Plaster
+rapidParts[1].Color=Color3.fromRGB(235,229,211)
+check(rapidParts[1].Material==Enum.Material.Brick and rapidParts[1].Color==Color3.fromRGB(51,85,119),
+	'Late replication of an old finish must not overwrite newer optimistic paint')
+acknowledgePaint(firstWait)
+check(#waitingPaint==firstWait+1 and rapidParts[1].Color==Color3.fromRGB(51,85,119),
+	'An old paint acknowledgement must reapply the latest finish and flush queued targets')
+acknowledgePaint(firstWait+1)
+check(rapidParts[1].Color==Color3.fromRGB(51,85,119) and rapidParts[2].Color==Color3.fromRGB(34,68,102),
+	'After all saves finish, both walls must keep their final clicked colors')
+local failureWait=#waitingPaint+1
+rapidClick(2,'#FF0000')
+check(rapidParts[2].Color==Color3.fromRGB(255,0,0),'A pending finish must display before a possible save rejection')
+acknowledgePaint(failureWait,false)
+check(rapidParts[2].Color==Color3.fromRGB(34,68,102) and #notices>0,
+	'A rejected finish must roll back to the saved appearance and notify the player')
+local beforeUndo=#calls
+local drainWait=#waitingPaint+1
+rapidClick(1,'#556677')
+pressText('Undo')
+check(calls[#calls].Action=='PaintBatch','Undo must wait behind an unsaved paint stroke')
+acknowledgePaint(drainWait)
+check(calls[#calls].Action=='Undo' and #calls==beforeUndo+2,
+	'Undo must submit after its preceding paint has committed')
+local exitWait=#waitingPaint+1
+rapidClick(2,'#667788')
+rapidClick(1,'#778899')
+editor:exit()
+acknowledgePaint(exitWait)
+check(#waitingPaint==exitWait+1,'Exiting build mode must continue flushing already-clicked paint')
+acknowledgePaint(exitWait+1)
+check(not editor:isActive() and rapidParts[1].Color==Color3.fromRGB(119,136,153),
+	'Queued paint may finish after exit without reopening the editor')
+delayPaint=false
+rayHit=nil
+
 local rotated = { UpVector = Vector3.new(0, 1, 0) }
 function rotated:PointToObjectSpace(point)
 	return Vector3.new(-point.Z - 40, point.Y - 8, point.X - 60)

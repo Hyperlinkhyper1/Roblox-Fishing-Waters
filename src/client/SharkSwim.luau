@@ -11,6 +11,10 @@ local FLEX_PIVOT_INVERSE = FLEX_PIVOT:Inverse()
 local TAIL_PIVOT_INVERSE = TAIL_PIVOT:Inverse()
 local SMOOTHING = 22
 local REFRESH_INTERVAL = 0.5
+-- Every piece is rewritten when a shark moves; past this range the body wave
+-- can't be seen, so far sharks step every few frames.
+local NEAR_DISTANCE = 250
+local FAR_STRIDE = 4
 
 function SharkSwim.start()
 	local folder = workspace:WaitForChild("Sharks")
@@ -28,7 +32,11 @@ function SharkSwim.start()
 		states[model] = nil
 	end)
 
+	local frame = 0
 	RunService.RenderStepped:Connect(function(dt)
+		frame += 1
+		local camera = workspace.CurrentCamera
+		local eye = camera and camera.CFrame.Position
 		local now = workspace:GetServerTimeNow()
 		local alpha = 1 - math.exp(-SMOOTHING * math.min(dt, 0.25))
 		local moved, frames = {}, {}
@@ -61,6 +69,9 @@ function SharkSwim.start()
 					end
 				end
 				state.parts = parts
+			end
+			if eye and (state.frame.Position - eye).Magnitude > NEAR_DISTANCE and (frame + math.floor(state.phase * 10)) % FAR_STRIDE ~= 0 then
+				continue
 			end
 			-- The head swings against the tail, each joint lagging the one ahead.
 			local phase = now * 5 + state.phase

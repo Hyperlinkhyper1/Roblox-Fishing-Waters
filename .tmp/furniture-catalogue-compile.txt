@@ -1,0 +1,1958 @@
+Function 0 (category):
+   68: 	return CATEGORY_BY_ITEM[itemId] or "Decor"
+GETUPVAL R3 U0
+GETTABLE R2 R3 R0
+ORK R1 R2 K0 ['Decor']
+RETURN R1 1
+
+Function 1 (matchesCategory):
+   71: 	return category == "All" or Furniture.category(itemId) == category
+LOADB R2 1
+JUMPXEQKS R1 K0 L1 ['All']
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K1 ['category']
+MOVE R4 R0
+CALLFB R3 1 1 [0]
+JUMPIFEQ R3 R1 L0
+LOADB R2 0 +1
+L0: LOADB R2 1
+L1: RETURN R2 1
+
+Function 2 (allowedOn):
+  588: 	local item = Furniture.Items[itemId]
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K0 ['Items']
+GETTABLE R2 R3 R0
+  589: 	return item ~= nil and table.find(item.Sites or { "Home" }, site or "Home") ~= nil
+LOADB R3 0
+JUMPXEQKNIL R2 L2
+GETIMPORT R4 3 [table.find]
+GETTABLEKS R5 R2 K4 ['Sites']
+JUMPIF R5 L0
+REMARK allocation: table array 1
+NEWTABLE R5 0 1
+LOADK R6 K5 ['Home']
+SETLIST R5 R6 1 [1]
+L0: ORK R6 R1 K5 ['Home']
+CALLFB R4 2 1 [0]
+JUMPXEQKNIL R4 L1 NOT
+LOADB R3 0 +1
+L1: LOADB R3 1
+L2: RETURN R3 1
+
+Function 3 (allowedRooms):
+  594: 	local item = Furniture.Items[itemId]
+GETUPVAL R2 U0
+GETTABLEKS R2 R2 K0 ['Items']
+GETTABLE R1 R2 R0
+  595: 	if not item then
+JUMPIF R1 L0
+REMARK allocation: table hash 0
+  596: 		return {}
+NEWTABLE R2 0 0
+RETURN R2 1
+  598: 	return item.Rooms or { item.Room }
+L0: GETTABLEKS R2 R1 K1 ['Rooms']
+JUMPIF R2 L1
+REMARK allocation: table array 1
+NEWTABLE R2 0 1
+GETTABLEKS R3 R1 K2 ['Room']
+SETLIST R2 R3 1 [1]
+L1: RETURN R2 1
+
+Function 4 (roomNames):
+REMARK allocation: table hash 0
+  602: 	local names = {}
+NEWTABLE R1 0 0
+REMARK allocation: table template 3
+  603: 	local shortNames = { Shop = "shop", Storage = "storage", Processing = "kitchen" }
+DUPTABLE R2 6
+  604: 	local item = Furniture.Items[itemId]
+GETUPVAL R4 U0
+GETTABLEKS R4 R4 K7 ['Items']
+GETTABLE R3 R4 R0
+  605: 	for _, room in Furniture.allowedRooms(itemId) do
+GETUPVAL R4 U0
+GETTABLEKS R4 R4 K8 ['allowedRooms']
+MOVE R5 R0
+CALLFB R4 1 3 [0]
+FORGPREP R4 L3
+REMARK builtin table.insert/2
+  608: 			if item.Rooms then shortNames[room] or Furniture.RoomNames[room] else Furniture.RoomNames[room]
+L0: GETTABLEKS R12 R3 K9 ['Rooms']
+JUMPIFNOT R12 L1
+GETTABLE R11 R2 R8
+JUMPIF R11 L2
+GETUPVAL R12 U0
+GETTABLEKS R12 R12 K10 ['RoomNames']
+GETTABLE R11 R12 R8
+JUMP L2
+L1: GETUPVAL R12 U0
+GETTABLEKS R12 R12 K10 ['RoomNames']
+GETTABLE R11 R12 R8
+L2: FASTCALL2 52 R1 R11 L3
+MOVE R10 R1
+  606: 		table.insert(
+GETIMPORT R9 13 [table.insert]
+CALL R9 2 0
+  605: 	for _, room in Furniture.allowedRooms(itemId) do
+L3: FORGLOOP R4 L0 2
+  611: 	if #names <= 1 then
+LENGTH R4 R1
+LOADN R5 1
+JUMPIFNOTLE R4 R5 L4
+  612: 		return names[1] or "house"
+GETTABLEN R5 R1 1
+ORK R4 R5 K14 ['house']
+RETURN R4 1
+  613: 	elseif #names == 2 then
+L4: LENGTH R4 R1
+JUMPXEQKN R4 K15 L5 NOT [2]
+  614: 		return names[1] .. " or " .. names[2]
+GETTABLEN R5 R1 1
+LOADK R6 K16 [' or ']
+GETTABLEN R7 R1 2
+CONCAT R4 R5 R7
+RETURN R4 1
+  616: 	return table.concat(names, ", ", 1, #names - 1) .. " or " .. names[#names]
+L5: GETIMPORT R5 18 [table.concat]
+MOVE R6 R1
+LOADK R7 K19 [', ']
+LOADN R8 1
+LENGTH R10 R1
+SUBK R9 R10 K20 [1]
+CALLFB R5 4 1 [1]
+LOADK R6 K16 [' or ']
+LENGTH R8 R1
+GETTABLE R7 R1 R8
+CONCAT R4 R5 R7
+RETURN R4 1
+
+Function 5 (place):
+  622: 	local ax, az, bx, bz = rect[1], rect[2], rect[3], rect[4]
+GETTABLEN R4 R0 1
+GETTABLEN R5 R0 2
+GETTABLEN R6 R0 3
+GETTABLEN R7 R0 4
+  623: 	for _ = 1, r % 4 do
+LOADN R10 1
+MODK R8 R3 K0 [4]
+LOADN R9 1
+FORNPREP R8 L1
+  624: 		ax, az, bx, bz = az, -ax, bz, -bx
+L0: MOVE R11 R5
+MINUS R5 R4
+MOVE R12 R7
+MINUS R7 R6
+MOVE R4 R11
+MOVE R6 R12
+  623: 	for _ = 1, r % 4 do
+FORNLOOP R8 L0
+REMARK allocation: table array 4
+  626: 	return { x + math.min(ax, bx), z + math.min(az, bz), x + math.max(ax, bx), z + math.max(az, bz) }
+L1: NEWTABLE R8 0 4
+REMARK builtin math.min/2
+FASTCALL2 19 R4 R6 L2
+MOVE R11 R4
+MOVE R12 R6
+GETIMPORT R10 3 [math.min]
+CALL R10 2 1
+L2: ADD R9 R1 R10
+REMARK builtin math.min/2
+FASTCALL2 19 R5 R7 L3
+MOVE R12 R5
+MOVE R13 R7
+GETIMPORT R11 3 [math.min]
+CALL R11 2 1
+L3: ADD R10 R2 R11
+REMARK builtin math.max/2
+FASTCALL2 18 R4 R6 L4
+MOVE R13 R4
+MOVE R14 R6
+GETIMPORT R12 5 [math.max]
+CALL R12 2 1
+L4: ADD R11 R1 R12
+REMARK builtin math.max/2
+FASTCALL2 18 R5 R7 L5
+MOVE R14 R5
+MOVE R15 R7
+GETIMPORT R13 5 [math.max]
+CALL R13 2 1
+L5: ADD R12 R2 R13
+SETLIST R8 R9 4 [1]
+RETURN R8 1
+
+Function 6 (layout):
+  632: 	local item = Furniture.Items[itemId]
+GETUPVAL R2 U0
+GETTABLEKS R2 R2 K0 ['Items']
+GETTABLE R1 R2 R0
+  633: 	if not item then
+JUMPIF R1 L0
+  634: 		return nil, 0, 0
+LOADNIL R2
+LOADN R3 0
+LOADN R4 0
+RETURN R2 3
+  636: 	local half = Furniture.GRID / 2
+L0: GETUPVAL R3 U0
+GETTABLEKS R3 R3 K2 ['GRID']
+DIVK R2 R3 K1 [2]
+REMARK allocation: table array 4
+  637: 	local cells = { -half, -half, -half + item.Cells[1] * Furniture.GRID, -half + item.Cells[2] * Furniture.GRID }
+NEWTABLE R3 0 4
+MINUS R4 R2
+MINUS R5 R2
+MINUS R7 R2
+GETTABLEKS R10 R1 K3 ['Cells']
+GETTABLEN R9 R10 1
+GETUPVAL R10 U0
+GETTABLEKS R10 R10 K2 ['GRID']
+MUL R8 R9 R10
+ADD R6 R7 R8
+MINUS R8 R2
+GETTABLEKS R11 R1 K3 ['Cells']
+GETTABLEN R10 R11 2
+GETUPVAL R11 U0
+GETTABLEKS R11 R11 K2 ['GRID']
+MUL R9 R10 R11
+ADD R7 R8 R9
+SETLIST R3 R4 4 [1]
+  638: 	local bodyZ = if item.Centered then (cells[2] + cells[4]) / 2 else cells[2] + WALL_GAP + item.Depth / 2
+GETTABLEKS R4 R1 K4 ['Centered']
+JUMPIFNOT R4 L1
+GETTABLEN R5 R3 2
+GETTABLEN R6 R3 4
+ADD R4 R5 R6
+DIVK R2 R4 K1 [2]
+JUMP L2
+L1: GETTABLEN R5 R3 2
+ADDK R4 R5 K5 [0.40000000000000002]
+GETTABLEKS R6 R1 K6 ['Depth']
+DIVK R5 R6 K1 [2]
+ADD R2 R4 R5
+  639: 	return cells, (cells[1] + cells[3]) / 2, bodyZ
+L2: MOVE R4 R3
+GETTABLEN R7 R3 1
+GETTABLEN R8 R3 3
+ADD R6 R7 R8
+DIVK R5 R6 K1 [2]
+MOVE R6 R2
+RETURN R4 3
+
+Function 7 (footprint):
+  644: 	local cells = Furniture.layout(itemId)
+GETUPVAL R4 U0
+GETTABLEKS R4 R4 K0 ['layout']
+MOVE R5 R0
+CALLFB R4 1 1 [0]
+  645: 	return if cells then place(cells, x, z, r) else nil
+JUMPIFNOT R4 L0
+GETUPVAL R5 U1
+MOVE R6 R4
+MOVE R7 R1
+MOVE R8 R2
+MOVE R9 R3
+CALLFB R5 4 1 [1]
+RETURN R5 1
+L0: LOADNIL R5
+RETURN R5 1
+
+Function 8 (access):
+  650: 	local item = Furniture.Items[itemId]
+GETUPVAL R5 U0
+GETTABLEKS R5 R5 K0 ['Items']
+GETTABLE R4 R5 R0
+  651: 	local cells = Furniture.layout(itemId)
+GETUPVAL R5 U0
+GETTABLEKS R5 R5 K1 ['layout']
+MOVE R6 R0
+CALLFB R5 1 1 [0]
+REMARK allocation: table hash 0
+  652: 	local strips = {}
+NEWTABLE R6 0 0
+  653: 	if item and cells then
+JUMPIFNOT R4 L1
+JUMPIFNOT R5 L1
+  654: 		if item.Front > 0 then
+GETTABLEKS R7 R4 K2 ['Front']
+LOADN R8 0
+JUMPIFNOTLT R8 R7 L0
+REMARK builtin table.insert/2+
+  655: 			table.insert(strips, place({ cells[1], cells[4], cells[3], cells[4] + item.Front }, x, z, r))
+MOVE R8 R6
+GETUPVAL R9 U1
+REMARK allocation: table array 4
+NEWTABLE R10 0 4
+GETTABLEN R11 R5 1
+GETTABLEN R12 R5 4
+GETTABLEN R13 R5 3
+GETTABLEN R15 R5 4
+GETTABLEKS R16 R4 K2 ['Front']
+ADD R14 R15 R16
+SETLIST R10 R11 4 [1]
+MOVE R11 R1
+MOVE R12 R2
+MOVE R13 R3
+CALL R9 4 -1
+FASTCALL 52 L0
+GETIMPORT R7 5 [table.insert]
+CALL R7 -1 0
+  657: 		if item.Back > 0 then
+L0: GETTABLEKS R7 R4 K6 ['Back']
+LOADN R8 0
+JUMPIFNOTLT R8 R7 L1
+REMARK builtin table.insert/2+
+  658: 			table.insert(strips, place({ cells[1], cells[2] - item.Back, cells[3], cells[2] }, x, z, r))
+MOVE R8 R6
+GETUPVAL R9 U1
+REMARK allocation: table array 4
+NEWTABLE R10 0 4
+GETTABLEN R11 R5 1
+GETTABLEN R13 R5 2
+GETTABLEKS R14 R4 K6 ['Back']
+SUB R12 R13 R14
+GETTABLEN R13 R5 3
+GETTABLEN R14 R5 2
+SETLIST R10 R11 4 [1]
+MOVE R11 R1
+MOVE R12 R2
+MOVE R13 R3
+CALL R9 4 -1
+FASTCALL 52 L1
+GETIMPORT R7 5 [table.insert]
+CALL R7 -1 0
+  661: 	return strips
+L1: RETURN R6 1
+
+Function 9 (body):
+  666: 	local item = Furniture.Items[itemId]
+GETUPVAL R5 U0
+GETTABLEKS R5 R5 K0 ['Items']
+GETTABLE R4 R5 R0
+  667: 	local cells, bodyX, bodyZ = Furniture.layout(itemId)
+GETUPVAL R5 U0
+GETTABLEKS R5 R5 K1 ['layout']
+MOVE R6 R0
+CALLFB R5 1 3 [0]
+  668: 	if not item or not cells then
+JUMPIFNOT R4 L0
+JUMPIF R5 L1
+  669: 		return nil
+L0: LOADNIL R8
+RETURN R8 1
+  671: 	local halfW, halfD = item.Width / 2, item.Depth / 2
+L1: GETTABLEKS R10 R4 K3 ['Width']
+DIVK R8 R10 K2 [2]
+GETTABLEKS R10 R4 K4 ['Depth']
+DIVK R9 R10 K2 [2]
+  672: 	return place({ bodyX - halfW, bodyZ - halfD, bodyX + halfW, bodyZ + halfD }, x, z, r)
+GETUPVAL R10 U1
+REMARK allocation: table array 4
+NEWTABLE R11 0 4
+SUB R12 R6 R8
+SUB R13 R7 R9
+ADD R14 R6 R8
+ADD R15 R7 R9
+SETLIST R11 R12 4 [1]
+MOVE R12 R1
+MOVE R13 R2
+MOVE R14 R3
+CALL R10 4 -1
+RETURN R10 -1
+
+Function 10 (overlaps):
+  676: 	return a[1] < b[3] - 1e-3 and a[3] > b[1] + 1e-3 and a[2] < b[4] - 1e-3 and a[4] > b[2] + 1e-3
+LOADB R2 0
+GETTABLEN R3 R0 1
+GETTABLEN R5 R1 3
+SUBK R4 R5 K0 [0.001]
+JUMPIFNOTLT R3 R4 L1
+LOADB R2 0
+GETTABLEN R3 R0 3
+GETTABLEN R5 R1 1
+ADDK R4 R5 K0 [0.001]
+JUMPIFNOTLT R4 R3 L1
+LOADB R2 0
+GETTABLEN R3 R0 2
+GETTABLEN R5 R1 4
+SUBK R4 R5 K0 [0.001]
+JUMPIFNOTLT R3 R4 L1
+GETTABLEN R3 R0 4
+GETTABLEN R5 R1 2
+ADDK R4 R5 K0 [0.001]
+JUMPIFLT R4 R3 L0
+LOADB R2 0 +1
+L0: LOADB R2 1
+L1: RETURN R2 1
+
+Function 11 (inside):
+  680: 	return a[1] >= room[1] - 1e-3 and a[3] <= room[3] + 1e-3 and a[2] >= room[2] - 1e-3 and a[4] <= room[4] + 1e-3
+LOADB R2 0
+GETTABLEN R3 R0 1
+GETTABLEN R5 R1 1
+SUBK R4 R5 K0 [0.001]
+JUMPIFNOTLE R4 R3 L1
+LOADB R2 0
+GETTABLEN R3 R0 3
+GETTABLEN R5 R1 3
+ADDK R4 R5 K0 [0.001]
+JUMPIFNOTLE R3 R4 L1
+LOADB R2 0
+GETTABLEN R3 R0 2
+GETTABLEN R5 R1 2
+SUBK R4 R5 K0 [0.001]
+JUMPIFNOTLE R4 R3 L1
+GETTABLEN R3 R0 4
+GETTABLEN R5 R1 4
+ADDK R4 R5 K0 [0.001]
+JUMPIFLE R3 R4 L0
+LOADB R2 0 +1
+L0: LOADB R2 1
+L1: RETURN R2 1
+
+Function 12 (shrink):
+REMARK builtin math.min/2
+  684: 	local dx, dz = math.min(by, (a[3] - a[1]) / 2), math.min(by, (a[4] - a[2]) / 2)
+GETTABLEN R8 R0 3
+GETTABLEN R9 R0 1
+SUB R7 R8 R9
+DIVK R6 R7 K0 [2]
+FASTCALL2 19 R1 R6 L0
+MOVE R5 R1
+GETIMPORT R4 3 [math.min]
+CALL R4 2 1
+L0: MOVE R2 R4
+REMARK builtin math.min/2
+GETTABLEN R7 R0 4
+GETTABLEN R8 R0 2
+SUB R6 R7 R8
+DIVK R5 R6 K0 [2]
+FASTCALL2 19 R1 R5 L1
+MOVE R4 R1
+GETIMPORT R3 3 [math.min]
+CALL R3 2 1
+REMARK allocation: table array 4
+  685: 	return { a[1] + dx, a[2] + dz, a[3] - dx, a[4] - dz }
+L1: NEWTABLE R4 0 4
+GETTABLEN R6 R0 1
+ADD R5 R6 R2
+GETTABLEN R7 R0 2
+ADD R6 R7 R3
+GETTABLEN R8 R0 3
+SUB R7 R8 R2
+GETTABLEN R9 R0 4
+SUB R8 R9 R3
+SETLIST R4 R5 4 [1]
+RETURN R4 1
+
+Function 13 (intersectsGridWall):
+  704: 	local item = Furniture.Items[entry.ItemId]
+GETUPVAL R2 U0
+GETTABLEKS R2 R2 K0 ['Items']
+GETTABLEKS R3 R0 K1 ['ItemId']
+GETTABLE R1 R2 R3
+  705: 	if not item then return false end
+JUMPIF R1 L0
+LOADB R2 0
+RETURN R2 1
+  707: 	local body = shrink(Furniture.body(entry.ItemId, entry.X, entry.Z, entry.R) :: { number }, WALL_REACH)
+L0: GETUPVAL R2 U1
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K2 ['body']
+GETTABLEKS R4 R0 K1 ['ItemId']
+GETTABLEKS R5 R0 K3 ['X']
+GETTABLEKS R6 R0 K4 ['Z']
+GETTABLEKS R7 R0 K5 ['R']
+CALLFB R3 4 1 [0]
+LOADK R4 K6 [0.33000000000000002]
+CALLFB R2 2 1 [1]
+  708: 	for _, wall in GRID_WALLS do
+GETUPVAL R3 U2
+LOADNIL R4
+LOADNIL R5
+FORGPREP R3 L2
+  709: 		if overlaps(body, wall) then return true end
+L1: GETUPVAL R8 U3
+MOVE R9 R2
+MOVE R10 R7
+CALLFB R8 2 1 [2]
+JUMPIFNOT R8 L2
+LOADB R8 1
+RETURN R8 1
+  708: 	for _, wall in GRID_WALLS do
+L2: FORGLOOP R3 L1 2
+  711: 	if item.Room == "Dining" and overlaps(body, { -24.4, -30.5, -19.5, -23.5 }) then
+GETTABLEKS R3 R1 K7 ['Room']
+JUMPXEQKS R3 K8 L3 NOT ['Dining']
+GETUPVAL R3 U3
+MOVE R4 R2
+REMARK allocation: table array 4
+NEWTABLE R5 0 4
+LOADK R6 K9 [-24.399999999999999]
+LOADK R7 K10 [-30.5]
+LOADK R8 K11 [-19.5]
+LOADK R9 K12 [-23.5]
+SETLIST R5 R6 4 [1]
+CALLFB R3 2 1 [3]
+JUMPIFNOT R3 L3
+  712: 		return true
+LOADB R3 1
+RETURN R3 1
+  714: 	return false
+L3: LOADB R3 0
+RETURN R3 1
+
+Function 14 (onGrid):
+  718: 	return type(value) == "number"
+LOADB R2 0
+REMARK builtin type/1
+FASTCALL1 40 R0 L0
+MOVE R4 R0
+GETIMPORT R3 1 [type]
+CALL R3 1 1
+L0: JUMPXEQKS R3 K2 L5 NOT ['number']
+LOADB R2 0
+JUMPIFNOTEQ R0 R0 L5
+LOADB R2 0
+REMARK builtin math.abs/1
+  720: 		and math.abs(value) <= 96
+FASTCALL1 2 R0 L1
+MOVE R4 R0
+GETIMPORT R3 5 [math.abs]
+CALL R3 1 1
+L1: LOADN R4 96
+JUMPIFNOTLE R3 R4 L5
+REMARK builtin math.abs/1
+  721: 		and math.abs(value / grid - math.round(value / grid)) < 1e-6
+DIV R5 R0 R1
+REMARK builtin math.round/1
+DIV R7 R0 R1
+FASTCALL1 48 R7 L2
+GETIMPORT R6 7 [math.round]
+CALL R6 1 1
+L2: SUB R4 R5 R6
+FASTCALL1 2 R4 L3
+GETIMPORT R3 5 [math.abs]
+CALL R3 1 1
+L3: LOADK R4 K8 [9.9999999999999995e-07]
+JUMPIFLT R3 R4 L4
+LOADB R2 0 +1
+L4: LOADB R2 1
+L5: RETURN R2 1
+
+Function 15 (within):
+  744: 		for _, need in needs do
+GETUPVAL R1 U0
+LOADNIL R2
+LOADNIL R3
+FORGPREP R1 L1
+  745: 			if not inside(need, room) then return false end
+L0: GETUPVAL R6 U1
+MOVE R7 R5
+MOVE R8 R0
+CALLFB R6 2 1 [0]
+JUMPIF R6 L1
+LOADB R6 0
+RETURN R6 1
+  744: 		for _, need in needs do
+L1: FORGLOOP R1 L0 2
+  747: 		return true
+LOADB R1 1
+RETURN R1 1
+
+Function 16 (clearOf):
+  750: 		for _, zone in zones do
+MOVE R1 R0
+LOADNIL R2
+LOADNIL R3
+FORGPREP R1 L3
+  751: 			for _, need in needs do
+L0: GETUPVAL R6 U0
+LOADNIL R7
+LOADNIL R8
+FORGPREP R6 L2
+  752: 				if overlaps(need, zone) then return false end
+L1: GETUPVAL R11 U1
+MOVE R12 R10
+MOVE R13 R5
+CALLFB R11 2 1 [0]
+JUMPIFNOT R11 L2
+LOADB R11 0
+RETURN R11 1
+  751: 			for _, need in needs do
+L2: FORGLOOP R6 L1 2
+  750: 		for _, zone in zones do
+L3: FORGLOOP R1 L0 2
+  755: 		return true
+LOADB R1 1
+RETURN R1 1
+
+Function 17 (check):
+  728: 	local item = Furniture.Items[itemId]
+GETUPVAL R9 U0
+GETTABLEKS R9 R9 K0 ['Items']
+GETTABLE R8 R9 R1
+  729: 	if not item then
+JUMPIF R8 L0
+  730: 		return "That isn't furniture."
+LOADK R9 K1 ['That isn't furniture.']
+RETURN R9 1
+  731: 	elseif not ((if legacy then type(x) == "number" and x == x and math.abs(x) <= 96
+L0: JUMPIFNOT R6 L7
+LOADB R9 0
+REMARK builtin type/1
+FASTCALL1 40 R2 L1
+MOVE R11 R2
+GETIMPORT R10 3 [type]
+CALL R10 1 1
+L1: JUMPXEQKS R10 K4 L8 NOT ['number']
+LOADB R9 0
+JUMPIFNOTEQ R2 R2 L8
+LOADB R9 0
+REMARK builtin math.abs/1
+FASTCALL1 2 R2 L2
+MOVE R11 R2
+GETIMPORT R10 7 [math.abs]
+CALL R10 1 1
+L2: LOADN R11 96
+JUMPIFNOTLE R10 R11 L8
+LOADB R9 0
+REMARK builtin type/1
+  732: 		and type(z) == "number" and z == z and math.abs(z) <= 96 else onGrid(x, Furniture.GRID) and onGrid(z, Furniture.GRID))
+FASTCALL1 40 R3 L3
+MOVE R11 R3
+GETIMPORT R10 3 [type]
+CALL R10 1 1
+L3: JUMPXEQKS R10 K4 L8 NOT ['number']
+LOADB R9 0
+JUMPIFNOTEQ R3 R3 L8
+REMARK builtin math.abs/1
+FASTCALL1 2 R3 L4
+MOVE R11 R3
+GETIMPORT R10 7 [math.abs]
+CALL R10 1 1
+L4: LOADN R11 96
+JUMPIFLE R10 R11 L5
+LOADB R9 0 +1
+L5: LOADB R9 1
+L6: JUMP L8
+L7: GETUPVAL R9 U1
+MOVE R10 R2
+GETUPVAL R11 U0
+GETTABLEKS R11 R11 K8 ['GRID']
+CALLFB R9 2 1 [0]
+JUMPIFNOT R9 L8
+GETUPVAL R9 U1
+MOVE R10 R3
+GETUPVAL R11 U0
+GETTABLEKS R11 R11 K8 ['GRID']
+CALLFB R9 2 1 [1]
+L8: JUMPIFNOT R9 L10
+REMARK builtin type/1
+  733: 		and type(r) == "number" and r % 1 == 0 and r >= 0 and r <= 3) then
+FASTCALL1 40 R4 L9
+MOVE R10 R4
+GETIMPORT R9 3 [type]
+CALL R9 1 1
+L9: JUMPXEQKS R9 K4 L10 NOT ['number']
+MODK R9 R4 K9 [1]
+JUMPXEQKN R9 K10 L10 NOT [0]
+LOADN R9 0
+JUMPIFNOTLE R9 R4 L10
+LOADN R9 3
+JUMPIFLE R4 R9 L11
+  734: 		return "That isn't a spot in your house."
+L10: LOADK R9 K11 ['That isn't a spot in your house.'...]
+RETURN R9 1
+  736: 	local area = Furniture.footprint(itemId, x, z, r) :: { number }
+L11: GETUPVAL R9 U0
+GETTABLEKS R9 R9 K12 ['footprint']
+MOVE R10 R1
+MOVE R11 R2
+MOVE R12 R3
+MOVE R13 R4
+CALLFB R9 4 1 [2]
+  737: 	local strips = Furniture.access(itemId, x, z, r)
+GETUPVAL R10 U0
+GETTABLEKS R10 R10 K13 ['access']
+MOVE R11 R1
+MOVE R12 R2
+MOVE R13 R3
+MOVE R14 R4
+CALLFB R10 4 1 [3]
+REMARK allocation: table array 1
+  739: 	local needs = { shrink(area, SLACK) }
+NEWTABLE R11 0 1
+GETUPVAL R12 U2
+MOVE R13 R9
+LOADK R14 K14 [0.45000000000000001]
+CALL R12 2 -1
+SETLIST R11 R12 -1 [1]
+  740: 	for _, strip in strips do
+MOVE R12 R10
+LOADNIL R13
+LOADNIL R14
+FORGPREP R12 L13
+REMARK builtin table.insert/2+
+  741: 		table.insert(needs, shrink(strip, SLACK))
+L12: MOVE R18 R11
+GETUPVAL R19 U2
+MOVE R20 R16
+LOADK R21 K14 [0.45000000000000001]
+CALL R19 2 -1
+FASTCALL 52 L13
+GETIMPORT R17 17 [table.insert]
+CALL R17 -1 0
+  740: 	for _, strip in strips do
+L13: FORGLOOP R12 L12 2
+REMARK allocation: closure with 2 upvalues
+  743: 	local function within(room: { number }): boolean
+NEWCLOSURE R12 P0
+CAPTURE VAL R11
+CAPTURE UPVAL U3
+REMARK allocation: closure with 2 upvalues
+  749: 	local function clearOf(zones): boolean
+NEWCLOSURE R13 P1
+CAPTURE VAL R11
+CAPTURE UPVAL U4
+  757: 	if site == "Company" then
+JUMPXEQKS R7 K18 L16 NOT ['Company']
+  758: 		if not Furniture.allowedOn(itemId, "Company") then
+GETUPVAL R14 U0
+GETTABLEKS R14 R14 K19 ['allowedOn']
+MOVE R15 R1
+LOADK R16 K18 ['Company']
+CALLFB R14 2 1 [4]
+JUMPIF R14 L14
+  759: 			return item.Name .. "s belong in your house, not on the company plot."
+GETTABLEKS R15 R8 K20 ['Name']
+LOADK R16 K21 ['s belong in your house, not on t'...]
+CONCAT R14 R15 R16
+RETURN R14 1
+  760: 		elseif not within(Furniture.PLOT) then
+L14: MOVE R14 R12
+GETUPVAL R15 U0
+GETTABLEKS R15 R15 K22 ['PLOT']
+CALLFB R14 1 1 [5]
+JUMPIF R14 L15
+  761: 			return "Keep furniture inside your company plot's fence."
+LOADK R14 K23 ['Keep furniture inside your compa'...]
+RETURN R14 1
+  762: 		elseif not clearOf(Furniture.PlotBlocked) then
+L15: MOVE R14 R13
+GETUPVAL R15 U0
+GETTABLEKS R15 R15 K24 ['PlotBlocked']
+CALLFB R14 1 1 [6]
+JUMPIF R14 L22
+  763: 			return "Keep the plot gate clear."
+LOADK R14 K25 ['Keep the plot gate clear.']
+RETURN R14 1
+JUMP L22
+  765: 	elseif not Furniture.allowedOn(itemId, "Home") then
+L16: GETUPVAL R14 U0
+GETTABLEKS R14 R14 K19 ['allowedOn']
+MOVE R15 R1
+LOADK R16 K26 ['Home']
+CALLFB R14 2 1 [7]
+JUMPIF R14 L17
+  766: 		return item.Name .. "s can only go on your company island plot."
+GETTABLEKS R15 R8 K20 ['Name']
+LOADK R16 K27 ['s can only go on your company is'...]
+CONCAT R14 R15 R16
+RETURN R14 1
+  768: 		local fitsRoom = false
+L17: LOADB R14 0
+  769: 		for _, room in Furniture.allowedRooms(itemId) do
+GETUPVAL R15 U0
+GETTABLEKS R15 R15 K28 ['allowedRooms']
+MOVE R16 R1
+CALLFB R15 1 3 [8]
+FORGPREP R15 L19
+  770: 			if within(Furniture.Rooms[room]) then
+L18: MOVE R20 R12
+GETUPVAL R22 U0
+GETTABLEKS R22 R22 K29 ['Rooms']
+GETTABLE R21 R22 R19
+CALLFB R20 1 1 [9]
+JUMPIFNOT R20 L19
+  771: 				fitsRoom = true
+LOADB R14 1
+  772: 				break
+JUMP L20
+  769: 		for _, room in Furniture.allowedRooms(itemId) do
+L19: FORGLOOP R15 L18 2
+  775: 		if not fitsRoom then
+L20: JUMPIF R14 L21
+  776: 			return item.Name .. "s can only go in the " .. Furniture.roomNames(itemId) .. "."
+GETTABLEKS R16 R8 K20 ['Name']
+LOADK R17 K30 ['s can only go in the ']
+GETUPVAL R18 U0
+GETTABLEKS R18 R18 K31 ['roomNames']
+MOVE R19 R1
+CALLFB R18 1 1 [10]
+LOADK R19 K32 ['.']
+CONCAT R15 R16 R19
+RETURN R15 1
+  777: 		elseif not clearOf(Furniture.Blocked) then
+L21: MOVE R15 R13
+GETUPVAL R16 U0
+GETTABLEKS R16 R16 K33 ['Blocked']
+CALLFB R15 1 1 [11]
+JUMPIF R15 L22
+  778: 			return "Keep doorways, the aisle and the built-in fixtures clear."
+LOADK R15 K34 ['Keep doorways, the aisle and the'...]
+RETURN R15 1
+  782: 	for index, other in placed do
+L22: MOVE R14 R0
+LOADNIL R15
+LOADNIL R16
+FORGPREP R14 L29
+  783: 		local otherArea = Furniture.footprint(other.ItemId, other.X, other.Z, other.R)
+L23: GETUPVAL R19 U0
+GETTABLEKS R19 R19 K12 ['footprint']
+GETTABLEKS R20 R18 K35 ['ItemId']
+GETTABLEKS R21 R18 K36 ['X']
+GETTABLEKS R22 R18 K37 ['Z']
+GETTABLEKS R23 R18 K38 ['R']
+CALLFB R19 4 1 [12]
+MOVE R13 R19
+  784: 		if index ~= skip and otherArea then
+JUMPIFEQ R17 R5 L29
+JUMPIFNOT R13 L29
+  785: 			if overlaps(area, otherArea) then
+GETUPVAL R19 U4
+MOVE R20 R9
+MOVE R21 R13
+CALLFB R19 2 1 [13]
+JUMPIFNOT R19 L24
+  786: 				return "That spot is taken by other furniture."
+LOADK R19 K39 ['That spot is taken by other furn'...]
+RETURN R19 1
+  788: 			for _, strip in strips do
+L24: MOVE R19 R10
+LOADNIL R20
+LOADNIL R21
+FORGPREP R19 L26
+  789: 				if overlaps(strip, otherArea) then
+L25: GETUPVAL R24 U4
+MOVE R25 R23
+MOVE R26 R13
+CALLFB R24 2 1 [14]
+JUMPIFNOT R24 L26
+  790: 					return "Leave room to stand in front of it."
+LOADK R24 K40 ['Leave room to stand in front of '...]
+RETURN R24 1
+  788: 			for _, strip in strips do
+L26: FORGLOOP R19 L25 2
+  793: 			for _, strip in Furniture.access(other.ItemId, other.X, other.Z, other.R) do
+GETUPVAL R19 U0
+GETTABLEKS R19 R19 K13 ['access']
+GETTABLEKS R20 R18 K35 ['ItemId']
+GETTABLEKS R21 R18 K36 ['X']
+GETTABLEKS R22 R18 K37 ['Z']
+GETTABLEKS R23 R18 K38 ['R']
+CALLFB R19 4 3 [15]
+FORGPREP R19 L28
+  794: 				if overlaps(area, strip) then
+L27: GETUPVAL R24 U4
+MOVE R25 R9
+MOVE R26 R23
+CALLFB R24 2 1 [16]
+JUMPIFNOT R24 L28
+  795: 					return "That would block the space in front of other furniture."
+LOADK R24 K41 ['That would block the space in fr'...]
+RETURN R24 1
+  793: 			for _, strip in Furniture.access(other.ItemId, other.X, other.Z, other.R) do
+L28: FORGLOOP R19 L27 2
+  782: 	for index, other in placed do
+L29: FORGLOOP R14 L23 2
+  800: 	return nil
+LOADNIL R14
+RETURN R14 1
+
+Function 18 (check):
+  804: 	return check(placed, itemId, x, z, r, skip, false, site)
+GETUPVAL R7 U0
+MOVE R8 R0
+MOVE R9 R1
+MOVE R10 R2
+MOVE R11 R3
+MOVE R12 R4
+MOVE R13 R5
+LOADB R14 0
+MOVE R15 R6
+CALL R7 8 -1
+RETURN R7 -1
+
+Function 19 (checkRelocation):
+  810: 	return check(placed, itemId, x, z, r, nil, true, site)
+GETUPVAL R6 U0
+MOVE R7 R0
+MOVE R8 R1
+MOVE R9 R2
+MOVE R10 R3
+MOVE R11 R4
+LOADNIL R12
+LOADB R13 1
+MOVE R14 R5
+CALL R6 8 -1
+RETURN R6 -1
+
+Function 20 (locked):
+  816: 	local item = Furniture.Items[itemId]
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K0 ['Items']
+GETTABLE R2 R3 R0
+  817: 	if item and item.Requires and not (unlocked and unlocked[item.Requires]) then
+JUMPIFNOT R2 L1
+GETTABLEKS R3 R2 K1 ['Requires']
+JUMPIFNOT R3 L1
+JUMPIFNOT R1 L0
+GETTABLEKS R4 R2 K1 ['Requires']
+GETTABLE R3 R1 R4
+JUMPIF R3 L1
+  818: 		return item.Name .. "s unlock with the " .. item.Requires .. " path."
+L0: GETTABLEKS R4 R2 K2 ['Name']
+LOADK R5 K3 ['s unlock with the ']
+GETTABLEKS R6 R2 K1 ['Requires']
+LOADK R7 K4 [' path.']
+CONCAT R3 R4 R7
+RETURN R3 1
+  820: 	return nil
+L1: LOADNIL R3
+RETURN R3 1
+
+Function 21 (count):
+  824: 	local count = 0
+LOADN R2 0
+  825: 	for _, entry in placed do
+MOVE R3 R0
+LOADNIL R4
+LOADNIL R5
+FORGPREP R3 L1
+  826: 		if entry.ItemId == itemId then
+L0: GETTABLEKS R8 R7 K0 ['ItemId']
+JUMPIFNOTEQ R8 R1 L1
+  827: 			count += 1
+ADDK R2 R2 K1 [1]
+  825: 	for _, entry in placed do
+L1: FORGLOOP R3 L0 2
+  830: 	return count
+RETURN R2 1
+
+Function 22 (floor):
+  835: 	if site == "Company" then
+JUMPXEQKS R1 K0 L0 NOT ['Company']
+  836: 		return 0
+LOADN R2 0
+RETURN R2 1
+  838: 	local item = itemId and Furniture.Items[itemId]
+L0: MOVE R2 R0
+JUMPIFNOT R2 L1
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K1 ['Items']
+GETTABLE R2 R3 R0
+  839: 	return item and Furniture.FloorHeights[item.Room] or 0.16
+L1: JUMPIFNOT R2 L2
+GETUPVAL R4 U0
+GETTABLEKS R4 R4 K2 ['FloorHeights']
+GETTABLEKS R5 R2 K3 ['Room']
+GETTABLE R3 R4 R5
+JUMPIF R3 L3
+L2: LOADK R3 K4 [0.16]
+L3: RETURN R3 1
+
+Function 23 (frame):
+  847: 	local _, bodyX, bodyZ = Furniture.layout(entry.ItemId)
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K0 ['layout']
+GETTABLEKS R4 R1 K1 ['ItemId']
+CALLFB R3 1 3 [0]
+  849: 		* CFrame.new(entry.X, Furniture.floor(entry.ItemId, site), entry.Z)
+GETIMPORT R9 4 [CFrame.new]
+GETTABLEKS R10 R1 K5 ['X']
+GETUPVAL R11 U0
+GETTABLEKS R11 R11 K6 ['floor']
+GETTABLEKS R12 R1 K1 ['ItemId']
+MOVE R13 R2
+CALLFB R11 2 1 [1]
+GETTABLEKS R12 R1 K7 ['Z']
+CALLFB R9 3 1 [2]
+MUL R8 R0 R9
+  850: 		* CFrame.Angles(0, entry.R * math.pi / 2, 0)
+GETIMPORT R9 9 [CFrame.Angles]
+LOADN R10 0
+GETTABLEKS R13 R1 K11 ['R']
+GETIMPORT R14 14 [math.pi]
+MUL R12 R13 R14
+DIVK R11 R12 K10 [2]
+LOADN R12 0
+CALLFB R9 3 1 [3]
+MUL R7 R8 R9
+  851: 		* CFrame.new(bodyX, 0, bodyZ)
+GETIMPORT R8 4 [CFrame.new]
+MOVE R9 R4
+LOADN R10 0
+MOVE R11 R5
+CALLFB R8 3 1 [4]
+MUL R6 R7 R8
+RETURN R6 1
+
+Function 24 (??):
+REMARK allocation: table hash 29
+   10: local Furniture = {}
+NEWTABLE R0 32 0
+REMARK allocation: table array 28
+   12: Furniture.Order = {
+NEWTABLE R1 0 28
+   13: 	"Freezer",
+LOADK R2 K0 ['Freezer']
+   14: 	"Register",
+LOADK R3 K1 ['Register']
+   15: 	"StorageRack",
+LOADK R4 K2 ['StorageRack']
+   16: 	"FoodCase",
+LOADK R5 K3 ['FoodCase']
+   17: 	"GrillStation",
+LOADK R6 K4 ['GrillStation']
+   18: 	"Smoker",
+LOADK R7 K5 ['Smoker']
+   19: 	"SushiBar",
+LOADK R8 K6 ['SushiBar']
+   20: 	"KitchenStorage",
+LOADK R9 K7 ['KitchenStorage']
+   21: 	"DiningTable",
+LOADK R10 K8 ['DiningTable']
+   22: 	"WeatherRadar",
+LOADK R11 K9 ['WeatherRadar']
+   23: 	"PottedPlant",
+LOADK R12 K10 ['PottedPlant']
+   24: 	"FlowerPlanter",
+LOADK R13 K11 ['FlowerPlanter']
+   25: 	"WoodenBench",
+LOADK R14 K12 ['WoodenBench']
+   26: 	"FloorLamp",
+LOADK R15 K13 ['FloorLamp']
+   27: 	"BarrelDisplay",
+LOADK R16 K14 ['BarrelDisplay']
+   28: 	"CrateStack",
+LOADK R17 K15 ['CrateStack']
+   29: 	"RopeBasket",
+SETLIST R1 R2 16 [1]
+LOADK R2 K16 ['RopeBasket']
+   30: 	"LifeRingStand",
+LOADK R3 K17 ['LifeRingStand']
+   31: 	"AnchorDisplay",
+LOADK R4 K18 ['AnchorDisplay']
+   32: 	"FishingNetDisplay",
+LOADK R5 K19 ['FishingNetDisplay']
+   33: 	"NauticalSign",
+LOADK R6 K20 ['NauticalSign']
+   34: 	"ShipWheelDisplay",
+LOADK R7 K21 ['ShipWheelDisplay']
+   35: 	"FishStatue",
+LOADK R8 K22 ['FishStatue']
+   36: 	"Aquarium",
+LOADK R9 K23 ['Aquarium']
+   37: 	"Rug",
+LOADK R10 K24 ['Rug']
+   38: 	"CoatRack",
+LOADK R11 K25 ['CoatRack']
+   39: 	"Bookcase",
+LOADK R12 K26 ['Bookcase']
+   40: 	"WallShelf",
+LOADK R13 K27 ['WallShelf']
+SETLIST R1 R2 12 [17]
+   12: Furniture.Order = {
+SETTABLEKS R1 R0 K28 ['Order']
+REMARK allocation: table array 2
+   43: Furniture.KitOrder = { "CompanyPrep", "CompanyDesk" }
+NEWTABLE R1 0 2
+LOADK R2 K29 ['CompanyPrep']
+LOADK R3 K30 ['CompanyDesk']
+SETLIST R1 R2 2 [1]
+SETTABLEKS R1 R0 K31 ['KitOrder']
+REMARK allocation: table array 9
+   46: Furniture.Categories = {
+NEWTABLE R1 0 9
+REMARK allocation: table template 2
+   47: 	{ Id = "All", Name = "All" },
+DUPTABLE R2 35
+REMARK allocation: table template 2
+   48: 	{ Id = "Shop", Name = "Shop counters" },
+DUPTABLE R3 38
+REMARK allocation: table template 2
+   49: 	{ Id = "Kitchen", Name = "Kitchen" },
+DUPTABLE R4 40
+REMARK allocation: table template 2
+   50: 	{ Id = "Storage", Name = "Storage" },
+DUPTABLE R5 42
+REMARK allocation: table template 2
+   51: 	{ Id = "Seating", Name = "Tables & seating" },
+DUPTABLE R6 45
+REMARK allocation: table template 2
+   52: 	{ Id = "Lighting", Name = "Lighting" },
+DUPTABLE R7 47
+REMARK allocation: table template 2
+   53: 	{ Id = "Plants", Name = "Plants" },
+DUPTABLE R8 49
+REMARK allocation: table template 2
+   54: 	{ Id = "Nautical", Name = "Nautical" },
+DUPTABLE R9 51
+REMARK allocation: table template 2
+   55: 	{ Id = "Decor", Name = "Decorations" },
+DUPTABLE R10 54
+SETLIST R1 R2 9 [1]
+   46: Furniture.Categories = {
+SETTABLEKS R1 R0 K55 ['Categories']
+REMARK allocation: table template 30
+   57: local CATEGORY_BY_ITEM = {
+DUPTABLE R1 56
+   67: function Furniture.category(itemId: string): string
+DUPCLOSURE R2 K57 ['category']
+CAPTURE VAL R1
+SETTABLEKS R2 R0 K58 ['category']
+   70: function Furniture.matchesCategory(itemId: string, category: string): boolean
+DUPCLOSURE R2 K59 ['matchesCategory']
+CAPTURE VAL R0
+SETTABLEKS R2 R0 K60 ['matchesCategory']
+REMARK allocation: table array 3
+   73: local DECORATION_ROOMS = { "Shop", "Storage", "Processing" }
+NEWTABLE R2 0 3
+LOADK R3 K36 ['Shop']
+LOADK R4 K41 ['Storage']
+LOADK R5 K61 ['Processing']
+SETLIST R2 R3 3 [1]
+REMARK allocation: table template 30
+   75: Furniture.Items = {
+DUPTABLE R3 62
+REMARK allocation: table template 10
+   76: 	Freezer = {
+DUPTABLE R4 80
+REMARK allocation: table array 2
+   83: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+   76: 	Freezer = {
+SETTABLEKS R4 R3 K0 ['Freezer']
+REMARK allocation: table template 11
+   89: 	Register = {
+DUPTABLE R4 90
+REMARK allocation: table array 2
+   96: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+   89: 	Register = {
+SETTABLEKS R4 R3 K1 ['Register']
+REMARK allocation: table template 10
+  103: 	StorageRack = {
+DUPTABLE R4 97
+REMARK allocation: table array 2
+  109: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  103: 	StorageRack = {
+SETTABLEKS R4 R3 K2 ['StorageRack']
+REMARK allocation: table template 11
+  116: 	FoodCase = {
+DUPTABLE R4 105
+REMARK allocation: table array 2
+  123: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  116: 	FoodCase = {
+SETTABLEKS R4 R3 K3 ['FoodCase']
+REMARK allocation: table template 11
+  129: 	GrillStation = {
+DUPTABLE R4 110
+REMARK allocation: table array 2
+  137: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  129: 	GrillStation = {
+SETTABLEKS R4 R3 K4 ['GrillStation']
+REMARK allocation: table template 11
+  143: 	Smoker = {
+DUPTABLE R4 114
+REMARK allocation: table array 2
+  150: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  143: 	Smoker = {
+SETTABLEKS R4 R3 K5 ['Smoker']
+REMARK allocation: table template 11
+  156: 	SushiBar = {
+DUPTABLE R4 118
+REMARK allocation: table array 2
+  163: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  156: 	SushiBar = {
+SETTABLEKS R4 R3 K6 ['SushiBar']
+REMARK allocation: table template 11
+  169: 	KitchenStorage = {
+DUPTABLE R4 121
+REMARK allocation: table array 2
+  176: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  169: 	KitchenStorage = {
+SETTABLEKS R4 R3 K7 ['KitchenStorage']
+REMARK allocation: table template 12
+  182: 	DiningTable = {
+DUPTABLE R4 130
+REMARK allocation: table array 2
+  190: 		Cells = { 1, 2 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 2
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  182: 	DiningTable = {
+SETTABLEKS R4 R3 K8 ['DiningTable']
+REMARK allocation: table template 11
+  197: 	WeatherRadar = {
+DUPTABLE R4 135
+REMARK allocation: table array 2
+  203: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  197: 	WeatherRadar = {
+SETTABLEKS R4 R3 K9 ['WeatherRadar']
+REMARK allocation: table template 13
+  210: 	PottedPlant = {
+DUPTABLE R4 142
+  214: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  218: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  210: 	PottedPlant = {
+SETTABLEKS R4 R3 K10 ['PottedPlant']
+REMARK allocation: table template 12
+  225: 	FlowerPlanter = {
+DUPTABLE R4 148
+  229: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  233: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  225: 	FlowerPlanter = {
+SETTABLEKS R4 R3 K11 ['FlowerPlanter']
+REMARK allocation: table template 12
+  239: 	WoodenBench = {
+DUPTABLE R4 153
+  243: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  247: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  239: 	WoodenBench = {
+SETTABLEKS R4 R3 K12 ['WoodenBench']
+REMARK allocation: table template 13
+  253: 	FloorLamp = {
+DUPTABLE R4 157
+  257: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  261: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  253: 	FloorLamp = {
+SETTABLEKS R4 R3 K13 ['FloorLamp']
+REMARK allocation: table template 13
+  268: 	BarrelDisplay = {
+DUPTABLE R4 161
+  272: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  276: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  268: 	BarrelDisplay = {
+SETTABLEKS R4 R3 K14 ['BarrelDisplay']
+REMARK allocation: table template 13
+  283: 	CrateStack = {
+DUPTABLE R4 165
+  287: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  291: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  283: 	CrateStack = {
+SETTABLEKS R4 R3 K15 ['CrateStack']
+REMARK allocation: table template 13
+  298: 	RopeBasket = {
+DUPTABLE R4 169
+  302: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  306: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  298: 	RopeBasket = {
+SETTABLEKS R4 R3 K16 ['RopeBasket']
+REMARK allocation: table template 13
+  313: 	LifeRingStand = {
+DUPTABLE R4 174
+  317: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  321: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  313: 	LifeRingStand = {
+SETTABLEKS R4 R3 K17 ['LifeRingStand']
+REMARK allocation: table template 13
+  328: 	AnchorDisplay = {
+DUPTABLE R4 177
+  332: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  336: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  328: 	AnchorDisplay = {
+SETTABLEKS R4 R3 K18 ['AnchorDisplay']
+REMARK allocation: table template 12
+  343: 	FishingNetDisplay = {
+DUPTABLE R4 181
+  347: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  351: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  343: 	FishingNetDisplay = {
+SETTABLEKS R4 R3 K19 ['FishingNetDisplay']
+REMARK allocation: table template 13
+  357: 	NauticalSign = {
+DUPTABLE R4 186
+  361: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  365: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  357: 	NauticalSign = {
+SETTABLEKS R4 R3 K20 ['NauticalSign']
+REMARK allocation: table template 13
+  372: 	ShipWheelDisplay = {
+DUPTABLE R4 191
+  376: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  380: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  372: 	ShipWheelDisplay = {
+SETTABLEKS R4 R3 K21 ['ShipWheelDisplay']
+REMARK allocation: table template 13
+  387: 	FishStatue = {
+DUPTABLE R4 195
+  391: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  395: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  387: 	FishStatue = {
+SETTABLEKS R4 R3 K22 ['FishStatue']
+REMARK allocation: table template 12
+  402: 	Aquarium = {
+DUPTABLE R4 199
+  406: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  410: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  402: 	Aquarium = {
+SETTABLEKS R4 R3 K23 ['Aquarium']
+REMARK allocation: table template 13
+  416: 	Rug = {
+DUPTABLE R4 202
+  420: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  424: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  416: 	Rug = {
+SETTABLEKS R4 R3 K24 ['Rug']
+REMARK allocation: table template 13
+  431: 	CoatRack = {
+DUPTABLE R4 205
+  435: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  439: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  431: 	CoatRack = {
+SETTABLEKS R4 R3 K25 ['CoatRack']
+REMARK allocation: table template 12
+  446: 	Bookcase = {
+DUPTABLE R4 207
+  450: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  454: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  446: 	Bookcase = {
+SETTABLEKS R4 R3 K26 ['Bookcase']
+REMARK allocation: table template 12
+  460: 	WallShelf = {
+DUPTABLE R4 211
+  464: 		Rooms = DECORATION_ROOMS,
+SETTABLEKS R2 R4 K138 ['Rooms']
+REMARK allocation: table array 2
+  468: 		Cells = { 1, 1 },
+NEWTABLE R5 0 2
+LOADN R6 1
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  460: 	WallShelf = {
+SETTABLEKS R4 R3 K27 ['WallShelf']
+REMARK allocation: table template 12
+  476: 	CompanyPrep = {
+DUPTABLE R4 217
+REMARK allocation: table array 1
+  481: 		Sites = { "Company" },
+NEWTABLE R5 0 1
+LOADK R6 K218 ['Company']
+SETLIST R5 R6 1 [1]
+SETTABLEKS R5 R4 K215 ['Sites']
+REMARK allocation: table array 2
+  484: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  476: 	CompanyPrep = {
+SETTABLEKS R4 R3 K29 ['CompanyPrep']
+REMARK allocation: table template 13
+  490: 	CompanyDesk = {
+DUPTABLE R4 222
+REMARK allocation: table array 1
+  495: 		Sites = { "Company" },
+NEWTABLE R5 0 1
+LOADK R6 K218 ['Company']
+SETLIST R5 R6 1 [1]
+SETTABLEKS R5 R4 K215 ['Sites']
+REMARK allocation: table array 2
+  499: 		Cells = { 2, 1 },
+NEWTABLE R5 0 2
+LOADN R6 2
+LOADN R7 1
+SETLIST R5 R6 2 [1]
+SETTABLEKS R5 R4 K71 ['Cells']
+  490: 	CompanyDesk = {
+SETTABLEKS R4 R3 K30 ['CompanyDesk']
+   75: Furniture.Items = {
+SETTABLEKS R3 R0 K223 ['Items']
+  508: for id, item in Furniture.Items do
+GETTABLEKS R3 R0 K223 ['Items']
+LOADNIL R4
+LOADNIL R5
+FORGPREP R3 L2
+  509: 	if item.Decoration or id == "StorageRack" or id == "KitchenStorage" or id == "WeatherRadar" then
+L0: GETTABLEKS R8 R7 K139 ['Decoration']
+JUMPIF R8 L1
+JUMPXEQKS R6 K2 L1 ['StorageRack']
+JUMPXEQKS R6 K7 L1 ['KitchenStorage']
+JUMPXEQKS R6 K9 L2 NOT ['WeatherRadar']
+REMARK allocation: table array 2
+  510: 		item.Sites = { "Home", "Company" }
+L1: NEWTABLE R8 0 2
+LOADK R9 K224 ['Home']
+LOADK R10 K218 ['Company']
+SETLIST R8 R9 2 [1]
+SETTABLEKS R8 R7 K215 ['Sites']
+  508: for id, item in Furniture.Items do
+L2: FORGLOOP R3 L0 2
+  513: Furniture.RACK_CAPACITY = 12
+LOADN R3 12
+SETTABLEKS R3 R0 K225 ['RACK_CAPACITY']
+  514: Furniture.KITCHEN_STORAGE_CAPACITY = 8
+LOADN R3 8
+SETTABLEKS R3 R0 K226 ['KITCHEN_STORAGE_CAPACITY']
+  517: Furniture.GRID = 4.5
+LOADK R3 K227 [4.5]
+SETTABLEKS R3 R0 K228 ['GRID']
+REMARK allocation: table template 6
+  532: Furniture.Rooms = {
+DUPTABLE R3 229
+REMARK allocation: table array 4
+  534: 	Shop = { -24.35, 65.6, 24.35, 82.9 },
+NEWTABLE R4 0 4
+LOADK R5 K230 [-24.350000000000001]
+LOADK R6 K231 [65.599999999999994]
+LOADK R7 K232 [24.350000000000001]
+LOADK R8 K233 [82.900000000000006]
+SETLIST R4 R5 4 [1]
+SETTABLEKS R4 R3 K36 ['Shop']
+REMARK allocation: table array 4
+  536: 	Storage = { 2.55, -15.4, 24.35, 15.4 },
+NEWTABLE R4 0 4
+LOADK R5 K234 [2.5499999999999998]
+LOADK R6 K235 [-15.4]
+LOADK R7 K232 [24.350000000000001]
+LOADK R8 K236 [15.4]
+SETLIST R4 R5 4 [1]
+SETTABLEKS R4 R3 K41 ['Storage']
+REMARK allocation: table array 4
+  537: 	Processing = { -24.35, -15.4, 1.95, 15.4 },
+NEWTABLE R4 0 4
+LOADK R5 K230 [-24.350000000000001]
+LOADK R6 K235 [-15.4]
+LOADK R7 K237 [1.95]
+LOADK R8 K236 [15.4]
+SETLIST R4 R5 4 [1]
+SETTABLEKS R4 R3 K61 ['Processing']
+REMARK allocation: table array 4
+  538: 	Kitchen = { -24.35, -15.4, 1.95, 15.4 },
+NEWTABLE R4 0 4
+LOADK R5 K230 [-24.350000000000001]
+LOADK R6 K235 [-15.4]
+LOADK R7 K237 [1.95]
+LOADK R8 K236 [15.4]
+SETLIST R4 R5 4 [1]
+SETTABLEKS R4 R3 K39 ['Kitchen']
+REMARK allocation: table array 4
+  540: 	Dining = { -24.4, -33.4, -7.1, -16.1 },
+NEWTABLE R4 0 4
+LOADK R5 K238 [-24.399999999999999]
+LOADK R6 K239 [-33.399999999999999]
+LOADK R7 K240 [-7.0999999999999996]
+LOADK R8 K241 [-16.100000000000001]
+SETLIST R4 R5 4 [1]
+SETTABLEKS R4 R3 K124 ['Dining']
+REMARK allocation: table array 4
+  543: 	Yard = { -4.8, -33, 26.5, -15.8 },
+NEWTABLE R4 0 4
+LOADK R5 K242 [-4.7999999999999998]
+LOADN R6 -33
+LOADK R7 K243 [26.5]
+LOADK R8 K244 [-15.800000000000001]
+SETLIST R4 R5 4 [1]
+SETTABLEKS R4 R3 K133 ['Yard']
+  532: Furniture.Rooms = {
+SETTABLEKS R3 R0 K138 ['Rooms']
+REMARK allocation: table template 7
+  545: Furniture.RoomNames = {
+DUPTABLE R3 251
+SETTABLEKS R3 R0 K252 ['RoomNames']
+REMARK allocation: table array 4
+  556: Furniture.PLOT = { -54, -31.5, 54, 31.5 }
+NEWTABLE R3 0 4
+LOADN R4 -54
+LOADK R5 K253 [-31.5]
+LOADN R6 54
+LOADK R7 K254 [31.5]
+SETLIST R3 R4 4 [1]
+SETTABLEKS R3 R0 K255 ['PLOT']
+REMARK allocation: table array 1
+  558: Furniture.PlotBlocked = {
+NEWTABLE R3 0 1
+REMARK allocation: table array 4
+  559: 	{ -4.5, -31.5, 4.5, -27 },
+NEWTABLE R4 0 4
+LOADK R5 K256 [-4.5]
+LOADK R6 K253 [-31.5]
+LOADK R7 K227 [4.5]
+LOADN R8 -27
+SETLIST R4 R5 4 [1]
+SETLIST R3 R4 1 [1]
+  558: Furniture.PlotBlocked = {
+SETTABLEKS R3 R0 K257 ['PlotBlocked']
+REMARK allocation: table template 1
+  562: Furniture.FloorHeights = {
+DUPTABLE R3 258
+SETTABLEKS R3 R0 K259 ['FloorHeights']
+REMARK allocation: table array 17
+  566: Furniture.Blocked = {
+NEWTABLE R3 0 17
+REMARK allocation: table array 4
+  567: 	{ -4, 65.6, 4, 78.4 }, -- shop entrance aisle customers walk along
+NEWTABLE R4 0 4
+LOADN R5 -4
+LOADK R6 K231 [65.599999999999994]
+LOADN R7 4
+LOADK R8 K260 [78.400000000000006]
+SETLIST R4 R5 4 [1]
+REMARK allocation: table array 4
+  568: 	{ 15.6, 69.5, 20.8, 78.5 }, -- shop's built-in freezer and its customer strip
+NEWTABLE R5 0 4
+LOADK R6 K261 [15.6]
+LOADK R7 K262 [69.5]
+LOADK R8 K263 [20.800000000000001]
+LOADK R9 K264 [78.5]
+SETLIST R5 R6 4 [1]
+REMARK allocation: table array 4
+  569: 	{ -21, 65.6, -11.5, 74.9 }, -- shop's built-in counter, its customers and the seller
+NEWTABLE R6 0 4
+LOADN R7 -21
+LOADK R8 K231 [65.599999999999994]
+LOADK R9 K265 [-11.5]
+LOADK R10 K266 [74.900000000000006]
+SETLIST R6 R7 4 [1]
+REMARK allocation: table array 4
+  570: 	{ -4, 11.25, 1.95, 15.4 }, -- front doorway into the kitchen
+NEWTABLE R7 0 4
+LOADN R8 -4
+LOADK R9 K267 [11.25]
+LOADK R10 K237 [1.95]
+LOADK R11 K236 [15.4]
+SETLIST R7 R8 4 [1]
+REMARK allocation: table array 4
+  571: 	{ -24.4, 6.45, -6.45, 15.4 }, -- enclosed office in the kitchen's front corner
+NEWTABLE R8 0 4
+LOADK R9 K238 [-24.399999999999999]
+LOADK R10 K268 [6.4500000000000002]
+LOADK R11 K269 [-6.4500000000000002]
+LOADK R12 K236 [15.4]
+SETLIST R8 R9 4 [1]
+REMARK allocation: table array 4
+  572: 	{ 2.55, 11.25, 8, 15.4 }, -- front doorway into the storage room
+NEWTABLE R9 0 4
+LOADK R10 K234 [2.5499999999999998]
+LOADK R11 K267 [11.25]
+LOADN R12 8
+LOADK R13 K236 [15.4]
+SETLIST R9 R10 4 [1]
+REMARK allocation: table array 4
+  573: 	{ 2.55, -11.25, 6.5, -2.25 }, -- passage from the processing room
+NEWTABLE R10 0 4
+LOADK R11 K234 [2.5499999999999998]
+LOADK R12 K270 [-11.25]
+LOADK R13 K271 [6.5]
+LOADK R14 K272 [-2.25]
+SETLIST R10 R11 4 [1]
+REMARK allocation: table array 4
+  574: 	{ -1, -11.25, 1.95, -2.25 }, -- processing room side of the storage passage
+NEWTABLE R11 0 4
+LOADN R12 -1
+LOADK R13 K270 [-11.25]
+LOADK R14 K237 [1.95]
+LOADK R15 K272 [-2.25]
+SETLIST R11 R12 4 [1]
+REMARK allocation: table array 4
+  575: 	{ -5.8, -15.4, 1.95, -11 }, -- rear door
+NEWTABLE R12 0 4
+LOADK R13 K273 [-5.7999999999999998]
+LOADK R14 K235 [-15.4]
+LOADK R15 K237 [1.95]
+LOADN R16 -11
+SETLIST R12 R13 4 [1]
+REMARK allocation: table array 4
+  576: 	{ -22.6, -14.6, -18, -1 }, -- built-in prep benches and their cooks
+NEWTABLE R13 0 4
+LOADK R14 K274 [-22.600000000000001]
+LOADK R15 K275 [-14.6]
+LOADN R16 -18
+LOADN R17 -1
+SETLIST R13 R14 4 [1]
+REMARK allocation: table array 4
+  577: 	{ -24.4, -30.5, -19.5, -23.5 }, -- dining room entrance and approach
+NEWTABLE R14 0 4
+LOADK R15 K238 [-24.399999999999999]
+LOADK R16 K276 [-30.5]
+LOADK R17 K277 [-19.5]
+LOADK R18 K278 [-23.5]
+SETLIST R14 R15 4 [1]
+REMARK allocation: table array 4
+  578: 	{ -6, -33, 6.5, -15.8 }, -- rear steps, spawn point and the walk down to the water
+NEWTABLE R15 0 4
+LOADN R16 -6
+LOADN R17 -33
+LOADK R18 K271 [6.5]
+LOADK R19 K244 [-15.800000000000001]
+SETLIST R15 R16 4 [1]
+REMARK allocation: table array 4
+  579: 	{ -4.8, -30.5, -2.5, -27.5 }, -- crab pot on the deck
+NEWTABLE R16 0 4
+LOADK R17 K242 [-4.7999999999999998]
+LOADK R18 K276 [-30.5]
+LOADK R19 K279 [-2.5]
+LOADK R20 K280 [-27.5]
+SETLIST R16 R17 4 [1]
+REMARK allocation: table array 4
+  580: 	{ 4.5, -33, 8, -29 }, -- rope coil
+NEWTABLE R17 0 4
+LOADK R18 K227 [4.5]
+LOADN R19 -33
+LOADN R20 8
+LOADN R21 -29
+SETLIST R17 R18 4 [1]
+REMARK allocation: table array 4
+  581: 	{ 12.5, -33, 21.5, -29 }, -- head of the right-hand gangway
+NEWTABLE R18 0 4
+LOADK R19 K281 [12.5]
+LOADN R20 -33
+LOADK R21 K282 [21.5]
+LOADN R22 -29
+SETLIST R18 R19 4 [1]
+REMARK allocation: table array 4
+  582: 	{ 16, -31, 26.5, -20 }, -- crates, barrels and crab pot by the quay edge
+NEWTABLE R19 0 4
+LOADN R20 16
+LOADN R21 -31
+LOADK R22 K243 [26.5]
+LOADN R23 -20
+SETLIST R19 R20 4 [1]
+  583: 	{ 24.5, -33, 26.5, -30.5 }, -- lamp post
+SETLIST R3 R4 16 [1]
+REMARK allocation: table array 4
+NEWTABLE R4 0 4
+LOADK R20 K283 [24.5]
+LOADN R21 -33
+LOADK R22 K243 [26.5]
+LOADK R23 K276 [-30.5]
+SETLIST R4 R20 4 [1]
+SETLIST R3 R4 1 [17]
+  566: Furniture.Blocked = {
+SETTABLEKS R3 R0 K284 ['Blocked']
+  587: function Furniture.allowedOn(itemId: string, site: string?): boolean
+DUPCLOSURE R3 K285 ['allowedOn']
+CAPTURE VAL R0
+SETTABLEKS R3 R0 K286 ['allowedOn']
+  593: function Furniture.allowedRooms(itemId: string): { string }
+DUPCLOSURE R3 K287 ['allowedRooms']
+CAPTURE VAL R0
+SETTABLEKS R3 R0 K288 ['allowedRooms']
+  601: function Furniture.roomNames(itemId: string): string
+DUPCLOSURE R3 K289 ['roomNames']
+CAPTURE VAL R0
+SETTABLEKS R3 R0 K290 ['roomNames']
+  621: local function place(rect: { number }, x: number, z: number, r: number): { number }
+DUPCLOSURE R2 K291 ['place']
+  631: function Furniture.layout(itemId: string): ({ number }?, number, number)
+DUPCLOSURE R3 K292 ['layout']
+CAPTURE VAL R0
+SETTABLEKS R3 R0 K293 ['layout']
+  643: function Furniture.footprint(itemId: string, x: number, z: number, r: number): { number }?
+DUPCLOSURE R3 K294 ['footprint']
+CAPTURE VAL R0
+CAPTURE VAL R2
+SETTABLEKS R3 R0 K295 ['footprint']
+  649: function Furniture.access(itemId: string, x: number, z: number, r: number): { { number } }
+DUPCLOSURE R3 K296 ['access']
+CAPTURE VAL R0
+CAPTURE VAL R2
+SETTABLEKS R3 R0 K297 ['access']
+  665: function Furniture.body(itemId: string, x: number, z: number, r: number): { number }?
+DUPCLOSURE R3 K298 ['body']
+CAPTURE VAL R0
+CAPTURE VAL R2
+SETTABLEKS R3 R0 K299 ['body']
+  675: local function overlaps(a: { number }, b: { number }): boolean
+DUPCLOSURE R3 K300 ['overlaps']
+  679: local function inside(a: { number }, room: { number }): boolean
+DUPCLOSURE R4 K301 ['inside']
+  683: local function shrink(a: { number }, by: number): { number }
+DUPCLOSURE R5 K302 ['shrink']
+REMARK allocation: table array 9
+  691: local GRID_WALLS = {
+NEWTABLE R6 0 9
+REMARK allocation: table array 4
+  692: 	{ -24.75, 1.925, -13, 2.575 },
+NEWTABLE R7 0 4
+LOADK R8 K303 [-24.75]
+LOADK R9 K304 [1.925]
+LOADN R10 -13
+LOADK R11 K305 [2.5750000000000002]
+SETLIST R7 R8 4 [1]
+REMARK allocation: table array 4
+  693: 	{ -7, 1.925, 9, 2.575 },
+NEWTABLE R8 0 4
+LOADN R9 -7
+LOADK R10 K304 [1.925]
+LOADN R11 9
+LOADK R12 K305 [2.5750000000000002]
+SETLIST R8 R9 4 [1]
+REMARK allocation: table array 4
+  694: 	{ 15.5, 1.925, 24.75, 2.575 },
+NEWTABLE R9 0 4
+LOADK R10 K306 [15.5]
+LOADK R11 K304 [1.925]
+LOADK R12 K307 [24.75]
+LOADK R13 K305 [2.5750000000000002]
+SETLIST R9 R10 4 [1]
+REMARK allocation: table array 4
+  695: 	{ 1.975, -15.75, 2.525, -11.25 },
+NEWTABLE R10 0 4
+LOADK R11 K308 [1.9750000000000001]
+LOADK R12 K309 [-15.75]
+LOADK R13 K310 [2.5249999999999999]
+LOADK R14 K270 [-11.25]
+SETLIST R10 R11 4 [1]
+REMARK allocation: table array 4
+  696: 	{ 1.975, -2.25, 2.525, 2.25 },
+NEWTABLE R11 0 4
+LOADK R12 K308 [1.9750000000000001]
+LOADK R13 K272 [-2.25]
+LOADK R14 K310 [2.5249999999999999]
+LOADK R15 K311 [2.25]
+SETLIST R11 R12 4 [1]
+REMARK allocation: table array 4
+  697: 	{ -7.05, 6.45, -6.45, 15.75 }, -- office east wall and doorway
+NEWTABLE R12 0 4
+LOADK R13 K312 [-7.0499999999999998]
+LOADK R14 K268 [6.4500000000000002]
+LOADK R15 K269 [-6.4500000000000002]
+LOADK R16 K313 [15.75]
+SETLIST R12 R13 4 [1]
+REMARK allocation: table array 4
+  698: 	{ -24.75, 6.45, -6.75, 7.05 }, -- office back wall
+NEWTABLE R13 0 4
+LOADK R14 K303 [-24.75]
+LOADK R15 K268 [6.4500000000000002]
+LOADK R16 K314 [-6.75]
+LOADK R17 K315 [7.0499999999999998]
+SETLIST R13 R14 4 [1]
+REMARK allocation: table array 4
+  699: 	{ -24.4, 7.05, -7.05, 15.4 }, -- enclosed office floor
+NEWTABLE R14 0 4
+LOADK R15 K238 [-24.399999999999999]
+LOADK R16 K315 [7.0499999999999998]
+LOADK R17 K312 [-7.0499999999999998]
+LOADK R18 K236 [15.4]
+SETLIST R14 R15 4 [1]
+REMARK allocation: table array 4
+  700: 	{ -7.05, -33.75, -6.45, -15.75 }, -- dining east wall moved inward
+NEWTABLE R15 0 4
+LOADK R16 K312 [-7.0499999999999998]
+LOADK R17 K316 [-33.75]
+LOADK R18 K269 [-6.4500000000000002]
+LOADK R19 K309 [-15.75]
+SETLIST R15 R16 4 [1]
+SETLIST R6 R7 9 [1]
+  703: function Furniture.intersectsGridWall(entry): boolean
+DUPCLOSURE R7 K317 ['intersectsGridWall']
+CAPTURE VAL R0
+CAPTURE VAL R5
+CAPTURE VAL R6
+CAPTURE VAL R3
+SETTABLEKS R7 R0 K318 ['intersectsGridWall']
+  717: local function onGrid(value: number, grid: number): boolean
+DUPCLOSURE R7 K319 ['onGrid']
+  727: local function check(placed, itemId: string, x: number, z: number, r: number, skip: number?, legacy: boolean?, site: string?): string?
+DUPCLOSURE R8 K320 ['check']
+CAPTURE VAL R0
+CAPTURE VAL R7
+CAPTURE VAL R5
+CAPTURE VAL R4
+CAPTURE VAL R3
+  803: function Furniture.check(placed, itemId: string, x: number, z: number, r: number, skip: number?, site: string?): string?
+DUPCLOSURE R9 K321 ['check']
+CAPTURE VAL R8
+SETTABLEKS R9 R0 K322 ['check']
+  809: function Furniture.checkRelocation(placed, itemId: string, x: number, z: number, r: number, site: string?): string?
+DUPCLOSURE R9 K323 ['checkRelocation']
+CAPTURE VAL R8
+SETTABLEKS R9 R0 K324 ['checkRelocation']
+  815: function Furniture.locked(itemId: string, unlocked): string?
+DUPCLOSURE R9 K325 ['locked']
+CAPTURE VAL R0
+SETTABLEKS R9 R0 K326 ['locked']
+  823: function Furniture.count(placed, itemId: string): number
+DUPCLOSURE R9 K327 ['count']
+SETTABLEKS R9 R0 K328 ['count']
+  834: function Furniture.floor(itemId: string?, site: string?): number
+DUPCLOSURE R9 K329 ['floor']
+CAPTURE VAL R0
+SETTABLEKS R9 R0 K330 ['floor']
+  846: function Furniture.frame(houseFrame, entry, site: string?)
+DUPCLOSURE R9 K331 ['frame']
+CAPTURE VAL R0
+SETTABLEKS R9 R0 K332 ['frame']
+  854: return Furniture
+RETURN R0 1
+

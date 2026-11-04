@@ -7,10 +7,10 @@ import {spawnSync} from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = name => readFile(join(root, name), 'utf8');
-const [catalog, editor, fixture] = await Promise.all([
-  read('src/shared/BuildingCatalog.luau'), read('src/client/StructureEditor.luau'), read('scripts/structure-editor.luau'),
+const [catalog, editor, queue, fixture] = await Promise.all([
+  read('src/shared/BuildingCatalog.luau'), read('src/client/StructureEditor.luau'), read('src/client/BuildPaintQueue.luau'), read('scripts/structure-editor.luau'),
 ]);
-const program = fixture.replace('-- BUILDING_CATALOG --', catalog).replace('-- STRUCTURE_EDITOR --', editor);
+const program = fixture.replace('-- BUILDING_CATALOG --', catalog).replace('-- BUILD_PAINT_QUEUE --', queue).replace('-- STRUCTURE_EDITOR --', editor);
 const directory = await mkdtemp(join(tmpdir(), 'structure-editor-check-'));
 try {
   const target = join(directory, 'editor.luau');

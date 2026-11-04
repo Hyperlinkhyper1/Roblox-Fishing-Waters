@@ -94,6 +94,8 @@ end
 do
   local state, held, selected, spot = nil, nil, nil, nil
   local pending = false
+  local furnitureCategory, categoryButtons = "All", {}
+  for _,category in Furniture.Categories do categoryButtons[category.Id]={} end
   local itemButtons, stockLabels = {}, {}
   local itemViews, previewStarted, previewCalls = {}, {}, {}
   local remotes = {}
@@ -107,7 +109,7 @@ ${section(build, '\tlocal function placed()', '\n\tlocal function furnitureFolde
   local active, editingRack = true, false
   local editRack, rackEditor, rackStatus, rackMode = {}, {}, {}, {}
   local addCage, takeCage, addNet, takeNet = {}, {}, {}, {}
-  local function setButton(item, text, enabled, chosen) item.Active, item.Chosen = enabled, chosen end
+  local function setButton(item, text, enabled, chosen) item.Text, item.Active, item.Chosen = text, enabled, chosen end
 ${section(build, '\tlocal function render()', '\n\tlocal function clearPreview(')}
   render()
   check(emptyInventory.Visible and string.find(emptyInventory.Text, "Loading"), "Loading inventory must have a clear status")
@@ -147,6 +149,23 @@ ${section(build, '\tlocal function render()', '\n\tlocal function clearPreview('
   render()
   check(itemButtons.Freezer.Visible and not itemButtons.Freezer.Active,
     "Owned stock must stay listed even at the placement limit")
+  state.Stock.FloorLamp = 2
+  furnitureCategory = "Lighting"
+  render()
+  check(itemButtons.FloorLamp.Visible and not itemButtons.Freezer.Visible,
+    "Furniture catalogues must show owned items of their selected kind only")
+  check(string.find(categoryButtons.All.Text,"3") and string.find(categoryButtons.Lighting.Text,"2"),
+    "Category counts must preserve total ownership while filtering visible furniture")
+  check(categoryButtons.Lighting.Chosen and not categoryButtons.All.Chosen,
+    "The active furniture catalogue must remain selected")
+  furnitureCategory = "Plants"
+  render()
+  check(emptyInventory.Visible and string.find(emptyInventory.Text,"catalogue"),
+    "An empty category must explain why owned furniture from other kinds is hidden")
+  furnitureCategory = "All"
+  render()
+  check(itemButtons.Freezer.Visible and itemButtons.FloorLamp.Visible,
+    "Returning to All must restore every owned furniture card")
 end
 -- Templates use all catalogue builders, with no live collisions or workspace dependence.
 local created = {}

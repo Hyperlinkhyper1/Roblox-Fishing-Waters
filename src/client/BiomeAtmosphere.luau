@@ -118,7 +118,9 @@ function BiomeAtmosphere.start()
 			for name, target in properties do
 				local current = (instance :: any)[name]
 				local differs
-				if typeof(target) == "Color3" then
+				if typeof(current) ~= typeof(target) then
+					differs = true
+				elseif typeof(target) == "Color3" then
 					differs = math.max(
 						math.abs(current.R - target.R),
 						math.abs(current.G - target.G),

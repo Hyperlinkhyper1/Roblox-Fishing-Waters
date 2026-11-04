@@ -1,0 +1,294 @@
+Function 0 (clone):
+    8: 	local templates = remotes:FindFirstChild("Previews")
+LOADK R4 K0 ['Previews']
+NAMECALL R2 R0 K1 ['FindFirstChild']
+CALLFB R2 2 1 [0]
+    9: 	local template = templates and templates:FindFirstChild(itemId)
+MOVE R3 R2
+JUMPIFNOT R3 L0
+MOVE R5 R1
+NAMECALL R3 R2 K1 ['FindFirstChild']
+CALLFB R3 2 1 [1]
+   10: 	if not template or not template:IsA("Model") then return nil end
+L0: JUMPIFNOT R3 L1
+LOADK R6 K2 ['Model']
+NAMECALL R4 R3 K3 ['IsA']
+CALLFB R4 2 1 [2]
+JUMPIF R4 L2
+L1: LOADNIL R4
+RETURN R4 1
+   11: 	return template:Clone()
+L2: NAMECALL R4 R3 K4 ['Clone']
+CALL R4 1 -1
+RETURN R4 -1
+
+Function 1 (frame):
+REMARK builtin math.max/2
+   34: 			local aspect = math.max(0.1, view.AbsoluteSize.X / math.max(1, view.AbsoluteSize.Y))
+LOADK R1 K0 [0.10000000000000001]
+GETUPVAL R3 U0
+GETTABLEKS R3 R3 K1 ['AbsoluteSize']
+GETTABLEKS R3 R3 K2 ['X']
+REMARK builtin math.max/2
+LOADN R5 1
+GETUPVAL R6 U0
+GETTABLEKS R6 R6 K1 ['AbsoluteSize']
+GETTABLEKS R6 R6 K3 ['Y']
+FASTCALL2 18 R5 R6 L0
+GETIMPORT R4 6 [math.max]
+CALL R4 2 1
+L0: DIV R2 R3 R4
+FASTCALL2 18 R1 R2 L1
+GETIMPORT R0 6 [math.max]
+CALL R0 2 1
+   35: 			local direction = Vector3.new(1, 0.65, 1).Unit
+L1: GETIMPORT R1 9 [Vector3.new]
+LOADN R2 1
+LOADK R3 K10 [0.65000000000000002]
+LOADN R4 1
+CALLFB R1 3 1 [0]
+GETTABLEKS R1 R1 K11 ['Unit']
+   36: 			local orientation = CFrame.lookAt(Vector3.zero, -direction)
+GETIMPORT R2 14 [CFrame.lookAt]
+GETIMPORT R3 16 [Vector3.zero]
+MINUS R4 R1
+CALLFB R2 2 1 [1]
+REMARK builtin math.tan/1+
+REMARK builtin math.rad/1
+   37: 			local tangent = math.tan(math.rad(camera.FieldOfView / 2))
+GETUPVAL R6 U1
+GETTABLEKS R6 R6 K18 ['FieldOfView']
+DIVK R5 R6 K17 [2]
+FASTCALL1 22 R5 L2
+GETIMPORT R4 20 [math.rad]
+CALL R4 1 -1
+L2: FASTCALL 27 L3
+GETIMPORT R3 22 [math.tan]
+CALL R3 -1 1
+   38: 			local distance = 0.5
+L3: LOADK R4 K23 [0.5]
+REMARK allocation: table array 2
+   39: 			for _, x in { -size.X / 2, size.X / 2 } do
+NEWTABLE R5 0 2
+GETUPVAL R10 U2
+GETTABLEKS R10 R10 K2 ['X']
+MINUS R9 R10
+DIVK R8 R9 K17 [2]
+GETUPVAL R10 U2
+GETTABLEKS R10 R10 K2 ['X']
+DIVK R9 R10 K17 [2]
+SETLIST R5 R8 2 [1]
+LOADNIL R6
+LOADNIL R7
+FORGPREP R5 L12
+REMARK allocation: table array 2
+   40: 				for _, y in { -size.Y / 2, size.Y / 2 } do
+L4: NEWTABLE R10 0 2
+GETUPVAL R15 U2
+GETTABLEKS R15 R15 K3 ['Y']
+MINUS R14 R15
+DIVK R13 R14 K17 [2]
+GETUPVAL R15 U2
+GETTABLEKS R15 R15 K3 ['Y']
+DIVK R14 R15 K17 [2]
+SETLIST R10 R13 2 [1]
+LOADNIL R11
+LOADNIL R12
+FORGPREP R10 L11
+REMARK allocation: table array 2
+   41: 					for _, z in { -size.Z / 2, size.Z / 2 } do
+L5: NEWTABLE R15 0 2
+GETUPVAL R20 U2
+GETTABLEKS R20 R20 K24 ['Z']
+MINUS R19 R20
+DIVK R18 R19 K17 [2]
+GETUPVAL R20 U2
+GETTABLEKS R20 R20 K24 ['Z']
+DIVK R19 R20 K17 [2]
+SETLIST R15 R18 2 [1]
+LOADNIL R16
+LOADNIL R17
+FORGPREP R15 L10
+   42: 						local corner = orientation:VectorToObjectSpace(box * Vector3.new(x, y, z) - box.Position)
+L6: GETUPVAL R24 U3
+GETIMPORT R25 9 [Vector3.new]
+MOVE R26 R9
+MOVE R27 R14
+MOVE R28 R19
+CALLFB R25 3 1 [2]
+MUL R23 R24 R25
+GETUPVAL R24 U3
+GETTABLEKS R24 R24 K25 ['Position']
+SUB R22 R23 R24
+NAMECALL R20 R2 K26 ['VectorToObjectSpace']
+CALLFB R20 2 1 [3]
+REMARK builtin math.max/3
+   43: 						distance = math.max(distance, corner.Z + math.abs(corner.X) / (tangent * aspect), corner.Z + math.abs(corner.Y) / tangent)
+GETTABLEKS R24 R20 K24 ['Z']
+REMARK builtin math.abs/1
+GETTABLEKS R27 R20 K2 ['X']
+FASTCALL1 2 R27 L7
+GETIMPORT R26 28 [math.abs]
+CALL R26 1 1
+L7: MUL R27 R3 R0
+DIV R25 R26 R27
+ADD R23 R24 R25
+GETTABLEKS R25 R20 K24 ['Z']
+REMARK builtin math.abs/1
+GETTABLEKS R28 R20 K3 ['Y']
+FASTCALL1 2 R28 L8
+GETIMPORT R27 28 [math.abs]
+CALL R27 1 1
+L8: DIV R26 R27 R3
+ADD R24 R25 R26
+FASTCALL3 18 R4 R23 R24 L9
+MOVE R22 R4
+GETIMPORT R21 6 [math.max]
+CALL R21 3 1
+L9: MOVE R4 R21
+   41: 					for _, z in { -size.Z / 2, size.Z / 2 } do
+L10: FORGLOOP R15 L6 2
+   40: 				for _, y in { -size.Y / 2, size.Y / 2 } do
+L11: FORGLOOP R10 L5 2
+   39: 			for _, x in { -size.X / 2, size.X / 2 } do
+L12: FORGLOOP R5 L4 2
+   47: 			camera.CFrame = CFrame.lookAt(box.Position + direction * distance * 1.12, box.Position)
+GETUPVAL R5 U1
+GETIMPORT R6 14 [CFrame.lookAt]
+GETUPVAL R8 U3
+GETTABLEKS R8 R8 K25 ['Position']
+MUL R10 R1 R4
+MULK R9 R10 K29 [1.1200000000000001]
+ADD R7 R8 R9
+GETUPVAL R8 U3
+GETTABLEKS R8 R8 K25 ['Position']
+CALLFB R6 2 1 [4]
+SETTABLEKS R6 R5 K12 ['CFrame']
+   48: 		end
+RETURN R0 0
+
+Function 2 (??):
+   16: 		local templates = remotes:WaitForChild("Previews", 10)
+GETUPVAL R0 U0
+LOADK R2 K0 ['Previews']
+LOADN R3 10
+NAMECALL R0 R0 K1 ['WaitForChild']
+CALLFB R0 3 1 [0]
+   17: 		local template = templates and templates:WaitForChild(itemId, 10)
+MOVE R1 R0
+JUMPIFNOT R1 L0
+GETUPVAL R3 U1
+LOADN R4 10
+NAMECALL R1 R0 K1 ['WaitForChild']
+CALLFB R1 3 1 [1]
+   18: 		if not template or not template:IsA("Model") or not view.Parent then
+L0: JUMPIFNOT R1 L1
+LOADK R4 K2 ['Model']
+NAMECALL R2 R1 K3 ['IsA']
+CALLFB R2 2 1 [2]
+JUMPIFNOT R2 L1
+GETUPVAL R2 U2
+GETTABLEKS R2 R2 K4 ['Parent']
+JUMPIF R2 L2
+   19: 			return
+L1: RETURN R0 0
+   21: 		local world = Instance.new("WorldModel")
+L2: GETIMPORT R2 7 [Instance.new]
+LOADK R3 K8 ['WorldModel']
+CALLFB R2 1 1 [3]
+MOVE R0 R2
+   22: 		world.Parent = view
+GETUPVAL R2 U2
+SETTABLEKS R2 R0 K4 ['Parent']
+   23: 		local model = template:Clone()
+NAMECALL R2 R1 K9 ['Clone']
+CALLFB R2 1 1 [4]
+   24: 		model.Parent = world
+SETTABLEKS R0 R2 K4 ['Parent']
+   25: 		local box, size = model:GetBoundingBox()
+NAMECALL R3 R2 K10 ['GetBoundingBox']
+CALLFB R3 1 2 [5]
+   26: 		local camera = Instance.new("Camera")
+GETIMPORT R5 7 [Instance.new]
+LOADK R6 K11 ['Camera']
+CALLFB R5 1 1 [6]
+MOVE R2 R5
+   27: 		camera.FieldOfView = 32
+LOADN R5 32
+SETTABLEKS R5 R2 K12 ['FieldOfView']
+   28: 		camera.Parent = view
+GETUPVAL R5 U2
+SETTABLEKS R5 R2 K4 ['Parent']
+   29: 		view.CurrentCamera = camera
+GETUPVAL R5 U2
+SETTABLEKS R2 R5 K13 ['CurrentCamera']
+   30: 		view.Ambient = Color3.fromRGB(185, 185, 185)
+GETUPVAL R5 U2
+GETIMPORT R6 16 [Color3.fromRGB]
+LOADN R7 185
+LOADN R8 185
+LOADN R9 185
+CALLFB R6 3 1 [7]
+SETTABLEKS R6 R5 K17 ['Ambient']
+   31: 		view.LightColor = Color3.fromRGB(255, 244, 226)
+GETUPVAL R5 U2
+GETIMPORT R6 16 [Color3.fromRGB]
+LOADN R7 255
+LOADN R8 244
+LOADN R9 226
+CALLFB R6 3 1 [8]
+SETTABLEKS R6 R5 K18 ['LightColor']
+   32: 		view.LightDirection = Vector3.new(-1, -1, -2)
+GETUPVAL R5 U2
+GETIMPORT R6 20 [Vector3.new]
+LOADN R7 -1
+LOADN R8 -1
+LOADN R9 -2
+CALLFB R6 3 1 [9]
+SETTABLEKS R6 R5 K21 ['LightDirection']
+REMARK allocation: closure with 4 upvalues
+   33: 		local function frame()
+NEWCLOSURE R1 P0
+CAPTURE UPVAL U2
+CAPTURE VAL R2
+CAPTURE VAL R4
+CAPTURE VAL R3
+   49: 		view:GetPropertyChangedSignal("AbsoluteSize"):Connect(frame)
+GETUPVAL R5 U2
+LOADK R7 K22 ['AbsoluteSize']
+NAMECALL R5 R5 K23 ['GetPropertyChangedSignal']
+CALLFB R5 2 1 [10]
+MOVE R7 R1
+NAMECALL R5 R5 K24 ['Connect']
+CALLFB R5 2 0 [11]
+   50: 		frame()
+MOVE R5 R1
+CALLFB R5 0 0 [12]
+   51: 	end)
+RETURN R0 0
+
+Function 3 (show):
+   15: 	task.spawn(function()
+GETIMPORT R3 2 [task.spawn]
+REMARK allocation: closure with 3 upvalues
+NEWCLOSURE R4 P0
+CAPTURE VAL R1
+CAPTURE VAL R2
+CAPTURE VAL R0
+CALLFB R3 1 0 [0]
+   52: end
+RETURN R0 0
+
+Function 4 (??):
+REMARK allocation: table hash 2
+    3: local Preview = {}
+NEWTABLE R0 2 0
+    7: function Preview.clone(remotes: Instance, itemId: string): Model?
+DUPCLOSURE R1 K0 ['clone']
+SETTABLEKS R1 R0 K1 ['clone']
+   14: function Preview.show(view: ViewportFrame, remotes: Instance, itemId: string)
+DUPCLOSURE R1 K2 ['show']
+SETTABLEKS R1 R0 K3 ['show']
+   54: return Preview
+RETURN R0 1
+

@@ -400,6 +400,7 @@ local function render() end
 local request = {InvokeServer = function() return {State = {Placed = {}}} end}
 local task = {spawn = function(callback) callback() end}
 local toggle = {Visible = true}
+local categoryButtons = {}
 local structureOpened, structureEntries, structureExits = false, 0, 0
 local StructureEditor = {new = function(options)
   return {
