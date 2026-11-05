@@ -84,7 +84,7 @@ while true do
 	table.insert(full, { Fish = fish(#full), X = spot.X, Y = spot.Y, R = spot.R })
 end
 local none, reason = BoatUpgrades.install(full, layout, "Motor", species)
-check(none == nil and string.find(reason, "4 cargo tiles"), "A full hold refuses a motor")
+check(none == nil and string.find(reason, "4 space"), "A full hold refuses a motor")
 check(BoatUpgrades.install(full, layout, "Sail", species) == nil, "Unknown upgrades are refused")
 
 -- Fitted parts are ordinary hold kit: they move like the engine and never leave the hold.
@@ -97,15 +97,15 @@ check(released == "Boat parts stay in the hold.", "A rudder can't be thrown over
 local _, handed = AnglerData.moveCargo(saved, "Rowboat", layout, index, "Hand", species)
 check(handed == "Boat parts stay in the hold.", "A rudder can't be carried off")
 
--- Refits fitted by hand land exactly on the tiles the player chose.
+-- Confirmed refits consume space without requiring distinct slot positions.
 local manual = assert(AnglerData.placePart(AnglerData.decode({}), "Rowboat", layout, "Rudder", 1, 4, 0, species))
 local manualHold = AnglerData.hold(manual, "Rowboat", layout)
 check(#manualHold == #AnglerData.hold({}, "Rowboat", layout) + 1, "A manual rudder joins the hold")
 check(BoatUpgrades.count(manualHold, layout, "Rudder") == 1, "A manual rudder counts as fitted")
 check(BoatUpgrades.spec(layout, manualHold).TurnRate > layout.TurnRate, "A manual rudder sharpens turning")
 check(
-	AnglerData.placePart(manual, "Rowboat", layout, "Rudder", 1, 4, 0, species) == nil,
-	"Overlapping manual placement is refused"
+	AnglerData.placePart(manual, "Rowboat", layout, "Rudder", 1, 4, 0, species) ~= nil,
+	"Fittings can share legacy coordinates while capacity remains"
 )
 check(
 	AnglerData.placePart(manual, "Rowboat", layout, "Rudder", 0, 1, 0, species) == nil,

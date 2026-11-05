@@ -37,6 +37,47 @@ local TWILIGHT_DECAY = Color3.fromRGB(118, 70, 78)
 local NIGHT_TINT = Color3.fromRGB(188, 204, 255)
 local NIGHT_CLOUDS = Color3.fromRGB(38, 44, 64)
 local NIGHT_AMBIENT = Color3.fromRGB(44, 54, 86)
+-- Sea mist: pale and slightly blue, lit warm by a low sun. It forms over the
+-- late night, peaks around dawn and burns off through the morning.
+local MIST_COLOR = Color3.fromRGB(206, 214, 220)
+local MIST_DECAY = Color3.fromRGB(150, 162, 172)
+local SUNSET_CLOUDS = Color3.fromRGB(255, 166, 128)
+local GOLDEN_FOG = Color3.fromRGB(236, 206, 160)
+-- Humid air keeps the haze up for a while after the rain has stopped (seconds).
+local WET_LINGER = 180
+-- Fog banks drift across the sea, so mist comes and goes as you sail.
+local BANK_SCALE = 1 / 1400
+local BANK_DRIFT = 1 / 240
+local TAU = math.pi * 2
+
+local function smoothstep(t: number): number
+	t = math.clamp(t, 0, 1)
+	return t * t * (3 - 2 * t)
+end
+
+-- 0 by day; a light mist after dark that thickens towards dawn, gone by ~09:30.
+function BiomeAtmosphere.mistAt(clock: number): number
+	if clock >= 12 then
+		return 0.35 * smoothstep((clock - 19) / 2.5)
+	end
+	local build = 0.35 + 0.65 * smoothstep((clock - 1.5) / 3.5)
+	return build * (1 - smoothstep((clock - 7) / 2.5))
+end
+
+-- Patchy fog banks, 0..1, drifting slowly with time.
+function BiomeAtmosphere.fogBank(x: number, z: number, time: number): number
+	local u, v, t = x * BANK_SCALE, z * BANK_SCALE, time * BANK_DRIFT
+	local n = (math.sin(u * 1.3 + t) + math.sin(v * 1.7 - t * 0.8 + 1.7) + math.sin((u + v) * 0.9 + t * 0.5 + 4.1)) / 3
+	return smoothstep((n + 0.25) / 0.9)
+end
+
+-- Warm low-sun light in the hour or two either side of twilight.
+local function goldenHour(clock: number): number
+	if clock >= 12 then
+		return smoothstep((clock - 15.5) / 1.5) * (1 - smoothstep((clock - 18) / 1))
+	end
+	return smoothstep((clock - 5.5) / 1) * (1 - smoothstep((clock - 7.5) / 1.5))
+end
 
 local function ensure<T>(parent: Instance, className: string): T
 	local existing = parent:FindFirstChildOfClass(className)
@@ -84,6 +125,31 @@ function BiomeAtmosphere.start()
 	local clouds = ensure(terrain, "Clouds") :: Clouds
 	local sky = ensure(Lighting, "Sky") :: Sky
 	local celestialBodiesShown = sky.CelestialBodiesShown
+	-- A smaller, sharper sun and moon read as far away; the Atmosphere's glare
+	-- supplies the glow around the sun. A denser star field for clear nights.
+	sky.SunAngularSize = 11
+	sky.MoonAngularSize = 9
+	sky.StarCount = 4000
+	-- Crepuscular rays where the sun breaks through haze and mist, and a soft
+	-- bloom on the sun and its glitter on the water. Both are cheap post effects.
+	local rays = Lighting:FindFirstChild("SkySunRays") :: SunRaysEffect?
+	if not rays then
+		rays = Instance.new("SunRaysEffect")
+		rays.Name = "SkySunRays"
+		rays.Parent = Lighting
+	end
+	rays.Spread = 0.75
+	rays.Intensity = 0.04
+	local bloom = Lighting:FindFirstChild("SkyBloom") :: BloomEffect?
+	if not bloom then
+		bloom = Instance.new("BloomEffect")
+		bloom.Name = "SkyBloom"
+		bloom.Parent = Lighting
+	end
+	bloom.Intensity = 0.5
+	bloom.Size = 28
+	bloom.Threshold = 1.7
+	local wetness, wetClock = 0, os.clock()
 	local title = makeTitle()
 	local titleToken = 0
 	local surfaceAmbient = Lighting.Ambient
@@ -152,7 +218,19 @@ function BiomeAtmosphere.start()
 		-- The built-in sky otherwise draws the moon and stars through rain clouds.
 		sky.CelestialBodiesShown = celestialBodiesShown and overcast < 0.85 and weather.kind ~= "BlackHole"
 		clouds.Enabled = true
-		local night = DayNight.darkness(DayNight.clockTime(now))
+		local clock = DayNight.clockTime(now)
+		local night = DayNight.darkness(clock)
+		-- Humid air: rises with the rain at once, then thins out over WET_LINGER.
+		local wallClock = os.clock()
+		wetness = math.max(rain, wetness - (wallClock - wetClock) / WET_LINGER)
+		wetClock = wallClock
+		local eye = if camera then camera.CFrame.Position else Vector3.new(0, 0, 0)
+		-- Rain and wind break the mist up; a storm leaves none.
+		local mist = BiomeAtmosphere.mistAt(clock)
+			* (0.4 + 0.6 * BiomeAtmosphere.fogBank(eye.X, eye.Z, now))
+			* (1 - storm)
+			* (1 - math.clamp(rain / 0.6, 0, 1) * 0.5)
+		local golden = goldenHour(clock) * (1 - overcast)
 		-- Light under a supercell turns dim and faintly green.
 		local cell = if camera then Weather.supercellCover(camera.CFrame.Position, weather.supercell) else 0
 		local blackHole = weather.kind == "BlackHole"
@@ -195,6 +273,7 @@ function BiomeAtmosphere.start()
 				Contrast = 0.16,
 			})
 			blend(clouds, { Cover = 1, Density = 0.9, Color = Color3.fromRGB(31, 7, 48) })
+			blend(rays, { Intensity = 0 })
 			blend(Lighting, {
 				Ambient = Color3.fromRGB(39, 15, 61),
 				OutdoorAmbient = Color3.fromRGB(47, 18, 68),
@@ -207,23 +286,40 @@ function BiomeAtmosphere.start()
 			local twilight = 4 * night * (1 - night) * (1 - overcast)
 			-- Under a night cloud deck the fog lifts toward the clouds instead of a black wall.
 			local nightFog = NIGHT_FOG:Lerp(NIGHT_CLOUDS, overcast * 0.6)
+			-- Mist glows with whatever light there is: warm at dawn, dim blue at night.
+			local mistColor = MIST_COLOR:Lerp(TWILIGHT_FOG, twilight * 0.5):Lerp(nightFog, night * 0.85)
 			blend(atmosphere, {
-				Offset = Biomes.DistanceFogOffset,
+				-- Mist swallows distant silhouettes instead of leaving a hard horizon.
+				Offset = Biomes.DistanceFogOffset * (1 - mist * 0.8),
 				Color = look.atmosphereColor
+					:Lerp(GOLDEN_FOG, golden * 0.3)
 					:Lerp(Color3.fromRGB(112, 125, 142), rain * 0.65)
 					:Lerp(TWILIGHT_FOG, twilight * 0.45)
-					:Lerp(nightFog, night),
+					:Lerp(nightFog, night)
+					:Lerp(mistColor, mist * 0.7),
 				Decay = look.atmosphereDecay
 					:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5)
 					:Lerp(TWILIGHT_DECAY, twilight * 0.5)
-					:Lerp(NIGHT_DECAY, night),
-				-- A touch thicker at night so far scenery dissolves into the dark.
-				Density = math.min(0.5, look.density + rain * 0.13 + night * 0.06),
+					:Lerp(NIGHT_DECAY, night)
+					:Lerp(MIST_DECAY:Lerp(NIGHT_DECAY, night * 0.8), mist * 0.6),
+				-- A touch thicker at night so far scenery dissolves into the dark;
+				-- mist and humid post-rain air thicken it most.
+				Density = math.min(
+					0.6,
+					look.density + rain * 0.13 + (wetness - rain) * 0.08 + night * 0.06 + mist * 0.2
+				),
 				-- Thin haze on clear nights; a bright haze layer reads as a glowing horizon.
-				Haze = (look.haze + rain * 1.8) * (1 - night * 0.7 * (1 - overcast)),
-				Glare = (look.glare * (1 - night) + twilight * 0.5) * (1 - rain),
+				Haze = (look.haze + rain * 1.8 + (wetness - rain) * 0.9) * (1 - night * 0.7 * (1 - overcast))
+					+ mist * 2.4,
+				-- A low sun blooms through the mist.
+				Glare = (look.glare * (1 - night) + twilight * 0.5 + golden * 0.25 + mist * 0.5 * (1 - night))
+					* (1 - rain),
 			})
 		end
+		-- Rays only where there is a sun to see; mist makes them strongest.
+		blend(rays, {
+			Intensity = if underwater then 0 else (0.035 + mist * 0.1 + golden * 0.04) * (1 - overcast) * (1 - night),
+		})
 		blend(grading, {
 			TintColor = if underwater
 				then Color3.fromRGB(215, 240, 255)
@@ -236,10 +332,19 @@ function BiomeAtmosphere.start()
 				- SATURATION_REDUCTION,
 			Contrast = if underwater then 0 else look.contrast + storm * 0.04,
 		})
+		-- Fair-weather cover wanders over a quarter of an hour so the sky is never
+		-- the same twice; overcast still closes it completely.
+		local fairCover = math.clamp(look.cloudCover + 0.1 * math.sin(now * TAU / 900), 0, 1)
+		local fairDensity = 0.45 + 0.1 * math.sin(now * TAU / 1300 + 1.3)
+		local twilightClouds = 4 * night * (1 - night)
 		blend(clouds, {
-			Cover = look.cloudCover + (1 - look.cloudCover) * overcast,
-			Density = 0.5 + overcast * 0.5,
-			Color = look.cloudColor:Lerp(Color3.fromRGB(75, 83, 99), rain * 0.8):Lerp(NIGHT_CLOUDS, night * 0.8),
+			Cover = fairCover + (1 - fairCover) * overcast,
+			Density = fairDensity + (1 - fairDensity) * overcast,
+			-- Sunset lights the cloud undersides orange and pink before night greys them.
+			Color = look.cloudColor
+				:Lerp(SUNSET_CLOUDS, math.max(twilightClouds * 0.6, golden * 0.2) * (1 - rain))
+				:Lerp(Color3.fromRGB(75, 83, 99), rain * 0.8)
+				:Lerp(NIGHT_CLOUDS, night * 0.8),
 		})
 		blend(Lighting, {
 			Ambient = if underwater then Color3.fromRGB(115, 145, 170) else surfaceAmbient,

@@ -39,7 +39,7 @@ function Service.recordCatch(
 	local count
 	local ok, message = BoatService.updateProgress(player, function(profile)
 		local emptyHand = profile.Angler.Hand == nil
-		local backpackLayout = BackpackCatalog.Items[profile.Angler.BackpackId] or BackpackCatalog.Items.Starter
+		local backpackLayout = BackpackCatalog.layoutFor(player, profile.Angler.BackpackId)
 		profile.Angler, destination = Data.recordCatch(
 			profile.Angler,
 			fishId,
@@ -58,7 +58,7 @@ function Service.recordCatch(
 		)
 		count = profile.Angler.Catches[fishId].Count
 		autoStored = false
-		if ownsAutoStore and emptyHand then
+		if ownsAutoStore and profile.Angler.Settings.AutoStore ~= false and emptyHand then
 			local boatId, model = BoatService.activeBoat(player)
 			local layout = boatId and BoatCatalog[boatId]
 			if layout and Aboard(player.Character, model) then

@@ -21,6 +21,10 @@ local SCHOOL_SIZE = NumberRange.new(3, 5)
 local SOLO_KG = 20
 local SPAWN_DISTANCE = NumberRange.new(40, 120)
 local DESPAWN_DISTANCE = 170
+-- Schools keep at least this far apart (flat studs), and a spawn tries this
+-- many spots before waiting for the next interval.
+local SCHOOL_GAP = 35
+local SPAWN_TRIES = 6
 -- School selection is spaced out; models are built or recycled on Heartbeat.
 local SPAWN_INTERVAL = 0.6
 local MODEL_INTERVAL = 0.12
@@ -33,16 +37,19 @@ local NEAR_DISTANCE = 60
 local FAR_STRIDE = 3
 local BEHIND_DOT = 0.15
 -- Depth of a fish's top below the calm surface; body size and swell add to it.
-local DEPTH = NumberRange.new(3, 6.5)
+-- Shallower schools read as sitting on the water when seen from above.
+local DEPTH = NumberRange.new(5, 8.5)
 local SWELL_MARGIN = 1.5 -- wave crests rise this many amplitudes above the calm level
 -- Water kept above the highest point of every model (dorsal fins, sails).
 local SURFACE_CLEARANCE = 1.5
 local MIN_CLEARANCE = 3 -- studs of water kept beneath a school
--- Studs per second. Schools barely drift; anything quicker read as darting.
-local SPEED = 0.1
--- Radians per second. A school's formation does not spin with its heading, so
--- turning only re-aims the fish instead of swinging them round the school.
-local WANDER_TURN = 0.03
+-- Studs per second, the same for every fish in a school. Slow, but quick enough
+-- to read as swimming: at 0.1 the schools looked parked.
+local SPEED = 0.8
+-- Radians per second. Schools hold one straight heading and only turn to
+-- avoid shallows. The formation does not spin with its heading, so a shore
+-- turn only re-aims the fish instead of swinging them round the school.
+local WANDER_TURN = 0
 local SHORE_TURN = 0.15
 local BOB_HEIGHT, BOB_RATE = 0.06, 0.4
 local TAIL_SWING, TAIL_RATE = 0.05, 2
@@ -199,14 +206,24 @@ function AmbientFish.start()
 		table.remove(schools, table.find(schools, school))
 	end
 
-	local function spawn(camera: Vector3)
-		local angle = rng:NextNumber(0, TAU)
-		local origin = camera + Vector3.new(math.cos(angle), 0, math.sin(angle)) * between(SPAWN_DISTANCE, rng)
+	-- Too close to a school already swimming: in a bay only the deep middle passes
+	-- the depth check, and every school used to pile up in that one spot.
+	local function crowded(origin: Vector3): boolean
+		for _, school in schools do
+			local gap = Vector3.new(school.center.X - origin.X, 0, school.center.Z - origin.Z)
+			if gap.Magnitude < SCHOOL_GAP then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function spawnAt(origin: Vector3): boolean
 		local now = workspace:GetServerTimeNow()
 		local pool = if Weather.inLake(origin) then "MainLake" else "OpenSea"
 		local id = pickSpecies(pool, (Seasons.current(now)), rng)
 		if not id then
-			return
+			return false
 		end
 		local species = FishSpecies[id]
 		local count = if species.AverageKg >= SOLO_KG then 1 else rng:NextInteger(SCHOOL_SIZE.Min, SCHOOL_SIZE.Max)
@@ -219,7 +236,7 @@ function AmbientFish.start()
 		local depth = between(DEPTH, rng) + length * 0.5 + spread + swell
 		local floor = floorAt(origin)
 		if not floor or floor > Biomes.WaterLevel - depth - MIN_CLEARANCE then
-			return
+			return false
 		end
 		local center = Vector3.new(origin.X, Biomes.WaterLevel - depth, origin.Z)
 		local school = {
@@ -240,6 +257,19 @@ function AmbientFish.start()
 			members = {},
 		}
 		table.insert(schools, school)
+		return true
+	end
+
+	-- A few spread-out tries per attempt, so a shallow or crowded first pick
+	-- does not leave the water empty or bunch the schools together.
+	local function spawn(camera: Vector3)
+		for _ = 1, SPAWN_TRIES do
+			local angle = rng:NextNumber(0, TAU)
+			local origin = camera + Vector3.new(math.cos(angle), 0, math.sin(angle)) * between(SPAWN_DISTANCE, rng)
+			if not crowded(origin) and spawnAt(origin) then
+				return
+			end
+		end
 	end
 
 	-- Limit cloning, parenting and disposal to one fish per Heartbeat. A bounded
@@ -316,7 +346,11 @@ function AmbientFish.start()
 			end
 			local position = school.center + offset
 			local forward = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading))
-			root.CFrame = CFrame.lookAt(position, position + forward) * CFrame.Angles(0, math.pi / 2, 0)
+			-- Move every part, not just the root: outside the workspace the welds are
+			-- inactive, so a root-only move left the fish where they were built (the
+			-- template origin, mid-bay at the surface) and they took that offset when
+			-- parented. Only once parented does moving the root carry the body.
+			model:PivotTo(CFrame.lookAt(position, position + forward) * CFrame.Angles(0, math.pi / 2, 0))
 			model.Parent = folder
 			table.insert(school.members, {
 				model = model,

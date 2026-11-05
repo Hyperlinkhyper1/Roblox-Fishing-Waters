@@ -5,6 +5,7 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 
 local BoatAudio = {}
 local started = false
+local DISCOVERY_INTERVAL = 0.25
 
 function BoatAudio.start()
 	if started then
@@ -12,9 +13,14 @@ function BoatAudio.start()
 	end
 	started = true
 	local records = {}
+	local previousFolder = nil
+	local discovery = DISCOVERY_INTERVAL
 	RunService.Heartbeat:Connect(function(dt)
 		local folder = workspace:FindFirstChild("PlayerBoats")
-		if folder then
+		discovery += dt
+		-- Only discovery scans the hierarchy; existing engines still blend every frame.
+		if folder and (folder ~= previousFolder or discovery >= DISCOVERY_INTERVAL) then
+			discovery = 0
 			for _, model in folder:GetChildren() do
 				local spec = BoatCatalog[model:GetAttribute("BoatId")]
 				if spec and spec.EngineSoundId and model:IsA("Model") and not records[model] then
@@ -36,6 +42,7 @@ function BoatAudio.start()
 				end
 			end
 		end
+		previousFolder = folder
 		local blend = 1 - math.exp(-8 * math.clamp(dt, 0, 0.1))
 		for model, record in records do
 			local sound = record.sound
@@ -51,6 +58,9 @@ function BoatAudio.start()
 			end
 			local occupant = record.seat.Occupant
 			local running = occupant ~= nil and occupant.Health > 0
+			if not running and sound.Volume == 0 and not sound.IsPlaying then
+				continue
+			end
 			local throttle = if running then math.abs(model:GetAttribute("RowThrottle") or 0) else 0
 			local velocity = record.root.AssemblyLinearVelocity
 			local speed = Vector2.new(velocity.X, velocity.Z).Magnitude

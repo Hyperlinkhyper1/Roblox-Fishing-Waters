@@ -479,9 +479,12 @@ local function addPiece(model: Model)
 end
 
 -- BaseParts under a model, or nil when it holds a model that streams by rules of its own
-local function plainParts(model: Model): number?
+local function plainParts(model: Model, pause: (() -> ())?): number?
 	local count = 0
 	for _, d in model:GetDescendants() do
+		if pause then
+			pause()
+		end
 		if d:IsA("BasePart") then
 			count += 1
 		elseif d:IsA("Model") and d.ModelStreamingMode ~= Enum.ModelStreamingMode.Default then
@@ -493,9 +496,12 @@ end
 
 -- Ground is thousands of anonymous wedges loose in one model (and its seabed slope), so it
 -- is regrouped by position. Nothing looks ground wedges up by name.
-local function chunkGround(container: Instance)
+local function chunkGround(container: Instance, pause: (() -> ())?)
 	local chunks: { [string]: Model } = {}
 	for _, child in container:GetChildren() do
+		if pause then
+			pause()
+		end
 		if child:IsA("BasePart") then
 			local key = math.floor(child.Position.X / CHUNK) .. "," .. math.floor(child.Position.Z / CHUNK)
 			local chunk = chunks[key]
@@ -510,7 +516,7 @@ local function chunkGround(container: Instance)
 			if child:HasTag(PIECE_TAG) then
 				addPiece(child)
 			else
-				chunkGround(child)
+				chunkGround(child, pause)
 			end
 		end
 	end
@@ -525,8 +531,11 @@ end
 -- to plain models, or their stale ids would pin the wrong pieces.
 local BASE_TAG = "PlayerBase"
 
-local function pinWhole(model: Model)
+local function pinWhole(model: Model, pause: (() -> ())?)
 	for _, d in model:GetDescendants() do
+		if pause then
+			pause()
+		end
 		if d:IsA("Model") and d:HasTag(PIECE_TAG) then
 			d:RemoveTag(PIECE_TAG)
 			d:SetAttribute("PieceId", nil)
@@ -539,33 +548,37 @@ end
 -- Everything else keeps its place in the hierarchy: a model small enough becomes a piece as
 -- it is, a bigger one is split into its children. Loose parts in a big model stay as they
 -- were and still stream normally.
-local function splitIntoPieces(container: Instance)
+local function splitIntoPieces(container: Instance, pause: (() -> ())?)
 	for _, child in container:GetChildren() do
+		if pause then
+			pause()
+		end
 		if child:IsA("Model") then
 			local mode = child.ModelStreamingMode
 			if child:HasTag(BASE_TAG) then
-				pinWhole(child)
+				pinWhole(child, pause)
 			elseif child:HasTag(PIECE_TAG) or mode == Enum.ModelStreamingMode.Atomic then
 				-- An atomic model (a shop, say) already arrives whole, so pinning changes nothing else
 				addPiece(child)
 			elseif mode == Enum.ModelStreamingMode.Default then
-				local parts = plainParts(child)
+				local parts = plainParts(child, pause)
 				if parts and parts <= PIECE_PARTS then
 					addPiece(child)
 				else
-					splitIntoPieces(child)
+					splitIntoPieces(child, pause)
 				end
 			end
 		elseif child:IsA("Folder") then
-			splitIntoPieces(child)
+			splitIntoPieces(child, pause)
 		end
 	end
 end
 
 -- Must run before an island's contents first replicate: switching a model's streaming mode
 -- after clients have it makes it stream in all over again. So each island is split once,
--- either as it's generated or at startup before anyone has a character.
-local function splitIsland(island: Model)
+-- either as it's generated or at startup before anyone has a character. `pause` may yield, so it is
+-- passed only where nothing can replicate meanwhile: startup, or an island that is still unparented.
+local function splitIsland(island: Model, pause: (() -> ())?)
 	if split[island] then
 		return
 	end
@@ -573,10 +586,10 @@ local function splitIsland(island: Model)
 	island.ModelStreamingMode = Enum.ModelStreamingMode.Default
 	for _, child in island:GetChildren() do
 		if child:IsA("Model") and child.Name == "Ground" and not child:HasTag(PIECE_TAG) then
-			chunkGround(child)
+			chunkGround(child, pause)
 		end
 	end
-	splitIntoPieces(island)
+	splitIntoPieces(island, pause)
 end
 
 -- Called as a generated island is parented. Its trees and houses are added after that, so
@@ -585,7 +598,19 @@ function Lod.prepareIsland(island: Model)
 	if split[island] then
 		return
 	end
-	splitIsland(island)
+	-- A whole city is split here; while it is unparented, yield now and then to stay inside the
+	-- script timeout. A parented island is split in the frame it arrived, before it replicates.
+	local pause: (() -> ())? = nil
+	if island.Parent == nil then
+		local resumed = os.clock()
+		pause = function()
+			if os.clock() - resumed > 0.05 then
+				task.wait()
+				resumed = os.clock()
+			end
+		end
+	end
+	splitIsland(island, pause)
 	island.ChildAdded:Connect(function(child)
 		if child:IsA("Model") and child.ModelStreamingMode == Enum.ModelStreamingMode.Default then
 			local parts = plainParts(child)
@@ -666,19 +691,22 @@ function Lod.serve()
 	remote.Parent = ReplicatedStorage
 end
 
-function Lod.prepareStreaming(root: Instance)
+function Lod.prepareStreaming(root: Instance, pause: (() -> ())?)
 	local shells = root:FindFirstChild("Lod")
 	if shells and shells:IsA("Model") then
 		-- Apply to baked maps too, so distant stand-ins cannot stream out/reload.
 		shells.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 	end
 	for _, island in islands(root) do
-		splitIsland(island)
+		splitIsland(island, pause)
 		-- A generated harbour parents its empty Bases folder before building the bases in it,
 		-- so the island's ChildAdded split never saw them
 		for _, d in island:GetDescendants() do
+			if pause then
+				pause()
+			end
 			if d:IsA("Model") and d:HasTag(BASE_TAG) and not pieceIds[d] then
-				pinWhole(d)
+				pinWhole(d, pause)
 			end
 		end
 		-- Counts baked into a saved map go stale whenever startup repairs rebuild some ground
@@ -686,6 +714,9 @@ function Lod.prepareStreaming(root: Instance)
 		-- stayed up over the finished town, so count again from the ground as it is now.
 		local id = island:GetAttribute("LodId")
 		local shell = if shells and id ~= nil then shells:FindFirstChild(tostring(id)) else nil
+		if pause then
+			pause()
+		end
 		if shell and shell:GetAttribute("TileSize") then
 			countTiles(shell, island)
 		elseif shell then
@@ -702,7 +733,14 @@ end
 -- Builds shells under root.Lod if they aren't already baked in. The client keeps a shell
 -- over its island until the island has mostly streamed in, so half an island never shows.
 function Lod.build(root: Instance)
-	Lod.prepareStreaming(root)
+	-- Islands were split at startup (or as generated); this pass only re-counts, so it may yield
+	local resumed = os.clock()
+	Lod.prepareStreaming(root, function()
+		if os.clock() - resumed > 0.05 then
+			task.wait()
+			resumed = os.clock()
+		end
+	end)
 	local baked = root:FindFirstChild("Lod")
 	if baked then
 		local lastId = 0

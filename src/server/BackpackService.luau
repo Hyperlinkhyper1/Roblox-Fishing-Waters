@@ -41,6 +41,9 @@ local function problem(profile, id)
 	if not item then
 		return "Choose a backpack from the store."
 	end
+	if item.Gamepass then
+		return "The " .. item.Name .. " is a gamepass. Find it in the Shop tab of your menu."
+	end
 	if Backpacks.rank(id) <= Backpacks.rank(profile.Angler.BackpackId) then
 		return "You already have this backpack or a larger one."
 	end
@@ -56,10 +59,8 @@ local function syncAppearance(player, force)
 	if not profile or not character then
 		return
 	end
-	local id = profile.Angler.BackpackId
-	if not Backpacks.Items[id] then
-		id = "Starter"
-	end
+	-- Black Hole Backpack owners wear the singularity over any saved pack.
+	local id = Backpacks.carriedId(player, profile.Angler.BackpackId)
 	local existing = character:FindFirstChild("FishingBackpack")
 	if not force and existing and existing:GetAttribute("BackpackId") == id then
 		return
@@ -111,13 +112,17 @@ function Service.start()
 		return {
 			Ok = ok,
 			Message = if ok
-				then Backpacks.Items[id].Name .. " purchased! Open Backpack [C] to pack your fish."
+				then Backpacks.Items[id].Name .. " purchased! Open Inventory [`] to store your fish."
 				else message,
 			State = state(player),
 		}
 	end
 	local function bind(player)
 		player:GetAttributeChangedSignal("AnglerRevision"):Connect(function()
+			syncAppearance(player)
+		end)
+		-- Ownership resolves asynchronously after join, and on purchase.
+		player:GetAttributeChangedSignal("OwnsBlackHoleBackpack"):Connect(function()
 			syncAppearance(player)
 		end)
 		player.CharacterAppearanceLoaded:Connect(function()

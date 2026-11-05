@@ -11,13 +11,16 @@ const read = (file) => readFileSync(join(root, file), 'utf8');
 const primitives = read('scripts/harbour-geometry.luau').split('local CFrame = {}')[0];
 const mocks = read('scripts/drydock-geometry.luau').split('local function loadLowPoly()')[0]
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
+const quality = read('scripts/water-quality.luau')
+  .replace('-- WATER_QUALITY --', () => read('src/client/WaterQuality.luau'));
 const harbour = read('src/server/Map/Harbour.luau')
   .replace(/local (\w+) = require\(script\.Parent\.(\w+)\)/g, 'local $1 = dependencies.$2')
   .replace(/return Harbour\s*$/, 'return { buildSurf = buildSurf, makeShape = makeShape, coastDistance = coastDistance, ensureSurf = Harbour.ensureSurf }');
 const client = read('src/client/ShoreWaves.luau')
+  .replace(/local WaterQuality = require\(script.Parent.WaterQuality\)/, 'local WaterQuality = dependencies.WaterQuality')
   .replace(/return ShoreWaves\s*$/, 'return { start = ShoreWaves.start, sample = sampleWave, period = PERIOD }');
 const program = read('scripts/shore-waves.luau')
-  .replace('-- MOCKS --', () => mocks)
+  .replace('-- MOCKS --', () => `${mocks}\n${quality}`)
   .replace('-- HARBOUR --', () => harbour)
   .replace('-- CLIENT --', () => client);
 const temporary = mkdtempSync(join(tmpdir(), 'shore-waves-'));

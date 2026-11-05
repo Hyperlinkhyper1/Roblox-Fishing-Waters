@@ -278,6 +278,7 @@ function StructureEditor.new(options)
 	local moveButton = button(actionStrip, "Move", { LayoutOrder = 2, Size = UDim2.fromOffset(70, 28) })
 	local reshapeButton = button(actionStrip, "Reshape", { LayoutOrder = 3, Size = UDim2.fromOffset(82, 28) })
 	local finishButton = button(actionStrip, "Apply finish", { LayoutOrder = 4, Size = UDim2.fromOffset(100, 28) })
+	local paintAllButton = button(actionStrip, "Paint all walls", { Name = "PaintAllWalls", LayoutOrder = 5, Size = UDim2.fromOffset(114, 28) })
 	local gridButton = button(actionStrip, "Grid: 4.5 [G]", { LayoutOrder = 7, Size = UDim2.fromOffset(104, 28) })
 	local downButton = button(actionStrip, "Floor −", { LayoutOrder = 8, Size = UDim2.fromOffset(76, 28) })
 	local upButton = button(actionStrip, "Floor +", { LayoutOrder = 9, Size = UDim2.fromOffset(76, 28) })
@@ -350,6 +351,12 @@ function StructureEditor.new(options)
 		moveButton.Visible = selecting and customSelection() and selectedEntry ~= nil
 		reshapeButton.Visible = moveButton.Visible and (selectedEntry.Kind == "Wall" or selectedEntry.Kind == "Floor" or selectedEntry.Kind == "Roof")
 		finishButton.Visible = selecting and selectedEntry ~= nil
+		paintAllButton.Visible = section == "Decorate"
+		local hasWalls = false
+		for _, entry in entriesById do
+			if entry.Kind == "Wall" then hasWalls = true; break end
+		end
+		setButton(paintAllButton, hasWalls and not pending)
 		cancelButton.Visible = anchor ~= nil or moving ~= nil or reshaping ~= nil or selected ~= nil
 		gridButton.Visible = section == "Build"
 		setButton(moveButton, customSelection() and selectedEntry ~= nil and not pending, moving ~= nil)
@@ -968,6 +975,12 @@ function StructureEditor.new(options)
 	redoButton.Activated:Connect(function() send("Redo", {}) end)
 	finishButton.Activated:Connect(function()
 		if selected then paint(selected) end
+	end)
+	paintAllButton.Activated:Connect(function()
+		if section ~= "Decorate" or not state then return end
+		send("PaintAllWalls", { Material = material, Color = table.clone(color) }, function()
+			statusMessage = "All walls painted."
+		end)
 	end)
 	moveButton.Activated:Connect(function()
 		if not customSelection() or pending then return end

@@ -10,8 +10,14 @@ frameMeta.__index = {
 frameMeta.__mul = function(a, b) return frame(a.x + b.x, a.y + b.y, a.z + b.z) end
 local CFrame = { identity = frame(), Angles = frame }
 local rotation = { Rotation = frame() }
+local scans, transformWrites = 0, 0
 local function joint(name, side)
-	local item = { Name = name, Parent = true, C0 = rotation, Transform = frame(), side = side }
+	local item = setmetatable({ Name = name, Parent = true, C0 = rotation, pose = frame(), side = side }, {
+		__index = function(self, key) if key == "Transform" then return self.pose end end,
+		__newindex = function(self, key, value)
+			if key == "Transform" then transformWrites += 1; self.pose = value else rawset(self, key, value) end
+		end,
+	})
 	function item:IsA(kind) return kind == "Motor6D" end
 	function item:GetAttribute(key) return if key == "RowSide" then self.side else nil end
 	return item
@@ -28,7 +34,7 @@ function model:GetAttribute(key) return self.attributes[key] end
 function model:FindFirstChild() return seat end
 function model:GetDescendants() return { port, starboard } end
 function seat:IsDescendantOf(parent) return parent == model end
-function folder:GetChildren() return { model } end
+function folder:GetChildren() scans += 1; return { model } end
 local time = 0.25
 local workspace = {}
 function workspace:FindFirstChild() return folder end
@@ -60,6 +66,12 @@ callback(1 / 60)
 assert(math.abs(port.Transform.y) > math.abs(before) * 0.8, "Stopping must blend rather than snap")
 for _ = 1, 180 do callback(1 / 60) end
 assert(math.abs(port.Transform.y) < 0.001 and left.Transform.x == 0, "Release must restore rest pose")
+for _, fps in { 30, 60, 144 } do
+	local beforeScans, beforeWrites = scans, transformWrites
+	for _ = 1, fps do callback(1 / fps) end
+	assert(scans - beforeScans <= 5, "Boat discovery must not scale with frame rate")
+	assert(transformWrites == beforeWrites, "Resting boats must stop rewriting oars and shoulders")
+end
 left.Name, right.Name = "Left Shoulder", "Right Shoulder"
 seat.Occupant = nil
 callback(1 / 60)
@@ -77,4 +89,4 @@ assert(left.Transform.x == 0 and port.Transform.y == 0, "Stream-out must clear a
 model.Parent = folder
 for _ = 1, 60 do callback(1 / 60) end
 assert(math.abs(port.Transform.y) > 0.1, "Stream-in must rebind animation")
-print("Rowing animation lifecycle checks passed (mock transforms; visual quality requires Studio)")
+print("Rowing lifecycle and idle-write checks passed at 30/60/144 FPS (mock transforms)")

@@ -1183,9 +1183,15 @@ function Med.stoneWall(parent: Instance, a: Vector3, b: Vector3, rng: Random): M
 	return m
 end
 
+-- The ensure* passes below walk the whole map at startup. `pause` (from Map.prepareStreaming)
+-- yields now and then, so together they stay inside the ~10 s script timeout.
+
 -- Upgrade borders already baked into a saved map without rebuilding their stones.
-function Med.ensureStoneWalls(root: Instance)
+function Med.ensureStoneWalls(root: Instance, pause: (() -> ())?)
 	for _, wall in root:GetDescendants() do
+		if pause then
+			pause()
+		end
 		if wall:IsA("Model") and wall.Name == "StoneWall" then
 			simplifyStoneWall(wall)
 		end
@@ -1194,8 +1200,11 @@ end
 
 -- Upgrade pergolas already baked into a saved map: their trellis and vines get
 -- the same one roof box and hitbox-free greenery fresh builds get.
-function Med.ensurePergolas(root: Instance)
+function Med.ensurePergolas(root: Instance, pause: (() -> ())?)
 	for _, model in root:GetDescendants() do
+		if pause then
+			pause()
+		end
 		if model:IsA("Model") and model.Name == "Pergola" then
 			simplifyPergola(model)
 		end
@@ -1205,11 +1214,26 @@ end
 -- Balconies baked before the single-hitbox policy carry every baluster and rail
 -- as its own collider. Balcony posts are the only 0.14 x 2.6 x 0.14 ironwork in
 -- the builders, so each cluster of them marks a balcony to collapse.
-function Med.ensureBalconies(root: Instance)
+local BALCONY_CELL = 32
+function Med.ensureBalconies(root: Instance, pause: (() -> ())?)
 	local collidable = {}
+	-- Colliders by XZ cell: each balcony looks only at parts near it, not at every part on the map
+	-- (balconies x map parts ran past the script timeout once the city was added).
+	local cells: { [string]: { BasePart } } = {}
 	for _, piece in root:GetDescendants() do
+		if pause then
+			pause()
+		end
 		if piece:IsA("BasePart") and piece.CanCollide then
 			table.insert(collidable, piece)
+			local p = piece.Position
+			local key = math.floor(p.X / BALCONY_CELL) .. "," .. math.floor(p.Z / BALCONY_CELL)
+			local cell = cells[key]
+			if not cell then
+				cell = {}
+				cells[key] = cell
+			end
+			table.insert(cell, piece)
 		end
 	end
 	local posts = {}
@@ -1237,6 +1261,9 @@ function Med.ensureBalconies(root: Instance)
 		while growing do
 			growing = false
 			for _, post in posts do
+				if pause then
+					pause()
+				end
 				if taken[post] then
 					continue
 				end
@@ -1260,9 +1287,31 @@ function Med.ensureBalconies(root: Instance)
 		for _, piece in group do
 			inGroup[piece] = true
 		end
+		-- Every part the test below can accept has its centre within 2.5 studs of the posts'
+		-- box in the balcony frame; gather the cells under a generous world circle around it.
+		local centreX, centreZ, reach = 0, 0, 0
+		for _, post in group do
+			centreX += post.Position.X / #group
+			centreZ += post.Position.Z / #group
+		end
+		for _, post in group do
+			reach = math.max(reach, math.sqrt((post.Position.X - centreX) ^ 2 + (post.Position.Z - centreZ) ^ 2))
+		end
+		reach += 6
+		local nearby = {}
+		for cx = math.floor((centreX - reach) / BALCONY_CELL), math.floor((centreX + reach) / BALCONY_CELL) do
+			for cz = math.floor((centreZ - reach) / BALCONY_CELL), math.floor((centreZ + reach) / BALCONY_CELL) do
+				for _, piece in cells[cx .. "," .. cz] or {} do
+					table.insert(nearby, piece)
+				end
+			end
+		end
+		if pause then
+			pause()
+		end
 		-- The balcony's rails hug the posts at their top; its slab tops out at
 		-- their feet. The door step below is deliberately left solid.
-		for _, piece in collidable do
+		for _, piece in nearby do
 			if inGroup[piece] then
 				continue
 			end
@@ -1342,8 +1391,11 @@ local function simplifyBoatCollision(boat: Model)
 	boat:SetAttribute("BoatCollisionVersion", 1)
 end
 
-function Med.ensureBoatCollision(root: Instance)
+function Med.ensureBoatCollision(root: Instance, pause: (() -> ())?)
 	for _, boat in root:GetDescendants() do
+		if pause then
+			pause()
+		end
 		if boat:IsA("Model") and boat.Name == "Boat" and boat:GetAttribute("BoatGeometryVersion") == 2 then
 			simplifyBoatCollision(boat)
 		end

@@ -6,6 +6,7 @@ local Passes = require(ReplicatedStorage.Shared.Gamepasses)
 local GamepassService = require(script.Parent.GamepassService)
 local Calendar = require(ReplicatedStorage.Shared.Calendar)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
+local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 
 local Service = {}
 local started = false
@@ -17,6 +18,8 @@ local help = table.concat({
 	"/gamepass get <gamepass name> - enable a pass for this server session",
 	"/event list - list events",
 	"/event spawn <event> - start an event for the rest of the in-game day",
+	"/mutation list - list fish mutations",
+	"/mutation <mutation> - add a mutation to your equipped fish",
 	"/set cash <amount> - set your cash",
 	"/set weather list - list weather types",
 	"/set weather <type> - change the weather",
@@ -53,6 +56,32 @@ function Service.start(reply)
 
 	register("CommandsCommand", "/commands", function(player)
 		reply(player, help)
+	end)
+	register("MutationCommand", "/mutation", function(player, message)
+		if message:match("^/mutation%s+list%s*$") then
+			local names = {}
+			for _, key in FishMutations.Order do
+				table.insert(names, FishMutations.label(key, nil))
+			end
+			reply(player, "Mutations: " .. table.concat(names, ", ") .. ".")
+			return
+		end
+		local requested = message:match("^/mutation%s+(.+)%s*$")
+		if not requested then
+			reply(player, "Usage: /mutation list or /mutation <mutation>.")
+			return
+		end
+		local target = normalize(requested):gsub("[^%w]", "")
+		for _, key in FishMutations.Order do
+			local label = FishMutations.label(key, nil)
+			if target == normalize(key):gsub("[^%w]", "") or target == normalize(label):gsub("[^%w]", "") then
+				local cargo = require(script.Parent.CargoService)
+				local _, result = cargo.addHeldMutation(player, key)
+				reply(player, result)
+				return
+			end
+		end
+		reply(player, "Unknown mutation. Use /mutation list for available names.")
 	end)
 	register("EventCommand", "/event", function(player, message)
 		if message:match("^/event%s+list%s*$") then

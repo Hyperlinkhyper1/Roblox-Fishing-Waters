@@ -90,10 +90,14 @@ local function enabledCount()
 	end
 	return total
 end
+setWaterQuality(3)
 Client.start()
 Client.start()
 local pool = beams()
 assert(#pool > 0 and #pool <= 100 and #renderStep.callbacks == 1, "Startup must keep one bounded render pool")
+tick(0)
+assert(enabledCount() == 0, "Low-quality joins must hide extra water ribbons")
+setWaterQuality(10)
 for _, beam in pool do
 	assert(
 		beam.TextureSpeed == 0,
@@ -151,6 +155,16 @@ assert(enabledCount() > 0, "Open water must show crests")
 local seaRipple = workspace.Terrain.WaterWaveSize
 assert(seaRipple > 0.15 and seaRipple <= 0.18, "Native storm ripples must stay small beneath the shared swells")
 assert(strongestCrestOpacity > 0.5, "Storm crests must have clearly visible contrast")
+-- Hold the weather phase fixed while isolating graphics-setting changes.
+for quality = 0, 6 do
+	setWaterQuality(quality)
+	tick(0)
+	assert(enabledCount() == 0, "Lower and automatic graphics must hide all swell ribbons immediately")
+	assert(workspace.Terrain.WaterWaveSize > 0, "Native water ripples must keep running at lower graphics")
+end
+setWaterQuality(10)
+tick(0)
+assert(enabledCount() > 0 and #beams() == #pool, "Raising graphics must restore the existing ribbon pool")
 local bodyDepth, foamDepth
 for _, beam in pool do
 	if beam.Name == "WindSwell" then
@@ -289,16 +303,29 @@ local hull = Instance.new("Part")
 hull.Size = hullSize
 hull.CFrame = CFrame.new(1500, 2, 0)
 hull.Parent = boat
-local function insideHull(position)
-	return math.abs(position.X - 1500) < hullSize.X / 2 and math.abs(position.Z) < hullSize.Z / 2
+boat.PrimaryPart = hull
+local measuredBoxes = 0
+local measureBox = instanceMethods.GetBoundingBox
+function instanceMethods:GetBoundingBox()
+	if self == boat then
+		measuredBoxes += 1
+		-- Roblox aligns a model's bounding box with its PrimaryPart.
+		if self.PrimaryPart then return self.PrimaryPart.CFrame, self.PrimaryPart.Size end
+	end
+	return measureBox(self)
 end
-local cut = false
+local function insideHull(position)
+	local localPosition = hull.CFrame:PointToObjectSpace(position)
+	return math.abs(localPosition.X) < hull.Size.X / 2 and math.abs(localPosition.Z) < hull.Size.Z / 2
+end
+local cut, drawn = false, false
 for _ = 1, 90 do
 	tick(1 / 30)
 	for _, beam in pool do
 		if not beam.Enabled then
 			continue
 		end
+		drawn = true
 		local a, b = beam.Attachment0.CFrame.Position, beam.Attachment1.CFrame.Position
 		if (b - a).Magnitude < FULL_RIBBON_LENGTH then
 			cut = true
@@ -308,7 +335,52 @@ for _ = 1, 90 do
 		end
 	end
 end
-assert(cut and enabledCount() > 0, "Ribbons next to a boat must be shortened, not all hidden")
+assert(cut and drawn, "Ribbons next to a boat must be shortened, not all hidden")
+assert(measuredBoxes <= 7, "Three seconds of hull masking must not measure bounds every frame")
+-- Translation and rotation follow the root immediately, between geometry refreshes.
+dependencies.Weather.heightAt = function() return 2, 2 end
+dependencies.Weather.sample = function() return { height = 2, normal = Vector3.yAxis } end
+tick(0.6)
+local beforeBoxes = measuredBoxes
+for index = 1, 24 do
+	hull.CFrame = CFrame.new(1500 + index, 2, index * 0.5) * CFrame.Angles(0, index * 0.04, 0)
+	tick(1 / 144)
+	assert(enabledCount() > 0, "Moving hull checks must exercise visible crests")
+	for _, beam in pool do
+		if beam.Enabled then
+			local a, b = beam.Attachment0.CFrame.Position, beam.Attachment1.CFrame.Position
+			for step = 0, 20 do
+				assert(not insideHull(a:Lerp(b, step / 20)), "Cached hull masks must follow motion and turns every frame")
+			end
+		end
+	end
+end
+assert(measuredBoxes == beforeBoxes, "Moving and turning must reuse root-relative hull measurements")
+-- Refits, missing roots, replacement roots, and remote hulls have separate lifecycles.
+hull.Size = Vector3.new(20, 6, 42)
+tick(0.6)
+assert(measuredBoxes == beforeBoxes + 1, "Geometry changes must refresh within half a second")
+boat.PrimaryPart = nil
+tick(0)
+assert(measuredBoxes == beforeBoxes + 2, "Streaming out the root must invalidate its cached coordinate frame")
+boat.PrimaryPart = hull
+tick(0)
+assert(measuredBoxes == beforeBoxes + 3, "A returning root must rebuild the hull mask immediately")
+hull.CFrame = CFrame.new(4000, 2, 0)
+beforeBoxes = measuredBoxes
+for _ = 1, 144 do tick(1 / 144) end
+assert(measuredBoxes == beforeBoxes, "Distant hulls must not keep measuring their geometry")
+local hiddenSamples = 0
+dependencies.Weather.heightAt = function() hiddenSamples += 1; return 2, 2 end
+dependencies.Weather.sample = function() hiddenSamples += 1; return { height = 2, normal = Vector3.yAxis } end
+for _, height in { -3, 300 } do
+	camera.CFrame = CFrame.new(1500, height, 0)
+	for _ = 1, 60 do tick(1 / 60) end
+	assert(enabledCount() == 0 and hiddenSamples == 0, "Invisible surface ribbons must skip wave geometry and samples")
+end
+camera.CFrame = CFrame.new(1500, 12, 0)
+dependencies.Weather.heightAt = realHeightAt
+dependencies.Weather.sample = realSample
 boats.Parent = nil
 dry = true
 -- Masks are rechecked a few ribbons per frame; give every ribbon its turn.

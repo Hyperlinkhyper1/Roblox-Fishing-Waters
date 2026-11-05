@@ -3,6 +3,7 @@
 local RunService = game:GetService("RunService")
 local RowingAnimation = {}
 local started = false
+local DISCOVERY_INTERVAL = 0.25
 
 local function restoreArms(record)
 	for joint in record.arms do
@@ -18,9 +19,13 @@ function RowingAnimation.start()
 	if started then return end
 	started = true
 	local records = {}
+	local previousFolder = nil
+	local discovery = DISCOVERY_INTERVAL
 	RunService.PreSimulation:Connect(function(dt)
 		local folder = workspace:FindFirstChild("PlayerBoats")
-		if folder then
+		discovery += dt
+		if folder and (folder ~= previousFolder or discovery >= DISCOVERY_INTERVAL) then
+			discovery = 0
 			for _, model in folder:GetChildren() do
 				if model:GetAttribute("BoatId") == "Rowboat" and not records[model] then
 					local seat = model:FindFirstChild("RowerSeat", true)
@@ -36,6 +41,7 @@ function RowingAnimation.start()
 				end
 			end
 		end
+		previousFolder = folder
 		local phase = workspace:GetServerTimeNow() * math.pi * 1.5
 		for model, record in records do
 			if model.Parent ~= folder or not record.seat:IsDescendantOf(model) then
@@ -66,6 +72,22 @@ function RowingAnimation.start()
 			local steer = if occupant and occupant.Health > 0 then model:GetAttribute("RowSteer") or 0 else 0
 			local effort = math.max(math.abs(throttle), math.abs(steer))
 			record.blend += (effort - record.blend) * (1 - math.exp(-8 * math.min(dt, 0.1)))
+			-- Parked oars need one final reset, then no transform writes until input returns.
+			if effort == 0 and record.blend < 0.001 then
+				if not record.idle then
+					for joint in record.oars do
+						if joint.Parent then joint.Transform = CFrame.identity end
+					end
+					for joint in record.arms do
+						if joint.Parent and record.posed then joint.Transform = CFrame.identity end
+					end
+					table.clear(record.drives)
+					record.posed = false
+					record.idle = true
+				end
+				continue
+			end
+			record.idle = false
 			for joint, side in record.oars do
 				local target = math.clamp(throttle + side * steer, -1, 1)
 				local drive = (record.drives[joint] or 0)

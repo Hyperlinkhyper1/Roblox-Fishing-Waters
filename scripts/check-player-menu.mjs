@@ -52,7 +52,7 @@ for _, width in {1020, 362} do
  sidebar.Shop.Activated:Fire()
  check(gui.MenuOverlay.Visible, "Shop opens")
  local before = #passPrompts
- click("Buy Auto Store · Robux")
+ content:FindFirstChild("BuyAutoStore", true).Activated:Fire()
  check(#passPrompts == before + 1 and passPrompts[#passPrompts][2] == 3722004182, "Configured purchase prompt")
  player:SetAttribute("OwnsAutoStore", true)
  click("Owned")
@@ -150,6 +150,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(ReplicatedStorage.Shared.FishingBobber\)/g, () => `(function() ${bobberModel} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.BoatCatalog\)/g, 'BoatCatalog')
       .replace(/require\(ReplicatedStorage.Shared.FishModels\)/g, 'nil')
+      .replace(/require\(ReplicatedStorage.Shared.BackpackModels\)/g, '{ show = function() end }')
       .replace(/require\(script.Parent.PlayerSettings\)/g, 'Settings')
       .replace(/require\(script.Parent.Freecam\)/g, '{ start = function() end, setEnabled = function(enabled) game:GetService("Players").LocalPlayer:SetAttribute("FreecamEnabled", enabled) end }')
       .replace(/require\(game:GetService\("ReplicatedFirst"\):WaitForChild\("UITheme"\)\)/g, 'Theme')

@@ -9,6 +9,8 @@ local RunService = game:GetService("RunService")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local MeshFeatures = require(ReplicatedStorage.Shared.MeshFeatures)
+local WaterQuality = require(script.Parent.WaterQuality)
+local EditableMeshBudget = require(script.Parent.EditableMeshBudget)
 
 local SwellSurface = {}
 -- World-fixed vertex grid around the camera: COUNT cells of SPACING studs a side.
@@ -63,10 +65,8 @@ function SwellSurface.start()
 	task.spawn(function()
 		local terrain = workspace.Terrain
 		local size = COUNT + 1
-		local meshOk, mesh = pcall(function()
-			return AssetService:CreateEditableMesh()
-		end)
-		if not meshOk or not mesh then
+		local mesh = EditableMeshBudget.create()
+		if not mesh then
 			warn(
 				"[SwellSurface] Water surface unavailable: EditableMesh is disabled or the device mesh budget is exhausted."
 			)
@@ -120,6 +120,7 @@ function SwellSurface.start()
 		part.Reflectance = 0.08
 		-- Let submerged scenery remain visible through the extra crest layer.
 		part.Transparency = 0.55
+		part.LocalTransparencyModifier = 1
 		part.Parent = workspace
 
 		local parameters = RaycastParams.new()
@@ -201,7 +202,8 @@ function SwellSurface.start()
 			local camera = workspace.CurrentCamera
 			local cameraPosition = camera and camera.CFrame.Position
 			if
-				not cameraPosition
+				not WaterQuality.layeredEnabled()
+				or not cameraPosition
 				or cameraPosition.Y < Biomes.WaterLevel - 0.5
 				or cameraPosition.Y > Biomes.WaterLevel + 180
 				or not Biomes.inOceanBounds(cameraPosition)

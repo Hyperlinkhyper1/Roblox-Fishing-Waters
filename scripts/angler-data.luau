@@ -157,17 +157,17 @@ local shaped = {
 local tiny = { Hold = { "####", "####", "####" }, StarterParts = { { PartId = "Engine", X = 1, Y = 1, R = 0 } } }
 local angler = Data.recordCatch(nil, "ArrowSquid", "Normal", 1, 20, 50, shaped, mutations)
 check(
-	not Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 1, Y = 1, R = 0 }, shaped),
-	"Fish can't overlap boat parts"
+	Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 1, Y = 1, R = 0 }, shaped),
+	"Capacity accepts fish independently from boat-part coordinates"
 )
-check(not Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 4, Y = 1, R = 0 }, shaped), "Fish can't hang off the hull")
+check(Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 4, Y = 1, R = 0 }, shaped), "Legacy coordinates do not limit capacity")
 local stowed = Data.moveCargo(angler, "Tiny", tiny, "Hand", { X = 3, Y = 1, R = 2 }, shaped)
 check(stowed and stowed.Hand == nil and #stowed.Holds.Tiny == 2, "Hand fish rotate into a free spot")
 check(angler.Hand ~= nil and next(angler.Holds) == nil, "Stowing is copy-on-write")
 check(stowed.Holds.Tiny[1].PartId == "Engine", "A new hold starts with the boat's kit")
 check(not Data.moveCargo(stowed, "Tiny", tiny, "Hand", { X = 1, Y = 3, R = 0 }, shaped), "Empty hands stow nothing")
 local second = Data.recordCatch(stowed, "Trout", "Normal", 2, 10, 60, shaped, mutations)
-check(not Data.moveCargo(second, "Tiny", tiny, "Hand", { X = 3, Y = 2, R = 0 }, shaped), "Fish can't overlap fish")
+check(Data.moveCargo(second, "Tiny", tiny, "Hand", { X = 3, Y = 2, R = 0 }, shaped), "Free space accepts fish independently from existing coordinates")
 check(not Data.moveCargo(second, "Tiny", tiny, 2, "Hand", shaped), "A full hand can't take from the hold")
 local moved = Data.moveCargo(stowed, "Tiny", tiny, 2, { X = 3, Y = 1, R = 1 }, shaped)
 check(moved and moved.Holds.Tiny[2].R == 1, "Hold fish turn in place without colliding with themselves")

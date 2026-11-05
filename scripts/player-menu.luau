@@ -370,6 +370,9 @@ function Players:CreateHumanoidModelFromDescriptionAsync(description, rig)
 end
 local ReplicatedStorage = Instance.new("ReplicatedStorage")
 local workspace = Instance.new("Workspace")
+local terrain = Instance.new("Terrain")
+terrain.Name, terrain.Parent = "Terrain", workspace
+workspace.Terrain = terrain
 local Lighting = Instance.new("Lighting")
 local SoundService = Instance.new("SoundService")
 local GuiService = {}
@@ -414,6 +417,12 @@ local services = {
 	SoundService = SoundService,
 	GuiService = GuiService,
 	UserInputService = UserInputService,
+	-- PlayerSettings tweens the underwater muffle.
+	TweenService = {
+		Create = function()
+			return { Play = function() end, Cancel = function() end }
+		end,
+	},
 }
 game = {
 	DescendantAdded = signal(),
@@ -883,7 +892,7 @@ check(content:FindFirstChild("JournalFindingsPage", true).Position.Y.Offset == 5
 check(not card.BookChrome.CenterBinding.Visible, "Narrow books hide the center binding when pages stack")
 open("Shop")
 check(contains("Auto Store") and contains("aboard your own ship"), "Shop explains Auto Store")
-clickText("Buy Auto Store · Robux")
+content:FindFirstChild("BuyAutoStore", true).Activated:Fire()
 check(#passPrompts == 1 and passPrompts[1][2] == 3722004182, "Shop prompts configured gamepass")
 player:SetAttribute("OwnsAutoStore", true)
 check(contains("Owned"), "Ownership refreshes shop")

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const read = path => readFile(new URL('../' + path, import.meta.url), 'utf8');
+const read = async path => (await readFile(new URL('../' + path, import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const cargo = await read('src/shared/Cargo.luau');
 const data = (await read('src/server/AnglerData.luau')).replace(
   'local Cargo\n', 'local Cargo = Grid\n');
@@ -18,6 +18,7 @@ for (const [expression, replacement] of [
   ['ReplicatedStorage.Shared.BoatCatalog', 'layouts'], ['ReplicatedStorage.Shared.AnglerCatalog', 'catalog'],
   ['ReplicatedStorage.Shared.StaffCatalog', '{}'], ['ReplicatedStorage.Shared.Paths', '{}'],
   ['ReplicatedStorage.Shared.FishingRanks', '{}'],
+  ['ReplicatedStorage.Shared.ShopUpgrades', '{}'],
   ['ReplicatedStorage.Shared.BackpackCatalog', 'Backpacks'],
   ['game:GetService("ReplicatedFirst"):WaitForChild("UITheme")', '{}'],
 ]) angler = angler.replace('require(' + expression + ')', replacement);
@@ -40,7 +41,7 @@ local market = { PromptGamePassPurchaseFinished = signal() }
 local queryCount, owns, failure = 0, false, false
 function market:UserOwnsGamePassAsync(id, pass)
  queryCount += 1
- check((pass == 3722004182 or pass == 2057358447), "Server checks configured pass")
+ check((pass == 3722004182 or pass == 2057358447 or pass == Passes.BlackHoleBackpack.Id), "Server checks configured pass")
  if failure then error("API unavailable") end
  return owns and pass == 3722004182
 end
@@ -50,6 +51,7 @@ end }
 local task = { spawn = function(fn, ...) fn(...) end }
 local function player(id)
  return { UserId = id, Parent = players, Character = {}, attributes = {},
+ GetAttribute = function(self, key) return self.attributes[key] end,
  SetAttribute = function(self, key, value) self.attributes[key] = value end }
 end
 local Ownership = (function() ${ownership} end)()
@@ -112,9 +114,18 @@ for _, scenario in {
  if stored then
   local items = profile.Angler.Holds.TestBoat
   check(#items == 2 and items[1].PartId == "Lantern", "Kit preserved")
-  check(items[2].R % 2 == 1 and items[2].Y == 2, "Rotates into available space")
+  check(Grid.used(items, catalog.Fish) == 3, "Fish and kit use the original total space")
  end
 end
+profile = { Angler = Data.decode(nil) }
+profile.Angler.Settings.AutoStore = false
+onBoat, active = true, true
+local toggleOk, _, toggledStored, toggledDestination = catch(buyer)
+check(toggleOk and not toggledStored and toggledDestination == "Hand", "Owner can disable automatic boat storage")
+profile.Angler.Hand = nil
+profile.Angler.Settings.AutoStore = true
+toggleOk, _, toggledStored, toggledDestination = catch(buyer)
+check(toggleOk and toggledStored and toggledDestination == "Boat", "Re-enabling restores automatic boat storage")
 onBoat, active = true, true
 profile = { Angler = Data.decode(nil) }
 catch(buyer)
@@ -163,8 +174,8 @@ local empty = Data.decode(nil)
 empty.Hand = existing
 local rotated, placed = Data.recordCatch(empty, "Test", "Normal", 1, 10, 1, catalog.Fish, catalog.Mutations,
  "Normal", {}, { Hold = { "#", "#" } })
-check(placed == "Backpack" and rotated.Backpack[1].R % 2 == 1, "Auto packing rotates a catch to fit")
--- Compare with an exhaustive fit oracle across every occupancy of a small irregular hold.
+check(placed == "Backpack" and Grid.used(rotated.Backpack, catalog.Fish) == 2, "Automatic storage uses space without rotation")
+-- Every subset of a small irregular hold obeys total capacity, regardless of gaps.
 local mask = { ".##", "###", "##." }
 local positions = {}
 for y, row in mask do for x = 1, #row do if Grid.open(mask, x, y) then table.insert(positions, {x,y}) end end end
@@ -174,16 +185,10 @@ for bits = 0, 2 ^ #positions - 1 do
   table.insert(items, { PartId = "Lantern", X = p[1], Y = p[2], R = 0 })
  end end
  local item = { Fish = { FishId = "Test", Size = "Normal" } }
- local taken = Grid.occupied(items, catalog.Fish)
- local any = false
- for r = 0, 3 do for y = 1, #mask do for x = 1, 3 do
-  any = any or Grid.fits(mask, taken, Grid.shape(item, catalog.Fish), x, y, r)
- end end end
  local spot = Grid.bestSpot(mask, items, item, catalog.Fish)
- check((spot ~= nil) == any, "Finds any available orientation")
- if spot then check(Grid.fits(mask, taken, Grid.shape(item, catalog.Fish), spot.X, spot.Y, spot.R), "Placement legal") end
+ check((spot ~= nil) == (#items + 2 <= #positions), "Storage uses total free space without fragmentation")
 end
-print("Auto Store: " .. checks .. " ownership, catch transaction and packing checks passed.")
+print("Auto Store: " .. checks .. " ownership, saved toggle, catch transaction and capacity checks passed.")
 `;
 const folder = await mkdtemp(join(tmpdir(), 'auto-store-'));
 try {

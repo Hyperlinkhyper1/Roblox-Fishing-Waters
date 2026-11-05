@@ -139,11 +139,7 @@ function BoatUpgrades.spec(layout, items)
 end
 
 function BoatUpgrades.freeTiles(layout, items, species): number
-	local used = 0
-	for _ in Cargo.occupied(items, species) do
-		used += 1
-	end
-	return math.max(Cargo.capacity(layout.Hold) - used, 0)
+	return math.max(Cargo.capacity(layout.Hold) - Cargo.used(items, species), 0)
 end
 
 -- Returns a copy of the hold with one more `kind` stowed in the best open spot,
@@ -160,7 +156,7 @@ function BoatUpgrades.install(items, layout, kind: string, species)
 	if not spot then
 		return nil,
 			string.format(
-				"There's no room in your hold. Clear %d cargo tiles in one place first.",
+				"There's no room in your hold. Free %d space first.",
 				BoatUpgrades.tiles(layout, kind)
 			)
 	end

@@ -14,6 +14,8 @@ function Models.create(id: string): Model
 	local model = Instance.new("Model")
 	model.Name = "Backpack_" .. id
 	model:SetAttribute("BackpackId", id)
+	-- Parts go into the model, or into the rig group being built (rigGroup).
+	local into: Instance = model
 	local function part(name, size, frame, color, material, shape, alpha)
 		local p = Instance.new("Part")
 		p.Name, p.Size, p.CFrame = name, size, frame
@@ -25,8 +27,22 @@ function Models.create(id: string): Model
 			p.Shape = shape
 		end
 		p.Transparency = alpha or 0
-		p.Parent = model
+		p.Parent = into
 		return p
+	end
+	-- A child Model whose PrimaryPart is an invisible pivot at `frame`. Worn
+	-- packs joint the pivot to the handle with a Motor6D named after the group
+	-- and weld the group's parts to the pivot, so a client can move the group
+	-- by changing that one joint.
+	local function rigGroup(name: string, frame: CFrame, build: (CFrame) -> ())
+		local group = Instance.new("Model")
+		group.Name = name
+		group.Parent = into
+		local previous = into
+		into = group
+		group.PrimaryPart = part("RigPivot", V(0.05, 0.05, 0.05), frame, steel, M.SmoothPlastic, nil, 1)
+		build(frame)
+		into = previous
 	end
 	local function ball(name, size, frame, color, material, alpha)
 		return part(name, size, frame, color, material, Enum.PartType.Ball, alpha)
@@ -541,6 +557,133 @@ function Models.create(id: string): Model
 		for _, star in { { -0.5, -0.31 }, { 0.48, 0.15 }, { 0.27, -0.65 } } do
 			ball("StarInlay", V(0.065, 0.065, 0.04), F(star[1], star[2], 0.51), rgb(233, 231, 255), M.Neon)
 		end
+	elseif id == "BlackHole" then
+		-- A captive singularity: a pitch-black event horizon behind a lensing
+		-- shell and photon ring, an accretion disk in two bands, and small fish
+		-- spiralling in. Sub-models are rigged groups (see Models.wear) that the
+		-- client spins (src/client/BlackHoleBackpack.luau) when the Backpack
+		-- animation setting is on; with it off the pack is shown frozen.
+		local void, gunmetal, frameDark = rgb(0, 0, 0), rgb(52, 54, 66), rgb(30, 29, 42)
+		local violet, hot, ember = rgb(160, 104, 255), rgb(255, 238, 200), rgb(255, 146, 58)
+		local core = F(0, 0.05, 0.36)
+		local disk = core * CFrame.Angles(-0.9, 0, 0.22)
+		panel("SingularityBackplate", V(1.45, 1.85, 0.2), F(0, 0, -0.38), rgb(24, 24, 32), M.Metal, 0.2)
+		part("BackplateInlay", V(1.05, 1.4, 0.03), F(0, 0.02, -0.27), rgb(38, 30, 58), M.Metal)
+		for _, side in { -1, 1 } do
+			part("SpineRail", V(0.12, 1.9, 0.18), F(side * 0.64, 0, -0.2), gunmetal, M.Metal)
+			rivet(side * 0.64, 0.82, -0.1)
+			rivet(side * 0.64, -0.82, -0.1)
+			-- Glowing piping along the harness, visible from the sides.
+			part(
+				"HarnessGlow",
+				V(0.05, 0.92, 0.03),
+				F(side * 0.5, 0.25, -0.48) * CFrame.Angles(0, 0, side * -0.12),
+				violet,
+				M.Neon
+			)
+		end
+		-- Containment hoop on four struts, with a neon field trim inside it.
+		ring("ContainmentRing", 0.86, core, frameDark, 0.15, M.Metal)
+		ring("ContainmentLip", 0.86, core * F(0, 0, -0.09), gunmetal, 0.08, M.Metal)
+		ring("FieldTrim", 0.77, core * F(0, 0, 0.05), violet, 0.035, M.Neon)
+		for i = 0, 3 do
+			local a = i * math.pi / 2 + math.pi / 4
+			part("RingStrut", V(0.1, 0.1, 0.64), F(math.cos(a) * 0.8, 0.05 + math.sin(a) * 0.8, 0.04), gunmetal, M.Metal)
+		end
+		-- Three field projectors aimed at the singularity.
+		for i = 0, 2 do
+			local spoke = core * CFrame.Angles(0, 0, i * math.pi * 2 / 3)
+			cylinder("FieldProjector", 0.085, 0.24, spoke * F(0, 0.78, 0.04), steel, M.Metal)
+			cylinder("ProjectorCollar", 0.11, 0.06, spoke * F(0, 0.7, 0.04), brass, M.Metal)
+			ball("ProjectorLens", V(0.11, 0.11, 0.11), spoke * F(0, 0.645, 0.04), violet, M.Neon)
+		end
+		-- The singularity itself.
+		ball("EventHorizon", V(0.56, 0.56, 0.56), core, void, M.SmoothPlastic)
+		local shell = ball("LensingShell", V(0.74, 0.74, 0.74), core, rgb(70, 40, 120), M.Glass, 0.6)
+		ring("PhotonRing", 0.33, core * F(0, 0, 0.06), hot, 0.035, M.Neon)
+		local glow = Instance.new("PointLight")
+		glow.Name, glow.Color, glow.Brightness, glow.Range, glow.Shadows = "SingularityGlow", violet, 0.9, 7, false
+		glow.Parent = shell
+		-- Stardust falling inward from a sphere around the hole (client toggled).
+		local infall = ball("InfallShell", V(1.5, 1.5, 1.5), core, void, M.SmoothPlastic, 1)
+		local dust = Instance.new("ParticleEmitter")
+		dust.Name = "Stardust"
+		dust.Shape = Enum.ParticleEmitterShape.Sphere
+		dust.ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface
+		dust.ShapeInOut = Enum.ParticleEmitterShapeInOut.Inward
+		dust.Speed = NumberRange.new(0.55, 0.8)
+		dust.Lifetime = NumberRange.new(0.8, 1.1)
+		dust.Rate = 16
+		dust.LightEmission = 1
+		dust.LockedToPart = true
+		dust.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.07), NumberSequenceKeypoint.new(1, 0) })
+		dust.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.2, 0.1),
+			NumberSequenceKeypoint.new(1, 0.6),
+		})
+		dust.Color = ColorSequence.new(rgb(196, 160, 255), rgb(255, 190, 120))
+		dust.Enabled = false
+		dust.Parent = infall
+		-- Accretion disk: a white-hot inner band that spins fast and two cooler
+		-- outer bands that lag behind it. Alternating tones read as streaks.
+		local function band(name, radius, width, count, colors, alpha)
+			for i = 0, count - 1 do
+				part(
+					name,
+					V(2 * math.pi * radius / count * 1.12, width, 0.025),
+					disk * CFrame.Angles(0, 0, i * 2 * math.pi / count) * F(0, radius, 0),
+					colors[i % #colors + 1],
+					M.Neon,
+					nil,
+					alpha
+				)
+			end
+		end
+		rigGroup("DiskInner", disk, function()
+			band("InnerDisk", 0.43, 0.1, 14, { hot, rgb(255, 214, 140) })
+		end)
+		rigGroup("DiskOuter", disk, function()
+			band("MiddleDisk", 0.56, 0.12, 16, { ember, rgb(255, 118, 40), rgb(255, 170, 80) })
+			band("OuterDisk", 0.7, 0.14, 18, { rgb(206, 64, 128), rgb(150, 52, 176) }, 0.2)
+			for _, a in { 0.4, 2.5, 4.4 } do
+				ball("HotSpot", V(0.1, 0.1, 0.05), disk * CFrame.Angles(0, 0, a) * F(0, 0.6, 0.02), hot, M.Neon)
+			end
+		end)
+		-- Five little fish on decaying orbits, each its own rig so the client
+		-- can pull it inward and fade it at the horizon.
+		for i = 1, 5 do
+			rigGroup("Infall" .. i, disk * CFrame.Angles(0, 0, i * math.pi * 2 / 5), function(frame)
+				local spot = frame * F(0.74, 0, 0.05)
+				ball("InfallFish", V(0.07, 0.17, 0.06), spot, rgb(150, 235, 255), M.Neon)
+				part("InfallTail", V(0.09, 0.05, 0.02), spot * F(0, -0.11, 0), rgb(110, 200, 255), M.Neon)
+			end)
+		end
+		-- Coolant canisters on top, intake vent below, a mass gauge on the side.
+		for _, side in { -1, 1 } do
+			cylinder("CoolantCanister", 0.13, 0.5, F(side * 0.42, 1.05, -0.17), rgb(70, 74, 92), M.Metal)
+			cylinder("CanisterCap", 0.15, 0.07, F(side * 0.42, 1.32, -0.17), steel, M.Metal)
+			cylinder("CoolantBand", 0.14, 0.05, F(side * 0.42, 1.0, -0.17), violet, M.Neon)
+		end
+		part("ColdPipe", V(0.7, 0.07, 0.07), F(0, 1.14, -0.17), steel, M.Metal)
+		cylinder("IntakeVent", 0.22, 0.12, F(0, -0.98, -0.12), gunmetal, M.Metal)
+		ball("IntakeGlow", V(0.26, 0.08, 0.26), F(0, -1.04, -0.12), violet, M.Neon)
+		part("MassGauge", V(0.07, 0.46, 0.3), F(-0.74, -0.45, -0.18), frameDark, M.Metal)
+		for i = 0, 3 do
+			part("GaugeCell", V(0.08, 0.07, 0.2), F(-0.75, -0.62 + i * 0.11, -0.18), if i == 3 then hot else violet, M.Neon)
+		end
+		-- Hazard chevrons along the bottom edge of the backplate.
+		part("HazardStrip", V(1.1, 0.16, 0.02), F(0, -0.8, -0.27), rgb(20, 20, 22), M.SmoothPlastic)
+		for i = -2, 2 do
+			part(
+				"HazardChevron",
+				V(0.07, 0.2, 0.025),
+				F(i * 0.22, -0.8, -0.265) * CFrame.Angles(0, 0, 0.6),
+				rgb(242, 196, 46),
+				M.SmoothPlastic
+			)
+		end
+		game:GetService("CollectionService"):AddTag(model, "BlackHoleBackpack")
 	elseif id == "Abyss" then
 		part("ReactorBackplate", V(1.1, 1.7, 0.22), F(0, 0, -0.4), rgb(36, 49, 62), M.Metal)
 		cylinder("AbyssalEnergy", 0.42, 1.5, F(0, 0, 0.18), rgb(93, 245, 202), M.Neon)
@@ -599,10 +742,26 @@ function Models.wear(character: Model, id: string): Model?
 	local box, size = model:GetBoundingBox()
 	model:PivotTo(torso.CFrame * F(0, -0.08, torso.Size.Z / 2 - box.Position.Z + size.Z / 2 + 0.04))
 	local handle = model.PrimaryPart
+	model:SetAttribute("RigScale", model:GetScale())
 	for _, piece in model:GetDescendants() do
 		if piece:IsA("BasePart") and piece ~= handle then
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0, weld.Part1, weld.Parent = handle, piece, piece
+			local group = piece.Parent
+			if group ~= model and group:IsA("Model") and group.PrimaryPart then
+				-- Rig groups (rigGroup): the pivot hangs off the handle on a
+				-- Motor6D, everything else in the group is welded to the pivot.
+				if piece == group.PrimaryPart then
+					local motor = Instance.new("Motor6D")
+					motor.Name, motor.Part0, motor.Part1 = group.Name, handle, piece
+					motor.C0 = handle.CFrame:ToObjectSpace(piece.CFrame)
+					motor.Parent = handle
+				else
+					local weld = Instance.new("WeldConstraint")
+					weld.Part0, weld.Part1, weld.Parent = group.PrimaryPart, piece, piece
+				end
+			else
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0, weld.Part1, weld.Parent = handle, piece, piece
+			end
 		end
 	end
 	local joint = Instance.new("WeldConstraint")

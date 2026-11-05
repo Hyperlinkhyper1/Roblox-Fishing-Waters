@@ -36,6 +36,30 @@ for index, id in Backpacks.Order do
 		end
 	end
 end
+-- Black Hole Backpack gamepass: infinite storage that overrides the saved pack.
+local blackHole = Backpacks.Items.BlackHole
+check(blackHole and blackHole.Gamepass == "BlackHoleBackpack", "Black hole pack is a gamepass item")
+check(not table.find(Backpacks.Order, "BlackHole"), "Black hole pack is never sold for cash")
+check(Grid.capacity(blackHole.Hold) == math.huge, "Black hole hold is infinite")
+check(Grid.capacity(Backpacks.Items.Abyss.Hold) == 80, "Other holds keep a finite capacity")
+check(#blackHole.Hold == 10 and #blackHole.Hold[1] == 10 and Grid.open(blackHole.Hold, 10, 10), "Infinite hold still draws as a grid")
+local function passHolder(owns)
+	return { GetAttribute = function(_, name) return if name == "OwnsBlackHoleBackpack" then owns else nil end }
+end
+check(Backpacks.layoutFor(passHolder(true), "Cooler") == blackHole, "Pass owners carry the black hole")
+check(Backpacks.layoutFor(passHolder(nil), "Cooler") == Backpacks.Items.Cooler, "Others carry their saved pack")
+check(Backpacks.carriedId(passHolder(false), "BlackHole") == "Starter", "A saved gamepass id never grants the pack")
+check(Backpacks.carriedId(nil, "Nope") == "Starter", "Unknown ids fall back to the starter")
+do
+	local heavy = { Test = { AverageKg = 1, RarityDenominator = 1, Shapes = { Normal = { "##", "##" } } } }
+	local stuffed = Data.decode(nil)
+	for i = 1, 400 do
+		local record = { FishId = "Test", Mutation = "Normal", Kg = 2, Value = 30, CaughtAt = i, Size = "Normal" }
+		table.insert(stuffed.Backpack, { Fish = record, X = 1, Y = 1, R = 0 })
+	end
+	check(Grid.bestSpot(blackHole.Hold, stuffed.Backpack, { Fish = stuffed.Backpack[1].Fish }, heavy) ~= nil, "1600 cells in, the black hole still has room")
+	check(Grid.bestSpot(Backpacks.Items.Abyss.Hold, stuffed.Backpack, { Fish = stuffed.Backpack[1].Fish }, heavy) == nil, "A normal pack is full long before that")
+end
 local original = catch(nil)
 local packed =
 	assert(Data.moveCargo(original, nil, Backpacks.Items.Starter, "Hand", { X = 1, Y = 1, R = 0 }, Catalog.Fish, true))
@@ -45,13 +69,13 @@ local replay = Data.decode(packed)
 check(replay.Backpack[1].X == 1 and replay.BackpackId == "Starter", "Placements survive reload")
 local held = catch(packed, 2)
 check(
-	not Data.moveCargo(held, nil, Backpacks.Items.Starter, "Hand", { X = 1, Y = 1, R = 0 }, Catalog.Fish, true),
-	"Overlaps rejected"
+	Data.moveCargo(held, nil, Backpacks.Items.Starter, "Hand", { X = 1, Y = 1, R = 0 }, Catalog.Fish, true),
+	"Remaining capacity accepts fish without distinct slots"
 )
 for _, spot in
 	{
 		{ X = 0, Y = 1, R = 0 },
-		{ X = 4, Y = 1, R = 0 },
+		{ X = 33, Y = 1, R = 0 },
 		{ X = 1, Y = 1, R = 4 },
 		{ X = 0 / 0, Y = 1, R = 0 },
 		{
@@ -234,6 +258,9 @@ function instanceMethods:ScaleTo(scale)
 	end
 	self._props.ModelScale = scale
 end
+function instanceMethods:GetScale()
+	return self._props.ModelScale or 1
+end
 function instanceMethods:ClearAllChildren()
 	for _, child in self:GetChildren() do
 		child:Destroy()
@@ -244,7 +271,9 @@ local Models = (function()
 	-- MODELS_SOURCE --
 end)()
 local signatures = {}
-for _, id in Backpacks.Order do
+local modelIds = table.clone(Backpacks.Order)
+table.insert(modelIds, "BlackHole")
+for _, id in modelIds do
 	local model = Models.create(id)
 	check(model:GetAttribute("BackpackId") == id and model.PrimaryPart ~= nil, "Each pack has a valid builder and root")
 	local names = {}
@@ -278,6 +307,23 @@ for _, id in Backpacks.Order do
 				)
 				check(torso.CFrame:PointToObjectSpace(piece.Position).Z > 0, "Worn geometry stays behind the avatar")
 			end
+		end
+		if id == "BlackHole" then
+			-- Animated groups hang off the handle on Motor6Ds named after them;
+			-- the client moves only those joints.
+			local handle = worn.PrimaryPart
+			for _, name in { "DiskInner", "DiskOuter", "Infall1", "Infall5" } do
+				local motor = handle:FindFirstChild(name)
+				local group = worn:FindFirstChild(name)
+				check(motor and motor:IsA("Motor6D") and group and motor.Part1 == group.PrimaryPart, "Black hole rig joint " .. name)
+				for _, piece in group:GetChildren() do
+					if piece:IsA("BasePart") and piece ~= group.PrimaryPart then
+						local weld = piece:FindFirstChildOfClass("WeldConstraint")
+						check(weld and weld.Part0 == group.PrimaryPart, "Rig parts follow their pivot")
+					end
+				end
+			end
+			check(worn:GetAttribute("RigScale") ~= nil, "Worn black hole records its scale for the animator")
 		end
 		local replacement = Models.wear(avatar, "Starter")
 		check(worn.Parent == nil and replacement.Parent == avatar, "Equipping replaces the previous worn model")
@@ -534,11 +580,11 @@ do
 	tool:Destroy()
 	profile.Angler = locked
 	stock(player, freezer, prompt)
-	check(#profile.Angler.Backpack == 1 and string.find(message, "No unlocked"),
+	check(#profile.Angler.Backpack == 1 and string.find(message, "locked"),
 		"Locked fish remain in the backpack with a useful message")
 	profile.Angler = fullFreezer
 	stock(player, freezer, prompt)
-	check(#profile.Angler.Backpack == 2 and string.find(message, "full"),
+	check(#profile.Angler.Backpack == 2 and string.find(message, "remaining freezer space"),
 		"A full freezer preserves backpack fish and reports the problem")
 	profile.Angler = withTwo
 	failSave = true
@@ -664,94 +710,13 @@ BoatCatalog.TestBoat.Name = "Test boat"
 local Font = { new = function(...)
 	return { ... }
 end }
-local ClientCargo = (function()
-	-- CLIENT_CARGO_SOURCE --
-end)()
-ClientCargo.start()
-local cargoGui = playerGui.Cargo
-local panel = cargoGui.CargoPanel
-check(cargoGui.OpenCargo.Visible and not panel.Visible, "Backpack button is available on land without opening on join")
-cargoGui.OpenCargo.Activated:Fire()
-check(panel.Visible, "Backpack opens on land")
-local grid = panel.Hold
-check(#grid:GetChildren()[3]:GetChildren() == 48, "Backpack UI draws the upgraded mask")
+-- Inventory UI and refit confirmation run in scripts/check-inventory.mjs.
 local function buttonWithText(parent, value)
-	for _, item in parent:GetDescendants() do
-		if item:IsA("TextButton") and item.Text == value then
-			return item
-		end
+	for _, control in parent:GetDescendants() do
+		if control:IsA("TextButton") and control.Text == value then return control end
 	end
 	error("Missing button: " .. value)
 end
-local boatTab = buttonWithText(panel, "Boat · aboard only")
-boatTab.Activated:Fire()
-check(#grid:GetChildren()[3]:GetChildren() == 48, "Boat tab cannot expose remote boat cargo on land")
--- Click and rotate a packed fish, then submit through the real cargo remote.
-local hit = grid:GetChildren()[6]
-mouse = Vector2.new(20, 20)
-hit.MouseButton2Click:Fire()
-check(
-	profile.Angler.Backpack[1].Locked and panel:FindFirstChild("LockIcon", true),
-	"Right-click locks the fish and displays its lock"
-)
-hit.Activated:Fire()
-buttonWithText(panel, "Rotate [R]").Activated:Fire()
-mouse = Vector2.new(110, 132)
-hit.Activated:Fire()
-check(
-	profile.Angler.Backpack[1].R == 1 and profile.Angler.Backpack[1].X == 3 and profile.Angler.Backpack[1].Locked,
-	"UI rotation and placement update the saved backpack"
-)
-mouse = Vector2.new(110, 132)
-hit.MouseButton2Click:Fire()
-check(
-	not profile.Angler.Backpack[1].Locked and not panel:FindFirstChild("LockIcon", true),
-	"Right-click unlocks the moved fish"
-)
-profile.Angler.Holds.TestBoat = { { Fish = catch(nil, 14).Hand, X = 1, Y = 1, R = 0 } }
-aboard = true
-cargoUpdate.OnClientEvent:Fire(cargoRemote.OnServerInvoke(player, "Get").State)
-now += 1
-RunService.Heartbeat:Fire()
-buttonWithText(panel, "Boat hold").Activated:Fire()
-check(#grid:GetChildren()[3]:GetChildren() == 12, "Boat tab uses its own mask")
-local bulkButton = buttonWithText(panel, "Move all to backpack")
-check(bulkButton.Visible, "Boat hold offers the bulk backpack move")
-bulkButton.Activated:Fire()
-check(
-	#profile.Angler.Backpack == 2 and #profile.Angler.Holds.TestBoat == 0,
-	"Bulk button moves every fish that fits into the saved backpack"
-)
--- The dock reserves a part as a string attribute; the chosen tile is saved as-is.
-refitPending = "TestBoat|Rudder|Rudder"
-now += 0.3
-local fitted = cargoRemote.OnServerInvoke(player, "Place", 1, 1, 0)
-check(
-	fitted.Ok
-		and refitPending == nil
-		and #profile.Angler.Holds.TestBoat == 1
-		and profile.Angler.Holds.TestBoat[1].PartId == "Rudder"
-		and profile.Angler.Holds.TestBoat[1].X == 1
-		and profile.Angler.Holds.TestBoat[1].Y == 1,
-	"Manual refit placement saves the chosen tile and clears the reservation"
-)
-refitPending = "TestBoat|Rudder|Rudder"
-now += 0.3
-local occupied = cargoRemote.OnServerInvoke(player, "Place", 1, 1, 0)
-check(
-	not occupied.Ok and refitPending == "TestBoat|Rudder|Rudder",
-	"A refused refit placement leaves the reservation for another try"
-)
-now += 0.3
-check(
-	cargoRemote.OnServerInvoke(player, "CancelPlace").Ok and refitPending == nil,
-	"Cancelling a refit clears its reservation"
-)
-buttonWithText(panel, "Backpack").Activated:Fire()
-check(
-	#grid:GetChildren()[3]:GetChildren() == 48 and #profile.Angler.Backpack == 2 and not bulkButton.Visible,
-	"Switching tabs preserves the packed fish and hides the boat action"
-)
 local ClientShop = (function()
 	-- CLIENT_SHOP_SOURCE --
 end)()
@@ -829,9 +794,4 @@ for index, id in Backpacks.Order do
 		)
 	end
 end
-cargoUpdate.OnClientEvent:Fire(cargoRemote.OnServerInvoke(player, "Get").State)
-workspace.CurrentCamera.ViewportSize = Vector2.new(640, 320)
-RunService.RenderStepped:Fire()
-local inventoryScale = panel:FindFirstChildOfClass("UIScale").Scale
-check(panel.Size.Y.Offset * inventoryScale <= 320 - 48, "Largest backpack grid fits a short landscape viewport")
-print(string.format("Backpacks: %d data, grid, purchase, proximity, plaza, and UI checks passed.", checks))
+print(string.format("Backpacks: %d data, capacity, purchase, proximity, plaza, and shop UI checks passed.", checks))

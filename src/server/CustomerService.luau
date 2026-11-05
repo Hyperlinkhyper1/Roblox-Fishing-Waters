@@ -1172,7 +1172,7 @@ local function porterTrip(shop, worker, owner: Player)
 	local function cargo(id: string)
 		local records = {}
 		for slot, item in data.Holds[id] or {} do
-			if item.Fish then
+			if item.Fish and not item.Locked and not item.Fish.Locked then
 				table.insert(records, { Index = slot, Record = item.Fish })
 			end
 		end
@@ -1355,7 +1355,7 @@ local function stock(player: Player, shop, prompt: ProximityPrompt)
 		notify(player, "Your tackle box is still loading. Try again in a moment.")
 		return
 	end
-	local carrying = CargoService.isCarrying(player, profile.Angler.Hand)
+	local carrying = profile.Angler.Hand ~= nil and not profile.Angler.Hand.Locked and CargoService.isCarrying(player, profile.Angler.Hand)
 	local _, available = AnglerData.stockFreezer(profile.Angler, carrying)
 	if available == 0 then
 		local unlocked = 0
@@ -1379,7 +1379,7 @@ local function stock(player: Player, shop, prompt: ProximityPrompt)
 	local moved, remaining = 0, 0
 	local ok, message = BoatService.updateProgress(player, function(current)
 		assert(ownerOf(shop.base) == player and near(player, position, reach), "Move closer to your freezer.")
-		local hasHand = CargoService.isCarrying(player, current.Angler.Hand)
+		local hasHand = current.Angler.Hand ~= nil and not current.Angler.Hand.Locked and CargoService.isCarrying(player, current.Angler.Hand)
 		current.Angler, moved = AnglerData.stockFreezer(current.Angler, hasHand)
 		remaining = if hasHand and current.Angler.Hand then 1 else 0
 		for _, item in current.Angler.Backpack do

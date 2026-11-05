@@ -1,6 +1,6 @@
 -- Refits on the drydock lift. Owners sail their launched boat over the underwater
 -- cradle behind the boat shop; it lifts the hull into the dry basin, where they
--- fit extra motors and rudders, which are boat parts that take up cargo tiles
+-- fit extra motors and rudders, which are boat parts that take up cargo space
 -- (see Shared.BoatUpgrades), repaint the hull in a preset colour, or buy the
 -- trawler's stern net. Clients only display; every change is checked here against
 -- the saved hold and the lift, and BoatService drives the hull with the tuned spec.
@@ -177,8 +177,8 @@ local function refitBoat(player: Player): (string?, any, Model?, string?)
 	return boatId, layout, model, nil
 end
 
--- The refit dock reserves the part in RefitPending while the player picks its
--- hold spot. Attributes cannot hold tables, so it is a server-owned
+-- The refit dock reserves the part in RefitPending until Inventory confirms it.
+-- Attributes cannot hold tables, so it is a server-owned
 -- "BoatId|Kind|PartId" string.
 local function pendingRefit(player: Player)
 	local value = player:GetAttribute("RefitPending")
@@ -214,8 +214,7 @@ local function state(player: Player)
 	}
 end
 
--- Install only reserves the part: the player picks its hold spot themselves in
--- the cargo grid, and CargoService saves it there.
+-- Install reserves the part; Inventory confirms it through CargoService.
 local function beginInstall(player: Player, kind: any): (boolean, string)
 	local upgrade = if type(kind) == "string" then BoatUpgrades.Kinds[kind] else nil
 	if not upgrade then
@@ -230,7 +229,7 @@ local function beginInstall(player: Player, kind: any): (boolean, string)
 	elseif pendingRefit(player) ~= nil then
 		return false, "A part is already waiting for a spot in your hold."
 	end
-	-- Reject a refit that could never fit before sending the player to the grid.
+	-- Reject a refit that exceeds capacity before opening Inventory.
 	local items, failure =
 		BoatUpgrades.install(AnglerData.hold(profile.Angler, boatId, layout), layout, kind, Catalog.Fish)
 	if not items then
@@ -239,7 +238,7 @@ local function beginInstall(player: Player, kind: any): (boolean, string)
 	local partId = BoatUpgrades.partId(layout, kind)
 	-- A string, because attributes cannot hold tables.
 	player:SetAttribute("RefitPending", string.format("%s|%s|%s", boatId, kind, partId))
-	return true, string.format("Choose where the %s goes in your hold.", string.lower(upgrade.Name))
+	return true, string.format("Confirm the %s fitting in Inventory.", string.lower(upgrade.Name))
 end
 
 local function remove(player: Player, kind: any): (boolean, string)
@@ -270,7 +269,7 @@ local function remove(player: Player, kind: any): (boolean, string)
 		return false, message
 	end
 	BoatService.refit(player)
-	return true, string.format("%s taken out. Its cargo tiles are free again.", upgrade.Name)
+	return true, string.format("%s taken out. Its cargo space is free again.", upgrade.Name)
 end
 
 local function repaint(player: Player, paintId: any): (boolean, string)

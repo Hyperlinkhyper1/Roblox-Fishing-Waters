@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local WaterQuality = require(script.Parent.WaterQuality)
 
 local WaterWaves = {}
 local GRID = 7
@@ -30,6 +31,9 @@ local COAST_CELL = 40
 -- one is cut back to the side of a boat.
 local HULL_MARGIN = 1.5
 local MIN_SEGMENT = 6
+local HULL_REFRESH_INTERVAL = 0.5
+type HullBounds = { root: BasePart?, offset: CFrame, frame: CFrame, size: Vector3, refreshAt: number }
+local hullBounds: { [Model]: HullBounds } = {}
 -- Broad rolling motion rather than rapid oscillation against the land.
 local WATER_WAVE_SPEED = 8
 -- The shared swell field supplies the large waves. Keep Terrain's unrelated
@@ -77,17 +81,43 @@ end
 -- Horizontal hull footprints near the camera, as ranges on the swell grid's
 -- across and along axes. The ribbons lie on the open surface, so without this
 -- they draw sea and foam over an open deck that sits below the crests.
-local function hullFootprints(cameraPosition: Vector3, across: Vector3, direction: Vector3)
+local function hullFootprints(cameraPosition: Vector3, across: Vector3, direction: Vector3, now: number)
 	local footprints = {}
 	local boats = workspace:FindFirstChild("PlayerBoats")
 	if not boats then
+		table.clear(hullBounds)
 		return footprints
+	end
+	for boat in hullBounds do
+		if boat.Parent ~= boats then hullBounds[boat] = nil end
 	end
 	for _, boat in boats:GetChildren() do
 		if not boat:IsA("Model") then
 			continue
 		end
-		local frame, size = boat:GetBoundingBox()
+		local root = boat.PrimaryPart
+		local bounds = hullBounds[boat]
+		-- The hull is rigid: carry its cached box with the root every frame. Only
+		-- measuring geometry needs to wait for refits and streamed-in pieces.
+		if
+			bounds and bounds.root == root and root
+			and (root.Position - cameraPosition).Magnitude > GRID * CELL + bounds.size.Magnitude + bounds.offset.Position.Magnitude
+		then
+			continue
+		end
+		if not bounds or bounds.root ~= root or now >= bounds.refreshAt then
+			local frame, size = boat:GetBoundingBox()
+			bounds = {
+				root = root,
+				offset = if root then root.CFrame:ToObjectSpace(frame) else CFrame.identity,
+				frame = frame,
+				size = size,
+				refreshAt = now + HULL_REFRESH_INTERVAL,
+			}
+			hullBounds[boat] = bounds
+		end
+		local frame = if root then root.CFrame * bounds.offset else bounds.frame
+		local size = bounds.size
 		if (frame.Position - cameraPosition).Magnitude > GRID * CELL + size.Magnitude then
 			continue
 		end
@@ -274,6 +304,7 @@ function WaterWaves.start()
 		local step = dt
 		local camera = workspace.CurrentCamera
 		if not camera then
+			table.clear(hullBounds)
 			for _, ribbon in ribbons do
 				ribbon.body.Enabled, ribbon.edge.Enabled = false, false
 			end
@@ -339,15 +370,31 @@ function WaterWaves.start()
 			* math.sqrt(Weather.lakeExposure(projected))
 			* coastalExposure
 		terrain.WaterWaveSize += (ripple - terrain.WaterWaveSize) * (1 - math.exp(-step * 3))
+		if not WaterQuality.layeredEnabled() then
+			table.clear(hullBounds)
+			for _, ribbon in ribbons do
+				ribbon.body.Enabled, ribbon.edge.Enabled = false, false
+			end
+			return
+		end
 		local recolor = now - coloredAt >= 0.5
 		if recolor then
 			coloredAt = now
 		end
-		local footprints = hullFootprints(cameraPosition, across, direction)
-		local probes = MAX_RIBBON_PROBES
 		local visible = cameraPosition.Y > Biomes.WaterLevel - 0.5
 			and cameraPosition.Y < Biomes.WaterLevel + 180
 			and Biomes.inOceanBounds(cameraPosition)
+		-- Underwater and high-altitude cameras cannot see these surface ribbons.
+		-- Keep their masks and wave phase ready, but skip hull geometry and samples.
+		if not visible then
+			table.clear(hullBounds)
+			for _, ribbon in ribbons do
+				ribbon.body.Enabled, ribbon.edge.Enabled = false, false
+			end
+			return
+		end
+		local footprints = hullFootprints(cameraPosition, across, direction, now)
+		local probes = MAX_RIBBON_PROBES
 		for _, ribbon in ribbons do
 			local center = across * (acrossOrigin + ribbon.column * CELL)
 				+ direction * (alongOrigin + ribbon.row * CELL)

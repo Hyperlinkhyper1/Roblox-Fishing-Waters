@@ -1,57 +1,32 @@
--- Shared tile inventory for your backpack, your hand, and your launched boat.
--- The backpack is reachable everywhere; the boat tab requires being aboard. Click a fish to pick it up, turn it with R or
--- right-click while holding, then click the hull to drop it. Right-click a packed fish to lock it. Boat parts rearrange the same way
--- but stay aboard. The server re-checks every move; this view only previews.
+-- Card inventory for the backpack, hand and active boat. Capacity is independent
+-- of the card layout; all saves, ownership and access are checked by the server.
 local Players = game:GetService("Players")
-local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-
+local ContextActionService = game:GetService("ContextActionService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local StarterGui = game:GetService("StarterGui")
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Cargo = require(ReplicatedStorage.Shared.Cargo)
+local Inventory = require(ReplicatedStorage.Shared.Inventory)
+local Passes = require(ReplicatedStorage.Shared.Gamepasses)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
-
 local CargoHold = {}
 local rgb = Color3.fromRGB
--- Dark glass panel with accent-bracketed buttons and rarity-lit tiles.
-local INK = rgb(22, 24, 28)
-local HULL = rgb(12, 13, 16)
-local EDGE = rgb(40, 42, 48)
-local CELL_EMPTY = rgb(16, 17, 20)
-local DECK = rgb(21, 22, 26)
-local RIM = rgb(28, 30, 35)
-local CELL_EDGE = rgb(38, 40, 46)
-local PART = rgb(96, 100, 104)
-local FITS = rgb(84, 192, 92)
-local BLOCKED = rgb(226, 72, 60)
-local WHITE = rgb(240, 240, 236)
-local MUTED = rgb(150, 152, 158)
-local GOLD = rgb(255, 226, 128)
-local CREAM = rgb(226, 218, 196)
-local CYAN = rgb(110, 228, 240)
-local VIOLET = rgb(178, 142, 255)
-local MINT = rgb(150, 230, 140)
-local AMBER = rgb(255, 176, 96)
-local RED = rgb(255, 82, 82)
-local CELL = 40
-local GAP = 4
-local STEP = CELL + GAP
-local PAD = 16
-local GRID_TOP = 248
--- The boat-only bulk action sits between the tabs and the hold grid.
-local MOVE_TOP = 242
-local BOAT_GRID_TOP = 284
--- How far the hull planking reaches past the outer cells, and its darker rim.
-local DECK_PAD = 6
-local RIM_PAD = 10
+local INK, HULL, EDGE = rgb(18, 19, 23), rgb(5, 6, 8), rgb(48, 49, 55)
+local WHITE, MUTED = rgb(240, 240, 236), rgb(150, 152, 158)
+local GOLD, CREAM, CYAN = rgb(255, 226, 128), rgb(226, 218, 196), rgb(110, 228, 240)
+local VIOLET, MINT, AMBER, RED = rgb(178, 142, 255), rgb(150, 230, 140), rgb(255, 176, 96), rgb(255, 82, 82)
+local WIDTH, HEIGHT, LEFT, CONTENT = 1180, 500, 176, 832
+local CARD, CARD_HEIGHT, GAP = 98, 98, 6
+local HOTBAR_CLEARANCE = 90
 local started = false
-
 local function make(class: string, parent: Instance?, props: { [string]: any }): any
 	local item = Instance.new(class)
 	for key, value in props do
@@ -190,18 +165,6 @@ local function mutationBadge(parent: Instance, record)
 	end
 end
 
-local function fishKey(record): string
-	return string.format("%s|%s|%s", tostring(record.FishId), tostring(record.Kg), tostring(record.CaughtAt))
-end
-
-local function itemKey(item): string
-	return if item.PartId then string.format("%s@%d,%d", item.PartId, item.X, item.Y) else fishKey(item.Fish)
-end
-
-local function shapeOf(item): { string }
-	return Cargo.shape(item, Catalog.Fish)
-end
-
 -- Fit every bounds corner after rolling the camera, including perspective depth.
 -- Use the tile dimensions because the preview may not be parented/on screen yet.
 local function fitTileFish(model: Model, camera: Camera, width: number, height: number, rotation: number)
@@ -223,1011 +186,427 @@ local function fitTileFish(model: Model, camera: Camera, width: number, height: 
 	camera:SetAttribute("Distance", distance)
 end
 
--- Draws an item's filled cells inside its rotated bounding box, with the fish
--- model (or the part's name) on top. Returns the box and its cell squares.
-local function drawItem(parent: Instance, item, rotation: number): (Frame, { Frame }, ViewportFrame?)
-	local cells, width, height = Cargo.cells(shapeOf(item), rotation)
-	local box = make("Frame", parent, {
-		Name = "Item",
-		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(width * STEP - GAP, height * STEP - GAP),
-	})
-	local species = item.Fish and Catalog.Fish[item.Fish.FishId]
-	local rarity = species and Catalog.Rarities[species.Rarity]
-	local tint = if item.PartId then PART elseif rarity then rarity.Color else MUTED
-	local squares = {}
-	for _, cell in cells do
-		local square = make("Frame", box, {
-			Position = UDim2.fromOffset(cell[1] * STEP, cell[2] * STEP),
-			Size = UDim2.fromOffset(CELL, CELL),
-			BackgroundColor3 = CELL_EMPTY:Lerp(tint, 0.18),
-			BackgroundTransparency = 0,
-			BorderSizePixel = 0,
-		})
-		round(square, 3)
-		stroke(square, tint, 1).Transparency = 0.55
-		table.insert(squares, square)
-	end
-	local view
-	if item.Fish then
-		local previewWidth, previewHeight = width * STEP - GAP - 4, height * STEP - GAP - 16
-		view = make("ViewportFrame", box, {
-			Position = UDim2.fromOffset(2, 2),
-			Size = UDim2.fromOffset(previewWidth, previewHeight),
-			BackgroundTransparency = 1,
-			ZIndex = 2,
-		})
-		local model, camera = FishModels.show(view, item.Fish.FishId, nil, item.Fish)
-		if model and camera then
-			fitTileFish(model, camera, previewWidth, previewHeight, rotation)
-		end
-		mutationBadge(box, item.Fish)
-		if item.Locked then
-			text(box, "🔒", {
-				Name = "LockIcon",
-				Position = UDim2.fromOffset(3, 2),
-				Size = UDim2.fromOffset(20, 20),
-				TextSize = 16,
-				TextStrokeTransparency = 0.2,
-				ZIndex = 4,
-			})
-		end
-		local heavy = item.Fish.Size == "Huge" or item.Fish.Size == "Big"
-		text(box, FishCatch.formatKg(item.Fish.Kg), {
-			Position = UDim2.new(0, 3, 1, -13),
-			Size = UDim2.new(1, -6, 0, 12),
-			TextSize = 11,
-			Font = Enum.Font.BuilderSansBold,
-			TextColor3 = if heavy then GOLD else CREAM,
-			TextStrokeTransparency = 0.2,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			ZIndex = 3,
-		})
-	else
-		local part = Cargo.Parts[item.PartId]
-		text(box, string.upper(if part then part.Name else item.PartId), {
-			Size = UDim2.fromScale(1, 1),
-			TextSize = 11,
-			Font = Enum.Font.BuilderSansExtraBold,
-			TextColor3 = rgb(226, 226, 220),
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			ZIndex = 2,
-		})
-	end
-	return box, squares, view
-end
-
 function CargoHold.start()
-	if started then
-		return
-	end
+	if started then return end
 	started = true
 	local player = Players.LocalPlayer
 	local remotes = ReplicatedStorage:WaitForChild("Cargo")
 	local request = remotes:WaitForChild("Request") :: RemoteFunction
 	local update = remotes:WaitForChild("Update") :: RemoteEvent
-
-	-- Draw over the full screen; pointer conversion still needs the GUI inset.
+	local state = { Backpack = {}, Items = {}, BackpackId = "Starter", AutoStore = true }
+	local open, pending, aboard = false, false, false
+	local tab, sortBy, ascending = "Backpack", nil, true
+	local view = { Fish = true, Items = true, Favorites = false }
+	local selected, signature = nil, nil
+	local lastRequest = -math.huge
+	local render, setOpen, send
+	local cards = {}
 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
-		Name = "Cargo",
-		ResetOnSpawn = false,
-		DisplayOrder = 23,
-		IgnoreGuiInset = true,
-		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Name = "Cargo", ResetOnSpawn = false, DisplayOrder = 23,
+		IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	})
-	local toggle = button(gui, "Backpack [C]", {
-		Name = "OpenCargo",
-		Position = UDim2.new(1, -126, 1, -100),
-		Size = UDim2.fromOffset(112, 38),
-		TextSize = 15,
+	local toggle = button(gui, "Inventory [`]", {
+		Name = "OpenCargo", Position = UDim2.new(1, -150, 1, -100), Size = UDim2.fromOffset(136, 38),
 	}, GOLD)
-	local handDot = make("Frame", toggle, {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(1, -3, 0, 3),
-		Size = UDim2.fromOffset(12, 12),
-		BackgroundColor3 = FITS,
-		BorderSizePixel = 0,
-		Visible = false,
+	local shade = make("Frame", gui, {
+		Name = "InventoryShade", Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(),
+		BackgroundTransparency = 1, BorderSizePixel = 0, Active = false, Visible = false,
 	})
-	round(handDot)
-
-	local panel = make("Frame", gui, {
-		Name = "CargoPanel",
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -20, 0.5, -24),
-		Size = UDim2.fromOffset(352, 420),
-		BackgroundColor3 = HULL,
-		BackgroundTransparency = 0.06,
-		BorderSizePixel = 0,
-		Active = true,
-		Visible = false,
+	local panel = make("Frame", shade, {
+		Name = "InventoryPanel", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -HOTBAR_CLEARANCE),
+		Size = UDim2.fromOffset(WIDTH, HEIGHT), BackgroundColor3 = HULL,
+		BackgroundTransparency = 0.08, BorderSizePixel = 0, Active = true,
 	})
 	round(panel, 3)
 	stroke(panel, EDGE, 1)
-	local scale = make("UIScale", panel, {})
-	local header = make("Frame", panel, {
-		Size = UDim2.new(1, 0, 0, 58),
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-	})
-	local title = text(header, "", {
-		Position = UDim2.fromOffset(PAD, 8),
-		Size = UDim2.new(1, -PAD * 2 - 40, 0, 26),
-		Font = Enum.Font.BuilderSansBold,
-		TextColor3 = GOLD,
-		TextSize = 22,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-	})
-	local subtitle = text(header, "", {
-		Position = UDim2.fromOffset(PAD, 33),
-		Size = UDim2.new(1, -PAD * 2, 0, 18),
-		TextSize = 14,
-		TextColor3 = MUTED,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-	})
-	make("Frame", header, {
-		Name = "Divider",
-		Position = UDim2.new(0, PAD / 2, 1, 0),
-		Size = UDim2.new(1, -PAD, 0, 1),
-		BackgroundColor3 = EDGE,
-		BorderSizePixel = 0,
-	})
-	local close = make("TextButton", header, {
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 10),
-		Size = UDim2.fromOffset(32, 32),
-		BackgroundColor3 = INK,
-		Font = Enum.Font.BuilderSansBold,
-		Text = "X",
-		TextColor3 = RED,
-		TextSize = 20,
-	})
-	close.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Bold, Enum.FontStyle.Italic)
-	round(close, 2)
-	stroke(close, EDGE, 1)
-
-	-- The single-fish hand slot and its actions.
-	text(panel, "IN HAND", {
-		Position = UDim2.fromOffset(PAD, 70),
-		Size = UDim2.fromOffset(120, 16),
-		Font = Enum.Font.BuilderSansBold,
-		TextSize = 12,
-		TextColor3 = MUTED,
-	})
-	local handSlot = make("TextButton", panel, {
-		Name = "Hand",
-		AutoButtonColor = false,
-		Text = "",
-		Position = UDim2.fromOffset(PAD, 90),
-		Size = UDim2.fromOffset(100, 100),
-		BackgroundColor3 = CELL_EMPTY,
-		BorderSizePixel = 0,
-	})
-	round(handSlot, 4)
-	local handStroke = stroke(handSlot, CELL_EDGE, 2)
-	local handView = make("ViewportFrame", handSlot, {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Active = false,
-	})
-	local handEmpty = text(handSlot, "Empty", {
-		Size = UDim2.fromScale(1, 1),
-		TextColor3 = MUTED,
-		TextSize = 13,
-		TextXAlignment = Enum.TextXAlignment.Center,
-	})
-	local handName = text(panel, "", {
-		Position = UDim2.fromOffset(PAD + 114, 90),
-		Size = UDim2.new(1, -(PAD * 2 + 114), 0, 20),
-		Font = Enum.Font.BuilderSansBold,
-		TextSize = 18,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-	})
-	local handInfo = text(panel, "", {
-		Position = UDim2.fromOffset(PAD + 114, 112),
-		Size = UDim2.new(1, -(PAD * 2 + 114), 0, 32),
-		TextSize = 12,
-		TextColor3 = MUTED,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-	})
-	local rotate = button(panel, "Rotate [R]", {
-		Position = UDim2.fromOffset(PAD + 114, 154),
-		Size = UDim2.fromOffset(96, 34),
-	}, GOLD)
-	local release = button(panel, "Release", {
-		Position = UDim2.fromOffset(PAD + 218, 154),
-		Size = UDim2.fromOffset(84, 34),
-	}, AMBER)
-
-	-- The hold: empty cells, placed items, the held item's ghost and one hit area
-	-- on top that turns clicks into grid cells.
-	local grid = make("Frame", panel, {
-		Name = "Hold",
-		Position = UDim2.fromOffset(PAD, GRID_TOP),
-		BackgroundTransparency = 1,
-	})
-	local function layer(zIndex: number): Frame
-		return make("Frame", grid, { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = zIndex })
+	local scale = make("UIScale", panel, { Scale = 1 })
+	local function updateLayout()
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		local size = camera.ViewportSize
+		-- Keep the world visible above a compact inventory and the tool hotbar below it.
+		scale.Scale = math.max(0.01, math.min(1, (size.X - 24) / WIDTH,
+			size.Y * 0.4 / HEIGHT, (size.Y - HOTBAR_CLEARANCE - 24) / HEIGHT))
 	end
-	local rimLayer, deckLayer, cellLayer = layer(1), layer(2), layer(3)
-	local itemLayer, ghostLayer = layer(4), layer(5)
-	local hit = make("TextButton", grid, {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Text = "",
-		ZIndex = 6,
-	})
-	local noBoat = text(panel, "Climb aboard your own launched boat to use its hold.", {
-		Position = UDim2.fromOffset(PAD, GRID_TOP),
-		Size = UDim2.new(1, -PAD * 2, 0, 90),
-		TextColor3 = MUTED,
-		TextWrapped = true,
-		TextXAlignment = Enum.TextXAlignment.Center,
-	})
-	local footer = text(panel, "", {
-		Position = UDim2.new(0, PAD, 1, -48),
-		Size = UDim2.new(1, -PAD * 2, 0, 38),
-		TextSize = 12,
-		TextColor3 = MUTED,
-		TextWrapped = true,
-		TextYAlignment = Enum.TextYAlignment.Top,
-	})
-
-	local backpackTab =
-		button(panel, "Backpack", { Position = UDim2.fromOffset(PAD, 204), Size = UDim2.fromOffset(142, 30) }, CYAN)
-	local boatTab = button(
-		panel,
-		"Boat hold",
-		{ Position = UDim2.fromOffset(PAD + 152, 204), Size = UDim2.fromOffset(142, 30) },
-		VIOLET
-	)
-	local moveAll = button(panel, "Move all to backpack", {
-		Position = UDim2.fromOffset(PAD, MOVE_TOP),
-		Size = UDim2.new(1, -PAD * 2, 0, 30),
-		Visible = false,
-	}, MINT)
-	local container = "Backpack"
-	local state = {
-		Hand = nil,
-		BoatId = nil,
-		Items = {},
-		Backpack = {},
-		BackpackId = "Starter",
-		Pending = nil,
-		Freezer = 0,
-		FreezerUsage = 0,
-	}
-	-- holding = { from = "Hand" | hold index | "Draft", item, r }
-	local holding = nil
-	-- A motor or rudder reserved at the refit dock, waiting for the player to
-	-- choose its tiles. The server owns the reservation; this is its view.
-	local draft = nil
-	local cancelDraft
-	local pending = false
-	local lastRequest = -math.huge
-	local touchPoint = nil
-	local open = false
-	local aboard = false
-	local builtFor = nil
-	-- What the hand slot and the item layer currently show. Every save on the server
-	-- refreshes this view (each sale, each coin), and rebuilding every fish model in
-	-- its viewport each time was a recurring frame spike, even with the panel shut.
-	local drawnHand: string? = nil
-	local drawnItems: string? = nil
-	local ghost, ghostSquares, ghostView = nil, {}, nil
-	local lastAnchor = nil
-	local noticeUntil = 0
-	local lastHand = ""
-	-- The first state (possibly a fish saved in hand last session) never pops the panel open.
-	local seeded = false
-
-	local function layout()
-		if container == "Backpack" then
-			return Backpacks.Items[state.BackpackId] or Backpacks.Items.Starter
-		end
-		return if aboard and state.BoatId then BoatCatalog[state.BoatId] else nil
-	end
-
-	local function contents()
-		return if container == "Backpack" then state.Backpack else state.Items
-	end
-
-	local render
-	local function flash(message: string, color: Color3?)
-		noticeUntil = os.clock() + 3
-		footer.Text, footer.TextColor3 = message, color or BLOCKED
-		task.delay(3.05, function()
+	updateLayout()
+	text(panel, "Inventory", { Position = UDim2.fromOffset(20, 12), Size = UDim2.fromOffset(150, 36),
+		TextSize = 25, Font = Enum.Font.BuilderSansBold, TextColor3 = GOLD })
+	local tabs = {}
+	for index, name in { "Backpack", "Boat", "All" } do
+		local control = button(panel, name, { Name = name .. "Tab", Position = UDim2.fromOffset(LEFT + (index - 1) * 154, 14),
+			Size = UDim2.fromOffset(146, 32) }, if name == "Boat" then VIOLET else CYAN)
+		tabs[name] = control
+		control.Activated:Connect(function()
+			tab, selected = name, nil
 			render()
 		end)
 	end
-
-	local function gridPoint(input: InputObject?): Vector2
-		local point
-		if input and input.UserInputType == Enum.UserInputType.Touch then
-			-- InputObject positions already use the Core UI coordinate system.
-			point = Vector2.new(input.Position.X, input.Position.Y)
-		elseif not input and UserInputService:GetLastInputType() == Enum.UserInputType.Touch and touchPoint then
-			point = touchPoint
-		else
-			-- Mouse location is in screen coordinates, unlike AbsolutePosition.
-			point = UserInputService:GetMouseLocation() - GuiService:GetGuiInset()
-		end
-		return (point - grid.AbsolutePosition) / scale.Scale
+	local close = button(panel, "X", { Name = "CloseInventory", Position = UDim2.new(1, -54, 0, 14),
+		Size = UDim2.fromOffset(34, 34), TextSize = 20 }, RED)
+	local summary = text(panel, "Loading inventory…", { Name = "InventoryCount", Position = UDim2.fromOffset(LEFT, 54),
+		Size = UDim2.fromOffset(560, 28), TextSize = 19, TextColor3 = GOLD })
+	local searchBox = make("TextBox", panel, { Name = "SearchInput", Position = UDim2.fromOffset(LEFT + CONTENT - 252, 54),
+		Size = UDim2.fromOffset(196, 32), BackgroundColor3 = INK, Text = "", PlaceholderText = "Search inventory…",
+		PlaceholderColor3 = MUTED, TextColor3 = WHITE, TextSize = 15, Font = Enum.Font.BuilderSans,
+		ClearTextOnFocus = false, TextXAlignment = Enum.TextXAlignment.Left, Visible = false })
+	make("UIPadding", searchBox, { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) })
+	stroke(searchBox, EDGE, 1)
+	local search = button(panel, "Search", { Name = "Search", Position = UDim2.fromOffset(LEFT + CONTENT - 108, 54),
+		Size = UDim2.fromOffset(108, 32) }, MUTED)
+	local list = make("ScrollingFrame", panel, { Name = "InventoryItems", Position = UDim2.fromOffset(LEFT, 94),
+		Size = UDim2.fromOffset(CONTENT, 306), BackgroundTransparency = 1, BorderSizePixel = 0,
+		CanvasSize = UDim2.fromOffset(0, 0), ScrollBarThickness = 4, ScrollBarImageColor3 = MUTED,
+		ScrollingDirection = Enum.ScrollingDirection.Y, ClipsDescendants = true })
+	local empty = text(panel, "", { Name = "EmptyInventory", Position = UDim2.fromOffset(LEFT + 30, 180),
+		Size = UDim2.fromOffset(CONTENT - 60, 130), TextSize = 18, TextColor3 = MUTED,
+		TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Center })
+	local capacity = text(panel, "", { Name = "Capacity", Position = UDim2.fromOffset(LEFT, 84),
+		Size = UDim2.fromOffset(CONTENT, 8), TextSize = 11, TextColor3 = MUTED })
+	local function sideTitle(caption, x, y)
+		text(panel, caption, { Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(136, 28),
+			TextSize = 21, Font = Enum.Font.BuilderSansBold, TextXAlignment = Enum.TextXAlignment.Center })
+		make("Frame", panel, { Position = UDim2.fromOffset(x + 6, y + 31), Size = UDim2.fromOffset(124, 2),
+			BackgroundColor3 = WHITE, BorderSizePixel = 0 })
 	end
-
-	local function anchor(input: InputObject?): (number, number)
-		local point = gridPoint(input)
-		local _, width, height = Cargo.cells(shapeOf(holding.item), holding.r)
-		return math.floor(point.X / STEP - width / 2 + 0.5) + 1, math.floor(point.Y / STEP - height / 2 + 0.5) + 1
+	sideTitle("Auto Store", 20, 54)
+	local autoStore = button(panel, "", { Name = "AutoStore", Position = UDim2.fromOffset(20, 98), Size = UDim2.fromOffset(136, 32) }, MINT)
+	text(panel, "Automatically stow catches aboard your boat.", { Position = UDim2.fromOffset(22, 138),
+		Size = UDim2.fromOffset(132, 42), TextSize = 12, TextColor3 = MUTED, TextWrapped = true })
+	sideTitle("Sort By", 20, 196)
+	local sortButtons = {}
+	for index, spec in { { "Off", "Sorting: Off", CYAN }, { "Rarity", "Rarity", AMBER }, { "Worth", "Worth", MINT }, { "Name", "ABC order", VIOLET } } do
+		local control = button(panel, spec[2], { Name = "Sort" .. spec[1], Position = UDim2.fromOffset(20, 238 + (index - 1) * 36),
+			Size = UDim2.fromOffset(136, 32), TextSize = 14 }, spec[3])
+		sortButtons[spec[1]] = control
+		control.Activated:Connect(function()
+			if spec[1] == "Off" then
+				sortBy = if sortBy then nil else "Rarity"
+				ascending = false
+			elseif sortBy == spec[1] then ascending = not ascending
+			else sortBy, ascending = spec[1], spec[1] == "Name" end
+			list.CanvasPosition = Vector2.zero
+			render()
+		end)
 	end
-
-	local function takenFor()
-		return Cargo.occupied(contents(), Catalog.Fish, if type(holding.from) == "number" then holding.from else nil)
+	sideTitle("View", 1026, 54)
+	local viewButtons = {}
+	for index, spec in { { "Fish", "Fish" }, { "Items", "Items" }, { "Favorites", "Favorites" } } do
+		local control = make("TextButton", panel, { Name = "View" .. spec[1], Text = "", BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(1024, 100 + (index - 1) * 38), Size = UDim2.fromOffset(142, 34) })
+		local track = make("Frame", control, { Position = UDim2.fromOffset(0, 7), Size = UDim2.fromOffset(44, 20),
+			BackgroundColor3 = MINT, BorderSizePixel = 0 })
+		round(track)
+		local knob = make("Frame", track, { Position = UDim2.fromOffset(24, -1), Size = UDim2.fromOffset(22, 22),
+			BackgroundColor3 = CREAM, BorderSizePixel = 0 })
+		round(knob)
+		stroke(knob, WHITE, 1)
+		text(control, spec[2], { Position = UDim2.fromOffset(52, 0), Size = UDim2.fromOffset(94, 34), TextSize = 16 })
+		viewButtons[spec[1]] = { Track = track, Knob = knob }
+		control.Activated:Connect(function()
+			view[spec[1]] = not view[spec[1]]
+			list.CanvasPosition = Vector2.zero
+			render()
+		end)
 	end
-
-	local function buildGhost()
-		if ghost then
-			ghost:Destroy()
-		end
-		ghost, ghostSquares, ghostView, lastAnchor = nil, {}, nil, nil
-		if holding and layout() then
-			ghost, ghostSquares, ghostView = drawItem(ghostLayer, holding.item, holding.r)
-			if ghostView then
-				ghostView.ImageTransparency = 0.25
+	text(panel, "Select a card for actions.\nRight-click a fish to favorite it.", { Position = UDim2.fromOffset(1026, 230),
+		Size = UDim2.fromOffset(134, 66), TextSize = 12, TextColor3 = MUTED, TextWrapped = true })
+	local detail = text(panel, "Select an item", { Name = "SelectedItem", Position = UDim2.fromOffset(LEFT, 404),
+		Size = UDim2.fromOffset(CONTENT, 24), TextSize = 15, TextTruncate = Enum.TextTruncate.AtEnd })
+	local actions = {}
+	for index, spec in { { "Hand", "Take in hand", CYAN }, { "Backpack", "To backpack", CYAN },
+		{ "Boat", "To boat", VIOLET }, { "Favorite", "Favorite", GOLD }, { "Release", "Release", RED } } do
+		local control = button(panel, spec[2], { Name = "Action" .. spec[1], Position = UDim2.fromOffset(LEFT + (index - 1) * 139, 432),
+			Size = UDim2.fromOffset(131, 32), TextSize = 13, Visible = false }, spec[3])
+		actions[spec[1]] = control
+	end
+	local bulk = button(panel, "Boat → backpack", { Name = "MoveAll", Position = UDim2.fromOffset(1026, 346),
+		Size = UDim2.fromOffset(136, 36), TextSize = 13, Visible = false }, MINT)
+	local fitPart = button(panel, "Fit reserved part", { Name = "FitPart", Position = UDim2.fromOffset(LEFT, 432),
+		Size = UDim2.fromOffset(194, 32), Visible = false }, MINT)
+	local cancelPart = button(panel, "Cancel refit", { Name = "CancelRefit", Position = UDim2.fromOffset(LEFT + 208, 432),
+		Size = UDim2.fromOffset(150, 32), Visible = false }, RED)
+	local worth = text(panel, "Total worth: $0", { Name = "TotalWorth", Position = UDim2.new(1, -330, 1, -30),
+		Size = UDim2.fromOffset(310, 24), TextSize = 18, Font = Enum.Font.BuilderSansBold,
+		TextColor3 = GOLD, TextXAlignment = Enum.TextXAlignment.Right })
+	local notice = text(panel, "", { Name = "InventoryNotice", Position = UDim2.fromOffset(LEFT, HEIGHT - 30),
+		Size = UDim2.fromOffset(620, 24), TextSize = 12, TextColor3 = MUTED, TextTruncate = Enum.TextTruncate.AtEnd })
+	local function money(amount)
+		local value = tostring(math.floor(amount))
+		local formatted = value:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+		return "$" .. formatted
+	end
+	local function entryId(entry)
+		return entry.Source .. ":" .. tostring(entry.Index)
+	end
+	local function refreshPreviews()
+		if not open then return end
+		local top = list.CanvasPosition.Y
+		for _, card in cards do
+			local visible = card.Y + CARD_HEIGHT >= top and card.Y <= top + list.Size.Y.Offset
+			if visible and not card.Preview and card.Entry.Item and card.Entry.Item.Fish then
+				local fish = card.Entry.Item.Fish
+				local viewport = make("ViewportFrame", card.Button, { Position = UDim2.fromOffset(2, 9),
+					Size = UDim2.fromOffset(CARD - 4, 58), BackgroundTransparency = 1, ZIndex = 1, Active = false })
+				local model, camera = FishModels.show(viewport, fish.FishId, nil, fish)
+				if model and camera then fitTileFish(model, camera, CARD - 4, 58, 0) end
+				card.Preview = viewport
+			elseif not visible and card.Preview then
+				card.Preview:Destroy()
+				card.Preview = nil
 			end
 		end
 	end
-
-	local function setOpen(value: boolean)
-		-- Closing while a refit waits for a spot puts the part back at the dock.
-		if not value and draft then
-			if not pending then
-				cancelDraft(true)
-			end
-			return
-		end
-		open = value
-		if not open then
-			holding = nil
-			buildGhost()
+	local function payload(entry)
+		return { Source = entry.Source, Index = entry.Index, BoatId = state.BoatId,
+			Expected = Inventory.expected(entry.Item) }
+	end
+	local function favorite(entry)
+		if pending or not entry or not entry.Item or not entry.Item.Fish then return end
+		local data = payload(entry)
+		data.Locked = not entry.Locked
+		send("InventoryLock", data)
+	end
+	local function applyState(nextState)
+		if type(nextState) ~= "table" then return end
+		local oldPending = state.Pending
+		if nextState.BoatId ~= state.BoatId then selected, signature = nil, nil end
+		state = nextState
+		if state.Pending and not oldPending then
+			tab, selected = "Boat", nil
+			setOpen(true)
 		end
 		render()
 	end
-
+	send = function(action, ...)
+		if pending then return end
+		pending = true
+		local args = table.pack(...)
+		notice.Text, notice.TextColor3 = "Updating inventory…", MUTED
+		render()
+		task.spawn(function()
+			local delay = 0.22 - (os.clock() - lastRequest)
+			if delay > 0 then task.wait(delay) end
+			local ok, response = pcall(request.InvokeServer, request, action, table.unpack(args, 1, args.n))
+			lastRequest, pending = os.clock(), false
+			if ok and type(response) == "table" then
+				applyState(response.State)
+				if response.Ok and (action == "Place" or action == "CancelPlace") then setOpen(false) end
+				notice.Text = if response.Message ~= "" then response.Message else (if response.Ok then "Inventory updated." else "Please try again.")
+				notice.TextColor3 = if response.Ok then MINT else RED
+			else
+				notice.Text, notice.TextColor3 = "Couldn't reach your inventory. Try again.", RED
+			end
+			render()
+		end)
+	end
 	render = function()
-		local spec = layout()
-		local handKey = if state.Hand then fishKey(state.Hand) else ""
-		if seeded and handKey ~= "" and handKey ~= lastHand and not open then
-			-- A fresh catch opens inventory so it can be stowed straight away.
-			open = true
+		local owned = player:GetAttribute("OwnsAutoStore") == true
+		autoStore.Text = if not owned then "Buy gamepass" elseif state.AutoStore ~= false then "ON" else "OFF"
+		autoStore.TextColor3 = if owned and state.AutoStore ~= false then MINT else MUTED
+		for name, control in tabs do
+			control.BackgroundColor3 = if tab == name then rgb(34, 39, 44) else INK
+			control.TextTransparency = if tab == name then 0 else 0.3
 		end
-		lastHand = handKey
-		panel.Visible = open
-		toggle.Visible = true
-		backpackTab.TextColor3 = if container == "Backpack" then CYAN else MUTED
-		boatTab.TextColor3 = if container == "Boat" then VIOLET else MUTED
-		boatTab.Text = if aboard then "Boat hold" else "Boat · aboard only"
-		handDot.Visible = state.Hand ~= nil
-
-		-- Header line.
-		local used, total, fish = 0, 0, 0
-		if spec then
-			total = Cargo.capacity(spec.Hold)
-			for _, item in contents() do
-				used += #Cargo.cells(shapeOf(item))
-				fish += if item.Fish then 1 else 0
-			end
+		for name, control in sortButtons do
+			control.Text = if name == "Off" then (if sortBy then "Sorting: On" else "Sorting: Off")
+				else (if sortBy == name then (if ascending then "↑ " else "↓ ") else "")
+					.. (if name == "Name" then "ABC order" else name)
+			control.BackgroundColor3 = if sortBy == name then rgb(34, 39, 44) else INK
 		end
-		title.Text = if spec then string.format("%d Fish • %d/%d Cells", fish, used, total) else "No boat"
-		subtitle.Text = (if spec then spec.Name .. "  ·  " else "")
-			.. string.format("Freezer %d fish · %d%% used", state.Freezer or 0, state.FreezerUsage or 0)
-
-		-- Hand slot.
-		local hand = state.Hand
-		local handHeld = holding ~= nil and holding.from == "Hand"
-		local fittingDraft = draft ~= nil and holding ~= nil and holding.from == "Draft"
-		local handDrawing = if open
-			then (if hand then fishKey(hand) .. "|" .. tostring(hand.Mutation) .. "|" .. tostring(hand.NeonColor) else "") .. (if fittingDraft then "|" .. draft.PartId else "")
-			else nil
-		local redrawHand = handDrawing ~= nil and handDrawing ~= drawnHand
-		if redrawHand then
-			drawnHand = handDrawing
-			for _, child in handSlot:GetChildren() do
-				if child.Name == "MutationIcon" then
-					child:Destroy()
+		for name, control in viewButtons do
+			control.Track.BackgroundColor3 = if view[name] then rgb(0, 184, 80) else EDGE
+			control.Knob.Position = UDim2.fromOffset(if view[name] then 24 else -1, -1)
+		end
+		bulk.Visible = open and aboard and tab ~= "Backpack" and not state.Pending
+		if not open then return end
+		local entries = Inventory.entries(state, Catalog, Cargo)
+		local filtered, totalWorth = Inventory.visible(entries, tab, view, searchBox.Text, sortBy, ascending)
+		worth.Text = "Total worth: " .. money(totalWorth)
+		summary.Text = string.format("%d shown · %d total items", #filtered, #entries)
+		-- Black Hole Backpack owners carry an infinite hold over any saved pack.
+		local backpack = Backpacks.layoutFor(player, state.BackpackId)
+		local boat = state.BoatId and BoatCatalog[state.BoatId]
+		local packTotal = Cargo.capacity(backpack.Hold)
+		local packSpace = string.format("Backpack %d / %s space", Cargo.used(state.Backpack or {}, Catalog.Fish), if packTotal == math.huge then "∞" else tostring(packTotal))
+		local boatSpace = if boat then string.format("Boat %d / %d space", Cargo.used(state.Items or {}, Catalog.Fish), Cargo.capacity(boat.Hold)) else "No boat launched"
+		capacity.Text = if tab == "Backpack" then packSpace elseif tab == "Boat" then boatSpace else packSpace .. "    ·    " .. boatSpace
+		empty.Visible = #filtered == 0
+		empty.Text = if tab == "Boat" and not boat then "Launch a boat to see its inventory."
+			elseif view.Favorites then "No favorites match these filters.\nSelect a fish and choose Favorite."
+			else "No items match these filters."
+		local parts = {}
+		for _, entry in filtered do
+			local fish = entry.Item and entry.Item.Fish
+			table.insert(parts, tostring(entryId(entry)) .. "|" .. entry.Name .. "|" .. tostring(entry.Locked) .. "|"
+				.. (if fish then fish.FishId .. "|" .. tostring(fish.Size) .. "|" .. tostring(fish.Kg) .. "|" .. tostring(fish.CaughtAt) .. "|" .. fish.Mutation .. "|"
+					.. tostring(fish.Value) .. "|" .. tostring(fish.NeonColor) .. "|" .. table.concat(fish.Corruptions or {}, ",") else ""))
+		end
+		local nextSignature = table.concat(parts, ";")
+		if signature ~= nextSignature then
+			signature = nextSignature
+			for _, card in cards do card.Button:Destroy() end
+			cards = {}
+			for index, entry in filtered do
+				local x, y = ((index - 1) % 8) * (CARD + GAP), math.floor((index - 1) / 8) * (CARD_HEIGHT + GAP)
+				local fish = entry.Item and entry.Item.Fish
+				local species = fish and Catalog.Fish[fish.FishId]
+				local rarity = species and Catalog.Rarities[species.Rarity]
+				local tint = if rarity then rarity.Color else VIOLET
+				local tile = make("TextButton", list, { Name = "InventoryCard", Text = "", AutoButtonColor = false,
+					Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(CARD, CARD_HEIGHT),
+					BackgroundColor3 = INK, BorderSizePixel = 0 })
+				local outline = stroke(tile, EDGE, 1)
+				make("UIGradient", tile, { Rotation = 90, Color = ColorSequence.new(INK, tint:Lerp(HULL, 0.6)) })
+				make("Frame", tile, { Position = UDim2.new(0, 0, 1, -2), Size = UDim2.new(1, 0, 0, 2),
+					BackgroundColor3 = tint, BorderSizePixel = 0, ZIndex = 3 })
+				text(tile, entry.Name, { Position = UDim2.fromOffset(4, 44), Size = UDim2.fromOffset(CARD - 8, 32),
+					TextSize = 13, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Center,
+					TextStrokeTransparency = 0.3, ZIndex = 3 })
+				text(tile, if fish then FishCatch.formatKg(fish.Kg) else "Fitted", {
+					Position = UDim2.fromOffset(4, CARD_HEIGHT - 19), Size = UDim2.fromOffset(CARD - 8, 16),
+					TextSize = 11, TextColor3 = CREAM, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 3 })
+				text(tile, if entry.Source == "Hand" then "IN HAND" elseif entry.Source == "Boat" then "BOAT" else "", {
+					Position = UDim2.fromOffset(4, 3), Size = UDim2.fromOffset(64, 12), TextSize = 9, TextColor3 = CYAN, ZIndex = 3 })
+				if entry.Locked then
+					text(tile, "★", { Name = "LockIcon", Position = UDim2.fromOffset(3, 17), Size = UDim2.fromOffset(20, 20),
+						TextColor3 = GOLD, TextSize = 18, ZIndex = 4 })
 				end
-			end
-			mutationBadge(handSlot, hand)
-			for _, child in handView:GetChildren() do
-				child:Destroy()
-			end
-		end
-		handEmpty.Visible = hand == nil
-		if fittingDraft then
-			local part = Cargo.Parts[draft.PartId]
-			handEmpty.Text = string.upper(if part then part.Name else draft.PartId)
-		else
-			handEmpty.Text = "Empty"
-		end
-		if hand then
-			if redrawHand then
-				FishModels.show(handView, hand.FishId, nil, hand)
-			end
-			local species = Catalog.Fish[hand.FishId]
-			local rarity = species and Catalog.Rarities[species.Rarity]
-			handStroke.Color = if rarity then rarity.Color else CELL_EDGE
-			local mutation = FishMutations.label(hand.Mutation, hand.NeonColor)
-			handName.Text = (if mutation ~= "" then mutation .. " " else "")
-				.. (if species then species.Name else hand.FishId)
-				.. (if hand.Size == "Huge" then "  HUGE" elseif hand.Size == "Big" then "  BIG" else "")
-			handInfo.Text = string.format(
-				"%s · $%d · takes %d cells",
-				FishCatch.formatKg(hand.Kg),
-				math.floor(hand.Value),
-				#Cargo.cells(shapeOf(hand))
-			)
-		elseif fittingDraft then
-			local part = Cargo.Parts[draft.PartId]
-			handStroke.Color = PART
-			handName.Text = if part then part.Name else draft.PartId
-			handInfo.Text = string.format("Pick a spot in the hold · takes %d cells", #Cargo.cells(shapeOf(draft)))
-		else
-			handStroke.Color = CELL_EDGE
-			handName.Text = ""
-			handInfo.Text = "Stow the fish in your hand to make room for your next catch."
-		end
-		handView.ImageTransparency = if handHeld then 0.7 else 0
-		local holdingFish = holding ~= nil and holding.item.Fish ~= nil
-		release.TextTransparency = if holdingFish then 0 else 0.6
-		rotate.TextTransparency = if holding then 0 else 0.6
-
-		-- Hold grid.
-		noBoat.Visible = spec == nil
-		grid.Visible = spec ~= nil
-		moveAll.Visible = container == "Boat" and spec ~= nil
-		local areaWidth, areaHeight = 300, 90
-		if spec then
-			local columns = 0
-			for _, row in spec.Hold do
-				columns = math.max(columns, #row)
-			end
-			areaWidth, areaHeight = columns * STEP - GAP, #spec.Hold * STEP - GAP
-			local layoutKey = container
-				.. ":"
-				.. tostring(if container == "Backpack" then state.BackpackId else state.BoatId)
-			if builtFor ~= layoutKey then
-				builtFor = layoutKey
-				for _, container in { rimLayer, deckLayer, cellLayer } do
-					for _, child in container:GetChildren() do
-						child:Destroy()
-					end
-				end
-				for y, row in spec.Hold do
-					for x = 1, #row do
-						if Cargo.open(spec.Hold, x, y) then
-							-- Overlapping planks per cell merge into the hull silhouette.
-							for _, plank in { { rimLayer, RIM, RIM_PAD }, { deckLayer, DECK, DECK_PAD } } do
-								local tile = make("Frame", plank[1], {
-									Position = UDim2.fromOffset((x - 1) * STEP - plank[3], (y - 1) * STEP - plank[3]),
-									Size = UDim2.fromOffset(CELL + plank[3] * 2, CELL + plank[3] * 2),
-									BackgroundColor3 = plank[2],
-									BorderSizePixel = 0,
-								})
-								round(tile, plank[3])
-							end
-							local cell = make("Frame", cellLayer, {
-								Position = UDim2.fromOffset((x - 1) * STEP, (y - 1) * STEP),
-								Size = UDim2.fromOffset(CELL, CELL),
-								BackgroundColor3 = CELL_EMPTY,
-								BorderSizePixel = 0,
-							})
-							round(cell, 3)
-							stroke(cell, CELL_EDGE, 1)
-						end
-					end
-				end
-			end
-			local drawing = { layoutKey, if holding then tostring(holding.from) else "" }
-			for _, item in contents() do
-				table.insert(
-					drawing,
-					string.format(
-						"%s:%s,%s,%s,%s,%s,%s",
-						itemKey(item),
-						tostring(item.X),
-						tostring(item.Y),
-						tostring(item.R),
-						tostring(item.Locked),
-						tostring(item.Fish and item.Fish.Mutation),
-						tostring(item.Fish and item.Fish.NeonColor)
-					)
-				)
-			end
-			local itemsKey = if open then table.concat(drawing, ";") else nil
-			local redrawItems = itemsKey ~= nil and itemsKey ~= drawnItems
-			if redrawItems then
-				drawnItems = itemsKey
-				for _, child in itemLayer:GetChildren() do
-					child:Destroy()
-				end
-			end
-			for index, item in if redrawItems then contents() else {} do
-				local box, squares, view = drawItem(itemLayer, item, item.R)
-				box.Position = UDim2.fromOffset((item.X - 1) * STEP, (item.Y - 1) * STEP)
-				if holding and holding.from == index then
-					for _, square in squares do
-						square.BackgroundTransparency = 0.88
-					end
-					if view then
-						view.ImageTransparency = 0.75
-					end
-				end
-			end
-		end
-		local panelWidth = math.max(areaWidth, 320) + PAD * 2
-		local gridTop = if container == "Boat" then BOAT_GRID_TOP else GRID_TOP
-		grid.Size = UDim2.fromOffset(areaWidth, areaHeight)
-		grid.Position = UDim2.fromOffset(math.floor((panelWidth - areaWidth) / 2), gridTop)
-		noBoat.Position = UDim2.fromOffset(PAD, gridTop)
-		panel.Size = UDim2.fromOffset(panelWidth, gridTop + areaHeight + 62)
-		if os.clock() >= noticeUntil then
-			if draft and holding and holding.from == "Draft" then
-				local part = Cargo.Parts[draft.PartId]
-				footer.TextColor3 = FITS
-				footer.Text = string.format(
-					"Click a tile to fit the %s · R or Rotate to turn · Esc to cancel",
-					string.lower(if part then part.Name else draft.PartId)
-				)
-			else
-				footer.TextColor3 = MUTED
-				footer.Text = if holding
-					then "Click a tile to pack · R or Rotate to turn · Esc to cancel"
-					else if container == "Backpack"
-						then "Right-click a fish to lock it · Unlocked fish go to the freezer"
-						else "Use Move all to fill your backpack, or take a fish in hand for the freezer."
-			end
-		end
-	end
-
-	local function applyState(next)
-		if type(next) ~= "table" then
-			return
-		end
-		state = next
-		state.Backpack = if type(state.Backpack) == "table" then state.Backpack else {}
-		state.Items = if type(state.Items) == "table" then state.Items else {}
-		-- Drop whatever is held if the server moved or removed it meanwhile.
-		if holding and holding.from ~= "Draft" then
-			local source = if holding.from == "Hand"
-				then state.Hand and { Fish = state.Hand }
-				else contents()[holding.from]
-			if not source or itemKey(source) ~= itemKey(holding.item) then
-				holding = nil
-			end
-		end
-		-- A reserved refit opens the boat hold with the part under the cursor.
-		local nextDraft = if type(state.Pending) == "table" and type(state.Pending.PartId) == "string"
-			then state.Pending
-			else nil
-		if nextDraft then
-			local changed = draft == nil or draft.BoatId ~= nextDraft.BoatId or draft.PartId ~= nextDraft.PartId
-			draft = nextDraft
-			if changed or not holding or holding.from ~= "Draft" then
-				container = "Boat"
-				open = true
-				holding = { from = "Draft", item = { PartId = nextDraft.PartId }, r = 0 }
-			end
-		elseif draft then
-			draft = nil
-			if holding and holding.from == "Draft" then
-				holding = nil
-			end
-		end
-		buildGhost()
-		render()
-		seeded = true
-	end
-
-	-- Mirrors the server's move so the hold answers instantly; the reply replaces it.
-	local function predict(from, to)
-		local next = table.clone(state)
-		local items = table.clone(contents())
-		if container == "Backpack" then
-			next.Backpack = items
-		else
-			next.Items = items
-		end
-		local item = if from == "Hand" then { Fish = state.Hand } else items[from]
-		if not item or (from == "Hand" and not state.Hand) then
-			return state
-		end
-		if type(to) == "table" then
-			local placed =
-				{ Fish = item.Fish, PartId = item.PartId, Locked = item.Locked, X = to.X, Y = to.Y, R = to.R }
-			if from == "Hand" then
-				table.insert(items, placed)
-				next.Hand = nil
-			else
-				items[from] = placed
-			end
-		else
-			if from ~= "Hand" then
-				table.remove(items, from)
-			end
-			if to == "Hand" then
-				next.Hand = item.Fish
-			elseif from == "Hand" then
-				next.Hand = nil
-			end
-		end
-		return next
-	end
-
-	local function invokeCargo(action, ...)
-		-- Space requests from the previous response so the server's rate limit
-		-- cannot reject a quick follow-up, regardless of network latency.
-		local delay = 0.21 - (os.clock() - lastRequest)
-		if delay > 0 then
-			task.wait(delay)
-		end
-		local ok, response = pcall(request.InvokeServer, request, action, ...)
-		lastRequest = os.clock()
-		return ok, response
-	end
-
-	local function send(from, to)
-		if pending then
-			return
-		end
-		local previous = state
-		local targetContainer = container
-		pending = true
-		holding = nil
-		applyState(predict(from, to))
-		task.spawn(function()
-			local ok, response = invokeCargo("Move", from, to, targetContainer)
-			pending = false
-			if ok and type(response) == "table" then
-				applyState(response.State or previous)
-				if not response.Ok and type(response.Message) == "string" and response.Message ~= "" then
-					flash(response.Message)
-				end
-			else
-				applyState(previous)
-				flash("Couldn't reach your hold. Try again.")
-			end
-		end)
-	end
-
-	local function placeDraft(x: number, y: number, r: number)
-		if pending or not draft then
-			return
-		end
-		pending = true
-		local previous = state
-		task.spawn(function()
-			local ok, response = invokeCargo("Place", x, y, r)
-			pending = false
-			if ok and type(response) == "table" then
-				applyState(response.State or previous)
-				if response.Ok then
-					draft = nil
-					if holding and holding.from == "Draft" then
-						holding = nil
-					end
-					buildGhost()
-					setOpen(false)
-				elseif type(response.Message) == "string" and response.Message ~= "" then
-					flash(response.Message)
-				end
-			else
-				applyState(previous)
-				flash("Couldn't reach your hold. Try again.")
-			end
-		end)
-	end
-
-	-- Puts the reserved part back at the dock, then optionally closes the panel.
-	cancelDraft = function(closeAfter: boolean)
-		if pending or not draft then
-			return
-		end
-		pending = true
-		local previous = state
-		holding = nil
-		buildGhost()
-		render()
-		task.spawn(function()
-			local ok, response = invokeCargo("CancelPlace")
-			pending = false
-			if ok and type(response) == "table" then
-				applyState(response.State or previous)
-				if response.Ok then
-					draft = nil
-					if holding and holding.from == "Draft" then
-						holding = nil
-					end
-					buildGhost()
-					if closeAfter then
-						setOpen(false)
-					else
-						render()
-					end
+				if fish then mutationBadge(tile, fish)
 				else
-					flash(response.Message or "Couldn't cancel that refit.")
+					text(tile, "⚙", { Position = UDim2.fromOffset(0, 8),
+						Size = UDim2.fromOffset(CARD, 46), TextSize = 32, TextColor3 = tint, TextXAlignment = Enum.TextXAlignment.Center })
 				end
+				table.insert(cards, { Button = tile, Outline = outline, Entry = entry, Y = y })
+				tile.Activated:Connect(function() selected = entry render() end)
+				tile.MouseButton2Click:Connect(function() selected = entry favorite(entry) end)
+			end
+			list.CanvasSize = UDim2.fromOffset(0, math.ceil(#filtered / 8) * (CARD_HEIGHT + GAP))
+		end
+		local nextSelected = nil
+		for _, entry in filtered do
+			if selected and entryId(entry) == entryId(selected) and Inventory.matches(entry.Item, Inventory.expected(selected.Item)) then
+				nextSelected = entry
+			end
+		end
+		selected = nextSelected
+		for _, card in cards do
+			card.Outline.Color = if selected and entryId(card.Entry) == entryId(selected) then GOLD else EDGE
+		end
+		local fish = selected and selected.Item and selected.Item.Fish
+		local reserved = state.Pending ~= nil
+		for name, control in actions do
+			control.Visible = fish ~= nil and not reserved
+			control.Active = not pending
+			if name == "Hand" then control.Visible = control.Visible and selected.Source ~= "Hand"
+			elseif name == "Backpack" then control.Visible = control.Visible and selected.Source ~= "Backpack"
+			elseif name == "Boat" then control.Visible = control.Visible and selected.Source ~= "Boat" and aboard
+			elseif name == "Favorite" then control.Text = if selected and selected.Locked then "Unfavorite" else "Favorite"
+			elseif name == "Release" then control.Visible = control.Visible and not selected.Locked end
+		end
+		fitPart.Visible, cancelPart.Visible = reserved, reserved
+		detail.Text = if reserved then "Reserved boat fitting · confirm to use cargo space."
+			elseif fish then string.format("%s · %s · %s · %d space · %s%s", selected.Name,
+				FishCatch.formatKg(fish.Kg), money(fish.Value), Cargo.space(selected.Item, Catalog.Fish),
+				selected.Source, if selected.Locked then " · Favorite" else "")
+			elseif selected then selected.Name .. " · Installed boat fitting"
+			else (if tab == "Boat" and not aboard then "Climb aboard your boat to transfer fish." else "Select an item")
+		refreshPreviews()
+	end
+	-- Roblox's core backpack binds the grave key as a core action, which outranks
+	-- our sink, so the vanilla expanded inventory opened alongside ours. Disabling
+	-- the Backpack CoreGui while ours is open closes and unbinds it; the numbered
+	-- hotbar comes back on close (deferred, so the closing keypress can't reopen it).
+	local coreBackpackBefore: boolean? = nil
+	local function suppressCoreBackpack(suppress: boolean)
+		if suppress then
+			if coreBackpackBefore == nil then
+				local ok, enabled = pcall(StarterGui.GetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack)
+				coreBackpackBefore = if ok then enabled else true
+			end
+			pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, false)
+		elseif coreBackpackBefore ~= nil then
+			local restore = coreBackpackBefore
+			coreBackpackBefore = nil
+			task.defer(function()
+				if not open then pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Backpack, restore) end
+			end)
+		end
+	end
+	setOpen = function(value)
+		if value then updateLayout() end
+		open, shade.Visible = value, value
+		suppressCoreBackpack(value)
+		toggle.Visible = not value
+		player:SetAttribute("InventoryOpen", value)
+		if not value then
+			searchBox:ReleaseFocus()
+			for _, card in cards do card.Button:Destroy() end
+			cards, signature = {}, nil
+			if state.Pending and not pending then send("CancelPlace") end
+		else render() end
+	end
+	for name, control in actions do
+		control.Activated:Connect(function()
+			if not selected or pending then return end
+			if name == "Favorite" then favorite(selected)
 			else
-				applyState(previous)
-				flash("Couldn't reach the dock. Try again.")
+				local data = payload(selected)
+				data.Destination = name
+				send("InventoryMove", data)
 			end
 		end)
 	end
-
-	local function pickUp(from, item, rotation: number)
-		if pending then
-			return
-		end
-		holding = { from = from, item = item, r = rotation }
-		if from == "Hand" and UserInputService:GetLastInputType() == Enum.UserInputType.Touch then
-			touchPoint = nil
-		end
-		buildGhost()
-		render()
-	end
-
-	local function cancel()
-		if holding then
-			holding = nil
-			buildGhost()
-			render()
-		end
-	end
-
-	local function turn()
-		if holding then
-			holding.r = (holding.r + 1) % 4
-			buildGhost()
-			render()
-		end
-	end
-
-	local function trackTouch(input: InputObject)
-		if input.UserInputType == Enum.UserInputType.Touch then
-			touchPoint = Vector2.new(input.Position.X, input.Position.Y)
-		end
-	end
-	hit.InputBegan:Connect(trackTouch)
-	hit.InputChanged:Connect(trackTouch)
-	hit.Activated:Connect(function(input)
-		local spec = layout()
-		if not spec or pending then
-			return
-		end
-		if holding then
-			local x, y = anchor(input)
-			if holding.from == "Draft" then
-				if Cargo.fits(spec.Hold, takenFor(), shapeOf(holding.item), x, y, holding.r) then
-					placeDraft(x, y, holding.r)
-				else
-					flash("It doesn't fit there.")
-				end
-				return
-			end
-			if Cargo.fits(spec.Hold, takenFor(), shapeOf(holding.item), x, y, holding.r) then
-				send(holding.from, { X = x, Y = y, R = holding.r })
-			else
-				flash("It doesn't fit there.")
-			end
-			return
-		end
-		local point = gridPoint(input)
-		local index = Cargo.at(
-			Cargo.occupied(contents(), Catalog.Fish),
-			math.floor(point.X / STEP) + 1,
-			math.floor(point.Y / STEP) + 1
-		)
-		local item = index and contents()[index]
-		if item then
-			pickUp(index, item, item.R)
-		end
+	autoStore.Activated:Connect(function()
+		if player:GetAttribute("OwnsAutoStore") ~= true then
+			local ok = pcall(MarketplaceService.PromptGamePassPurchase, MarketplaceService, player, Passes.AutoStore.Id)
+			if not ok then notice.Text = "Couldn't open the purchase screen. Try again." end
+		else send("AutoStore", state.AutoStore == false) end
 	end)
-	hit.MouseButton2Click:Connect(function()
-		if holding then
-			turn()
-			return
-		end
-		if pending or container ~= "Backpack" then
-			return
-		end
-		local point = gridPoint()
-		local index = Cargo.at(
-			Cargo.occupied(contents(), Catalog.Fish),
-			math.floor(point.X / STEP) + 1,
-			math.floor(point.Y / STEP) + 1
-		)
-		local item = index and contents()[index]
-		if not item or not item.Fish then
-			return
-		end
-		pending = true
-		local expected =
-			{ X = item.X, Y = item.Y, FishId = item.Fish.FishId, Kg = item.Fish.Kg, CaughtAt = item.Fish.CaughtAt }
-		task.spawn(function()
-			local ok, response = invokeCargo("Lock", index, not item.Locked, expected)
-			pending = false
-			if ok and type(response) == "table" then
-				applyState(response.State or state)
-				if not response.Ok then
-					flash(response.Message or "Couldn't lock that fish.")
-				end
-			else
-				flash("Couldn't reach your backpack. Try again.")
-			end
-		end)
+	bulk.Activated:Connect(function() send("MoveAll") end)
+	fitPart.Activated:Connect(function() send("Place", 1, 1, 0) end)
+	cancelPart.Activated:Connect(function() send("CancelPlace") end)
+	search.Activated:Connect(function()
+		searchBox.Visible = not searchBox.Visible
+		summary.Size = UDim2.fromOffset(if searchBox.Visible then CONTENT - 268 else 560, 28)
+		search.Position = UDim2.fromOffset(LEFT + CONTENT - (if searchBox.Visible then 48 else 108), 54)
+		search.Size = UDim2.fromOffset(if searchBox.Visible then 48 else 108, 32)
+		search.Text = if searchBox.Visible then "×" else "Search"
+		if searchBox.Visible then searchBox:CaptureFocus() else searchBox.Text = "" searchBox:ReleaseFocus() end
 	end)
-	handSlot.Activated:Connect(function()
-		if holding and holding.from == "Draft" then
-			setOpen(false)
-		elseif holding and holding.from == "Hand" then
-			cancel()
-		elseif holding then
-			if holding.item.PartId then
-				flash("Boat parts stay in the hold.")
-			elseif state.Hand then
-				flash("Your hands are already full.")
-			else
-				send(holding.from, "Hand")
-			end
-		elseif state.Hand then
-			pickUp("Hand", { Fish = state.Hand }, 0)
-		end
-	end)
-	release.Activated:Connect(function()
-		if holding and holding.from == "Draft" then
-			flash("Place the part in the hold first.")
-		elseif holding and holding.item.Fish then
-			send(holding.from, "Release")
-		elseif holding then
-			flash("Boat parts stay in the hold.")
-		else
-			flash("Pick up a fish first, then release it.")
-		end
-	end)
-	rotate.Activated:Connect(turn)
-	moveAll.Activated:Connect(function()
-		if draft then
-			flash("Place the reserved part in the hold first.")
-			return
-		elseif pending or container ~= "Boat" then
-			return
-		end
-		pending = true
-		task.spawn(function()
-			local ok, response = invokeCargo("MoveAll")
-			pending = false
-			if ok and type(response) == "table" then
-				applyState(response.State or state)
-				if type(response.Message) == "string" and response.Message ~= "" then
-					flash(response.Message, if response.Ok then FITS else BLOCKED)
-				end
-			else
-				flash("Couldn't reach your hold. Try again.")
-			end
-		end)
-	end)
-	close.Activated:Connect(function()
-		setOpen(false)
-	end)
-	local function switchContainer(value)
-		if pending then
-			return
-		elseif draft then
-			flash("Place the reserved part in the hold first.")
-			return
-		end
-		if value == "Boat" and not aboard then
-			flash("Climb aboard your boat to use its hold.")
-			return
-		end
-		holding = nil
-		container = value
-		buildGhost()
-		render()
-	end
-	backpackTab.Activated:Connect(function()
-		switchContainer("Backpack")
-	end)
-	boatTab.Activated:Connect(function()
-		switchContainer("Boat")
-	end)
-	toggle.Activated:Connect(function()
-		setOpen(not open)
-	end)
+	searchBox:GetPropertyChangedSignal("Text"):Connect(function() list.CanvasPosition = Vector2.zero render() end)
+	list:GetPropertyChangedSignal("CanvasPosition"):Connect(refreshPreviews)
+	close.Activated:Connect(function() setOpen(false) end)
+	toggle.Activated:Connect(function() setOpen(not open) end)
+	-- Sink the grave key before Roblox's default expanded backpack handles it;
+	-- the standard numbered hotbar remains available for equipped tools.
+	ContextActionService:BindActionAtPriority("ToggleInventory", function(_, inputState)
+		if UserInputService:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
+		if inputState == Enum.UserInputState.Begin then setOpen(not open) end
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.High.Value + 1, Enum.KeyCode.Backquote)
 	UserInputService.InputBegan:Connect(function(input, processed)
-		if processed then
-			return
-		end
-		if input.KeyCode == Enum.KeyCode.C then
-			setOpen(not open)
-		elseif open and input.KeyCode == Enum.KeyCode.R then
-			turn()
-		elseif open and (input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB) then
-			if draft then
-				setOpen(false)
-			else
-				cancel()
-			end
+		if not processed and open and (input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB) then
+			setOpen(false)
 		end
 	end)
-
-	-- Aboard means sitting in or standing on your own launched boat.
+	player:GetAttributeChangedSignal("OwnsAutoStore"):Connect(function() render() end)
+	player:GetAttributeChangedSignal("OwnsBlackHoleBackpack"):Connect(function() render() end)
 	local nextCheck = 0
 	RunService.Heartbeat:Connect(function()
-		if os.clock() < nextCheck then
-			return
-		end
-		nextCheck = os.clock() + 0.2
-		local boatId = player:GetAttribute("ActiveBoatId")
+		if os.clock() < nextCheck then return end
+		nextCheck = os.clock() + 0.25
+		local id = player:GetAttribute("ActiveBoatId")
 		local boats = workspace:FindFirstChild("PlayerBoats")
-		local boat = if type(boatId) == "string" and boats
-			then boats:FindFirstChild(boatId .. "_" .. player.UserId)
-			else nil
-		local now = Aboard(player.Character, boat)
-		if now ~= aboard then
-			aboard = now
-			if not now and container == "Boat" then
-				container = "Backpack"
-				holding = nil
-				draft = nil
-				buildGhost()
-			end
-			setOpen(open)
-		end
+		local model = if type(id) == "string" and boats then boats:FindFirstChild(id .. "_" .. player.UserId) else nil
+		local now = Aboard(player.Character, model)
+		if now ~= aboard then aboard = now render() elseif open then render() end
 	end)
-
 	RunService.RenderStepped:Connect(function()
-		if not open then
-			return
-		end
-		local camera = workspace.CurrentCamera
-		if camera then
-			local viewport = camera.ViewportSize
-			scale.Scale = math.clamp(
-				math.min((viewport.X - 40) / panel.Size.X.Offset, (viewport.Y - 150) / panel.Size.Y.Offset),
-				0.2,
-				1
-			)
-		end
-		if ghost and holding then
-			ghost.Visible = UserInputService:GetLastInputType() ~= Enum.UserInputType.Touch or touchPoint ~= nil
-			local x, y = anchor()
-			ghost.Position = UDim2.fromOffset((x - 1) * STEP, (y - 1) * STEP)
-			local spot = x * 1000 + y
-			if spot ~= lastAnchor then
-				lastAnchor = spot
-				local spec = layout()
-				local fits = spec ~= nil and Cargo.fits(spec.Hold, takenFor(), shapeOf(holding.item), x, y, holding.r)
-				for _, square in ghostSquares do
-					square.BackgroundColor3 = if fits then FITS else BLOCKED
-					square.BackgroundTransparency = 0.35
-				end
-			end
-		end
+		if open then updateLayout() end
 	end)
-
-	update.OnClientEvent:Connect(function(next)
-		if not pending then
-			applyState(next)
-		end
-	end)
+	update.OnClientEvent:Connect(applyState)
 	local ok, response = pcall(request.InvokeServer, request, "Get")
-	if ok and type(response) == "table" and response.State then
-		applyState(response.State)
-	else
-		render()
-	end
+	if ok and type(response) == "table" then applyState(response.State) else render() end
 end
 
 return CargoHold

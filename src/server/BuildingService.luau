@@ -284,6 +284,21 @@ local function change(profile, site, action, payload, builtins, record)
 			table.insert(data.Pieces, entry)
 			cost += Building.price(entry)
 		end
+	elseif action == "PaintAllWalls" then
+		-- Resolve targets from the current property inside the transaction so this
+		-- stays one undoable edit even when there are more than 64 wall sections.
+		local ids = {}
+		for _, entry in data.Pieces do
+			if entry.Kind == "Wall" then table.insert(ids, entry.Id) end
+		end
+		for id, entry in availableBuiltins(builtins, data) do
+			if entry.Kind == "Wall" then table.insert(ids, id) end
+		end
+		if #ids == 0 then return nil, "There are no walls to paint on this property." end
+		for _, id in ids do
+			local problem = paint(data, { Id = id, Material = payload.Material, Color = payload.Color }, builtins)
+			if problem then return nil, problem end
+		end
 	elseif action == "Paint" or action == "PaintBatch" then
 		if action == "Paint" then
 			local problem = paint(data, payload, builtins)
@@ -330,7 +345,7 @@ local function change(profile, site, action, payload, builtins, record)
 		return nil, "That building tool is unavailable."
 	end
 	if same(before, data) then
-		if action == "Paint" or action == "PaintBatch" then return {Before=clone(before),After=clone(data),Cost=0,Noop=true},nil end
+		if action == "Paint" or action == "PaintBatch" or action == "PaintAllWalls" then return {Before=clone(before),After=clone(data),Cost=0,Noop=true},nil end
 		return nil, "That surface already has this finish."
 	end
 	local problem = validate(profile, site, data, builtins)

@@ -127,7 +127,6 @@ function BuildMode.start()
 	local touchStart = Vector2.zero
 	local touchDragged = false
 	local structures = nil
-	local furnitureCategory = "All"
 	local ghostParts = {}
 
 	-- HUD
@@ -151,10 +150,10 @@ function BuildMode.start()
 		Active = true,
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -12),
-		Size = UDim2.new(1, -24, 0, 190),
+		Size = UDim2.new(1, -24, 0, 158),
 		Visible = false,
 	})
-	make("UISizeConstraint", panel, { MaxSize = Vector2.new(1020, 190) })
+	make("UISizeConstraint", panel, { MaxSize = Vector2.new(1020, 158) })
 	StructureEditor.stylePanel(panel)
 	local function label(parent: Instance, text: string, props: { [string]: any }): TextLabel
 		local item = make("TextLabel", parent, {
@@ -215,16 +214,8 @@ function BuildMode.start()
 		})
 		return strip
 	end
-	local categoryStrip = horizontalStrip("FurnitureCategories", 46, 27)
-	local categoryButtons = {}
-	for index, category in Furniture.Categories do
-		categoryButtons[category.Id] = button(categoryStrip, category.Name, {
-			Name = "FurnitureCategory" .. category.Id, LayoutOrder = index,
-			Size = UDim2.fromOffset(if #category.Name > 12 then 164 else 126, 22), TextSize = 11,
-		})
-	end
-	local catalogue = horizontalStrip("Placeables", 78, 62)
-	local actions = horizontalStrip("BuildActions", 144, 36)
+	local catalogue = horizontalStrip("Placeables", 46, 62)
+	local actions = horizontalStrip("BuildActions", 112, 36)
 	local itemButtons = {}
 	local stockLabels = {}
 	local itemViews, previewStarted = {}, {}
@@ -262,7 +253,7 @@ function BuildMode.start()
 	end
 	local emptyInventory = label(panel, "Loading your furniture…", {
 		Name = "EmptyInventory",
-		Position = UDim2.fromOffset(16, 80),
+		Position = UDim2.fromOffset(16, 48),
 		Size = UDim2.new(1, -32, 0, 52),
 		TextSize = 14,
 		TextColor3 = Theme.Colors.Muted,
@@ -290,7 +281,7 @@ function BuildMode.start()
 	local editRack = button(actions, "Edit rack", { Name = "EditRack", LayoutOrder = 0, Size = UDim2.fromOffset(110, 30) })
 	local rackEditor = make("Frame", gui, {
 		Name = "RackEditor", Active = true, AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -210), Size = UDim2.new(1, -24, 0, 164), Visible = false,
+		Position = UDim2.new(0.5, 0, 1, -178), Size = UDim2.new(1, -24, 0, 164), Visible = false,
 	})
 	make("UISizeConstraint", rackEditor, { MaxSize = Vector2.new(520, 164) })
 	Theme.glassWindow(rackEditor)
@@ -401,36 +392,25 @@ function BuildMode.start()
 		if item:IsDescendantOf(panel) then StructureEditor.styleButton(item, appearance) else Theme.glassButton(item, appearance) end
 	end
 	local function render()
-		local total, matching = 0, 0
-		local categoryCounts = {}
+		local total = 0
 		for _, id in ITEMS do
 			local item = Furniture.Items[id]
 			local stock = if state and Furniture.allowedOn(id, site) then state.Stock[id] or 0 else 0
 			local full = state ~= nil and Furniture.count(placed(), id) >= item.MaxPlaced
 			total += stock
-			local category = Furniture.category(id)
-			categoryCounts[category] = (categoryCounts[category] or 0) + stock
-			local visible = Furniture.matchesCategory(id, furnitureCategory)
-			if visible then matching += stock end
-			itemButtons[id].Visible = stock > 0 and visible
+			itemButtons[id].Visible = stock > 0
 			itemButtons[id].Selectable = stock > 0 and not full and not pending
 			stockLabels[id].Text = string.format("%d unplaced", stock)
-			if stock > 0 and visible and not previewStarted[id] then
+			if stock > 0 and not previewStarted[id] then
 				previewStarted[id] = true
 				FurniturePreview.show(itemViews[id], remotes, id)
 			end
 			setButton(itemButtons[id], "", stock > 0 and not full and not pending, held ~= nil and held.From == id)
 		end
-		for _, category in Furniture.Categories do
-			local count = if category.Id == "All" then total else categoryCounts[category.Id] or 0
-			setButton(categoryButtons[category.Id], string.format("%s · %d", category.Name, count), not pending, furnitureCategory == category.Id)
-		end
 		inventoryTitle.Text = string.format("Unplaced furniture · %d", total)
-		emptyInventory.Visible = matching == 0
+		emptyInventory.Visible = total == 0
 		emptyInventory.Text = if not state
 			then "Loading your furniture…"
-			elseif total > 0 and furnitureCategory ~= "All"
-			then "No unplaced furniture in this catalogue. Choose another category."
 			elseif site == "Company"
 			then "Nothing to place here. Racks, kitchen storage, the radar and decorations from Harbour Home can go on your plot."
 			else "No unplaced furniture. Buy items at Harbour Home, or pick up furniture in your house."
@@ -1328,16 +1308,6 @@ function BuildMode.start()
 			end
 		end,
 	})
-	for id, categoryButton in categoryButtons do
-		categoryButton.Activated:Connect(function()
-			if active and not pending then
-				furnitureCategory = id
-				catalogue.CanvasPosition = Vector2.zero
-				render()
-			end
-		end)
-	end
-
 	for id, item in itemButtons do
 		item.Activated:Connect(function()
 			if active and item.Active then

@@ -449,8 +449,19 @@ function FurnitureShop.build(plaza: Model, plazaFrame: CFrame): Model
 	return shop
 end
 
+-- Startup repairs scan the whole map (city and islands included) before anyone spawns. Yield a
+-- frame every 50 ms so the startup thread stays inside Roblox's ~10 s script timeout.
+local breatheAt = os.clock()
+local function breathe()
+	if task and os.clock() - breatheAt > 0.05 then
+		task.wait()
+		breatheAt = os.clock()
+	end
+end
+
 function FurnitureShop.ensure(root: Instance)
 	for _, plaza in root:GetDescendants() do
+		breathe()
 		if plaza:IsA("Model") and plaza.Name == "Plaza" then
 			local frame = PlazaHouses.pavingFrame(plaza)
 			if frame then FurnitureShop.build(plaza, frame) end

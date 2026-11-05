@@ -14,6 +14,7 @@ local Paths = require(ReplicatedStorage.Shared.Paths)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
+local BackpackModels = require(ReplicatedStorage.Shared.BackpackModels)
 local Settings = require(script.Parent.PlayerSettings)
 local Freecam = require(script.Parent.Freecam)
 local StaffPreview = require(script.Parent.StaffPreview)
@@ -2856,6 +2857,12 @@ function Menu.start()
 				"Show rain, wind particles, and lightning flashes.",
 				"Weather"
 			)
+			settingRow(
+				"BackpackAnimation",
+				"Backpack animation",
+				"Animate Black Hole Backpacks: spinning accretion disk, fish falling in and stardust. Off by default on phones.",
+				"Equipmentbag"
+			)
 		elseif settingTab == "Audio" then
 			settingRow("MasterVolume", "Master volume", "Overall game audio.", "Audio")
 			settingRow("MusicVolume", "Music", "Volume for music tracks.", "Music")
@@ -2909,6 +2916,388 @@ function Menu.start()
 			end
 			if unlocked == 0 then
 				text(body, "No titles unlocked yet.", 16, muted, { Size = UDim2.new(1, -8, 0, 60) })
+			end
+		end
+	end
+	-- Robux shop: Featured / Gamepasses tabs over big art-forward banner cards.
+	-- Banner art is built from plain frames (gradients, strokes, sparkles) so it
+	-- needs no uploaded images and stays sharp on every screen.
+	local shopTab = "Featured"
+	local shopViews = {}
+	local ShopProducts = {
+		{
+			Key = "BlackHoleBackpack",
+			Name = "Black Hole Backpack",
+			New = true,
+			Perks = { "Infinite fish storage", "Spinning accretion disk", "Fish fall right in" },
+			Colors = { Color3.fromRGB(34, 8, 66), Color3.fromRGB(150, 40, 175), Color3.fromRGB(40, 175, 225) },
+			Accent = Color3.fromRGB(205, 140, 255),
+			Description = "A captive singularity strapped to your back. Infinite fish storage: your backpack never fills up, so you can keep fishing all day. Animated accretion disk and infalling fish (toggle in Settings > Performance).",
+		},
+		{
+			Key = "AutoStore",
+			Name = "Auto Store",
+			Perks = { "Auto-stores your catches", "Toggle in Inventory", "Works aboard your ship" },
+			Colors = { Color3.fromRGB(8, 70, 96), Color3.fromRGB(30, 140, 190), Color3.fromRGB(110, 225, 195) },
+			Accent = Color3.fromRGB(120, 235, 210),
+			Description = "Automatically stores caught fish in your ship's inventory while you are aboard your own ship. Toggle Auto Store in Inventory. Fish keep their space cost; if the boat is full, the fish stays in your hand.",
+		},
+		{
+			Key = "DoubleXP",
+			Name = "2x XP",
+			Perks = { "Double XP every catch", "Crab cages & mussel nets", "Trawler net too" },
+			Colors = { Color3.fromRGB(250, 150, 40), Color3.fromRGB(230, 80, 160), Color3.fromRGB(115, 90, 235) },
+			Accent = Color3.fromRGB(255, 215, 120),
+			Description = "Earn double XP from every catch, including crab cages, mussel nets and the trawler net.",
+		},
+	}
+	-- Unthemed instance: the banners own their colours instead of the glass finish.
+	local function raw(class, parent, props)
+		local item = Instance.new(class)
+		for key, value in props do
+			item[key] = value
+		end
+		item.Parent = parent
+		return item
+	end
+	local function gradient(parent, colors, rotation)
+		local keys = {}
+		for index, color in colors do
+			table.insert(keys, ColorSequenceKeypoint.new((index - 1) / math.max(#colors - 1, 1), color))
+		end
+		return raw("UIGradient", parent, { Color = ColorSequence.new(keys), Rotation = rotation or 0 })
+	end
+	local function outline(parent, color, thickness)
+		return raw("UIStroke", parent, {
+			Color = color,
+			Thickness = thickness or 2,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		})
+	end
+	local function corner(parent, radius)
+		return raw("UICorner", parent, { CornerRadius = UDim.new(0, radius or 6) })
+	end
+	-- Chunky outlined display text, like a sticker on the banner.
+	local function display(parent, value, size, color, props)
+		local item = raw("TextLabel", parent, {
+			BackgroundTransparency = 1,
+			Text = value,
+			TextSize = size,
+			Font = Enum.Font.FredokaOne,
+			TextColor3 = color or Color3.new(1, 1, 1),
+			TextStrokeColor3 = Color3.fromRGB(20, 10, 30),
+			TextStrokeTransparency = 0,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Right,
+		})
+		for key, value2 in props or {} do
+			item[key] = value2
+		end
+		return item
+	end
+	-- Four-point star: two long rays and two short diagonal ones.
+	local function sparkle(parent, position, size, transparency)
+		for _, ray in { { 0, 1 }, { 90, 1 }, { 45, 0.55 }, { 135, 0.55 } } do
+			local part = raw("Frame", parent, {
+				Name = "Sparkle",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = transparency or 0.1,
+				BorderSizePixel = 0,
+				Position = position,
+				Rotation = ray[1],
+				Size = UDim2.fromOffset(size * ray[2], math.max(2, size / 6)),
+				ZIndex = 3,
+			})
+			corner(part, size)
+		end
+	end
+	local function badge(parent, value, color, position)
+		local tag = raw("Frame", parent, {
+			Name = "Badge",
+			BackgroundColor3 = Color3.fromRGB(28, 20, 10),
+			BackgroundTransparency = 0.15,
+			Position = position,
+			Size = UDim2.fromOffset(120, 40),
+			ZIndex = 4,
+		})
+		corner(tag, 4)
+		outline(tag, color, 2)
+		display(tag, value, 18, color, {
+			Size = UDim2.fromScale(1, 1),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Font = Enum.Font.GothamBold,
+			TextStrokeTransparency = 1,
+			ZIndex = 5,
+		})
+		return tag
+	end
+	local function art(parent, pass, owned, size)
+		if pass.Key == "BlackHoleBackpack" then
+			local view = raw("ViewportFrame", parent, {
+				Name = "BlackHolePreview",
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(size, size),
+				ZIndex = 2,
+			})
+			pcall(BackpackModels.show, view, "BlackHole")
+		elseif pass.Key == "AutoStore" then
+			glyph(parent, "AutoStore", if owned then green else Color3.new(1, 1, 1), UDim2.fromScale(0.5, 0.5), size * 0.6)
+		else
+			display(parent, "2x\nXP", size * 0.38, Color3.fromRGB(255, 236, 140), {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(size, size),
+				TextXAlignment = Enum.TextXAlignment.Center,
+				LineHeight = 0.85,
+				Rotation = -8,
+				ZIndex = 2,
+			})
+		end
+	end
+	local function buyPass(pass)
+		if player:GetAttribute("Owns" .. pass.Key) == true then
+			return
+		end
+		local ok = pcall(function()
+			MarketplaceService:PromptGamePassPurchase(player, Gamepasses[pass.Key].Id)
+		end)
+		if not ok then
+			notice.Text = "The purchase prompt could not open. Please try again."
+		end
+	end
+	-- One banner. `compact` is the shorter card used in the Gamepasses grid.
+	local function banner(parent, pass, position, width, height, compact)
+		local owned = player:GetAttribute("Owns" .. pass.Key) == true
+		local stacked = width < 520
+		local frame = raw("Frame", parent, {
+			Name = pass.Key .. "Card",
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BorderSizePixel = 0,
+			ClipsDescendants = true,
+			Position = position,
+			Size = UDim2.fromOffset(width, height),
+		})
+		corner(frame, 6)
+		gradient(frame, pass.Colors, 20)
+		outline(frame, pass.Accent, 3)
+		-- Soft glow behind the art and a dark wash behind the text keep both readable.
+		local glow = raw("Frame", frame, {
+			Name = "ArtGlow",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundTransparency = 0.55,
+			BorderSizePixel = 0,
+			Position = if stacked then UDim2.new(0.5, 0, 0, height * 0.24) else UDim2.new(0, height * 0.62, 0.5, 0),
+			Size = UDim2.fromOffset(height * (if stacked then 0.42 else 0.9), height * (if stacked then 0.42 else 0.9)),
+		})
+		corner(glow, height)
+		raw("UIGradient", glow, {
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.2),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+		})
+		local wash = raw("Frame", frame, {
+			Name = "TextWash",
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+		})
+		raw("UIGradient", wash, {
+			Rotation = if stacked then 90 else 0,
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.45, 1),
+				NumberSequenceKeypoint.new(1, 0.55),
+			}),
+		})
+		local artSize = if stacked then height * 0.4 else height * 0.78
+		local artBox = raw("Frame", frame, {
+			Name = "ProductIcon",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = glow.Position,
+			Size = UDim2.fromOffset(artSize, artSize),
+			ZIndex = 2,
+		})
+		art(artBox, pass, owned, artSize)
+		sparkle(frame, UDim2.new(0, 22, 1, -26), 14)
+		sparkle(frame, UDim2.new(1, -26, 0, 18), 18)
+		sparkle(frame, UDim2.new(0.45, 0, 0, 22), 10, 0.3)
+		sparkle(frame, UDim2.new(0.12, 0, 0.35, 0), 8, 0.4)
+		badge(frame, if owned then "Owned" else "Gamepass", if owned then green else Color3.fromRGB(255, 214, 110), UDim2.fromOffset(16, 16))
+
+		local pad = 18
+		local textLeft = if stacked then pad else math.floor(width * 0.42)
+		local textTop = if stacked then height * 0.46 else pad
+		local align = if stacked then Enum.TextXAlignment.Center else Enum.TextXAlignment.Right
+		local titleSize = if compact then 28 elseif stacked then 30 else 40
+		local title = display(frame, pass.Name, titleSize, Color3.new(1, 1, 1), {
+			Name = "Title",
+			Position = UDim2.fromOffset(textLeft, textTop),
+			Size = UDim2.new(1, -(textLeft + pad), 0, titleSize + 8),
+			TextXAlignment = align,
+			TextScaled = true,
+			ZIndex = 4,
+		})
+		raw("UITextSizeConstraint", title, { MaxTextSize = titleSize, MinTextSize = 16 })
+		gradient(title, { Color3.new(1, 1, 1), pass.Accent }, 90)
+
+		local perkSize = if compact or stacked then 18 else 23
+		local perkTop = textTop + titleSize + 12
+		local perks = raw("Frame", frame, {
+			Name = "Perks",
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(textLeft, perkTop),
+			Size = UDim2.new(1, -(textLeft + pad), 0, #pass.Perks * (perkSize + 6)),
+			ZIndex = 4,
+		})
+		for index, perk in pass.Perks do
+			display(perks, perk, perkSize, if index % 2 == 0 then pass.Accent else Color3.new(1, 1, 1), {
+				Position = UDim2.fromOffset(0, (index - 1) * (perkSize + 6)),
+				Size = UDim2.new(1, 0, 0, perkSize + 4),
+				TextXAlignment = align,
+				TextWrapped = false,
+				TextScaled = true,
+				ZIndex = 4,
+			})
+		end
+		-- View swaps the perks for the full description.
+		local details = display(frame, pass.Description, if stacked then 14 else 16, Color3.new(1, 1, 1), {
+			Name = "Details",
+			Font = Enum.Font.GothamMedium,
+			Position = perks.Position,
+			Size = UDim2.new(1, -(textLeft + pad), 0, (height - 76) - perkTop),
+			TextXAlignment = align,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			TextScaled = true,
+			Visible = shopViews[pass.Key] == true,
+			ZIndex = 4,
+		})
+		raw("UITextSizeConstraint", details, { MaxTextSize = if stacked then 14 else 17, MinTextSize = 10 })
+		perks.Visible = not details.Visible
+
+		local buttonWidth = if stacked then math.floor((width - pad * 3) / 2) else 150
+		local price = Gamepasses[pass.Key].Price
+		local buy = button(frame, if owned then "Owned" elseif price then tostring(price) else "Robux", function()
+			buyPass(pass)
+		end, {
+			Name = "Buy" .. pass.Key,
+			Position = UDim2.new(1, -(pad + buttonWidth), 1, -62),
+			Size = UDim2.fromOffset(buttonWidth, 48),
+			BackgroundColor3 = if owned then navy else gold,
+			Active = not owned,
+			TextSize = 22,
+			ZIndex = 5,
+		})
+		Theme.glassButton(buy, if owned then "Disabled" else "Selected")
+		withIcon(buy, if owned then "Check" else "Robux", if owned then green else Color3.fromRGB(150, 255, 170), 22)
+		buy.ThemeBorder.Color = if owned then green else pass.Accent
+		local view = button(frame, if details.Visible then "Back" else "View", function()
+			shopViews[pass.Key] = not shopViews[pass.Key]
+			render()
+		end, {
+			Name = "View" .. pass.Key,
+			Position = UDim2.new(1, -(pad * 2 + buttonWidth * 2), 1, -62),
+			Size = UDim2.fromOffset(buttonWidth, 48),
+			TextSize = 22,
+			ZIndex = 5,
+		})
+		Theme.glassButton(view, "Normal")
+		view.ThemeBorder.Color = Color3.fromRGB(120, 140, 255)
+		return frame
+	end
+	local function shop()
+		local measured = content.AbsoluteSize
+		local width = math.max(
+			if measured and measured.X > 0 then measured.X else card.AbsoluteSize.X - 40,
+			280
+		)
+		-- Tabs: Featured (hero banners) and Gamepasses (compact grid).
+		local tabs = { { "Featured", Color3.fromRGB(235, 130, 255) }, { "Gamepasses", Color3.fromRGB(150, 235, 170) } }
+		local tabWidth = math.min(170, math.floor((width - 24) / #tabs))
+		for index, entry in tabs do
+			local name, color = entry[1], entry[2]
+			local tab = button(content, name, function()
+				shopTab = name
+				render()
+			end, {
+				Name = name .. "Tab",
+				Position = UDim2.fromOffset(8 + (index - 1) * (tabWidth + 10), 14),
+				Size = UDim2.fromOffset(tabWidth, 44),
+				TextSize = if narrow then 15 else 18,
+			})
+			Theme.glassButton(tab, if shopTab == name then "Selected" else "Normal")
+			tab.ThemeBorder.Color = color
+			tab.ThemeBorder.Transparency = if shopTab == name then 0 else 0.35
+			tab.ThemeCaption.TextColor3 = color
+			if name == "Featured" then
+				display(content, "NEW", 15, Color3.new(1, 1, 1), {
+					Name = "NewTag",
+					Font = Enum.Font.FredokaOne,
+					Position = UDim2.fromOffset(8 + tabWidth - 64, 0),
+					Size = UDim2.fromOffset(50, 18),
+					Rotation = 6,
+					ZIndex = 6,
+				})
+				sparkle(content, UDim2.fromOffset(8 + tabWidth - 6, 6), 14)
+			end
+		end
+		local shelf = scroll(content, {
+			Name = "ShopCards",
+			Position = UDim2.fromOffset(0, 70),
+			Size = UDim2.new(1, 0, 1, -100),
+		})
+		display(content, "Gamepasses are bought once and kept forever.", if narrow then 12 else 15, muted, {
+			Name = "ShopFooter",
+			Font = Enum.Font.GothamMedium,
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, 8, 1, 0),
+			Size = UDim2.new(1, -16, 0, 26),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextStrokeTransparency = 1,
+		})
+		local inner = width - 28
+		local y = 0
+		if shopTab == "Featured" then
+			-- Red ribbon over the newest pass, like a shop-window sticker.
+			local ribbon = raw("Frame", shelf, {
+				Name = "Ribbon",
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BorderSizePixel = 0,
+				Position = UDim2.fromOffset(math.floor(inner * 0.35), 0),
+				Size = UDim2.fromOffset(inner - math.floor(inner * 0.35) + 8, 44),
+			})
+			gradient(ribbon, { Color3.fromRGB(10, 6, 14), Color3.fromRGB(120, 10, 20), Color3.fromRGB(215, 25, 35) })
+			display(ribbon, "New: Black Hole Backpack!", if narrow then 16 else 24, Color3.new(1, 1, 1), {
+				Position = UDim2.fromOffset(10, 0),
+				Size = UDim2.new(1, -24, 1, 0),
+				TextScaled = true,
+			})
+			y = 40
+			local height = if inner < 520 then 440 else 300
+			for _, pass in ShopProducts do
+				banner(shelf, pass, UDim2.fromOffset(8, y), inner, height, false)
+				y += height + 18
+			end
+		else
+			local columns = if inner >= 760 then 2 else 1
+			local cardWidth = math.floor((inner - (columns - 1) * 14) / columns)
+			local height = if cardWidth < 520 then 400 else 240
+			for index, pass in ShopProducts do
+				local column = (index - 1) % columns
+				local row = math.floor((index - 1) / columns)
+				banner(
+					shelf,
+					pass,
+					UDim2.fromOffset(8 + column * (cardWidth + 14), row * (height + 14)),
+					cardWidth,
+					height,
+					true
+				)
 			end
 		end
 	end
@@ -2973,94 +3362,7 @@ function Menu.start()
 			Shop = "The Fishing Waters Robux shop.",
 		})[active]
 		if active == "Shop" then
-			iconTitle(
-				content,
-				"Shop",
-				"Gamepasses",
-				22,
-				cream,
-				{ Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -16, 0, 36) }
-			)
-			local products = {
-				{ Key = "AutoStore", Name = "Auto Store", Description = "Automatically packs caught fish into your ship's hold while you are aboard your own ship. Tries every rotation for a snug fit. If the hold is full, the fish stays in your hand." },
-				{ Key = "DoubleXP", Name = "2x XP", Description = "Earn double XP from every catch, including crab cages, mussel nets and the trawler net." },
-			}
-			for index, pass in products do
-				local owned = player:GetAttribute("Owns" .. pass.Key) == true
-				-- One product card: icon tile, details and its buy button grouped on a panel.
-				local product = make("Frame", content, {
-					Name = pass.Key .. "Card",
-					BackgroundColor3 = paper,
-					Position = UDim2.fromOffset(8, 48 + (index - 1) * (if narrow then 342 else 240)),
-					Size = UDim2.new(1, -16, 0, if narrow then 330 else 228),
-				})
-				local tileSize = if narrow then 84 else 150
-				local tile = make("Frame", product, {
-					Name = "ProductIcon",
-					BackgroundColor3 = paper,
-					Position = UDim2.fromOffset(14, 14),
-					Size = UDim2.fromOffset(tileSize, tileSize),
-				})
-				Theme.glassPanel(tile, true)
-				if pass.Key == "AutoStore" then
-					glyph(tile, "AutoStore", if owned then green else cream, UDim2.fromScale(0.5, 0.5), tileSize * 0.55)
-				else
-					text(tile, "2x XP", 24, if owned then green else gold, { Size = UDim2.fromScale(1, 1), TextXAlignment = Enum.TextXAlignment.Center, Font = Enum.Font.GothamBold })
-				end
-				local left = if narrow then 14 else tileSize + 30
-				local textTop = if narrow then tileSize + 24 else 14
-				local titleLeft = if narrow then tileSize + 30 else left
-				text(product, pass.Name, 24, cream, {
-					Position = UDim2.fromOffset(titleLeft, 14),
-					Size = UDim2.new(1, -(titleLeft + 14), 0, 32),
-					Font = Enum.Font.GothamBold,
-				})
-				local tag = make("Frame", product, {
-					Name = "PassTag",
-					BackgroundColor3 = paper,
-					Position = UDim2.fromOffset(titleLeft, 50),
-					Size = UDim2.fromOffset(if owned then 92 else 104, 24),
-				})
-				Theme.glassPanel(tag, true)
-				tag.ThemeBorder.Color = if owned then green else gold
-				tag.ThemeBorder.Transparency = 0.2
-				glyph(tag, if owned then "Check" else "Robux", if owned then green else cream, UDim2.fromOffset(14, 12), 14)
-				text(tag, if owned then "OWNED" else "GAMEPASS", 11, if owned then green else cream, {
-					Position = UDim2.fromOffset(26, 0),
-					Size = UDim2.new(1, -30, 1, 0),
-				})
-				text(
-					product,
-					pass.Description,
-					15,
-					muted,
-					{
-						Position = UDim2.fromOffset(left, if narrow then textTop else 84),
-						Size = UDim2.new(1, -(left + 14), 0, if narrow then 120 else 72),
-						TextWrapped = true,
-						TextYAlignment = Enum.TextYAlignment.Top,
-					}
-				)
-				local buy = button(product, if owned then "Owned" else "Buy " .. pass.Name .. " · Robux", function()
-					if player:GetAttribute("Owns" .. pass.Key) == true then
-						return
-					end
-					local ok = pcall(function()
-						MarketplaceService:PromptGamePassPurchase(player, Gamepasses[pass.Key].Id)
-					end)
-					if not ok then
-						notice.Text = "The purchase prompt could not open. Please try again."
-					end
-				end, {
-					Name = "Buy" .. pass.Key,
-					Position = UDim2.new(0, left, 1, -60),
-					Size = UDim2.new(1, -(left + 14), 0, 44),
-					BackgroundColor3 = if owned then navy else gold,
-					Active = not owned,
-				})
-				Theme.glassButton(buy, if owned then "Disabled" else "Selected")
-				withIcon(buy, if owned then "Check" else "Robux", if owned then green else cream)
-			end
+			shop()
 		elseif not profile then
 			empty(
 				content,
@@ -3084,7 +3386,7 @@ function Menu.start()
 			render()
 		end
 	end)
-	for _, attribute in { "OwnsAutoStore", "OwnsDoubleXP" } do
+	for _, attribute in { "OwnsAutoStore", "OwnsDoubleXP", "OwnsBlackHoleBackpack" } do
 		player:GetAttributeChangedSignal(attribute):Connect(function()
 			if active == "Shop" then
 				render()

@@ -3,6 +3,8 @@
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 
+local WaterQuality = require(script.Parent.WaterQuality)
+
 local ShoreWaves = {}
 local TAG = "ShoreWaveSource"
 local PERIOD = 9.2
@@ -136,7 +138,8 @@ function ShoreWaves.start()
 		local cameraPosition = camera and camera.CFrame.Position
 		local time = workspace:GetServerTimeNow()
 		for source, state in sources do
-			local visible = cameraPosition ~= nil
+			local visible = WaterQuality.layeredEnabled()
+				and cameraPosition ~= nil
 				and (source.Position - cameraPosition).Magnitude < DISTANCE
 				and source:IsDescendantOf(workspace)
 			-- Most of the map's shoreline is far away: leave its beams alone rather than

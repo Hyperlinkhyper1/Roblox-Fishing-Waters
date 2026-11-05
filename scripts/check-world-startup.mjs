@@ -357,7 +357,7 @@ local modules = {Biomes=Biomes}
 local script = {ServerUpdates="ServerUpdates", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
   BoatService="BoatService", FishingService="FishingService", WeatherService="WeatherService",
   AnglerService="AnglerService", LeaderboardService="LeaderboardService"}
-for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "OxygenService", "DashboardService"} do
+for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "BuildingService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "OxygenService", "DashboardService"} do
   script[name] = name
   modules[name] = {start=function() record(name) end}
 end
@@ -366,7 +366,15 @@ modules.ChartCatalog = {start=function() record("ChartCatalog") end}
 script.ScaleModels = "ScaleModels"
 modules.ScaleModels = {ensure=function() record("ScaleModels") end}
 local deferred = {}
-task.defer = function(callback) table.insert(deferred, callback) end
+task.defer = function(callback, ...)
+  -- init.server runs each startup step in a deferred thread and waits for it; run those at once
+  if debug.info(2, "n") == "step" then
+    local thread = coroutine.create(callback)
+    coroutine.resume(thread, ...)
+    return thread
+  end
+  table.insert(deferred, callback)
+end
 local function ready() return ReplicatedStorage:GetAttribute("FishingWatersWorldReady") == true end
 for _, name in {"ServerUpdates", "BaseService", "BoatService", "FishingService", "WeatherService", "AnglerService", "LeaderboardService", "AnglerService", "LeaderboardService"} do
   modules[name] = {start=function()

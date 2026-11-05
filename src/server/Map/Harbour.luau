@@ -2015,10 +2015,21 @@ function Harbour.ensureMetro(root: Instance)
 	workspace.Terrain:FillBlock(CFrame.new((pocket.min + pocket.max) / 2), pocket.max - pocket.min, M.Air)
 end
 
+-- Startup repairs scan the whole map (city and islands included) before anyone spawns. Yield a
+-- frame every 50 ms so the startup thread stays inside Roblox's ~10 s script timeout.
+local breatheAt = os.clock()
+local function breathe()
+	if task and os.clock() - breatheAt > 0.05 then
+		task.wait()
+		breatheAt = os.clock()
+	end
+end
+
 -- Upgrade only the generated dock pieces, keeping claimed bases and their controls intact.
 -- Saved Studio maps skip Map.build, so this also runs on the normal startup path.
 function Harbour.ensureDocks(root: Instance)
 	for _, base in root:GetDescendants() do
+		breathe()
 		if not base:IsA("Model") or not CollectionService:HasTag(base, Harbour.BASE_TAG) then
 			continue
 		end
@@ -2064,6 +2075,7 @@ function Harbour.ensureBaseBoatClearance(root: Instance)
 	local islands = root:GetDescendants()
 	table.insert(islands, root)
 	for _, island in islands do
+		breathe()
 		if island.Name ~= "Harbour Isle" then
 			continue
 		end
@@ -2082,6 +2094,7 @@ function Harbour.ensureBaseBoatClearance(root: Instance)
 			end
 		end
 		for _, shop in island:GetDescendants() do
+			breathe()
 			local launch = shop.Name == "Drydock" and shop:GetAttribute("LaunchWaterFrame")
 			if typeof(launch) == "CFrame" then
 				table.insert(lanes, { frame = launch, width = 45, near = 55, far = -70 })
@@ -2149,6 +2162,7 @@ end
 -- Move anchored scenery aside so the slipway and its water approach stay open.
 function Harbour.ensureLaunchClearance(root: Instance)
 	for _, shop in root:GetDescendants() do
+		breathe()
 		if not shop:IsA("Model") or shop.Name ~= "Drydock" then
 			continue
 		end
@@ -2157,6 +2171,7 @@ function Harbour.ensureLaunchClearance(root: Instance)
 			continue
 		end
 		for _, boat in root:GetDescendants() do
+			breathe()
 			if not boat:IsA("Model") or boat.Name ~= "Boat" then
 				continue
 			end
@@ -2177,6 +2192,7 @@ function Harbour.ensureLaunchClearance(root: Instance)
 				local side = if position.X < 0 then -1 else 1
 				local offset = launch:VectorToWorldSpace(Vector3.new(side * 65 - position.X, 0, 0))
 				for _, piece in boat:GetDescendants() do
+					breathe()
 					if piece:IsA("BasePart") then
 						piece.CFrame += offset
 					end
@@ -2250,6 +2266,7 @@ end
 function Harbour.ensureBoating(root: Instance)
 	Harbour.ensureCapacity(root)
 	for _, island in root:GetDescendants() do
+		breathe()
 		if island:IsA("Model") and island.Name == "Harbour Isle" then
 			-- Saved maps may still contain the old coastal boulders.
 			local forest = island:FindFirstChild("Forest")
@@ -2291,6 +2308,7 @@ end
 function Harbour.ensureBases(root: Instance)
 	local islands = { root }
 	for _, item in root:GetDescendants() do
+		breathe()
 		if item:IsA("Model") and CollectionService:HasTag(item, Harbour.BASE_TAG) then
 			BaseHouse.ensure(item)
 		elseif item.Name == "Harbour Isle" then
@@ -2298,6 +2316,7 @@ function Harbour.ensureBases(root: Instance)
 		end
 	end
 	for _, island in islands do
+		breathe()
 		clearShopPlots(island)
 		local village, bases = island:FindFirstChild("Village"), island:FindFirstChild("Bases")
 		if village and bases then
@@ -2336,6 +2355,7 @@ end
 -- Trim legacy paving in place, preserving every plaza prop and its placement.
 function Harbour.ensurePlazaPaving(root: Instance)
 	for _, plaza in root:GetDescendants() do
+		breathe()
 		if not plaza:IsA("Model") or plaza.Name ~= "Plaza" or plaza:GetAttribute("PlazaPavingVersion") == 2 then
 			continue
 		end

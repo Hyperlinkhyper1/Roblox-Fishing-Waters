@@ -1,6 +1,6 @@
--- Dredge-style cargo grid rules shared by the server (which validates every
--- placement) and the client (which previews it). Pure: no Roblox services, so the
--- saved-data tests run it directly.
+-- Inventory capacity shared by gameplay and the client. Shape areas retain each
+-- fish/part's original space cost; placement and rotation no longer limit storage.
+-- Legacy coordinates and geometry helpers remain readable for older saved data.
 --
 -- Shapes and hold masks are rows of text read top to bottom: "#" is a filled
 -- cell, "." is empty. Items sit at X, Y (1-based, the top-left of the rotated
@@ -59,7 +59,12 @@ function Cargo.open(mask: { string }, x: number, y: number): boolean
 	return row ~= nil and x >= 1 and string.sub(row, x, x) == "#"
 end
 
+-- A hold whose metatable reports Infinite (the Black Hole Backpack) never fills.
+-- Its legacy rows remain readable by backpack models and older saves.
 function Cargo.capacity(mask: { string }): number
+	if (mask :: any).Infinite then
+		return math.huge
+	end
 	return #Cargo.cells(mask)
 end
 
@@ -95,42 +100,27 @@ function Cargo.fits(mask: { string }, taken, shape: { string }, x: number, y: nu
 	return true
 end
 
--- Try every orientation, preferring contact with walls/cargo to limit fragmentation.
--- Existing placements (including installed kit) are preserved.
-function Cargo.bestSpot(mask, items, item, species)
-	local taken = Cargo.occupied(items, species)
-	local shape = Cargo.shape(item, species)
-	local best, bestScore = nil, -math.huge
-	for rotation = 0, 3 do
-		local cells = Cargo.cells(shape, rotation)
-		local own = {}
-		for _, cell in cells do
-			own[key(cell[1], cell[2])] = true
-		end
-		for y, row in mask do
-			for x = 1, #row do
-				if not Cargo.fits(mask, taken, shape, x, y, rotation) then
-					continue
-				end
-				local score = 0
-				for _, cell in cells do
-					for _, direction in { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } } do
-						local dx, dy = cell[1] + direction[1], cell[2] + direction[2]
-						if not own[key(dx, dy)] then
-							local cx, cy = x + dx, y + dy
-							if not Cargo.open(mask, cx, cy) or Cargo.at(taken, cx, cy) then
-								score += 1
-							end
-						end
-					end
-				end
-				if score > bestScore then
-					best, bestScore = { X = x, Y = y, R = rotation }, score
-				end
-			end
+function Cargo.space(item, species): number
+	return #Cargo.cells(Cargo.shape(item, species))
+end
+
+function Cargo.used(items, species, skip: number?): number
+	local used = 0
+	for index, item in items do
+		if index ~= skip then
+			used += Cargo.space(item, species)
 		end
 	end
-	return best
+	return used
+end
+
+-- The placeholder coordinates keep saves compatible with older profiles. They
+-- do not describe occupied slots and must never be used to calculate free space.
+function Cargo.bestSpot(mask, items, item, species, skip: number?)
+	if Cargo.used(items, species, skip) + Cargo.space(item, species) <= Cargo.capacity(mask) then
+		return { X = 1, Y = 1, R = 0 }
+	end
+	return nil
 end
 
 return Cargo

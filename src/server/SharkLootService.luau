@@ -29,7 +29,7 @@ function Service.start()
 		local saved, overflow = false, false
 		for attempt = 1, 4 do
 			saved = BoatService.updateProgress(player, function(profile)
-				local backpack = Backpacks.Items[profile.Angler.BackpackId] or Backpacks.Items.Starter
+				local backpack = Backpacks.layoutFor(player, profile.Angler.BackpackId)
 				profile.Angler, overflow = Data.recordSharkDrops(profile.Angler, ids, caughtAt, Catalog.Fish, backpack)
 			end)
 			if saved or player.Parent ~= Players then

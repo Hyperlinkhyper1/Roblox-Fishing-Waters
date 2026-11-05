@@ -280,6 +280,60 @@ failSave=true
 result=invoke("PaintBatch",{Entries={{Id=selected,Material="Wood",Color={1,2,3}}}})
 failSave=false
 check(not result.Ok and profile.Cash==batchWallet,"A failed paint save must not debit the wallet or commit an optimistic finish")
+
+-- Bulk painting resolves every wall on the property as one saved history item.
+local bulkWall=assert(Building.normalize(wall(9,-5,18,-5)));bulkWall.Id="p1"
+local upperWall=copy(bulkWall);upperWall.Id="p2";upperWall.Level=1
+local opening=assert(Building.normalize({Kind="Window",HostId="p1",Offset=4.5,Material="Wood",Color={246,246,242}}));opening.Id="p3"
+profile.Angler.Building.Home={NextId=4,Pieces={bulkWall,upperWall,opening},Overrides={
+ ["b:testwall"]={Removed=true},[roofA]={Material="Slate",Color={30,40,50}}
+}}
+for index=1,70 do
+ local id="b:bulk"..index
+ builtins[id]={Id=id,Kind="Wall",X1=-18,Z1=9,X2=-9,Z2=9,Level=index%2,Material="Plaster",Color={235,229,211}}
+end
+local companyBefore=copy(profile.Angler.Building.Company)
+local bulkCash=profile.Cash
+saveCount=saves
+result=invoke("PaintAllWalls",{Material="Marble",Color={17,34,51}})
+check(result.Ok and saves==saveCount+1 and profile.Cash==bulkCash,"Painting all walls must use one free atomic save even above 64 surfaces")
+for _,entry in result.State.Pieces do
+ if entry.Kind=="Wall" then
+  check(entry.Material=="Marble" and entry.Color[1]==17 and entry.Color[2]==34 and entry.Color[3]==51,"Bulk paint must cover custom walls on every floor")
+ else check(entry.Material=="Wood" and entry.HostId=="p1","Bulk wall painting must preserve attached window finishes and geometry") end
+end
+for index=1,70 do
+ local finish=result.State.Overrides["b:bulk"..index]
+ check(finish and finish.Material=="Marble" and finish.Color[3]==51,"Bulk paint must cover all surviving original wall sections")
+end
+check(result.State.Overrides["b:testwall"].Removed and result.State.Overrides["b:testwall"].Material==nil,"Bulk painting must never restore removed walls")
+check(result.State.Overrides[roofA].Material=="Slate" and result.State.Overrides[shopRoof]==nil,"Bulk painting must preserve roofs and their finishes")
+check(profile.Angler.Building.Company.Pieces[1].Material==companyBefore.Pieces[1].Material,"Painting home walls must leave the company property untouched")
+saveCount=saves
+result=invoke("PaintAllWalls",{Material="Marble",Color={17,34,51}})
+check(result.Ok and saves==saveCount,"Repeating an identical bulk finish must avoid another save or undo item")
+result=invoke("Undo",{})
+check(result.Ok and result.State.Pieces[1].Material=="Brick" and result.State.Pieces[2].Material=="Brick"
+ and result.State.Overrides["b:bulk1"]==nil and result.State.Overrides["b:bulk70"]==nil and profile.Cash==bulkCash,"One undo must restore every wall's prior finish without changing cash")
+result=invoke("Redo",{})
+check(result.Ok and result.State.Pieces[1].Material=="Marble" and result.State.Overrides["b:bulk70"].Color[3]==51,"One redo must reapply the entire bulk wall finish")
+saveCount=saves
+for _,finish in {{Material="Invalid",Color={1,2,3}},{Material="Brick",Color={999,2,3}}} do
+ result=invoke("PaintAllWalls",finish)
+ check(not result.Ok and saves==saveCount and profile.Angler.Building.Home.Pieces[1].Material=="Marble","Invalid bulk finishes must reject without applying partial changes")
+end
+failSave=true
+result=invoke("PaintAllWalls",{Material="Metal",Color={1,2,3}})
+failSave=false
+check(not result.Ok and profile.Angler.Building.Home.Pieces[1].Material=="Marble" and profile.Cash==bulkCash,"Failed bulk saves must preserve every saved finish and the wallet")
+profile.Angler.Building.Company={NextId=3,Pieces={bulkWall,upperWall},Overrides={}}
+result=invoke("PaintAllWalls",{Material="Metal",Color={1,2,3}},"Company")
+check(result.Ok and result.State.Pieces[1].Material=="Metal" and result.State.Pieces[2].Material=="Metal"
+ and profile.Angler.Building.Home.Pieces[1].Material=="Marble","Company bulk paint must affect only company walls")
+profile.Angler.Building.Company={NextId=1,Pieces={},Overrides={}}
+saveCount=saves
+result=invoke("PaintAllWalls",{Material="Brick",Color={1,2,3}},"Company")
+check(not result.Ok and saves==saveCount,"A property without walls must reject bulk paint without saving")
 print("Building service: "..checks.." ownership, transaction, persistence, price, history and collision checks passed (no Studio/DataStore).")
 `;
 const folder=await mkdtemp(join(tmpdir(),'building-service-'));

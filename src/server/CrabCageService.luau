@@ -482,7 +482,7 @@ local function collect(player: Player, prompt: ProximityPrompt, automatic: boole
 		notify(player, problem)
 		return
 	end
-	local backpack = BackpackCatalog.Items[profile.Angler.BackpackId] or BackpackCatalog.Items.Starter
+	local backpack = BackpackCatalog.layoutFor(player, profile.Angler.BackpackId)
 	-- Rolled before saving so every save retry lands the same crab and timer.
 	local function rng()
 		return random:NextNumber()
@@ -535,7 +535,7 @@ local function collect(player: Player, prompt: ProximityPrompt, automatic: boole
 			assert(current.Angler.Staff.Porter and StaffCatalog.workerLevel(current.Angler, "Porter") >= 2, "Porter unavailable")
 		end
 		assert(not CrabCages.collectProblem(current.Angler, x, z, now), "Harvest is no longer ready")
-		local layout = BackpackCatalog.Items[current.Angler.BackpackId] or BackpackCatalog.Items.Starter
+		local layout = BackpackCatalog.layoutFor(player, current.Angler.BackpackId)
 		local awarded
 		awarded, destination = award(current.Angler, layout)
 		blocked = destination == "Released"

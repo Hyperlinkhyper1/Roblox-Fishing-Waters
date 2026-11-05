@@ -2,7 +2,7 @@
 -- the boat shop (or using its prompt) asks the server to lift the hull into the
 -- dry basin; the menu opens once it is up, and closing it sets the boat back
 -- afloat. Boating brakes the hull meanwhile. The server reserves motors and
--- rudders for the cargo hold, where the player picks their spot, and saves paint;
+-- rudders for the cargo hold, confirmed in Inventory, and saves paint;
 -- this module only presents what it reports.
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -38,7 +38,7 @@ local ACCENTS = {
 local PULL_IN_SPEED = 8
 -- Menus that own the screen; the refit menu never opens over them.
 local MENUS = { "PlayerMenuOpen", "DrydockScreenOpen", "RodWorkshopOpen" }
-local HINT = "Motors and rudders use hold tiles — you pick their spot when fitting. Paint is free. The trawler's net is a permanent fitting."
+local HINT = "Motors and rudders use cargo space. Confirm each fitting in Inventory. Paint is free. The trawler's net is a permanent fitting."
 
 function BoatRefit.start()
 	if started then
@@ -120,7 +120,7 @@ function BoatRefit.start()
 	local boatName = label(header, "", UDim2.fromOffset(18, 30), UDim2.new(1, -280, 0, 32), 24, cream)
 	local cargoPanel = frame(header, "Cargo", UDim2.new(1, -244, 0, 14), UDim2.fromOffset(184, 46), Theme.Colors.Inset)
 	Theme.panel(cargoPanel, true, 23)
-	label(cargoPanel, "FREE CARGO TILES", UDim2.fromOffset(16, 4), UDim2.new(1, -24, 0, 14), 11, muted)
+	label(cargoPanel, "FREE CARGO SPACE", UDim2.fromOffset(16, 4), UDim2.new(1, -24, 0, 14), 11, muted)
 	local cargoValue = label(cargoPanel, "—", UDim2.fromOffset(16, 18), UDim2.new(1, -24, 0, 24), 20, GOOD)
 	cargoValue.RichText = true
 
@@ -246,8 +246,7 @@ function BoatRefit.start()
 	local pending = false
 	local lastRequest = -math.huge
 	local hovered: string? = nil
-	-- True while a fitted part waits for the player to choose its hold tiles;
-	-- the refit window hides so the cargo grid has the screen to itself.
+	-- True while a reserved part waits for confirmation in Inventory.
 	local placing = false
 	local restoreToken = 0
 
@@ -299,7 +298,7 @@ function BoatRefit.start()
 							math.deg(nextSpec.TurnRate)
 						)
 				end
-				view.cost.Text = string.format("Uses %d cargo tiles each", tiles)
+				view.cost.Text = string.format("Uses %d cargo space each", tiles)
 			else
 				view.stat.Text, view.cost.Text = "", ""
 			end
@@ -307,7 +306,7 @@ function BoatRefit.start()
 			view.fit.Text = if not layout
 				then "NO BOAT"
 				elseif maxed then "MAXED OUT"
-				elseif free < tiles then string.format("NEEDS %d FREE TILES", tiles)
+				elseif free < tiles then string.format("NEEDS %d FREE SPACE", tiles)
 				else string.format("FIT %s · PICK SPOT", if kind == "Motor" then "MOTOR" else "RUDDER")
 			Theme.button(view.fit, if canFit then "Selected" else "Disabled")
 			view.fit.Active, view.fit.Selectable, view.fit.AutoButtonColor = canFit, canFit, canFit
@@ -341,7 +340,7 @@ function BoatRefit.start()
 			then ""
 			elseif netOwned then "Deploy while underway. Catches common fish, and the odd uncommon."
 			elseif not trawler then "Only the teal fishing trawler has the stern gear for this net."
-			else "A permanent fitting — it never uses cargo tiles."
+			else "A permanent fitting — it never uses cargo space."
 		netCost.Text = if not layout
 			then ""
 			elseif netOwned then "Already fitted to this boat."
@@ -393,7 +392,7 @@ function BoatRefit.start()
 				setStatus(tostring(result.Message), if result.Ok then GOOD else BAD)
 				if result.Ok then
 					if action == "Install" then
-						-- The cargo grid takes over so the player can pick the spot.
+						-- Inventory takes over for fitting confirmation.
 						placing = true
 						overlay.Visible = false
 					else
@@ -527,7 +526,7 @@ function BoatRefit.start()
 	close.Activated:Connect(closeRefit)
 	overlay.Activated:Connect(closeRefit)
 
-	-- Fitting a part hides the window while the cargo grid takes the spot, then
+	-- Fitting a part hides the window while Inventory confirms the fitting, then
 	-- brings the window back once the part is placed or put back.
 	player:GetAttributeChangedSignal("RefitPending"):Connect(function()
 		if player:GetAttribute("RefitPending") ~= nil then
@@ -564,7 +563,7 @@ function BoatRefit.start()
 		end)
 	end)
 	UserInputService.InputBegan:Connect(function(input)
-		-- While a part waits for its tiles, Esc belongs to the cargo grid and
+		-- While a part waits for confirmation, Esc belongs to Inventory and
 		-- only cancels the placement.
 		if player:GetAttribute("RefitPending") ~= nil then
 			return

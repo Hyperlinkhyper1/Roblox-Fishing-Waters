@@ -20,9 +20,12 @@ return {
 		local rgb, v2 = kit.rgb, kit.v2
 		local colors = { back = rgb(200, 150, 26), side = rgb(238, 198, 58), belly = rgb(248, 228, 146) }
 		local fin, tooth = rgb(214, 160, 40), rgb(250, 246, 226)
+		b:beginSkin(colors)
 		b:layered("Body", Vector3.new(0.06, 0, 0), Vector3.new(0.62, 0.5, 0.46), colors)
 		b:layered("TailBody", Vector3.new(-0.26, -0.01, 0), Vector3.new(0.3, 0.2, 0.16), colors)
 		b:layered("TailStalk", Vector3.new(-0.36, 0, 0), Vector3.new(0.12, 0.1, 0.07), colors)
+		-- The jaw stays separate so the open mouth still shows between them.
+		b:finishSkin()
 		b:layered("LowerJaw", Vector3.new(0.27, -0.14, 0), Vector3.new(0.38, 0.16, 0.42), colors)
 		b:ellipsoid("Mouth", CFrame.new(0.365, -0.065, 0), Vector3.new(0.13, 0.19, 0.34), rgb(48, 12, 18))
 		for index = -4, 4 do

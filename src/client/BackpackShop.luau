@@ -66,7 +66,7 @@ function Shop.start()
 	local status = label(card, "", UDim2.fromOffset(20, 52), UDim2.fromOffset(490, 44), 14)
 	label(
 		card,
-		"Fish use the same shaped tiles as boat cargo. Open Backpack [C], pick up your hand fish, rotate and pack it.",
+		"Open Inventory [`] to browse and transfer fish. Bigger fish use more space; no slot placement is needed.",
 		UDim2.fromOffset(20, 98),
 		UDim2.fromOffset(500, 45),
 		14
@@ -148,7 +148,7 @@ function Shop.start()
 		label(row, item.Name, UDim2.fromOffset(142, 12), UDim2.new(1, -152, 0, 25), 19)
 		label(
 			row,
-			string.format("%d tiles · %d × %d grid", Cargo.capacity(item.Hold), #item.Hold[1], #item.Hold),
+			(if Cargo.capacity(item.Hold) == math.huge then "Unlimited space" else string.format("%d space", Cargo.capacity(item.Hold))),
 			UDim2.fromOffset(142, 40),
 			UDim2.new(1, -152, 0, 20),
 			14

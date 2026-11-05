@@ -50,8 +50,11 @@ function Props.simplifyDecorationCollision(model: Model)
 	model:SetAttribute("DecorationCollisionVersion", 1)
 end
 
-function Props.ensureDecorationCollision(root: Instance)
+function Props.ensureDecorationCollision(root: Instance, pause: (() -> ())?)
 	for _, model in root:GetDescendants() do
+		if pause then
+			pause()
+		end
 		if model:IsA("Model") and (model.Name == "Bush" or model.Name == "Flowers" or model.Name == "Sandcastle" or model.Name == "BeachBall") then
 			Props.simplifyDecorationCollision(model)
 		end
@@ -125,8 +128,11 @@ function Props.simplifyHouseCollision(house: Model)
 end
 
 -- Baked maps keep their models, positions, ownership and furnishings.
-function Props.ensureHouseCollision(root: Instance)
+function Props.ensureHouseCollision(root: Instance, pause: (() -> ())?)
 	for _, house in root:GetDescendants() do
+		if pause then
+			pause()
+		end
 		if
 			house:IsA("Model")
 			and (

@@ -6,11 +6,22 @@ import { spawnSync } from 'node:child_process';
 
 const read = path => readFile(new URL('../' + path, import.meta.url), 'utf8');
 const passes = await read('src/shared/Gamepasses.luau');
+const mutations = await read('src/shared/FishMutations.luau');
+const cargoSource = await read('src/server/CargoService.luau');
+const cargoIdentity = cargoSource.slice(cargoSource.indexOf('local function fishKey('), cargoSource.indexOf('local function buildFishTool('));
+const cargoMutation = cargoSource.slice(cargoSource.indexOf('function CargoService.addHeldMutation('), cargoSource.indexOf('\nfunction CargoService.push('));
+if (!cargoIdentity.includes('function CargoService.isCarrying') || !cargoMutation.includes('BoatService.updateProgress')) {
+  throw new Error('Could not locate the production cargo mutation functions');
+}
 const ownership = (await read('src/server/GamepassService.luau'))
   .replace('require(game:GetService("ReplicatedStorage").Shared.Gamepasses)', 'Passes');
 const commands = (await read('src/server/AdminCommands.luau'))
   .replace('require(ReplicatedStorage.Shared.Gamepasses)', 'Passes')
+  .replace('require(ReplicatedStorage.Shared.Calendar)', 'Calendar')
+  .replace('require(ReplicatedStorage.Shared.DayNight)', 'DayNight')
+  .replace('require(ReplicatedStorage.Shared.FishMutations)', 'FishMutations')
   .replace('require(script.Parent.GamepassService)', 'Ownership')
+  .replace('require(script.Parent.CargoService)', 'Cargo')
   .replace('require(script.Parent.ScaleModels)', 'ScaleModels');
 const program = `
 local checks = 0
@@ -75,23 +86,63 @@ local Instance = { new = function(kind)
  return command
 end }
 local Passes = (function() ${passes} end)()
+local FishMutations = (function() ${mutations} end)()
+local Calendar, DayNight = {}, {}
+local mutationsApplied = {}
+local Cargo = { addHeldMutation = function(who, key)
+ table.insert(mutationsApplied, {who, key})
+ return true, "Mutation applied."
+end }
 local Ownership = (function() ${ownership} end)()
 Ownership.start()
 local notices = {}
 local Commands = (function() ${commands} end)()
 Commands.start(function(who, message) table.insert(notices, {who, message}) end)
 Commands.start(function() error("Duplicate registration") end)
-check(#chat.commands == 4, "Repeated startup registers each command only once")
-local help, gamepass, teleport, fly
+check(#chat.commands == 6, "Repeated startup registers each command only once")
+local help, gamepass, teleport, fly, mutation
 for _, command in chat.commands do
  check(command.Parent == chat and command.AutocompleteVisible == false, "Commands are registered and hidden from public autocomplete")
  if command.PrimaryAlias == "/commands" then help = command end
  if command.PrimaryAlias == "/gamepass" then gamepass = command end
  if command.PrimaryAlias == "/tp" then teleport = command end
  if command.PrimaryAlias == "/fly" then fly = command end
+ if command.PrimaryAlias == "/mutation" then mutation = command end
 end
-check(help and gamepass and teleport and fly, "All requested aliases exist")
+check(help and gamepass and teleport and fly and mutation, "All requested aliases exist")
 local function send(command, who, message) command.Triggered:Fire({UserId = who.UserId}, message) end
+send(mutation, other, "/mutation Neon")
+send(mutation, other, "/mutation list")
+check(#mutationsApplied == 0 and #notices == 0, "Only the authorized user can use mutation commands")
+send(mutation, admin, "/MUTATION LIST ")
+check(string.find(notices[#notices][2], "Void Touched", 1, true) and string.find(notices[#notices][2], "Jack's Pet", 1, true), "List displays mutation names")
+for _, pair in {{"/mutation neon", "Neon"}, {"/MUTATION void touched ", "VoidTouched"}, {"/mutation jack's pet", "JacksPet"}, {"/mutation JackOFish", "JackOFish"}} do
+ send(mutation, admin, pair[1])
+ check(mutationsApplied[#mutationsApplied][1] == admin and mutationsApplied[#mutationsApplied][2] == pair[2], "Mutation names resolve to canonical keys")
+end
+local count = #mutationsApplied
+for _, message in {"/mutation", "/mutation list extra", "/mutation nonsense"} do send(mutation, admin, message) end
+check(#mutationsApplied == count, "Invalid mutation requests do not change fish")
+notices = {}
+do
+ local CargoService = {}
+ local saved = { Angler = { Hand = { FishId = "Test", Kg = 1, CaughtAt = 123, Mutation = "Normal", Value = 100, Rarity = 10 } } }
+ local BoatService = { getProfile = function() return saved end, updateProgress = function(_, transform) transform(saved) return true, "Saved." end }
+ local Catalog = { Fish = { Test = { RarityDenominator = 10 } }, Mutations = { Neon = { RarityMultiplier = 145 }, ["Corrupted+Neon"] = { RarityMultiplier = 1304 } } }
+ ${cargoIdentity}
+ ${cargoMutation}
+ local fishTool = { IsA = function(_, kind) return kind == "Tool" end, GetAttribute = function(_, name) if name == "CargoFish" then return fishKey(saved.Angler.Hand) end end }
+ admin.Character = { GetChildren = function() return { fishTool } end }
+ check(not CargoService.addHeldMutation(other, "Neon"), "The cargo helper independently rejects other users")
+ check(not CargoService.addHeldMutation(admin, "Missing"), "Unknown mutation keys cannot be saved")
+ check(CargoService.addHeldMutation(admin, "Neon"), "An equipped fish can gain Neon")
+ check(saved.Angler.Hand.Mutation == "Neon" and saved.Angler.Hand.NeonColor and saved.Angler.Hand.Value == 200 and saved.Angler.Hand.Rarity == 1450, "Mutation traits, value and rarity are saved")
+ check(not CargoService.addHeldMutation(admin, "Neon"), "Duplicate mutations do not change the fish")
+ check(CargoService.addHeldMutation(admin, "Corrupted"), "A second mutation can be added")
+ check(saved.Angler.Hand.Mutation == "Corrupted+Neon" and #saved.Angler.Hand.Corruptions == 1 and saved.Angler.Hand.Value == 350, "Existing traits survive and corruption updates the value")
+ admin.Character = { GetChildren = function() return {} end }
+ check(not CargoService.addHeldMutation(admin, "Rainbow"), "A fish must be equipped before mutation")
+end
 send(fly, other, "/fly")
 send(fly, other, "/fly speed 100")
 check(other:GetAttribute("AdminFlyEnabled") == nil and other:GetAttribute("AdminFlySpeed") == nil, "Spoofed names cannot control flight")
@@ -143,11 +194,11 @@ send(gamepass, admin, {})
 check(#notices == 0 and not Ownership.ownsAutoStore(other), "Unauthorized, unknown, missing and malformed senders receive nothing and gain no pass")
 check(not Ownership.grantForSession(other, "AutoStore"), "Grant helper independently rejects other players")
 send(help, admin, "/commands")
-for _, usage in {"/commands", "/gamepass list", "/gamepass get", "/set cash", "/set weather list", "/set weather <type>", "/tp city", "/tp models", "/fly", "/fly speed"} do
+for _, usage in {"/commands", "/gamepass list", "/gamepass get", "/mutation list", "/mutation <mutation>", "/set cash", "/set weather list", "/set weather <type>", "/tp city", "/tp models", "/fly", "/fly speed"} do
  check(string.find(notices[#notices][2], usage, 1, true), "Help includes " .. usage)
 end
 send(gamepass, admin, "/GAMEPASS LIST  ")
-check(notices[#notices][2] == "Gamepasses: 2x XP, Auto Store.", "List shows the configured pass name")
+check(notices[#notices][2] == "Gamepasses: 2x XP, Auto Store, Black Hole Backpack.", "List shows the configured pass name")
 for _, message in {"/gamepass", "/gamepass get", "/gamepass get   ", "/gamepass list extra", "/gamepass get Missing", "/gamepass get Auto Store otherPlayer"} do
  send(gamepass, admin, message)
  check(not Ownership.ownsAutoStore(admin), "Malformed or unknown requests grant nothing")

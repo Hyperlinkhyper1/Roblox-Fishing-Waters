@@ -449,7 +449,7 @@ local function collect(player: Player, prompt: ProximityPrompt, automatic: boole
 		notify(player, problem)
 		return
 	end
-	local backpack = BackpackCatalog.Items[profile.Angler.BackpackId] or BackpackCatalog.Items.Starter
+	local backpack = BackpackCatalog.layoutFor(player, profile.Angler.BackpackId)
 	-- Roll once so a blocked harvest or save retry cannot reroll the catches.
 	local function rng()
 		return random:NextNumber()
@@ -515,7 +515,7 @@ local function collect(player: Player, prompt: ProximityPrompt, automatic: boole
 			assert(current.Angler.Staff.Porter and StaffCatalog.workerLevel(current.Angler, "Porter") >= 3, "Porter unavailable")
 		end
 		assert(not MusselNets.collectProblem(current.Angler, x, z, now), "Harvest is no longer ready")
-		local layout = BackpackCatalog.Items[current.Angler.BackpackId] or BackpackCatalog.Items.Starter
+		local layout = BackpackCatalog.layoutFor(player, current.Angler.BackpackId)
 		local awarded
 		awarded, destinations = award(current.Angler, layout)
 		blocked = awarded == nil

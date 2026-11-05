@@ -28,6 +28,7 @@ local modules = {
 	"AmbientFish",
 	"CargoHold",
 	"BackpackShop",
+	"BlackHoleBackpack",
 	"MutationEffects",
 	"FishMeshes",
 	"Sprint",

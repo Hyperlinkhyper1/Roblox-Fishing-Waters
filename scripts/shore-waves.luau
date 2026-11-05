@@ -99,6 +99,7 @@ assert(offshore == -10 and onshore > 2.7, "Wave must wash from shallows onto bea
 assert(invisible == 0 and dissolved == 0, "Loop reset must happen while invisible")
 print("PASS shoreward motion, runup, fade and invisible loop reset")
 
+setWaterQuality(3)
 Client.start()
 Client.start()
 local source = sources[math.ceil(#sources / 2)]
@@ -116,6 +117,9 @@ local along = source:GetAttribute("Along")
 local delay = along / 350 + math.sin(along / 55) * 0.08
 now = (delay + 0.2) * Client.period
 heartbeat:Fire(1 / 30)
+assert(not wave.Enabled, "Low-quality joins must hide overlapping shore foam")
+setWaterQuality(10)
+heartbeat:Fire(1 / 30)
 local before = wave.Attachment0.CFrame.Position
 now += 1
 heartbeat:Fire(1 / 30)
@@ -130,6 +134,14 @@ heartbeat:Fire(1 / 144)
 assert((wave.Attachment0.CFrame.Position - highRefreshBefore).Magnitude > 0.001,
 	"Shore foam must advance on every rendered frame, including 144 Hz displays")
 assert(wave.ZOffset > 0, "Foam must be separated from coplanar shoreline surfaces")
+for quality = 0, 6 do
+	setWaterQuality(quality)
+	heartbeat:Fire(1 / 30)
+	assert(not wave.Enabled, "Lower and automatic graphics must hide shore foam immediately")
+end
+setWaterQuality(10)
+heartbeat:Fire(1 / 30)
+assert(wave.Enabled and #beams() == 2, "Raising graphics must restore the existing shore foam")
 camera.CFrame = source.CFrame + Vector3.new(1000, 0, 0)
 heartbeat:Fire(1 / 30)
 assert(not wave.Enabled, "Distant surf must be culled")

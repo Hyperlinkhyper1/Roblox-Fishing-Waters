@@ -112,6 +112,28 @@ local Catalog = {
 				"########",
 			},
 		},
+		-- Black Hole Backpack gamepass (999 Robux). Not sold for cash and not in
+		-- Order: owning the pass replaces whatever pack is saved (layoutFor).
+		-- The rows retain the legacy shape; the Infinite flag on the mask
+		-- makes Cargo.capacity unlimited.
+		BlackHole = {
+			Name = "Black hole backpack",
+			Price = 0,
+			Gamepass = "BlackHoleBackpack",
+			Description = "A captive singularity in a containment harness. Infinite fish storage.",
+			Hold = table.freeze(setmetatable({
+				"##########",
+				"##########",
+				"##########",
+				"##########",
+				"##########",
+				"##########",
+				"##########",
+				"##########",
+				"##########",
+				"##########",
+			}, { __index = { Infinite = true } })),
+		},
 		Abyss = {
 			Name = "Abyss reactor",
 			Price = 100000,
@@ -134,6 +156,19 @@ local Catalog = {
 
 function Catalog.rank(id): number
 	return table.find(Catalog.Order, id) or 0
+end
+
+-- The id a player actually carries: the gamepass pack overrides the saved one.
+-- The server sets OwnsBlackHoleBackpack, so clients read the same answer.
+function Catalog.carriedId(player: Player?, savedId: string?): string
+	if player and player:GetAttribute("OwnsBlackHoleBackpack") == true then
+		return "BlackHole"
+	end
+	return if savedId and Catalog.Items[savedId] and not Catalog.Items[savedId].Gamepass then savedId else "Starter"
+end
+
+function Catalog.layoutFor(player: Player?, savedId: string?)
+	return Catalog.Items[Catalog.carriedId(player, savedId)]
 end
 
 return Catalog

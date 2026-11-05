@@ -235,7 +235,17 @@ if METRO_ONLY then return end
 
 step(10)
 local models = fish()
-assert(#models >= 12 and #models <= 40, "Schools fill the water within the cosmetic fish budget")
+-- Eight schools: solo Tuna count one fish each, Sardine shoals three to five.
+assert(#models >= 8 and #models <= 40, "Schools fill the water within the cosmetic fish budget: " .. #models)
+-- Schools spread round the camera instead of piling into one spot: any two fish
+-- are either schoolmates (a few studs apart) or a full school gap away.
+for _, a in models do
+	for _, b in models do
+		local pa, pb = rootOf(a).CFrame.Position, rootOf(b).CFrame.Position
+		local gap = Vector3.new(pa.X - pb.X, 0, pa.Z - pb.Z).Magnitude
+		assert(gap < 14 or gap > 20, "Schools keep apart: two fish " .. gap .. " studs apart")
+	end
+end
 for _, model in models do
 	assert(model.Name == "Sardine" or model.Name == "Tuna", "Only open-sea swimmers that bite now: " .. model.Name)
 	local root = rootOf(model)
@@ -254,6 +264,21 @@ for _, model in models do
 		end
 	end
 	assert(welds == parts, "Every visible part is welded")
+	-- Inactive welds don't carry parts in Roblox either, so a fish must be placed
+	-- whole before it is parented. Its visible body starts at the school, not at
+	-- the template origin (mid-bay, on the surface); mock welds never carry it, so
+	-- allow the 10 s of drift since it was placed.
+	local rootPosition = root.CFrame.Position
+	for _, item in model:GetDescendants() do
+		if item:IsA("BasePart") and item ~= root then
+			local p = item.CFrame.Position
+			assert(
+				Vector3.new(p.X - rootPosition.X, 0, p.Z - rootPosition.Z).Magnitude < 16,
+				model.Name .. "'s body was left behind at " .. tostring(p)
+			)
+			assert(p.Y + item.Size.Y / 2 < -1, model.Name .. "'s body sits under the surface: " .. p.Y)
+		end
+	end
 	local y = root.CFrame.Position.Y
 	assert(y < -3 and y > floorY + 2, "Schools swim fully submerged, clear of the seabed")
 	-- The Tuna mock carries a sail far taller than its body. Mock welds don't
@@ -266,13 +291,13 @@ for _, id in { "BlueCrab", "NightEel", "Icefish", "SharkFin", "Pike", "Tire", "L
 	assert(not created[id], id .. " must not swim here")
 end
 
--- Bodies face the way they drift, at a crawl of about 0.1 studs a second.
+-- Bodies face the way they swim, a slow 0.8 studs a second on one heading.
 local sample = rootOf(models[1])
 local before = sample.CFrame.Position
 step(10)
 local travelled = sample.CFrame.Position - before
 local drift = Vector3.new(travelled.X, 0, travelled.Z).Magnitude
-assert(drift > 0.7 and drift < 1.1, "Fish drift at 0.1 studs per second: " .. drift)
+assert(drift > 5.6 and drift < 8.8, "Fish swim at 0.8 studs per second: " .. drift)
 local flat = Vector3.new(travelled.X, 0, travelled.Z).Unit
 local right = sample.CFrame.RightVector
 assert(Vector3.new(right.X, 0, right.Z).Unit:Dot(flat) > 0.75, "The head (+X) leads")
@@ -340,9 +365,17 @@ for frame = 1, 20 * 60 do
 		local root = rootOf(model)
 		assert(root.CFrame.Position.X < shoreX + 3, "Schools never reach the beach")
 		local previous = before[model]
-		if previous and previous ~= root.CFrame then
+		-- A culled school catches up out of sight when it re-enters view (an
+		-- 81-degree cone, wider than any screen); judge only ones seen throughout.
+		local eye = workspace.CurrentCamera.CFrame.Position
+		local seen = previous
+			and facing:Dot((previous.Position - eye).Unit) > 0.3
+			and facing:Dot((root.CFrame.Position - eye).Unit) > 0.3
+		if seen and previous ~= root.CFrame then
 			local moved = (root.CFrame.Position - previous.Position).Magnitude
-			assert(moved < 0.005, "Fish crawl instead of darting: " .. moved)
+			-- 0.8 studs/s is 0.0133 a frame at 60 fps; schools past 60 studs step every
+			-- third frame (FAR_STRIDE), so up to 0.04 at once, plus the bob.
+			assert(moved < 0.045, "Fish swim slowly instead of darting: " .. moved)
 			local turn = math.acos(math.clamp(previous.LookVector:Dot(root.CFrame.LookVector), -1, 1))
 			assert(turn < 0.01, "Fish turn gently instead of swinging round: " .. turn)
 		end

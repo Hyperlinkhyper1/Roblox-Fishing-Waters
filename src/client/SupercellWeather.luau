@@ -4,7 +4,7 @@
 -- Every device gets the funnels and the storm's dark rotating base; computers
 -- with volumetric clouds also get the full tower, anvil and overshooting top.
 --
--- Like the cloud field, the storm is soft billows (VolumetricClouds.billows)
+-- The storm is soft billows (VolumetricClouds.billows)
 -- around a few opaque cores: nine parts on a computer and five on a phone,
 -- where it used to move close to a hundred translucent spheres every frame.
 -- Billows are locked to their part, so turning the shelf turns its puffs.

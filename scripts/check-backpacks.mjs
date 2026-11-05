@@ -8,6 +8,7 @@ const read = async p => (await readFile(new URL('../' + p, import.meta.url), 'ut
 const primitives = (await read('scripts/harbour-geometry.luau')).split('local CFrame = {}')[0];
 const mocks = (await read('scripts/drydock-geometry.luau')).split('local function loadLowPoly()')[0].replace('-- SHARED_PRIMITIVES --', () => primitives);
 const replacements = {
+ 'ReplicatedStorage.Shared.Inventory': 'Inventory', 'script.Parent.GamepassService': '{ownsAutoStore=function() return false end, ownsBlackHoleBackpack=function() return false end}',
  'script.Parent.BackpackCatalog': 'Backpacks', 'ReplicatedStorage.Shared.BackpackModels': 'Models',
  'ReplicatedStorage.Shared.BackpackCatalog': 'Backpacks', 'ReplicatedStorage.Shared.Cargo': 'Grid',
  'script.Parent.PlazaHouses': 'PlazaHouses', 'script.Parent.Props': 'Props',
@@ -18,7 +19,7 @@ const replacements = {
  'game:GetService("ReplicatedFirst"):WaitForChild("UITheme")': 'Theme',
 };
 function inject(source) { for (const [key,value] of Object.entries(replacements)) source = source.replaceAll('require(' + key + ')', value); return source; }
-let program = mocks + await read('scripts/backpacks.luau');
+let program = mocks + '\nlocal Inventory = (function()\n' + await read('src/shared/Inventory.luau') + '\nend)()\n' + await read('scripts/backpacks.luau');
 for (const [marker,path] of Object.entries({ GRID:'src/shared/Cargo.luau', BAGS:'src/shared/BackpackCatalog.luau', MODELS:'src/shared/BackpackModels.luau', DATA:'src/server/AnglerData.luau', PROPS:'src/server/Map/Props.luau', BUILDER:'src/server/Map/BackpackShop.luau', SERVICE:'src/server/BackpackService.luau', CARGO_SERVICE:'src/server/CargoService.luau', CLIENT_CARGO:'src/client/CargoHold.luau', CLIENT_SHOP:'src/client/BackpackShop.luau' })) {
  let source = await read(path);
  if (marker === 'DATA') {

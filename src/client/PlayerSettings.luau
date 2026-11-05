@@ -15,8 +15,10 @@ local performance, device, preset
 local function applyPerformance()
 	Lighting.GlobalShadows = performance.Shadows
 	Players.LocalPlayer:SetAttribute("WeatherEffectsEnabled", performance.WeatherEffects)
-	-- Computers add the distant cloud field and extra detail. The local rain
-	-- cloud deck remains present on every device, including Performance mode.
+	-- Read by BlackHoleBackpack for every worn black hole pack in view.
+	Players.LocalPlayer:SetAttribute("BackpackAnimationEnabled", performance.BackpackAnimation)
+	-- Computers get the full supercell tower and denser billows. The rain deck
+	-- under the supercell remains present on every device, including Performance mode.
 	Players.LocalPlayer:SetAttribute("VolumetricCloudsEnabled", device == "Computer" and performance.WeatherEffects)
 end
 
@@ -42,7 +44,9 @@ local function detectPerformance()
 		tier = math.min(tier, if quality <= 3 then 1 elseif quality <= 6 then 2 else 3)
 	end
 	preset = if tier == 1 then "Performance" elseif tier == 2 then "Balanced" else "Quality"
-	performance = { Shadows = tier == 3, WeatherEffects = tier >= 2 }
+	-- The black hole pack animation is off by default on phones and tablets
+	-- regardless of their graphics level; it can still be turned on in Settings.
+	performance = { Shadows = tier == 3, WeatherEffects = tier >= 2, BackpackAnimation = device ~= "Mobile / tablet" }
 end
 
 function Settings.description()

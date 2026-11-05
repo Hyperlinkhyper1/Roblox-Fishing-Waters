@@ -109,8 +109,16 @@ function Data.levelProgress(xp)
 	local threshold = Data.xpForLevel(level)
 	return level, xp - threshold, Data.xpForLevel(level + 1) - threshold
 end
-Data.DefaultSettings =
-	{ Shadows = true, WeatherEffects = true, MasterVolume = 100, MusicVolume = 100, EffectsVolume = 100 }
+Data.DefaultSettings = {
+	Shadows = true,
+	WeatherEffects = true,
+	-- Black Hole Backpack animation; the client turns it off on join for phones.
+	BackpackAnimation = true,
+	AutoStore = true,
+	MasterVolume = 100,
+	MusicVolume = 100,
+	EffectsVolume = 100,
+}
 local defaults = {
 	TotalCaught = 0,
 	TotalCaughtKg = 0,
@@ -643,21 +651,13 @@ local function catchRecord(fishId, mutation, kg, value, caughtAt, species, mutat
 	return record
 end
 
--- A cast is possible while the hand is empty or the backpack has an open tile.
+-- A cast is possible while the hand is empty or the backpack has free space.
 function Data.hasCatchSpace(raw, backpackLayout, species)
 	if not raw.Hand then
 		return true
 	end
 	local grid = cargo()
-	local taken = grid.occupied(raw.Backpack, species)
-	for y, row in backpackLayout.Hold do
-		for x = 1, #row do
-			if grid.open(backpackLayout.Hold, x, y) and not grid.at(taken, x, y) then
-				return true
-			end
-		end
-	end
-	return false
+	return grid.used(raw.Backpack, species) < grid.capacity(backpackLayout.Hold)
 end
 
 -- Shared bestiary, streak, XP and findings bookkeeping for every landed fish.
@@ -784,11 +784,9 @@ function Data.hold(raw, boatId, layout)
 	return copy(raw.Holds and raw.Holds[boatId] or layout.StarterParts or {})
 end
 
--- Moves one fish or boat part. `from` is "Hand" or an index into the hold; `to` is
--- "Hand", "Release" (back into the water) or { X, Y, R } in the hold. `layout` is
--- the boat's catalog entry, or nil when no hold is in reach. Returns nil and a
--- player-facing reason when the move is not allowed. With backpack=true, the
--- same placement rules operate on Backpack using its catalog layout.
+-- Legacy move interface used by automatic catches and older callers. X/Y/R are
+-- retained as save metadata; capacity alone decides whether a stored item fits.
+-- New UI transfers use moveInventory with a source identity check.
 function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 	local data = Data.decode(raw)
 	local items = if backpack then data.Backpack elseif layout then Data.hold(data, boatId, layout) else nil
@@ -797,7 +795,7 @@ function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 		if not data.Hand then
 			return nil, "Your hands are empty."
 		end
-		item = { Fish = data.Hand }
+		item = { Fish = data.Hand, Locked = data.Hand.Locked }
 	elseif type(from) == "number" and items and items[from] then
 		item, index = items[from], from
 	elseif type(from) == "number" then
@@ -808,6 +806,8 @@ function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 	if to == "Release" or to == "Hand" then
 		if item.PartId then
 			return nil, "Boat parts stay in the hold."
+		elseif to == "Release" and (item.Locked or item.Fish.Locked) then
+			return nil, "Unlock this favorite before releasing it."
 		elseif to == "Hand" and data.Hand then
 			return nil, "Your hands are already full."
 		end
@@ -816,6 +816,7 @@ function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 		end
 		if to == "Hand" then
 			data.Hand = item.Fish
+			data.Hand.Locked = item.Locked or item.Fish.Locked or nil
 		elseif from == "Hand" then
 			data.Hand = nil
 		end
@@ -828,11 +829,14 @@ function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 			return nil, "That isn't a spot in the hold."
 		end
 		local grid = cargo()
-		local taken = grid.occupied(items, species, index)
-		if not grid.fits(layout.Hold, taken, grid.shape(item, species), x, y, r) then
-			return nil, "It doesn't fit there."
+		if not grid.bestSpot(layout.Hold, items, item, species, index) then
+			return nil, "There isn't enough space."
 		end
 		local placed = { Fish = item.Fish, PartId = item.PartId, Locked = item.Locked, X = x, Y = y, R = r }
+		if placed.Fish then
+			placed.Locked = item.Locked or item.Fish.Locked or nil
+			placed.Fish.Locked = nil
+		end
 		if index then
 			items[index] = placed
 		else
@@ -850,8 +854,7 @@ function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 	return Data.decode(data)
 end
 
--- Places a newly fitted boat part at the exact hold spot the player picked.
--- The caller has already checked the upgrade limit; this only enforces the grid.
+-- Confirms a reserved refit using capacity, with no placement puzzle.
 function Data.placePart(raw, boatId, layout, partId, x, y, r, species)
 	local data = Data.decode(raw)
 	local grid = cargo()
@@ -862,11 +865,11 @@ function Data.placePart(raw, boatId, layout, partId, x, y, r, species)
 	elseif not (cell(x) and cell(y) and number(r, true) and r <= 3) then
 		return nil, "That isn't a spot in the hold."
 	end
-	local taken = grid.occupied(items, species)
-	if not grid.fits(layout.Hold, taken, part.Shape, x, y, r) then
-		return nil, "It doesn't fit there."
+	local placement = grid.bestSpot(layout.Hold, items, { PartId = partId }, species)
+	if not placement then
+		return nil, "There isn't enough space."
 	end
-	table.insert(items, { PartId = partId, X = x, Y = y, R = r })
+	table.insert(items, { PartId = partId, X = placement.X, Y = placement.Y, R = placement.R })
 	data.Holds[boatId] = items
 	return Data.decode(data)
 end
@@ -956,6 +959,61 @@ function Data.autoStore(raw, boatId, layout, species)
 	return moved or raw, moved ~= nil
 end
 
+-- Direct inventory transfers are atomic. Identity checks reject stale cards
+-- after another save removes/reorders fish; no intermediate hand is required.
+function Data.moveInventory(raw, source, index, destination, expected, boatId, layout, backpackLayout, species, matches)
+	local data = Data.decode(raw)
+	local function contents(container)
+		if container == "Backpack" then return data.Backpack end
+		if container == "Boat" and layout and boatId then
+			data.Holds[boatId] = data.Holds[boatId] or Data.hold(data, boatId, layout)
+			return data.Holds[boatId]
+		end
+		return nil
+	end
+	local items = contents(source)
+	local item = if source == "Hand" and data.Hand then { Fish = data.Hand, Locked = data.Hand.Locked }
+		elseif items then items[index] else nil
+	local identity = if source == "Hand" then data.Hand else item
+	if not item or not item.Fish or not matches(identity, expected) then
+		return nil, "That fish changed. Select it again."
+	elseif source == destination then
+		return nil, "That fish is already there."
+	elseif destination == "Release" and (item.Locked or item.Fish.Locked) then
+		return nil, "Unlock this favorite before releasing it."
+	end
+	if destination == "Hand" then
+		if data.Hand then return nil, "Your hands are already full." end
+		data.Hand = item.Fish
+		data.Hand.Locked = item.Locked or item.Fish.Locked or nil
+	elseif destination ~= "Release" then
+		local target = contents(destination)
+		local spec = if destination == "Backpack" then backpackLayout else layout
+		if not target or not spec then return nil, "That inventory is unavailable." end
+		local placement = cargo().bestSpot(spec.Hold, target, item, species)
+		if not placement then return nil, "There isn't enough space." end
+		table.insert(target, { Fish = item.Fish, Locked = item.Locked or item.Fish.Locked,
+			X = placement.X, Y = placement.Y, R = placement.R })
+		item.Fish.Locked = nil
+	end
+	if source == "Hand" then data.Hand = nil else table.remove(items, index) end
+	return data
+end
+
+function Data.lockInventory(raw, source, index, locked, expected, boatId, layout, matches)
+	local data = Data.decode(raw)
+	local items = if source == "Backpack" then data.Backpack
+		elseif source == "Boat" and layout then Data.hold(data, boatId, layout) else nil
+	local item = if source == "Hand" then data.Hand elseif items then items[index] else nil
+	if not item or type(locked) ~= "boolean" or not matches(item, expected) then
+		return nil, "That fish changed. Select it again."
+	end
+	item.Locked = if locked then true else nil
+	if item.Fish then item.Fish.Locked = nil end
+	if source == "Boat" then data.Holds[boatId] = items end
+	return data
+end
+
 -- Counted here rather than through the catalog, so inlined test harnesses that
 -- never place furniture don't need to resolve it.
 local function placed(raw, itemId)
@@ -1041,7 +1099,7 @@ end
 function Data.stockFreezer(raw, includeHand)
 	local data = Data.decode(raw)
 	local moved = 0
-	if includeHand ~= false and data.Hand and Data.canFreeze(data, data.Hand) then
+	if includeHand ~= false and data.Hand and not data.Hand.Locked and Data.canFreeze(data, data.Hand) then
 		table.insert(data.Freezer, data.Hand)
 		data.Hand = nil
 		moved += 1
@@ -1077,7 +1135,7 @@ function Data.unloadFish(raw, boatId, index, record, toStorage)
 	local items = data.Holds[boatId]
 	local item = items and items[index]
 	local shelf = if toStorage then data.Storage else data.Freezer
-	if not item or not item.Fish or not sameFish(item.Fish, record) then
+	if not item or not item.Fish or item.Locked or item.Fish.Locked or not sameFish(item.Fish, record) then
 		return nil
 	end
 	if
@@ -1094,7 +1152,7 @@ function Data.unloadFishToKitchenStorage(raw, boatId, index, record, catalogFish
 	local data = Data.decode(raw)
 	local items = data.Holds[boatId]
 	local item = items and items[index]
-	if not item or not item.Fish or not sameFish(item.Fish, record) then
+	if not item or not item.Fish or item.Locked or item.Fish.Locked or not sameFish(item.Fish, record) then
 		return nil
 	end
 	if not Data.canKitchenStorageAccept(data, item.Fish, catalogFish) then
@@ -1126,7 +1184,7 @@ function Data.storeFish(raw, includeHand)
 	local data = Data.decode(raw)
 	local capacity = Data.storageCapacity(data)
 	local moved = 0
-	if includeHand ~= false and data.Hand then
+	if includeHand ~= false and data.Hand and not data.Hand.Locked then
 		if capacity == 0 then
 			return nil, "Place a storage rack in your storage room first."
 		elseif #data.Storage >= capacity then
@@ -1355,7 +1413,7 @@ function Data.sellToCove(raw, day, limit, onlyHand)
 		data.Stats.CoinsEarned += price
 		data.Stats.FishSold += 1
 	end
-	if data.Hand and sales.Count + sold < limit then
+	if data.Hand and not data.Hand.Locked and sales.Count + sold < limit then
 		sell(data.Hand)
 		data.Hand = nil
 	end
@@ -1378,7 +1436,7 @@ end
 -- Hands over the first fish `matches` accepts, from the hand, then the backpack (never a locked one).
 function Data.deliverFish(raw, matches)
 	local data = Data.decode(raw)
-	if data.Hand and matches(data.Hand) then
+	if data.Hand and not data.Hand.Locked and matches(data.Hand) then
 		local record = data.Hand
 		data.Hand = nil
 		return data, record
@@ -1439,6 +1497,8 @@ function Data.startCooking(raw, key, recipeId, species, now)
 		return nil, "This station is already in use."
 	elseif not data.Hand then
 		return nil, "Carry a fish to the station first."
+	elseif data.Hand.Locked then
+		return nil, "Unlock this favorite before cooking it."
 	end
 	local fish = data.Hand
 	local problem = book.problem(recipeId, station, species[fish.FishId] and species[fish.FishId].Rarity)

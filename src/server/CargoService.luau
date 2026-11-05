@@ -1,6 +1,5 @@
--- The angler's hand, backpack, and launched boat's cargo hold. The backpack is
--- reachable everywhere; the boat hold is only reachable while aboard. Clients only
--- preview placements; every move is checked against the saved profile here.
+-- Inventory for the hand, backpack and active boat. Every transfer checks the
+-- saved fish identity, capacity and boat access on the server.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -14,14 +13,16 @@ local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
+local Inventory = require(ReplicatedStorage.Shared.Inventory)
+local GamepassService = require(script.Parent.GamepassService)
 
 local CargoService = {}
 local started = false
 local requests = {}
 local update: RemoteEvent
 
--- The refit dock reserves a motor or rudder in RefitPending while the player
--- picks its hold spot. Attributes cannot hold tables, so the reservation is a
+-- The refit dock reserves a motor or rudder in RefitPending until the player
+-- confirms it in Inventory. Attributes cannot hold tables, so the reservation is a
 -- server-owned "BoatId|Kind|PartId" string.
 local function pendingRefit(player: Player)
 	local value = player:GetAttribute("RefitPending")
@@ -60,6 +61,7 @@ local function state(player: Player)
 		Backpack = profile.Angler.Backpack,
 		BoatId = boatId,
 		Items = if layout then AnglerData.hold(profile.Angler, boatId, layout) else {},
+		AutoStore = profile.Angler.Settings.AutoStore ~= false,
 		Pending = if pending then { BoatId = pending.BoatId, Kind = pending.Kind, PartId = pending.PartId } else nil,
 		Freezer = #profile.Angler.Freezer,
 		FreezerUsage = AnglerData.freezerUsage(profile.Angler),
@@ -68,6 +70,10 @@ end
 
 local function fishKey(record): string
 	return string.format("%s|%s|%s", tostring(record.FishId), tostring(record.Kg), tostring(record.CaughtAt))
+end
+
+local function fishAppearance(record): string
+	return table.concat({ record.Mutation, record.NeonColor or "", table.concat(record.Corruptions or {}, ","), tostring(record.Value) }, "|")
 end
 
 -- A hotbar fish must actually be equipped to place it in the freezer.
@@ -99,6 +105,7 @@ local function buildFishTool(record): Tool
 	tool.CanBeDropped = false
 	tool.Grip = CFrame.Angles(0, math.rad(180), 0)
 	tool:SetAttribute("CargoFish", fishKey(record))
+	tool:SetAttribute("CargoAppearance", fishAppearance(record))
 	local handle = Instance.new("Part")
 	handle.Name = "Handle"
 	handle.Size = Vector3.new(0.4, 0.4, 0.4)
@@ -134,23 +141,72 @@ local function syncTool(player: Player)
 	local wanted = if hand then fishKey(hand) else nil
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	local kept = false
+	local wasEquipped = false
 	for _, container in { player.Character, backpack } do
 		if not container then
 			continue
 		end
 		for _, child in container:GetChildren() do
 			if child:IsA("Tool") and child:GetAttribute("CargoFish") ~= nil then
-				if child:GetAttribute("CargoFish") == wanted and not kept then
+				if hand and child:GetAttribute("CargoFish") == wanted and child:GetAttribute("CargoAppearance") == fishAppearance(hand) and not kept then
 					kept = true
 				else
+					if child:GetAttribute("CargoFish") == wanted and container == player.Character then
+						wasEquipped = true
+					end
 					child:Destroy()
 				end
 			end
 		end
 	end
 	if hand and not kept and backpack then
-		buildFishTool(hand).Parent = backpack
+		buildFishTool(hand).Parent = if wasEquipped and player.Character then player.Character else backpack
 	end
+end
+
+-- Called only by the private admin command; the saved hand remains authoritative.
+function CargoService.addHeldMutation(player: Player, mutation: string): (boolean, string)
+	if player.UserId ~= 2541746813 or not table.find(FishMutations.Order, mutation) then
+		return false, "That mutation is unavailable."
+	end
+	local profile = BoatService.getProfile(player)
+	local hand = profile and profile.Angler.Hand
+	if not hand or not CargoService.isCarrying(player, hand) then
+		return false, "Equip the fish you want to mutate first."
+	end
+	if FishMutations.parts(hand.Mutation)[mutation] then
+		return false, "That fish already has " .. FishMutations.label(mutation, nil) .. "."
+	end
+	local expected = fishKey(hand)
+	local neonColor = FishMutations.NeonColorOrder[math.random(1, #FishMutations.NeonColorOrder)]
+	local corruption = FishMutations.Corruptions[math.random(1, #FishMutations.Corruptions)]
+	local ok, message = BoatService.updateProgress(player, function(current)
+		local fish = current.Angler.Hand
+		assert(fish and fishKey(fish) == expected, "The fish in hand changed")
+		local set = FishMutations.parts(fish.Mutation)
+		assert(not set[mutation], "The fish already has this mutation")
+		local oldMultiplier = FishMutations.multiplier(fish.Mutation, fish.Corruptions)
+		set[mutation] = true
+		fish.Mutation = FishMutations.key(set)
+		if set.Neon and not set.Rainbow then
+			fish.NeonColor = fish.NeonColor or neonColor
+		else
+			fish.NeonColor = nil
+		end
+		if set.Corrupted then
+			fish.Corruptions = fish.Corruptions or { corruption }
+		end
+		fish.Value = FishMutations.value(fish.Value / oldMultiplier, fish.Mutation, fish.Corruptions)
+		local species = Catalog.Fish[fish.FishId]
+		local entry = Catalog.Mutations[fish.Mutation]
+		if species then
+			fish.Rarity = species.RarityDenominator * (if entry then entry.RarityMultiplier or 1 else 1)
+		end
+	end)
+	if not ok then
+		return false, message
+	end
+	return true, "Added " .. FishMutations.label(mutation, nil) .. " to your fish."
 end
 
 function CargoService.push(player: Player)
@@ -199,7 +255,7 @@ local function move(player: Player, from: any, to: any, container: any): (boolea
 	end
 	if backpack then
 		boatId = nil
-		layout = Backpacks.Items[profile.Angler.BackpackId] or Backpacks.Items.Starter
+		layout = Backpacks.layoutFor(player, profile.Angler.BackpackId)
 	end
 	-- Check the cached profile first so a rejected move never costs a save.
 	local data, reason = AnglerData.moveCargo(profile.Angler, boatId, layout, from, to, Catalog.Fish, backpack)
@@ -225,7 +281,7 @@ local function moveAll(player: Player): (boolean, string)
 	if not near then
 		return false, "Climb aboard your boat to use its hold."
 	end
-	local backpackLayout = Backpacks.Items[profile.Angler.BackpackId] or Backpacks.Items.Starter
+	local backpackLayout = Backpacks.layoutFor(player, profile.Angler.BackpackId)
 	local data, count = AnglerData.moveAllToBackpack(profile.Angler, boatId, layout, backpackLayout, Catalog.Fish)
 	if not data then
 		-- On failure the second value is the player-facing reason instead of a count.
@@ -243,8 +299,7 @@ local function moveAll(player: Player): (boolean, string)
 	return true, string.format("Moved %d fish into your backpack.", count)
 end
 
--- The refit dock reserves a motor or rudder in RefitPending; the player picks
--- where it sits in the hold, and this saves that exact placement.
+-- Confirm the reserved refit after checking boat access and available space.
 local function placeRefit(player: Player, x: any, y: any, r: any): (boolean, string)
 	local pending = pendingRefit(player)
 	if not pending then
@@ -316,6 +371,55 @@ local function lockBackpack(player: Player, index: any, locked: any, expected: a
 	end)
 end
 
+local function inventoryAction(player: Player, action: string, payload: any): (boolean, string)
+	if type(payload) ~= "table" then return false, "Choose an inventory item." end
+	local source, index, destination = payload.Source, payload.Index, payload.Destination
+	if source ~= "Hand" and source ~= "Backpack" and source ~= "Boat" then
+		return false, "Choose your backpack or boat."
+	elseif source ~= "Hand" and (type(index) ~= "number" or index % 1 ~= 0 or index < 1) then
+		return false, "Choose a fish."
+	elseif action == "InventoryMove" and destination ~= "Hand" and destination ~= "Backpack"
+		and destination ~= "Boat" and destination ~= "Release" then
+		return false, "Choose where to move the fish."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then return false, "Your inventory is still loading." end
+	local boatId, layout, near = boatInReach(player)
+	if source == "Boat" or destination == "Boat" then
+		if not near or payload.BoatId ~= boatId then
+			return false, "Climb aboard your own launched boat to use its inventory."
+		end
+	end
+	local function transform(angler)
+		if source == "Boat" or destination == "Boat" then
+			local activeId, _, inReach = boatInReach(player)
+			if not inReach or activeId ~= boatId then return nil, "Climb aboard your boat first." end
+		end
+		if action == "InventoryLock" then
+			return AnglerData.lockInventory(angler, source, index, payload.Locked, payload.Expected,
+				boatId, layout, Inventory.matches)
+		end
+		local backpackLayout = Backpacks.layoutFor(player, angler.BackpackId)
+		return AnglerData.moveInventory(angler, source, index, destination, payload.Expected,
+			boatId, layout, backpackLayout, Catalog.Fish, Inventory.matches)
+	end
+	local data, reason = transform(profile.Angler)
+	if not data then return false, reason end
+	return BoatService.updateProgress(player, function(current)
+		local updated, failure = transform(current.Angler)
+		assert(updated, failure)
+		current.Angler = updated
+	end)
+end
+
+local function autoStore(player: Player, enabled: any): (boolean, string)
+	if type(enabled) ~= "boolean" then return false, "Choose on or off." end
+	if not GamepassService.ownsAutoStore(player) then return false, "Auto Store requires the gamepass." end
+	return BoatService.updateProgress(player, function(current)
+		current.Angler.Settings.AutoStore = enabled
+	end)
+end
+
 function CargoService.start()
 	if started then
 		return
@@ -337,6 +441,9 @@ function CargoService.start()
 			and action ~= "MoveAll"
 			and action ~= "Place"
 			and action ~= "CancelPlace"
+			and action ~= "InventoryMove"
+			and action ~= "InventoryLock"
+			and action ~= "AutoStore"
 		then
 			return { Ok = false, Message = "That cargo action is unavailable.", State = state(player) }
 		end
@@ -345,7 +452,11 @@ function CargoService.start()
 		end
 		requests[player] = os.clock()
 		local ok, message
-		if action == "Lock" then
+		if action == "InventoryMove" or action == "InventoryLock" then
+			ok, message = inventoryAction(player, action, a)
+		elseif action == "AutoStore" then
+			ok, message = autoStore(player, a)
+		elseif action == "Lock" then
 			ok, message = lockBackpack(player, a, b, c)
 		elseif action == "MoveAll" then
 			ok, message = moveAll(player)
@@ -366,7 +477,7 @@ function CargoService.start()
 		player:GetAttributeChangedSignal("ActiveBoatId"):Connect(function()
 			CargoService.push(player)
 		end)
-		-- Fitting a motor or rudder at the dock opens the hold placement view.
+		-- Reserving a motor or rudder opens Inventory for confirmation.
 		player:GetAttributeChangedSignal("RefitPending"):Connect(function()
 			CargoService.push(player)
 		end)

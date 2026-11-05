@@ -45,7 +45,14 @@ function BoatLaunchCollision.start()
 	workspace.DescendantAdded:Connect(classify)
 	local map = workspace:FindFirstChild("Map")
 	if map then
+		-- Every part on the map: yield a frame every 50 ms (startup, BoatService.start) so the
+		-- startup thread stays inside Roblox's ~10 s script timeout.
+		local resumed = os.clock()
 		for _, item in map:GetDescendants() do
+			if task and os.clock() - resumed > 0.05 then
+				task.wait()
+				resumed = os.clock()
+			end
 			classify(item)
 		end
 	end

@@ -269,6 +269,8 @@ byName("DecorateTab").Activated:Fire()
 check(editor:isActive() and blue(byName("DecorateTab")) and not blue(byName("BuildTab")),
 	"Decorate must own its tab selection while retaining structural input")
 check(blue(byName("ToolPaint")), "Decorate must activate the paint utility")
+check(visible(byName("PaintAllWalls")) and byName("PaintAllWalls").Active,
+	"Decorate must offer painting all walls without selecting one first")
 check(byName("ToolSelect").Parent == byName("EditingTools") and visible(byName("ToolSelect"))
 	and visible(byName("ToolPaint")) and visible(byName("ToolRemove")),
 	"Decorate must keep its three primary editing tools together and visible")
@@ -288,6 +290,7 @@ for _, item in instances do
 end
 byName("BuildTab").Activated:Fire()
 check(blue(byName("ToolWall")), "Build must restore its latest construction category")
+check(not visible(byName("PaintAllWalls")), "Paint all walls belongs with the Decorate finishes")
 check(not visible(byName('SurfaceMaterials')) and not visible(byName('SurfaceColors')),
 	'Construction catalogues must replace the paint palettes rather than crowd the same rows')
 byName('ToolWindow').Activated:Fire()
@@ -498,6 +501,32 @@ acknowledgePaint(exitWait+1)
 check(not editor:isActive() and rapidParts[1].Color==Color3.fromRGB(119,136,153),
 	'Queued paint may finish after exit without reopening the editor')
 delayPaint=false
+rayHit=nil
+
+-- The bulk action captures the chosen finish and waits for pending paint.
+editor:enter(rapidHouse,identity,"Company")
+byName("DecorateTab").Activated:Fire()
+byName("MaterialSlate").Activated:Fire()
+delayPaint=true
+local bulkWait=#waitingPaint+1
+rapidClick(1,"#AABBCC")
+local beforeBulk=#calls
+pressText("Paint all walls")
+check(#calls==beforeBulk and not byName("PaintAllWalls").Active,
+	"Painting all walls must wait for a pending stroke and disable repeated submission")
+pressText("Paint all walls")
+acknowledgePaint(bulkWait)
+local bulk=calls[#calls]
+check(#calls==beforeBulk+1 and bulk.Action=="PaintAllWalls" and bulk.Site=="Company",
+	"Paint all walls must submit one command to the active property after queued paint saves")
+check(bulk.Payload.Material=="Slate" and bulk.Payload.Color[1]==170
+	and bulk.Payload.Color[2]==187 and bulk.Payload.Color[3]==204,
+	"Painting all walls must use the selected texture and custom color")
+delayPaint=false
+serverState.Pieces,serverState.Builtins,serverState.Overrides={}, {}, {}
+update.OnClientEvent:Fire("State",deep(serverState),"Company")
+check(not byName("PaintAllWalls").Active,"Properties with no walls must disable Paint all walls")
+editor:exit()
 rayHit=nil
 
 local rotated = { UpVector = Vector3.new(0, 1, 0) }

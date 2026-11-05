@@ -224,14 +224,23 @@ end
 
 -- Update collision and streaming even when existing scenery was baked in Studio.
 -- Runs before anyone has a character, so islands are split into pieces before players are out among them.
+-- Every pass walks the whole map (city and company islands included); together they ran past the
+-- ~10 s script timeout and failed startup, so each yields a frame whenever 50 ms have gone by.
 function Map.prepareStreaming(root: Instance)
-	Med.ensureStoneWalls(root)
-	Med.ensurePergolas(root)
-	Med.ensureBalconies(root)
-	Props.ensureHouseCollision(root)
-	Props.ensureDecorationCollision(root)
-	Med.ensureBoatCollision(root)
-	Lod.prepareStreaming(root)
+	local resumed = os.clock()
+	local function pause()
+		if os.clock() - resumed > 0.05 then
+			task.wait()
+			resumed = os.clock()
+		end
+	end
+	Med.ensureStoneWalls(root, pause)
+	Med.ensurePergolas(root, pause)
+	Med.ensureBalconies(root, pause)
+	Props.ensureHouseCollision(root, pause)
+	Props.ensureDecorationCollision(root, pause)
+	Med.ensureBoatCollision(root, pause)
+	Lod.prepareStreaming(root, pause)
 	Lod.serve()
 end
 

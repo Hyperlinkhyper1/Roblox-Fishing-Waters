@@ -5,6 +5,7 @@ end)()
 local folder = {}
 local children = {}
 local sounds = {}
+local scans, velocityReads = 0, 0
 local callback, connections = nil, 0
 local game = {}
 function game:GetService(name)
@@ -14,7 +15,7 @@ end
 local workspace = {}
 local present = true
 function workspace:FindFirstChild() return if present then folder else nil end
-function folder:GetChildren() return children end
+function folder:GetChildren() scans += 1; return children end
 local Enum = { RollOffMode = { InverseTapered = "InverseTapered" } }
 local Vector2 = { new = function(x, y) return { Magnitude = math.sqrt(x * x + y * y) } end }
 local Instance = {}
@@ -29,7 +30,14 @@ function Instance.new(kind)
 end
 local function boat(id)
 	local model = { Parent = folder, attributes = { BoatId = id, RowThrottle = 0 } }
-	local root = { AssemblyLinearVelocity = { X = 0, Z = 0 } }
+	local root = setmetatable({ velocity = { X = 0, Z = 0 } }, {
+		__index = function(self, key)
+			if key == "AssemblyLinearVelocity" then velocityReads += 1; return self.velocity end
+		end,
+		__newindex = function(self, key, value)
+			if key == "AssemblyLinearVelocity" then self.velocity = value else rawset(self, key, value) end
+		end,
+	})
 	local seat = {}
 	function root:IsDescendantOf(parent) return parent == model and model.PrimaryPart == self end
 	function seat:IsDescendantOf(parent) return parent == model end
@@ -54,6 +62,12 @@ assert(#sounds == 1 and sounds[1].Parent == root, "Only engine boats have positi
 local sound = sounds[1]
 assert(sound.SoundId == catalog.FishingBoat.EngineSoundId and sound.Looped, "Use catalog library audio in a loop")
 assert(sound.plays == 0, "Unoccupied boats must be silent")
+for _, fps in { 30, 60, 144 } do
+	local beforeScans, beforeReads = scans, velocityReads
+	for _ = 1, fps do callback(1 / fps) end
+	assert(scans - beforeScans <= 5, "Discovery must stay bounded as frame rate rises")
+	assert(velocityReads == beforeReads, "Silent engines must not read boat velocity every frame")
+end
 seat.Occupant = { Health = 100 }
 for _ = 1, 120 do callback(1 / 60) end
 local idlePitch, idleVolume = sound.PlaybackSpeed, sound.Volume
@@ -88,10 +102,25 @@ callback(1 / 60)
 assert(#sounds == 1, "A removed boat must not create a new sound")
 fishingBoat.Parent = folder
 table.insert(children, fishingBoat)
-callback(1 / 60)
+for _ = 1, 16 do callback(1 / 60) end
 assert(#sounds == 2 and sounds[2].IsPlaying, "Stream-in must recreate the engine")
 present = false
 fishingBoat.Parent = nil
 callback(1 / 60)
 assert(sounds[2].destroyed, "Removing the entire folder must also clear sounds")
-print("Boat audio lifecycle checks passed (mock sound; live playback requires Studio)")
+-- A root can arrive after its model during streaming, and a folder can be replaced.
+present = true
+local lateBoat, lateSeat, lateRoot = boat("FishingBoat")
+lateBoat.PrimaryPart = nil
+lateSeat.Occupant = { Health = 100 }
+children = { lateBoat }
+callback(1 / 60)
+assert(#sounds == 2, "An incomplete boat must wait for its root")
+lateBoat.PrimaryPart = lateRoot
+for _ = 1, 16 do callback(1 / 60) end
+assert(#sounds == 3 and sounds[3].IsPlaying, "Discovery must retry partially streamed boats")
+folder = {}
+function folder:GetChildren() scans += 1; return {} end
+callback(1 / 60)
+assert(sounds[3].destroyed, "Replacing the boat folder must release old sounds immediately")
+print("Boat audio lifecycle and bounded discovery checks passed at 30/60/144 FPS (mock sound)")

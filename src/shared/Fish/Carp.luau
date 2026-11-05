@@ -17,7 +17,6 @@ return {
 	Build = function(b, kit)
 		local rgb, carp = kit.rgb, kit.carp
 		carp(b, {
-			mesh = true,
 			colors = { back = rgb(86, 68, 36), side = rgb(192, 146, 64), belly = rgb(234, 208, 148) },
 			fin = rgb(176, 104, 60),
 			scale = rgb(164, 118, 48),

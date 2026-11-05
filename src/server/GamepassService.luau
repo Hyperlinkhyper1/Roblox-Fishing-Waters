@@ -50,6 +50,12 @@ function Service.ownsDoubleXP(player: Player): boolean
 	return owns(player, "DoubleXP")
 end
 
+-- Infinite fish storage. BackpackCatalog.layoutFor reads the replicated
+-- OwnsBlackHoleBackpack attribute this sets, so every service agrees.
+function Service.ownsBlackHoleBackpack(player: Player): boolean
+	return owns(player, "BlackHoleBackpack")
+end
+
 function Service.grantForSession(player: Player, key: string): (boolean, string)
 	if player.UserId ~= COMMAND_USER_ID or player.Parent ~= Players then
 		return false, "This command is unavailable."

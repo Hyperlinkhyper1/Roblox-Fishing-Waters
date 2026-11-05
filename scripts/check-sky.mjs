@@ -1,5 +1,5 @@
 // Run the real VolumetricClouds and SupercellWeather client modules against
-// minimal Roblox mocks: cloud field, forced supercell, funnels and toggles.
+// minimal Roblox mocks: no clouds outside the supercell, its rain deck, funnels and toggles.
 // Recording mocks only; how the sky looks still needs Studio.
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -152,7 +152,7 @@ end)()
 Clouds.start()
 Supercell.start()
 Clouds.start()
-assert(#render == 3 and #heartbeat == 1, "Repeated startup keeps one canopy, one distant sky and one supercell renderer")
+assert(#render == 2 and #heartbeat == 0, "Repeated startup keeps one supercell deck and one supercell renderer")
 local function frames(n, dt)
   for _ = 1, n do
     now += dt
@@ -174,99 +174,28 @@ local function count(predicate)
   return n
 end
 
--- Clear forecast stage: fair-weather clouds only, no supercell.
+-- No distant cloud field any more: clear skies and ordinary rain build nothing.
+-- The sky there is Terrain.Clouds + Atmosphere (BiomeAtmosphere).
+local function cloudObjects()
+  return count(function(o)
+    return o.Name == "RainCloudTile" or o.Name == "Billows" or o.Name == "VolumetricClouds"
+      or (o.ClassName == "Model" and type(o.Name) == "string" and o.Name:match("Cloud$") ~= nil)
+  end)
+end
 attributes.WeatherOverride = "Clear"
-frames(1, 1/60)
-assert(count(function(o) return o.ClassName == "Model" and o.Name == "FairCloud" end) <= 2,
-  "Initial sky creation is spread across frames")
 frames(150, 1/30)
-local function billowsOf(model)
-  local list = {}
-  for _, o in created do
-    if o.Name == "Billows" and not gone(o) and o.Parent and o.Parent.Parent == model then table.insert(list, o) end
-  end
-  return list
-end
-local fair, fairParts, fairBillows = 0, 0, 0
-for _, o in created do
-  if o.ClassName == "Model" and o.Name == "FairCloud" and not gone(o) then
-    fair += 1
-    for _, p in created do
-      if p.ClassName == "Part" and p.Parent == o and not gone(p) then
-        fairParts += 1
-        assert(p.CFrame and p.CFrame.p.Y > 300, "Clouds float at altitude")
-        assert(p.Transparency == 1, "Fair clouds are soft billows, never solid spheres")
-        assert(not p.CanCollide and not p.CanTouch and not p.CanQuery and not p.CastShadow, "Billow anchors are inert")
-      end
-    end
-    for _, e in billowsOf(o) do
-      fairBillows += 1
-      assert(e.Enabled and (e.emitted or 0) > 0, "A placed cloud starts its billows and fills half at once")
-      assert(e.Texture == "rbxasset://textures/particles/smoke_main.dds", "Billows use the soft smoke texture")
-    end
+assert(cloudObjects() == 0, "Clear skies build no volumetric clouds")
+assert(count(function(o) return o.Name == "Tornado" or o.Name == "Supercell" end) == 0, "No supercell in clear weather")
+for _, kind in { "LightRain", "Rain", "Storm" } do
+  attributes.WeatherOverride = kind
+  for _, position in { Vector3.new(0, 8, 0), Vector3.new(-5000, 8, 5000), Vector3.new(123, 600, -456) } do
+    workspace.CurrentCamera.CFrame = CFrame.new(position)
+    frames(20, 1/60)
+    assert(cloudObjects() == 0, "Ordinary " .. kind .. " uses Terrain clouds, not volumetric ones")
   end
 end
-assert(fair > 10, "Clear skies still hold fair-weather cumulus: " .. fair)
-assert(fairParts <= fair * 2 and fairBillows == fairParts,
-  "Each fair cloud is two billow anchors: " .. fairParts .. " parts for " .. fair .. " clouds")
-assert(count(function(o) return o.Name == "Tornado" end) == 0, "No tornado in clear weather")
-print("clear clouds", fair, "parts", fairParts)
-
-local sample, sampleCloud
-for _, o in created do
-  if o.ClassName == "Part" and o.Parent and o.Parent.Name == "FairCloud" and not gone(o)
-    and Vector3.new(o.CFrame.Position.X, 0, o.CFrame.Position.Z).Magnitude < 1500 then
-    sample, sampleCloud = o, o.Parent
-    break
-  end
-end
-assert(sample, "A visible fair cloud is available for motion checks")
-local layers, darkest, brightest, largest = 0, 1, 0, 0
-for _, e in billowsOf(sampleCloud) do
-  layers += 1
-  local keys = e.Color[1]
-  darkest, brightest = math.min(darkest, keys[1][2].R), math.max(brightest, keys[2][2].R)
-  largest = math.max(largest, e.Size[1][2][2])
-end
-assert(layers >= 2, "Clouds have a flat base and a billowing body")
-assert(brightest - darkest > 0.12, "Shaded bases and brighter billows remain distinct")
-assert(largest <= 100, "Billow sprites stay within the particle size limit")
-local sampleEmitter = billowsOf(sampleCloud)[1]
-local steadyTransparency = sampleEmitter.Transparency
--- Clouds hold still: once placed, a settled sky moves no parts at all. Moving
--- thousands of huge puffs each frame caused Octree and shadow-map spikes.
-local function stillFor(n, dt, renderOnly)
-  local before, movedBefore = sample.CFrame.Position, movedParts
-  for _ = 1, n do
-    if renderOnly then
-      now += dt
-      for _, f in render do f(dt) end
-    else
-      frames(1, dt)
-    end
-  end
-  return (sample.CFrame.Position - before).Magnitude == 0, movedParts - movedBefore
-end
-for _, dt in { 1/60, 1/144, 1/30, 0.011, 0.024 } do
-  local still, moved = stillFor(20, dt, false)
-  assert(still, "Clouds stay where they were built at every frame rate")
-  assert(moved == 0, "A settled clear sky moves no parts between frames: " .. moved)
-  assert(sampleEmitter.Transparency == steadyTransparency, "A settled sky never rewrites billow transparency")
-end
-assert(stillFor(20, 1/144, true), "Render-only frames leave the sky in place")
-
--- Moving far away retires the old field: it stops billowing and its last puffs
--- dissolve where they are before the model goes.
-workspace.CurrentCamera.CFrame = CFrame.new(10000, 8, 0)
-frames(40, 1/60)
-assert(not sampleEmitter.Enabled and not gone(sample), "Outgoing clouds dissolve instead of disappearing")
-assert(stillFor(10, 1/60, false), "Retiring clouds dissolve where they are")
 workspace.CurrentCamera.CFrame = CFrame.new(0, 8, 0)
-frames(200, 1/30)
-assert(not gone(sample), "A retired cloud keeps its model while its last billows fade")
-frames(400, 1/30)
-assert(gone(sample), "Retired cloud models are cleaned up")
-print("PASS billowed clouds, bounded builds, frame-rate independent stillness, stable billows and dissolving retirement")
+print("PASS no volumetric clouds outside the supercell")
 
 local function assertCovered(position, label)
   for _, o in created do
@@ -276,38 +205,39 @@ local function assertCovered(position, label)
       if center.Y - o.Size.Y/2 > position.Y and x*x + z*z < 1 then return o end
     end
   end
-  error("Rain must have an opaque volumetric cloud directly overhead: " .. label)
+  error("Supercell rain must have an opaque volumetric cloud directly overhead: " .. label)
 end
 local function renderOnly()
   now += 1/144
   for _, f in render do f(1/144) end
 end
--- No Heartbeat, settling time or random grid occupancy may leave rain uncovered.
+-- Under the supercell no settling time or teleport may leave its rain uncovered.
+attributes.WeatherOverride = "Supercell"
+attributes.SupercellPosition = Vector3.new(0, 0, 0)
+attributes.SupercellSince = now - 60
+local function cellCenter()
+  local cell = Weather.supercell(now)
+  return Vector3.new(cell.position.X, 8, cell.position.Z)
+end
 for _, seed in { 17, 1847, 999983 } do
   attributes.WeatherSeed = seed
-  for _, kind in { "LightRain", "Rain", "Storm", "Supercell" } do
-    attributes.WeatherOverride = kind
-    attributes.SupercellSince = now - 60
-    for _, position in {
-      Vector3.new(0, 8, 0), Vector3.new(-5000, 8, 5000), Vector3.new(5000, 8, -5000), Vector3.new(123, 600, -456),
-    } do
-      workspace.CurrentCamera.CFrame = CFrame.new(position)
-      renderOnly()
-      assertCovered(position, kind .. " seed " .. seed .. " on its first frame / after teleport")
-    end
-    local drift = Weather.getState(now).windDirection * 7 * (now - attributes.WeatherEpoch)
-    for _, delta in { -0.01, 0.01 } do
-      local position = Vector3.new(drift.X + 180 + delta, 8, drift.Z + 180 + delta)
-      workspace.CurrentCamera.CFrame = CFrame.new(position)
-      renderOnly()
-      assertCovered(position, "diagonal grid corner / " .. kind)
-    end
+  for _, offset in { Vector3.new(0, 0, 0), Vector3.new(300, 0, -200), Vector3.new(-250, 592, 180) } do
+    local position = cellCenter() + offset
+    workspace.CurrentCamera.CFrame = CFrame.new(position)
+    renderOnly()
+    assertCovered(position, "supercell seed " .. seed .. " on its first frame / after teleport")
+  end
+  for _, delta in { -0.01, 0.01 } do
+    local position = Vector3.new(180 + delta, 8, 180 + delta)
+    workspace.CurrentCamera.CFrame = CFrame.new(position)
+    renderOnly()
+    assertCovered(position, "diagonal grid corner under the supercell")
   end
 end
-attributes.WeatherSeed, attributes.WeatherOverride = 4242, "Rain"
-workspace.CurrentCamera.CFrame = CFrame.new(0, 8, 0)
+attributes.WeatherSeed = 4242
+workspace.CurrentCamera.CFrame = CFrame.new(cellCenter())
 frames(180, 1/60)
-local covered = assertCovered(workspace.CurrentCamera.CFrame.Position, "detailed rain")
+local covered = assertCovered(workspace.CurrentCamera.CFrame.Position, "detailed supercell rain")
 local tileParts, darkest, brightest, billows, scud, wisps = 0, 1, 0, nil, nil, nil
 for _, o in created do
   if o.Parent == covered.Parent and not gone(o) and o.ClassName == "Part" then
@@ -331,15 +261,12 @@ assert(billows and billows.Enabled and billows.LockedToPart and (billows.emitted
   "A lumpy billowed underside hangs below the deck and rides along with it")
 assert(scud and wisps and wisps.Enabled and wisps.Texture == "rbxasset://textures/particles/smoke_main.dds",
   "Lower scud and soft textured wisps break up the cloud underside")
-local scudBefore = scud.CFrame.Position
-renderOnly()
-assert((scud.CFrame.Position - scudBefore).Magnitude == 0, "The settled rain deck holds still between frames")
 assert(count(function(o) return o.Name == "RainCloudTile" end) <= 36, "The local cloud pool stays bounded")
 
--- Camera and avatar can be far apart; both wet locations need coverage.
-local root = { Position = Vector3.new(-3500, 8, 3500) }
+-- Camera and avatar can be far apart under the storm; both need a deck.
+local root = { Position = cellCenter() + Vector3.new(150, 0, 150) }
 Players.LocalPlayer.Character = { FindFirstChild = function(_, name) return if name == "HumanoidRootPart" then root else nil end }
-workspace.CurrentCamera.CFrame = CFrame.new(3500, 8, -3500)
+workspace.CurrentCamera.CFrame = CFrame.new(cellCenter() + Vector3.new(-200, 0, 100))
 renderOnly()
 assertCovered(root.Position, "avatar away from the camera")
 assertCovered(workspace.CurrentCamera.CFrame.Position, "free camera away from the avatar")
@@ -347,44 +274,24 @@ for _, detailed in { false, true, false } do
   playerAttributes.VolumetricCloudsEnabled = detailed
   playerAttributes.WeatherEffectsEnabled = false
   renderOnly()
-  local body = assertCovered(root.Position, "graphics toggle never removes the rain deck")
-  assertCovered(workspace.CurrentCamera.CFrame.Position, "low graphics camera")
-  assert(body.CastShadow == false, "The moving rain deck never casts shadows, at any graphics level")
-end
-for frame = 1, 100 do
-  root.Position = Vector3.new(frame * 1200, 8, frame * -600)
-  workspace.CurrentCamera.CFrame = CFrame.new(root.Position + Vector3.new(0, 0, 20))
-  renderOnly()
-  assertCovered(root.Position, "rapid travel frame " .. frame)
-  assert(count(function(o) return o.Name == "RainCloudTile" end) <= 36, "Rapid travel cannot leak cloud tiles")
+  local body = assertCovered(root.Position, "graphics toggle never removes the supercell deck")
+  assert(body.CastShadow == false, "The rain deck never casts shadows, at any graphics level")
 end
 Players.LocalPlayer.Character = nil
 playerAttributes.VolumetricCloudsEnabled, playerAttributes.WeatherEffectsEnabled = true, true
 workspace.CurrentCamera = nil
 renderOnly()
-assert(count(function(o) return o.Name == "RainCloudTile" end) == 0, "Camera loss cleans up the local rain deck")
-workspace.CurrentCamera = { CFrame = CFrame.new(0, 8, 0) }
+assert(count(function(o) return o.Name == "RainCloudTile" end) == 0, "Camera loss cleans up the rain deck")
+workspace.CurrentCamera = { CFrame = CFrame.new(cellCenter()) }
 renderOnly()
-assertCovered(workspace.CurrentCamera.CFrame.Position, "camera recovery in rain")
--- A naturally arriving rain band needs the same guarantee as an admin preset.
-attributes.WeatherOverride = nil
-now = attributes.WeatherEpoch + 480
-local naturalWet
-for x = -5000, 5000, 500 do
-  for z = -5000, 5000, 500 do
-    local point = Vector3.new(x, 8, z)
-    if Weather.getState(now, point).rain > 0.01 then naturalWet = point break end
-  end
-  if naturalWet then break end
-end
-assert(naturalWet, "Natural forecast has a rain band for this integration check")
-workspace.CurrentCamera.CFrame = CFrame.new(naturalWet)
-renderOnly()
-assertCovered(naturalWet, "natural rain band")
+assertCovered(workspace.CurrentCamera.CFrame.Position, "camera recovery under the supercell")
+-- Leaving the storm fades the deck away.
+workspace.CurrentCamera.CFrame = CFrame.new(8000, 8, 8000)
+frames(400, 1/60)
+assert(count(function(o) return o.Name == "RainCloudTile" end) == 0, "Leaving the supercell removes its deck")
 attributes.WeatherOverride = "Clear"
-frames(260, 1/60)
-assert(count(function(o) return o.Name == "RainCloudTile" end) == 0, "Clear weather fades and removes the rain deck")
-print("PASS guaranteed overhead volume in all rain, seeds, grid corners, teleports, high ground, natural fronts, detached cameras and low graphics; detailed billows/scud/wisps and bounded cleanup")
+frames(60, 1/60)
+print("PASS supercell rain deck: overhead coverage, teleports, grid corners, detached cameras, low graphics and cleanup")
 workspace.CurrentCamera.CFrame = CFrame.new(0, 8, 0)
 
 -- Forced supercell over the camera: tower + funnels.
@@ -443,24 +350,16 @@ for _, o in created do
 end
 for k, v in kinds do print("model", k, v) end
 do
-  -- Storm decks: no moving shadow casters, and only nearby clouds carry lobes.
-  local eye = workspace.CurrentCamera.CFrame.Position
-  local stormParts, budget = 0, 0
+  -- The supercell sky keeps a bounded billow budget.
+  local budget = 0
   for _, o in created do
-    if not gone(o) and o.Parent and (o.Parent.Name == "NimbostratusCloud" or o.Parent.Name == "CumulonimbusCloud") then
-      if o.ClassName == "Part" then
-        stormParts += 1
-        assert(o.CastShadow == false, "Rain-bearing clouds cast no shadows")
-      end
-    end
     if not gone(o) and o.Name == "Billows" and o.Enabled then budget += o:GetAttribute("Billows") or 0 end
   end
-  print("storm parts", stormParts, "live billows", budget)
-  assert(stormParts > 0 and stormParts < 600, "A storm sky stays within a few hundred parts: " .. stormParts)
-  assert(budget < 4000, "The whole sky keeps a bounded number of billows: " .. budget)
+  print("live billows", budget)
+  assert(budget < 1500, "The whole sky keeps a bounded number of billows: " .. budget)
 end
 
--- Mobile: lightweight mandatory rain deck, no distant field, simpler supercell.
+-- Mobile: lightweight mandatory rain deck, simpler supercell.
 playerAttributes.VolumetricCloudsEnabled = false
 frames(60, 1/30)
 assert(count(function(o) return o.Name == "CloudPuff" and o.Parent ~= nil and not o.destroyed and o.ClassName == "Part" and o.CastShadow == true end) == 0, "Mobile sky casts no cloud shadows")
@@ -474,7 +373,7 @@ attributes.WeatherOverride = "Clear"
 playerAttributes.WeatherEffectsEnabled, playerAttributes.VolumetricCloudsEnabled = true, true
 frames(200, 1/30)
 assert(count(function(o) return o.Name == "Supercell" end) == 0, "Clear weather has no supercell")
-print("PASS volumetric cloud field, forced supercell with tornado funnel, mobile detail and weather toggle cleanup")
+print("PASS forced supercell with tornado funnel, mobile detail and weather toggle cleanup")
 `;
 const target = join(scratch, 'sky-smoke.luau');
 writeFileSync(target, program);

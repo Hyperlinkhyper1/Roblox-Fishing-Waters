@@ -21,6 +21,7 @@ return {
 		local rgb, v2 = kit.rgb, kit.v2
 		local colors = { back = rgb(96, 104, 112), side = rgb(156, 164, 170), belly = rgb(222, 224, 222) }
 		local fin = rgb(110, 118, 126)
+		b:beginSkin(colors)
 		b:layered("Body", Vector3.new(0.05, 0, 0), Vector3.new(0.7, 0.62, 0.16), colors)
 		b:layered("Head", Vector3.new(0.3, -0.02, 0), Vector3.new(0.26, 0.4, 0.14), colors)
 		local top, bottom = b:top(-0.1), b:bottom(-0.1)

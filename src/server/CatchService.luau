@@ -117,7 +117,7 @@ local function cast(player: Player, target: any, heldSeconds: any)
 		send(player, "Cancelled", "Your tackle box is still loading. Try again in a moment.")
 		return
 	end
-	local backpack = BackpackCatalog.Items[profile.Angler.BackpackId] or BackpackCatalog.Items.Starter
+	local backpack = BackpackCatalog.layoutFor(player, profile.Angler.BackpackId)
 	if not AnglerData.hasCatchSpace(profile.Angler, backpack, Catalog.Fish) then
 		send(player, "Cancelled", "Your hand and backpack are full. Make room before fishing.")
 		return

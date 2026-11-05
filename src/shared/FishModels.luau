@@ -61,25 +61,43 @@ end
 
 -- An axis-aligned ellipsoid that markings can be laid on.
 function Builder:body(name: string, center: Vector3, size: Vector3, color: Color3, transparency: number?)
-	table.insert(self.sections, { c = center, h = size / 2 })
-	return self:ellipsoid(name, CFrame.new(center), size, color, transparency)
+	local section = { c = center, h = size / 2 }
+	table.insert(self.sections, section)
+	return self:ellipsoid(name, CFrame.new(center), size, color, transparency), section
+end
+
+local function sameColors(a, b): boolean
+	return a == b or (a.side == b.side and a.back == b.back and a.belly == b.belly)
 end
 
 -- Main colour with a darker back and paler belly layer offset above and below.
+-- While a fishBody skin is still open, layers in the body's own colours (a
+-- snout, hump or jaw) join the smooth skin instead of staying spheres.
 function Builder:layered(name: string, center: Vector3, size: Vector3, colors)
-	self:body(name, center, size, colors.side)
-	self:body(
+	local side, sideSection = self:body(name, center, size, colors.side)
+	local back, backSection = self:body(
 		name .. "Back",
 		center + Vector3.new(0, size.Y * 0.12, 0),
 		size * Vector3.new(0.985, 0.86, 1.012),
 		colors.back
 	)
-	self:body(
+	local belly, bellySection = self:body(
 		name .. "Belly",
 		center - Vector3.new(0, size.Y * 0.14, 0),
 		size * Vector3.new(0.97, 0.8, 1.006),
 		colors.belly
 	)
+	local open = self.skinOpen
+	if open and sameColors(open.colors, colors) then
+		for _, part in { side, back, belly } do
+			table.insert(open.parts, part)
+		end
+		for _, section in { sideSection, backSection, bellySection } do
+			table.insert(open.sections, section)
+		end
+		open.swatches = open.swatches or { Side = side, Back = back, Belly = belly }
+	end
+	return side, back, belly
 end
 
 -- Loft rings are { x, top, bottom, width (half) } cross-sections, snout first.
@@ -137,23 +155,34 @@ local function catmull(p0: number, p1: number, p2: number, p3: number, t: number
 		* (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t)
 end
 
+-- Sections the smooth skin replaces are skipped while it is in use (the carp
+-- clears `loft` briefly to lay its scale discs on the spheres underneath).
+local function solid(self, section): boolean
+	return not (section.skin and self.loft)
+end
+
 -- Outermost body surface at (x, y) on one side (+1 or -1), with its normal.
 function Builder:surface(x: number, y: number, side: number): (Vector3?, Vector3?)
+	self:finishSkin()
+	local bestPoint: Vector3?, bestNormal: Vector3? = nil, nil
+	local bestZ = -1
 	if self.loft then
 		local ring = loftRing(self.loft, x)
-		if not ring or ring.top <= ring.bottom then
-			return nil, nil
+		if ring and ring.top > ring.bottom then
+			local c = (y - (ring.top + ring.bottom) / 2) / ((ring.top - ring.bottom) / 2)
+			if math.abs(c) < 1 then
+				local angle = math.acos(c) * side
+				local point = loftPoint(ring, angle)
+				bestPoint, bestNormal = point, loftNormal(self.loft, x, angle)
+				bestZ = point.Z * side
+			end
 		end
-		local c = (y - (ring.top + ring.bottom) / 2) / ((ring.top - ring.bottom) / 2)
-		if math.abs(c) >= 1 then
-			return nil, nil
-		end
-		local angle = math.acos(c) * side
-		return loftPoint(ring, angle), loftNormal(self.loft, x, angle)
 	end
 	local best: Ellipsoid? = nil
-	local bestZ = -1
 	for _, section in self.sections do
+		if not solid(self, section) then
+			continue
+		end
 		local dx, dy = (x - section.c.X) / section.h.X, (y - section.c.Y) / section.h.Y
 		local remaining = 1 - dx * dx - dy * dy
 		if remaining > 0 then
@@ -164,7 +193,7 @@ function Builder:surface(x: number, y: number, side: number): (Vector3?, Vector3
 		end
 	end
 	if not best then
-		return nil, nil
+		return bestPoint, bestNormal
 	end
 	local h = best.h
 	local normal = Vector3.new(
@@ -176,14 +205,15 @@ function Builder:surface(x: number, y: number, side: number): (Vector3?, Vector3
 end
 
 function Builder:top(x: number): number
+	self:finishSkin()
+	local best = 0
 	if self.loft then
 		local ring = loftRing(self.loft, x)
-		return if ring then math.max(ring.top, 0) else 0
+		best = if ring then math.max(ring.top, 0) else 0
 	end
-	local best = 0
 	for _, section in self.sections do
 		local dx = (x - section.c.X) / section.h.X
-		if dx * dx < 1 then
+		if dx * dx < 1 and solid(self, section) then
 			best = math.max(best, section.c.Y + section.h.Y * math.sqrt(1 - dx * dx))
 		end
 	end
@@ -191,14 +221,15 @@ function Builder:top(x: number): number
 end
 
 function Builder:bottom(x: number): number
+	self:finishSkin()
+	local best = 0
 	if self.loft then
 		local ring = loftRing(self.loft, x)
-		return if ring then math.min(ring.bottom, 0) else 0
+		best = if ring then math.min(ring.bottom, 0) else 0
 	end
-	local best = 0
 	for _, section in self.sections do
 		local dx = (x - section.c.X) / section.h.X
-		if dx * dx < 1 then
+		if dx * dx < 1 and solid(self, section) then
 			best = math.min(best, section.c.Y - section.h.Y * math.sqrt(1 - dx * dx))
 		end
 	end
@@ -372,40 +403,20 @@ local function v2(x: number, y: number): Vector2
 	return Vector2.new(x, y)
 end
 
--- Shared bony-fish body: head, chest, rear body and tail stalk.
+-- Shared bony-fish body: head, chest, rear body and tail stalk. It gets a
+-- smooth skin (see Builder:smoothSkin) through the envelope of these spheres
+-- and any same-coloured layers added before the first surface query.
 function Builder:fishBody(depth: number, width: number, colors, headDrop: number?)
 	local drop = headDrop or 0.05
+	self:beginSkin(colors)
 	self:layered("Chest", Vector3.new(0.1, 0, 0), Vector3.new(0.6, depth, width), colors)
 	self:layered("Head", Vector3.new(0.29, -depth * drop, 0), Vector3.new(0.38, depth * 0.8, width * 0.9), colors)
 	self:layered("Rear", Vector3.new(-0.13, 0, 0), Vector3.new(0.42, depth * 0.72, width * 0.78), colors)
 	self:layered("TailStalk", Vector3.new(-0.29, 0, 0), Vector3.new(0.2, depth * 0.3, width * 0.42), colors)
 end
 
--- A smooth skin lofted through `stations` ({ x, top, bottom, half width },
--- snout first) instead of overlapping spheres. EditableMesh never replicates,
--- so the sphere body is still built: servers and the wiki see it, and
--- FishMeshes hides it on each client once the skin exists. Its Chest layers
--- are the skin's colour swatches, so mutations that repaint parts repaint the
--- skin too. Markings, eyes and fins follow the skin's surface.
-function Builder:loftBody(stations: { { number } }, colors, depth: number, width: number, headDrop: number?)
-	local existing = {}
-	for _, item in self.model:GetChildren() do
-		existing[item] = true
-	end
-	self:fishBody(depth, width, colors, headDrop)
-	local swatches = { Chest = "Side", ChestBack = "Back", ChestBelly = "Belly" }
-	local anchor: BasePart? = nil
-	for _, item in self.model:GetChildren() do
-		if not existing[item] then
-			item:SetAttribute("LoftFallback", true)
-			if swatches[item.Name] then
-				item:SetAttribute("LoftSwatch", swatches[item.Name])
-			end
-			if item.Name == "Chest" then
-				anchor = item :: BasePart
-			end
-		end
-	end
+-- Loft rings through hand-tuned { x, top, bottom, half width } stations.
+local function stationRings(stations: { { number } }): { Ring }
 	local rings: { Ring } = {}
 	local count = #stations
 	for index = 1, count - 1 do
@@ -422,12 +433,130 @@ function Builder:loftBody(stations: { { number } }, colors, depth: number, width
 	end
 	local last = stations[count]
 	table.insert(rings, { x = last[1], top = last[2], bottom = last[3], width = last[4] })
-	self.loft = rings
-	if anchor then
-		lofts[self.model.Name] = { rings = rings, anchorPosition = anchor.Position, anchorSize = anchor.Size }
-		self.model:SetAttribute("LoftFish", self.model.Name)
-		self.model:AddTag(FishModels.LOFT_TAG)
+	return rings
+end
+
+-- Loft rings hugging the outside of a set of axis-aligned ellipsoids, snout
+-- first. `extra` ({ front, back, at }) adds a shape the spheres don't describe
+-- (the eel's waving tube): at(x) returns its top, bottom and half width. Rings crowd towards both tips so they close smoothly,
+-- and creases where two spheres meet are filled so the skin reads as one body.
+local function envelopeRings(sections: { Ellipsoid }, extra: any?): { Ring }
+	local front, back = -math.huge, math.huge
+	for _, section in sections do
+		front = math.max(front, section.c.X + section.h.X)
+		back = math.min(back, section.c.X - section.h.X)
 	end
+	if extra then
+		front, back = math.max(front, extra.front), math.min(back, extra.back)
+	end
+	local span = front - back
+	local count = math.clamp(math.ceil(span * 100), 40, 160)
+	local rings: { Ring } = {}
+	for index = 1, count - 1 do
+		local x = front - span * (1 - math.cos(math.pi * index / count)) / 2
+		local top, bottom, width = -math.huge, math.huge, 0
+		for _, section in sections do
+			local dx = (x - section.c.X) / section.h.X
+			if dx * dx < 1 then
+				local s = math.sqrt(1 - dx * dx)
+				top = math.max(top, section.c.Y + section.h.Y * s)
+				bottom = math.min(bottom, section.c.Y - section.h.Y * s)
+				width = math.max(width, math.abs(section.c.Z) + section.h.Z * s)
+			end
+		end
+		if extra then
+			local t, b, w = extra.at(x)
+			if t then
+				top, bottom, width = math.max(top, t), math.min(bottom, b :: number), math.max(width, w :: number)
+			end
+		end
+		if top > bottom then
+			table.insert(rings, { x = x, top = top, bottom = bottom, width = width })
+		end
+	end
+	for _ = 1, 3 do
+		local smoothed = {}
+		for index, ring in rings do
+			local a, c = rings[index - 1], rings[index + 1]
+			if a and c then
+				smoothed[index] = {
+					x = ring.x,
+					top = math.max(ring.top, (a.top + 2 * ring.top + c.top) / 4),
+					bottom = math.min(ring.bottom, (a.bottom + 2 * ring.bottom + c.bottom) / 4),
+					width = math.max(ring.width, (a.width + 2 * ring.width + c.width) / 4),
+				}
+			else
+				smoothed[index] = ring
+			end
+		end
+		rings = smoothed
+	end
+	return rings
+end
+
+-- Replaces sphere bodies with one smooth skin. EditableMesh never replicates,
+-- so the spheres are still built: servers and the wiki see them, and
+-- FishMeshes hides them (`parts`) on each client once the skin exists. The
+-- `swatches` (Side, Back, Belly) lend the skin their colours, so mutations
+-- that repaint parts repaint the skin too. Markings, eyes and fins placed
+-- afterwards follow the skin's surface. `mode` "flat" paints the +Z face from
+-- Side and the -Z face from Belly (flatfish) instead of back-to-belly bands.
+function Builder:smoothSkin(rings: { Ring }, parts: { BasePart }, swatches, sections: { Ellipsoid }?, mode: string?)
+	self.skinDone, self.skinOpen = true, nil
+	if #rings < 2 or not swatches or not swatches.Side then
+		return
+	end
+	for _, section in sections or {} do
+		section.skin = true
+	end
+	for _, part in parts do
+		part:SetAttribute("LoftFallback", true)
+	end
+	for name, part in swatches do
+		part:SetAttribute("LoftSwatch", name)
+	end
+	self.loft = rings
+	local anchor = swatches.Side
+	lofts[self.model.Name] = { rings = rings, anchorPosition = anchor.Position, anchorSize = anchor.Size, mode = mode }
+	self.model:SetAttribute("LoftFish", self.model.Name)
+	self.model:AddTag(FishModels.LOFT_TAG)
+end
+
+-- Opens a smooth skin: b:layered calls in these `colors` join it until the
+-- first surface query (or b:finishSkin()), which lofts it round their spheres.
+function Builder:beginSkin(colors)
+	if not self.skinDone and not self.skinOpen then
+		self.skinOpen = { colors = colors, parts = {}, sections = {} }
+	end
+end
+
+-- Ring helpers for custom bodies (species modules can't reach the locals):
+-- b:smoothSkin(b:envelope({ section, ... }), parts, { Side = p, Back = p, Belly = p }, sections)
+-- where sections are the second values b:body returns.
+function Builder:envelope(sections: { Ellipsoid }, extra: any?): { Ring }
+	return envelopeRings(sections, extra)
+end
+
+function Builder:stations(stations: { { number } }): { Ring }
+	return stationRings(stations)
+end
+
+-- Closes the fishBody skin opened earlier: called on the first surface query
+-- and after every builder, so later layers stay separate spheres.
+function Builder:finishSkin(stations: { { number } }?)
+	local open = self.skinOpen
+	if not open or self.skinDone then
+		return
+	end
+	local rings = if stations then stationRings(stations) else envelopeRings(open.sections)
+	self:smoothSkin(rings, open.parts, open.swatches, open.sections)
+end
+
+-- fishBody with a hand-tuned profile ({ x, top, bottom, half width }
+-- stations, snout first) instead of the spheres' envelope.
+function Builder:loftBody(stations: { { number } }, colors, depth: number, width: number, headDrop: number?)
+	self:fishBody(depth, width, colors, headDrop)
+	self:finishSkin(stations)
 end
 
 function Builder:face(eyeX: number, eyeY: number, eyeSize: number, iris: Color3, line: Color3)
@@ -542,15 +671,10 @@ local CARP_STATIONS = {
 }
 
 -- Deep-bodied carp with scale rows, barbels and fleshy lips; `p` is the palette.
--- `p.mesh` swaps the sphere body for a smooth skin (`p.stations` or the
--- default carp profile).
+-- The smooth skin follows `p.stations` or the default carp profile.
 local function carp(b, p)
 	local colors, fin = p.colors, p.fin
-	if p.mesh then
-		b:loftBody(p.stations or CARP_STATIONS, colors, 0.29, 0.16, 0.08)
-	else
-		b:fishBody(0.29, 0.16, colors, 0.08)
-	end
+	b:loftBody(p.stations or CARP_STATIONS, colors, 0.29, 0.16, 0.08)
 	b:edgeFin(0.11, -0.22, { 0.095, 0.07, 0.05, 0.045, 0.04, 0.035 }, fin, false, 0.05)
 	b:edgeFin(-0.12, -0.22, { 0.07, 0.05 }, fin, true)
 	b:edgeFin(0.02, -0.06, { 0.06, 0.05 }, fin, true)
@@ -596,7 +720,7 @@ local function carp(b, p)
 			"Barbel"
 		)
 	end
-	b:ellipsoid("Lips", CFrame.new(if p.mesh then 0.5 else 0.48, -0.035, 0), Vector3.new(0.04, 0.035, 0.055), p.lips)
+	b:ellipsoid("Lips", CFrame.new(0.5, -0.035, 0), Vector3.new(0.04, 0.035, 0.055), p.lips)
 	b:face(0.37, 0.01, 0.036, p.iris, p.line)
 end
 
@@ -614,6 +738,7 @@ local function eel(b, p)
 		return 0.058 - 0.04 * t ^ 1.25
 	end
 	local finTop, finBottom = {}, {}
+	local tube, firstBelly = {}, nil
 	for index = 1, count do
 		local a, c = spine[index], spine[index + 1]
 		local t = (index - 0.5) / count
@@ -624,9 +749,11 @@ local function eel(b, p)
 		-- Long overlap keeps the waists between sections shallow, so the body
 		-- reads as one smooth tube instead of a chain of beads.
 		local length, h = (c - a).Magnitude * (if index <= 2 then 2 else 3.4), radius(t)
-		b:ellipsoid("Body", frame, Vector3.new(length, h * 2, h * 1.7), side)
-		b:ellipsoid("BodyBack", frame + up * h * 0.14, Vector3.new(length * 0.98, h * 1.7, h * 1.72), back)
-		b:ellipsoid("BodyBelly", frame - up * h * 0.16, Vector3.new(length * 0.97, h * 1.6, h * 1.71), belly)
+		table.insert(tube, b:ellipsoid("Body", frame, Vector3.new(length, h * 2, h * 1.7), side))
+		table.insert(tube, b:ellipsoid("BodyBack", frame + up * h * 0.14, Vector3.new(length * 0.98, h * 1.7, h * 1.72), back))
+		local bellyPart = b:ellipsoid("BodyBelly", frame - up * h * 0.16, Vector3.new(length * 0.97, h * 1.6, h * 1.71), belly)
+		table.insert(tube, bellyPart)
+		firstBelly = firstBelly or bellyPart
 		if t > (p.dorsalFrom or 0.22) then
 			table.insert(finTop, { middle + up * h * 0.75, middle + up * (h + 0.03 * (1 - t * 0.4)) })
 		end
@@ -645,9 +772,30 @@ local function eel(b, p)
 	end
 	local headY = spine[1].Y
 	-- Head no wider than the body, tapering to a pointed snout.
-	b:body("Head", Vector3.new(0.43, headY, 0), Vector3.new(0.17, 0.1, 0.088), side)
-	b:body("HeadBack", Vector3.new(0.43, headY + 0.012, 0), Vector3.new(0.165, 0.085, 0.09), back)
-	b:body("Snout", Vector3.new(0.5, headY - 0.004, 0), Vector3.new(0.08, 0.05, 0.052), back)
+	local head, headSection = b:body("Head", Vector3.new(0.43, headY, 0), Vector3.new(0.17, 0.1, 0.088), side)
+	local headBack, headBackSection =
+		b:body("HeadBack", Vector3.new(0.43, headY + 0.012, 0), Vector3.new(0.165, 0.085, 0.09), back)
+	local snout, snoutSection = b:body("Snout", Vector3.new(0.5, headY - 0.004, 0), Vector3.new(0.08, 0.05, 0.052), back)
+	-- One smooth skin over the head and the waving tube (whose sections are
+	-- angled, so the tube is described directly), narrowing to the tail tip.
+	local heads = { headSection, headBackSection, snoutSection }
+	local rings = envelopeRings(heads, {
+		front = 0.5,
+		back = -0.52,
+		at = function(x: number)
+			local t = 0.5 - x
+			if t < 0 then
+				return nil
+			end
+			local h = radius(math.min(t, 1)) * math.sqrt(math.clamp((1.02 - t) / 0.06, 0, 1))
+			local y = 0.035 * math.sin(t * math.pi * 2.2)
+			return y + h, y - h, h * 0.86
+		end,
+	})
+	table.insert(tube, head)
+	table.insert(tube, headBack)
+	table.insert(tube, snout)
+	b:smoothSkin(rings, tube, { Side = head, Back = headBack, Belly = firstBelly }, heads)
 	b:eye(0.475, headY + 0.016, p.eyeSize or 0.026, p.iris)
 	b:stroke({ v2(0.51, headY - 0.008), v2(0.455, headY - 0.022) }, 0.007, rgb(30, 30, 30))
 	b:marks(0.385, headY - 0.005, 0.012, 0.03, back:Lerp(rgb(0, 0, 0), 0.35))
@@ -658,10 +806,19 @@ end
 -- p.ocelli (optional) are the eye-spot positions.
 local function flatfish(b, p)
 	local brown, under = p.top, p.under
-	b:body("Disc", Vector3.new(0.02, 0, 0), Vector3.new(0.74, 0.46, 0.06), brown)
-	b:ellipsoid("Underside", CFrame.new(0.02, 0, -0.008), Vector3.new(0.735, 0.455, 0.056), under)
-	b:body("HeadBump", Vector3.new(0.33, 0.03, 0), Vector3.new(0.17, 0.18, 0.05), brown)
-	b:ellipsoid("TailStalk", CFrame.new(-0.34, 0, 0), Vector3.new(0.09, 0.1, 0.04), brown)
+	local disc, discSection = b:body("Disc", Vector3.new(0.02, 0, 0), Vector3.new(0.74, 0.46, 0.06), brown)
+	local underside = b:ellipsoid("Underside", CFrame.new(0.02, 0, -0.008), Vector3.new(0.735, 0.455, 0.056), under)
+	local bump, bumpSection = b:body("HeadBump", Vector3.new(0.33, 0.03, 0), Vector3.new(0.17, 0.18, 0.05), brown)
+	local stalk = b:ellipsoid("TailStalk", CFrame.new(-0.34, 0, 0), Vector3.new(0.09, 0.1, 0.04), brown)
+	-- Smooth skin: eyed (+Z) face from the Disc, blind face from the Underside.
+	local stalkSection = { c = Vector3.new(-0.34, 0, 0), h = Vector3.new(0.045, 0.05, 0.02) }
+	b:smoothSkin(
+		envelopeRings({ discSection, bumpSection, stalkSection }),
+		{ disc, underside, bump, stalk },
+		{ Side = disc, Belly = underside },
+		{ discSection, bumpSection },
+		"flat"
+	)
 	local finColor, rayColor = p.fin, p.ray
 	local function edge(x: number, sign: number): number
 		local dx = (x - 0.02) / 0.37
@@ -1013,6 +1170,7 @@ for id, fish in FishSpecies do
 	if build then
 		builders[id] = function(b)
 			build(b, kit)
+			b:finishSkin()
 		end
 	end
 end

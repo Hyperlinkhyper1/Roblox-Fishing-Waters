@@ -9,6 +9,7 @@ local Weather = require(ReplicatedStorage.Shared.Weather)
 local BoatSpray = {}
 local started = false
 local MAX_DISTANCE = 280
+local UPDATE_INTERVAL = 1 / 20
 
 local function stockMotors(spec): number
 	local count = 0
@@ -73,9 +74,15 @@ function BoatSpray.start()
 	started = true
 	local records = {}
 	local scan = 0.3
+	local elapsed = 0
 	RunService.Heartbeat:Connect(function(dt)
+		elapsed += dt
+		if elapsed < UPDATE_INTERVAL then return end
+		-- Emitters simulate continuously; only their settings need a 20 Hz update.
+		local step = elapsed
+		elapsed = 0
 		local folder = workspace:FindFirstChild("PlayerBoats")
-		scan += dt
+		scan += step
 		if folder and scan >= 0.3 then
 			scan = 0
 			for _, model in folder:GetChildren() do
@@ -91,6 +98,7 @@ function BoatSpray.start()
 			end
 		end
 		local camera = workspace.CurrentCamera
+		local now = workspace:GetServerTimeNow()
 		for model, record in records do
 			local root, seat, spec = record.root, record.seat, record.spec
 			if
@@ -106,10 +114,9 @@ function BoatSpray.start()
 				continue
 			end
 			local motors = model:GetAttribute("MotorCount") or record.stock
-			local velocity = root.AssemblyLinearVelocity
-			local speed = math.abs(velocity:Dot(root.CFrame.LookVector))
 			local nearby = camera and (root.Position - camera.CFrame.Position).Magnitude <= MAX_DISTANCE
 			local driver = seat.Occupant
+			local speed = if nearby and motors > 0 then math.abs(root.AssemblyLinearVelocity:Dot(root.CFrame.LookVector)) else 0
 			local active = motors > 0
 				and nearby
 				and driver
@@ -120,7 +127,7 @@ function BoatSpray.start()
 				and not model:GetAttribute("DisplayOnly")
 			if active then
 				-- A thrown hull must not spray while away from the surface.
-				local wave = Weather.sample(root.Position, workspace:GetServerTimeNow())
+				local wave = Weather.sample(root.Position, now)
 				active = math.abs(root.Position.Y - (Biomes.WaterLevel + wave.height)) < 5
 			end
 			if active and not record.jets then
@@ -128,14 +135,25 @@ function BoatSpray.start()
 					makeSpray(model, root, spec, model:GetAttribute("WaterlineRootOffset") or Vector3.new(0, -0.4, 0))
 			end
 			local strength = math.clamp(speed / spec.ForwardSpeed, 0, 1)
+			local enabled = active == true
+			local changed = enabled and (record.strength == nil or math.abs(strength - record.strength) >= 0.01)
+			local spraySpeed = if changed then NumberRange.new(7 + strength * 7, 11 + strength * 12) else nil
 			for _, jet in record.jets or {} do
-				jet.spray.Enabled = active == true
-				jet.spray.Rate = if active then 25 + strength * 85 else 0
-				jet.spray.Speed = NumberRange.new(7 + strength * 7, 11 + strength * 12)
-				if not nearby then
+				if record.enabled ~= enabled then
+					jet.spray.Enabled = enabled
+					jet.spray.Rate = if enabled then 25 + strength * 85 else 0
+				end
+				if changed then
+					jet.spray.Rate = 25 + strength * 85
+					jet.spray.Speed = spraySpeed
+				end
+				if not nearby and record.nearby ~= false then
 					jet.spray:Clear()
 				end
 			end
+			record.enabled = enabled
+			record.nearby = nearby == true
+			if changed then record.strength = strength end
 		end
 	end)
 end

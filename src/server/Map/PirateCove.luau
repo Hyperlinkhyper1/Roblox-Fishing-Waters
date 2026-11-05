@@ -339,6 +339,15 @@ function Cove.build(root: Instance): Model
 		existing:Destroy()
 	end
 	clearSite(root)
+	-- Built after players are in (and on every start until a map with this version is saved): yield
+	-- between the heavy parts so the build stays inside the ~10 s script timeout.
+	local resumed = os.clock()
+	local function pause()
+		if os.clock() - resumed > 0.05 then
+			task.wait()
+			resumed = os.clock()
+		end
+	end
 	local rng = Random.new(Biomes.Seed + 4077)
 	local seaFloor = Biomes.Tropical.shelfDepth or Biomes.SeaFloor
 
@@ -363,6 +372,7 @@ function Cove.build(root: Instance): Model
 	if lodId ~= nil then
 		island:SetAttribute("LodId", lodId)
 	end
+	pause()
 	-- The headland: a rocky stack on the north-west shore that shelters the pier.
 	local headland = Islands.build({
 		position = Vector2.new(CENTER.X - 128, CENTER.Z - 92),
@@ -379,6 +389,7 @@ function Cove.build(root: Instance): Model
 		piece.Parent = ground
 	end
 	headland:Destroy()
+	pause()
 
 	-- Split into streaming pieces before the first replication; props added below are split as they go in.
 	Lod.prepareIsland(island)
@@ -403,6 +414,7 @@ function Cove.build(root: Instance): Model
 		return true
 	end
 
+	pause()
 	-- Plaza: the flag, lights and a signpost.
 	local town = newModel("Town", island)
 	jollyRoger(town, plaza)
@@ -535,6 +547,7 @@ function Cove.build(root: Instance): Model
 		if planted >= 70 then
 			break
 		end
+		pause()
 		local a = rng:NextNumber(0, TAU)
 		local d = rng:NextNumber(32, Data.RADIUS * 0.82)
 		local x, z = math.cos(a) * d, math.sin(a) * d
@@ -554,6 +567,7 @@ function Cove.build(root: Instance): Model
 		if scattered >= 28 then
 			break
 		end
+		pause()
 		local a = rng:NextNumber(0, TAU)
 		local d = rng:NextNumber(Data.RADIUS * 0.66, Data.RADIUS * 0.86)
 		local x, z = math.cos(a) * d, math.sin(a) * d
@@ -582,6 +596,7 @@ function Cove.build(root: Instance): Model
 		)
 	end
 
+	pause()
 	-- The wreck in the shallows off the north-east shore.
 	wreck(island, CFrame.new(world(150, -150)) * CFrame.Angles(0, 0.7, 0))
 

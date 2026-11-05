@@ -18,6 +18,7 @@ return {
 		local rgb, v2 = kit.rgb, kit.v2
 		local colors = { back = rgb(150, 132, 76), side = rgb(196, 180, 120), belly = rgb(240, 236, 214) }
 		local fin = rgb(190, 170, 110)
+		b:beginSkin(colors)
 		b:layered("Body", Vector3.new(0.06, 0, 0), Vector3.new(0.74, 0.58, 0.54), colors)
 		b:layered("TailStalk", Vector3.new(-0.3, 0, 0), Vector3.new(0.18, 0.12, 0.1), colors)
 		b:edgeFin(-0.2, -0.27, { 0.06, 0.05 }, fin, false, 0.2)

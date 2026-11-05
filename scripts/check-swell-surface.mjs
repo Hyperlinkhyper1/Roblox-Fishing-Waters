@@ -11,15 +11,20 @@ const read = (file) => readFileSync(join(root, file), 'utf8');
 const primitives = read('scripts/harbour-geometry.luau').split('local CFrame = {}')[0];
 const mocks = read('scripts/drydock-geometry.luau').split('local function loadLowPoly()')[0]
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
+const quality = read('scripts/water-quality.luau')
+  .replace('-- WATER_QUALITY --', () => read('src/client/WaterQuality.luau'));
 const source = read('src/client/SwellSurface.luau')
   .replace(/local Biomes = require\(ReplicatedStorage.Shared.Biomes\)/, 'local Biomes = dependencies.Biomes')
   .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather')
-  .replace(/local MeshFeatures = require\(ReplicatedStorage.Shared.MeshFeatures\)/, 'local MeshFeatures = { EditableMeshesEnabled = true }');
+  .replace(/local MeshFeatures = require\(ReplicatedStorage.Shared.MeshFeatures\)/, 'local MeshFeatures = { EditableMeshesEnabled = true }')
+  .replace(/local WaterQuality = require\(script.Parent.WaterQuality\)/, 'local WaterQuality = dependencies.WaterQuality');
+const client = source.replace(/local EditableMeshBudget = require\(script.Parent.EditableMeshBudget\)/,
+  () => `local EditableMeshBudget = (function()\n${read('src/client/EditableMeshBudget.luau')}\nend)()`);
 const program = read('scripts/swell-surface.luau')
-  .replace('-- MOCKS --', () => mocks)
+  .replace('-- MOCKS --', () => `${mocks}\n${quality}`)
   .replace('-- BIOMES --', () => read('src/shared/Biomes.luau'))
   .replace('-- WEATHER --', () => read('src/shared/Weather.luau'))
-  .replace('-- CLIENT --', () => source);
+  .replace('-- CLIENT --', () => client);
 const temporary = mkdtempSync(join(tmpdir(), 'swell-surface-'));
 const target = join(temporary, 'check.luau');
 try {

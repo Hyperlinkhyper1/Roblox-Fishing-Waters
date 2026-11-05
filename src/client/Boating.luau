@@ -827,22 +827,22 @@ function Boating.start()
 			else "Looking for your first boat? Claim the free wooden rowboat, or choose a bigger, faster fishing boat. We'll lower it into the water and put you aboard."
 		title.Text = spec.Name
 		description.Text = if selectedBoatId == "RacingSpeedboat"
-			then "Our fastest boat with the sharpest turns. Four cockpit seats and 49 cargo tiles: 15 fewer than the fishing boat."
+			then "Our fastest boat with the sharpest turns. Four cockpit seats and 49 units of cargo space: 15 fewer than the fishing boat."
 			elseif
 				selectedBoatId == "Tugboat"
-			then "A black harbour tug with a full rubber fender and the toughest hull in the yard. Twin thrusters pivot it on the spot; cruise at 75 studs/s with the same 64 cargo tiles as the fishing boat."
+			then "A black harbour tug with a full rubber fender and the toughest hull in the yard. Twin thrusters pivot it on the spot; cruise at 75 studs/s with the same 64 units of cargo space as the fishing boat."
 			elseif
 				selectedBoatId == "Trawler"
-			then "A traditional teal fishing trawler with a sheltered forward wheelhouse, stern gantry, net drum and two fishing seats. Cruise at 70 studs/s with 104 cargo tiles."
+			then "A traditional teal fishing trawler with a sheltered forward wheelhouse, stern gantry, net drum and two fishing seats. Cruise at 70 studs/s with 104 units of cargo space."
 			elseif
 				selectedBoatId == "PatrolBoat"
-			then "A long gray patrol cruiser with a wheelhouse for two, stern benches for two more, 128 cargo tiles and more speed. Pivots easily in harbour; turns a little wider than the Bluewater speedboat at speed."
+			then "A long gray patrol cruiser with a wheelhouse for two, stern benches for two more, 128 units of cargo space and more speed. Pivots easily in harbour; turns a little wider than the Bluewater speedboat at speed."
 			elseif
 				selectedBoatId == "Hovercraft"
-			then "A navy hovercraft with a big ducted stern fan and three bucket seats. Glides at 65 studs/s with the same hull strength and 64 cargo tiles as the fishing boat."
+			then "A navy hovercraft with a big ducted stern fan and three bucket seats. Glides at 65 studs/s with the same hull strength and 64 units of cargo space as the fishing boat."
 			elseif
 				selectedBoatId == "Speedboat"
-			then "A blue-and-white sport cruiser with more speed, sharper turns and the same 64 cargo tiles as the fishing boat."
+			then "A blue-and-white sport cruiser with more speed, sharper turns and the same 64 units of cargo space as the fishing boat."
 			elseif
 				selectedBoatId == "FishingBoat"
 			then "A bigger hull, a sheltered wheelhouse and room for three. Cruise faster to your next fishing spot."

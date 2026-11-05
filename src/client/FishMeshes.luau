@@ -11,10 +11,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local MeshFeatures = require(ReplicatedStorage.Shared.MeshFeatures)
+local EditableMeshBudget = require(script.Parent.EditableMeshBudget)
 
 local FishMeshes = {}
 -- Angle steps from back to belly on one flank.
-local ANGLE_STEPS = 36
+local ANGLE_STEPS = 28
 -- Colour bands from back to belly (fractions of pi). Blend bands mix their two
 -- swatches, softening the countershading.
 local BANDS = {
@@ -26,15 +27,25 @@ local BANDS = {
 	{ name = "BellySide", from = 0.68, to = 0.74, a = "Side", b = "Belly", mix = 0.7 },
 	{ name = "Belly", from = 0.74, to = 1, a = "Belly", b = "Belly", mix = 0 },
 }
+-- Flatfish (loft mode "flat") lie on their side: one colour per face.
+local FLAT_BANDS = {
+	{ name = "Top", from = 0, to = 1, a = "Side", b = "Side", mix = 0, sides = { 1 } },
+	{ name = "Under", from = 0, to = 1, a = "Belly", b = "Belly", mix = 0, sides = { -1 } },
+}
+local function bandsFor(spec)
+	return if spec.mode == "flat" then FLAT_BANDS else BANDS
+end
 local PAINTED = { "Color", "Material", "Reflectance", "Transparency" }
 local started = false
--- [fishId] = { [band name] = { part, size, offset } }, false when unavailable,
--- or "building" while another fish waits on it.
+-- [fishId] = { [band name] = { part, mesh, size, offset } }, false when unavailable.
 local skins: { [string]: any } = {}
+-- Part creation and fixed-size copying yield. Only one species may hold a
+-- temporary dynamic mesh at a time, even when many tagged fish arrive together.
+local building = false
 local hydrated: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
 -- One band of the skin as a mesh part, its vertices centred on its bounds.
-local function buildBand(rings, band): (MeshPart?, Vector3?)
+local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?)
 	local scale = FishModels.SCALE
 	local steps = math.max(2, math.ceil((band.to - band.from) * ANGLE_STEPS))
 	local points, normals = {}, {}
@@ -52,7 +63,8 @@ local function buildBand(rings, band): (MeshPart?, Vector3?)
 		Vector3.new(1, 0, 0)
 	)
 	local tail = add(Vector3.new(last.x - 0.004, (last.top + last.bottom) / 2, 0) * scale, Vector3.new(-1, 0, 0))
-	for _, side in { 1, -1 } do
+	local sides = band.sides or { 1, -1 }
+	for _, side in sides do
 		local grid = {}
 		for ringIndex, ring in rings do
 			local row = {}
@@ -66,63 +78,69 @@ local function buildBand(rings, band): (MeshPart?, Vector3?)
 	end
 	local center = (low + high) / 2
 
-	local ok, mesh = pcall(function()
-		return AssetService:CreateEditableMesh()
-	end)
-	if not ok or not mesh then
-		return nil, nil
+	local mesh = EditableMeshBudget.create()
+	if not mesh then
+		return nil, nil, nil
 	end
-	local vertexIds, normalIds = {}, {}
-	for index, point in points do
-		vertexIds[index] = mesh:AddVertex(point - center)
-		normalIds[index] = mesh:AddNormal(normals[index])
-	end
-	-- Wound so (b - a) x (c - a) faces outward, the side Roblox draws.
-	local function face(a: number, b: number, c: number)
-		local pa = points[a]
-		local cross = (points[b] - pa):Cross(points[c] - pa)
-		if cross.Magnitude < 1e-10 then
-			return
+	local ok, part = pcall(function()
+		local vertexIds, normalIds = {}, {}
+		for index, point in points do
+			vertexIds[index] = mesh:AddVertex(point - center)
+			normalIds[index] = mesh:AddNormal(normals[index])
 		end
-		if cross:Dot(normals[a] + normals[b] + normals[c]) < 0 then
-			b, c = c, b
+		-- Wound so (b - a) x (c - a) faces outward, the side Roblox draws.
+		local function face(a: number, b: number, c: number)
+			local pa = points[a]
+			local cross = (points[b] - pa):Cross(points[c] - pa)
+			if cross.Magnitude < 1e-10 then
+				return
+			end
+			if cross:Dot(normals[a] + normals[b] + normals[c]) < 0 then
+				b, c = c, b
+			end
+			local id = mesh:AddTriangle(vertexIds[a], vertexIds[b], vertexIds[c])
+			mesh:SetFaceNormals(id, { normalIds[a], normalIds[b], normalIds[c] })
 		end
-		local id = mesh:AddTriangle(vertexIds[a], vertexIds[b], vertexIds[c])
-		mesh:SetFaceNormals(id, { normalIds[a], normalIds[b], normalIds[c] })
-	end
-	for _, side in { 1, -1 } do
-		local grid = grids[side]
-		for ringIndex = 1, #rings - 1 do
-			local row, nextRow = grid[ringIndex], grid[ringIndex + 1]
+		for _, side in sides do
+			local grid = grids[side]
+			for ringIndex = 1, #rings - 1 do
+				local row, nextRow = grid[ringIndex], grid[ringIndex + 1]
+				for step = 0, steps - 1 do
+					face(row[step], nextRow[step], nextRow[step + 1])
+					face(row[step], nextRow[step + 1], row[step + 1])
+				end
+			end
 			for step = 0, steps - 1 do
-				face(row[step], nextRow[step], nextRow[step + 1])
-				face(row[step], nextRow[step + 1], row[step + 1])
+				face(snout, grid[1][step], grid[1][step + 1])
+				face(tail, grid[#rings][step], grid[#rings][step + 1])
 			end
 		end
-		for step = 0, steps - 1 do
-			face(snout, grid[1][step], grid[1][step + 1])
-			face(tail, grid[#rings][step], grid[#rings][step + 1])
-		end
-	end
 
-	local partOk, part = pcall(function()
+		mesh = EditableMeshBudget.fixed(mesh)
+		if not mesh then
+			return nil
+		end
 		return AssetService:CreateMeshPartAsync(
 			Content.fromObject(mesh),
 			{ CollisionFidelity = Enum.CollisionFidelity.Box }
 		)
 	end)
-	if not partOk or not part then
-		mesh:Destroy()
-		warn("[FishMeshes] Could not create a fish skin: " .. tostring(part))
-		return nil, nil
+	if not ok or not part then
+		if mesh then
+			mesh:Destroy()
+		end
+		if not ok then
+			warn("[FishMeshes] Could not create a fish skin: " .. tostring(part))
+		end
+		return nil, nil, nil
 	end
 	part.Size = high - low
-	return part, center
+	return part, center, mesh
 end
 
 -- Band templates for a species, built once and shared by every fish of it.
 local function skin(fishId: string)
-	while skins[fishId] == "building" do
+	while building do
 		task.wait()
 	end
 	if skins[fishId] ~= nil then
@@ -133,20 +151,23 @@ local function skin(fishId: string)
 		skins[fishId] = false
 		return false
 	end
-	skins[fishId] = "building"
+	building = true
 	local bands = {}
-	for _, band in BANDS do
-		local ok, part, center = pcall(buildBand, spec.rings, band)
-		if not ok or not part or not center then
+	for _, band in bandsFor(spec) do
+		local ok, part, center, mesh = pcall(buildBand, spec.rings, band)
+		if not ok or not part or not center or not mesh then
 			for _, built in bands do
 				built.part:Destroy()
+				built.mesh:Destroy()
 			end
 			skins[fishId] = false
+			building = false
 			return false
 		end
-		bands[band.name] = { part = part, size = part.Size, offset = center - spec.anchorPosition }
+		bands[band.name] = { part = part, mesh = mesh, size = part.Size, offset = center - spec.anchorPosition }
 	end
 	skins[fishId] = bands
+	building = false
 	return bands
 end
 
@@ -175,11 +196,13 @@ function FishMeshes.hydrate(model: Instance)
 		end
 	end
 	local anchor = swatches.Side
-	if not anchor or not swatches.Back or not swatches.Belly then
+	swatches.Back = swatches.Back or anchor
+	swatches.Belly = swatches.Belly or anchor
+	if not anchor then
 		return
 	end
 	local parts = {}
-	for _, band in BANDS do
+	for _, band in bandsFor(spec) do
 		local template = bands[band.name]
 		local part = template.part:Clone()
 		part.Name = "LoftSkin"

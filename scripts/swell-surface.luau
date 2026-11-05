@@ -138,10 +138,15 @@ local function tick(dt)
 	renderStep:Fire(dt)
 end
 
+setWaterQuality(3)
 Client.start()
 Client.start()
 assert(#meshes == 1 and #meshParts == 1 and #renderStep.callbacks == 1, "Startup must build one sheet")
 local mesh, part = meshes[1], meshParts[1]
+assert(part.LocalTransparencyModifier == 1, "New water sheets must start hidden before their first frame")
+tick(0)
+assert(part.LocalTransparencyModifier == 1 and rays == 0, "Low-quality joins must skip the swell sheet")
+setWaterQuality(10)
 assert(#mesh.positions <= 2500 and #mesh.faces == 2 * (math.sqrt(#mesh.positions) - 1) ^ 2, "Bounded, fully tiled grid")
 assert(not part.CanCollide and not part.CanQuery and not part.CanTouch, "The sheet must never collide or block rays")
 for face, ids in mesh.faces do
@@ -190,6 +195,15 @@ assert(
 	"Check must see crests, troughs, open water and land"
 )
 assert(part.LocalTransparencyModifier == 0, "Above water the sheet is shown")
+for quality = 0, 6 do
+	setWaterQuality(quality)
+	local before = rays
+	tick(0)
+	assert(part.LocalTransparencyModifier == 1 and rays == before, "Lower and automatic graphics must hide the sheet and skip its probes")
+end
+setWaterQuality(10)
+tick(0)
+assert(part.LocalTransparencyModifier == 0 and #meshes == 1, "Raising graphics must restore the same water sheet")
 
 -- Boats ride the visible surface: never below Terrain water.
 for step = 0, 40 do
