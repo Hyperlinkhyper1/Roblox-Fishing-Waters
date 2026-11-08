@@ -377,6 +377,8 @@ function Data.decode(raw)
 			"Upgrades",
 			"BoatPaint",
 			"BoatUpgrades",
+			"BoatFurniture",
+			"BoatFurnitureStock",
 		}
 	do
 		assert(data[name] == nil or type(data[name]) == "table", "Invalid angler " .. name)
@@ -423,6 +425,24 @@ function Data.decode(raw)
 		for id, owned in upgrades do
 			assert(type(id) == "string" and type(owned) == "boolean", "Invalid boat upgrade")
 		end
+	end
+	-- Boat furniture (Shared.BoatFurniture): placed pieces per boat id in hull-root
+	-- studs, and bought pieces waiting to be placed. Unknown item ids are kept.
+	local function signed(value)
+		return type(value) == "number" and value == value and math.abs(value) < 1e6
+	end
+	for boatId, entries in data.BoatFurniture do
+		assert(type(boatId) == "string" and type(entries) == "table" and #entries <= 64, "Invalid boat furniture")
+		for index, entry in entries do
+			assert(
+				type(index) == "number" and type(entry) == "table" and type(entry.Id) == "string" and #entry.Id <= 40
+					and signed(entry.X) and signed(entry.Y) and signed(entry.Z) and signed(entry.R),
+				"Invalid boat furniture piece"
+			)
+		end
+	end
+	for itemId, count in data.BoatFurnitureStock do
+		assert(type(itemId) == "string" and number(count, true) and count >= 0, "Invalid boat furniture stock")
 	end
 	-- Profiles from before paths start as a fish shop; their lifetime stats count
 	-- towards it, since its baseline is empty.
@@ -1095,6 +1115,12 @@ function Data.unstocked(raw)
 	return count
 end
 
+-- A favorite is locked on its backpack/hold entry, or on the fish record itself
+-- (that is where the held fish keeps it). Either way it is never sold or stocked.
+local function favorite(entry)
+	return entry.Locked == true or (entry.Fish ~= nil and entry.Fish.Locked == true)
+end
+
 -- Stock the equipped hand fish and every unlocked backpack fish that fits.
 function Data.stockFreezer(raw, includeHand)
 	local data = Data.decode(raw)
@@ -1107,7 +1133,7 @@ function Data.stockFreezer(raw, includeHand)
 	local index = 1
 	while index <= #data.Backpack do
 		local item = data.Backpack[index]
-		if not item.Locked and Data.canFreeze(data, item.Fish) then
+		if not favorite(item) and Data.canFreeze(data, item.Fish) then
 			table.insert(data.Freezer, item.Fish)
 			table.remove(data.Backpack, index)
 			moved += 1
@@ -1197,7 +1223,7 @@ function Data.storeFish(raw, includeHand)
 	local index = 1
 	while index <= #data.Backpack and #data.Storage < capacity do
 		local item = data.Backpack[index]
-		if not item.Locked then
+		if not favorite(item) then
 			table.insert(data.Storage, item.Fish)
 			table.remove(data.Backpack, index)
 			moved += 1
@@ -1381,12 +1407,13 @@ function Data.editRack(raw, index, action, site)
 	return data
 end
 
--- A customer pays the fish's value. Returns nil when that fish is no longer frozen;
--- the caller credits Cash in the same profile transaction.
+-- A customer pays the fish's value. Returns nil when that fish is no longer frozen
+-- (or is a favorite, which is never sold); the caller credits Cash in the same
+-- profile transaction.
 function Data.sellFrozen(raw, record)
 	local data = Data.decode(raw)
 	for index, frozen in data.Freezer do
-		if sameFish(frozen, record) then
+		if sameFish(frozen, record) and not frozen.Locked then
 			table.remove(data.Freezer, index)
 			local price = math.max(1, math.floor(frozen.Value))
 			data.Stats.CoinsEarned += price
@@ -1420,7 +1447,7 @@ function Data.sellToCove(raw, day, limit, onlyHand)
 	if not onlyHand then
 		local kept = {}
 		for _, item in data.Backpack do
-			if item.Fish and not item.Locked and sales.Count + sold < limit then
+			if item.Fish and not favorite(item) and sales.Count + sold < limit then
 				sell(item.Fish)
 			else
 				table.insert(kept, item)
@@ -1442,7 +1469,7 @@ function Data.deliverFish(raw, matches)
 		return data, record
 	end
 	for index, item in data.Backpack do
-		if item.Fish and not item.Locked and matches(item.Fish) then
+		if item.Fish and not favorite(item) and matches(item.Fish) then
 			table.remove(data.Backpack, index)
 			return data, item.Fish
 		end
@@ -1736,7 +1763,7 @@ function Data.scores(raw, now)
 		start
 end
 Data.KITCHEN_STORAGE_CAPACITY = 8
-local KITCHEN_RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical", "Exotic", "Divine", "Limited" }
+local KITCHEN_RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical", "Exotic", "Divine", "Limited", "Admin" }
 
 function Data.setKitchenStorageTargets(raw, targets)
 	local data = Data.decode(raw)

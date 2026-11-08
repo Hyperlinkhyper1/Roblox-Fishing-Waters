@@ -13,6 +13,7 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Paths = require(ReplicatedStorage.Shared.Paths)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
+local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local BackpackModels = require(ReplicatedStorage.Shared.BackpackModels)
 local Settings = require(script.Parent.PlayerSettings)
@@ -680,16 +681,16 @@ local function commas(value)
 	until count == 0
 	return formatted
 end
--- "Red Neon Albino": the catalog name with the neon colour worked in.
-local function mutationName(record)
-	local mutation = Catalog.Mutations[record.Mutation]
-	local name = mutation and mutation.Name or record.Mutation
-	return if record.NeonColor then (string.gsub(name, "Neon", record.NeonColor .. " Neon")) else name
-end
-local function fishName(record)
+-- RichText "Red Neon Albino Cod": each mutation word in its own colour
+-- (FishMutations.richLabel), then the species name in `nameColor` if given.
+local function fishName(record, nameColor: string?)
 	local fish = Catalog.Fish[record.FishId]
-	return (if record.Mutation ~= "Normal" then mutationName(record) .. " " else "")
-		.. (fish and fish.Name or record.FishId)
+	local mutation = FishMutations.richLabel(record.Mutation, record.NeonColor)
+	local name = fish and fish.Name or record.FishId
+	if nameColor then
+		name = '<font color="' .. nameColor .. '">' .. name .. "</font>"
+	end
+	return (if mutation ~= "" then mutation .. " " else "") .. name
 end
 -- Silhouettes are drawn as flat ink, so undiscovered fish keep their shape secret-ish.
 local function picture(parent, id, props, silhouette, traits)
@@ -751,7 +752,9 @@ function Menu.start()
 	Settings.start()
 	Freecam.start()
 	local player = Players.LocalPlayer
-	local remote = ReplicatedStorage:WaitForChild("AnglerMenu") :: RemoteFunction
+	-- The server makes this remote in a startup step, often well past 5 s after a
+	-- join; an explicit timeout keeps that normal wait out of the error report.
+	local remote = ReplicatedStorage:WaitForChild("AnglerMenu", math.huge) :: RemoteFunction
 	local profile = nil
 	local active = nil
 	local settingTab, journalTab = "Performance", "Stats"
@@ -1184,12 +1187,20 @@ function Menu.start()
 				}, 0.4)
 				return
 			end
-			local mutationNames = {}
+			-- Sorted by plain name, written with each mutation word in its own colour.
+			local recorded = {}
 			for mutation, count in entry.Mutations or {} do
 				local info = Catalog.Mutations[mutation]
-				table.insert(mutationNames, (info and info.Name or mutation) .. " ×" .. count)
+				table.insert(recorded, { Plain = info and info.Name or mutation, Key = mutation, Count = count })
 			end
-			table.sort(mutationNames)
+			table.sort(recorded, function(a, b)
+				return a.Plain < b.Plain
+			end)
+			local mutationNames = {}
+			for _, item in recorded do
+				local rich = FishMutations.richLabel(item.Key, nil, true)
+				table.insert(mutationNames, (if rich ~= "" then rich else item.Plain) .. " ×" .. item.Count)
+			end
 			label(sheet, "MUTATIONS", 12, {
 				Position = UDim2.new(0, 0, 0.4, 154),
 				Size = UDim2.new(1, 0, 0, 16),
@@ -1204,6 +1215,7 @@ function Menu.start()
 				{
 					Size = UDim2.new(1, -8, 0, 0),
 					AutomaticSize = Enum.AutomaticSize.Y,
+					RichText = true,
 					TextXAlignment = Enum.TextXAlignment.Center,
 					TextYAlignment = Enum.TextYAlignment.Top,
 				},
@@ -1677,9 +1689,7 @@ function Menu.start()
 			end
 		end
 		local function richName(record)
-			local fish = Catalog.Fish[record.FishId]
-			local prefix = if record.Mutation and record.Mutation ~= "Normal" then mutationName(record) .. " " else ""
-			return prefix .. '<font color="#A6D8F2">' .. (fish and fish.Name or record.FishId) .. "</font>"
+			return fishName(record, "#A6D8F2")
 		end
 		local cards = {
 			{
@@ -2640,6 +2650,7 @@ function Menu.start()
 				text(stockCard, fishName(record), 17, cream, {
 					Position = UDim2.fromOffset(110, 10),
 					Size = UDim2.new(1, -124, 0, 28),
+					RichText = true,
 				})
 				text(
 					stockCard,
@@ -2935,6 +2946,15 @@ function Menu.start()
 			Description = "A captive singularity strapped to your back. Infinite fish storage: your backpack never fills up, so you can keep fishing all day. Animated accretion disk and infalling fish (toggle in Settings > Performance).",
 		},
 		{
+			Key = "BoatCustomization",
+			Name = "Boat Customization",
+			New = true,
+			Perks = { "30 pieces of boat furniture", "Place them anywhere on deck", "Bought at the drydock" },
+			Colors = { Color3.fromRGB(20, 54, 92), Color3.fromRGB(36, 128, 150), Color3.fromRGB(240, 176, 84) },
+			Accent = Color3.fromRGB(255, 205, 120),
+			Description = "Turn your boat into your own. Buy deck chairs, lanterns, palms, a hot tub and more at the drydock refit dock, then place them freely on your decks. Furniture is bought with in-game cash and moves between your boats.",
+		},
+		{
 			Key = "AutoStore",
 			Name = "Auto Store",
 			Perks = { "Auto-stores your catches", "Toggle in Inventory", "Works aboard your ship" },
@@ -3043,6 +3063,18 @@ function Menu.start()
 				ZIndex = 2,
 			})
 			pcall(BackpackModels.show, view, "BlackHole")
+		elseif pass.Key == "BoatCustomization" then
+			local view = raw("ViewportFrame", parent, {
+				Name = "BoatFurniturePreview",
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(size, size),
+				ZIndex = 2,
+			})
+			pcall(function()
+				require(ReplicatedStorage.Shared.BoatFurniture).preview(view, "DeckChair")
+			end)
 		elseif pass.Key == "AutoStore" then
 			glyph(parent, "AutoStore", if owned then green else Color3.new(1, 1, 1), UDim2.fromScale(0.5, 0.5), size * 0.6)
 		else

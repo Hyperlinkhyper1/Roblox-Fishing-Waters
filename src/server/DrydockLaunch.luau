@@ -299,6 +299,29 @@ local function moveLift(lift, rise: number)
 	pcall(lift.hoist, math.max(0, rise - lift.contact))
 end
 
+local function serverNow(): number
+	local ok, now = pcall(function()
+		return workspace:GetServerTimeNow()
+	end)
+	return if ok and type(now) == "number" then now else os.clock()
+end
+
+-- Moving the anchored cradle and hull from the server every frame replicated as
+-- uneven steps, the two models out of step with each other and the seated owner
+-- welded into the jerking hull. The server now sets only the end poses; every
+-- client (DrydockLift) animates both from this timeline in its own frames.
+local function travel(lift, from: number, to: number, seconds: number)
+	local shop = lift.shop
+	shop:SetAttribute("LiftRest", lift.rest)
+	shop:SetAttribute("LiftContact", lift.contact)
+	shop:SetAttribute("LiftFrom", from)
+	shop:SetAttribute("LiftTo", to)
+	shop:SetAttribute("LiftSeconds", seconds)
+	shop:SetAttribute("LiftStartedAt", serverNow())
+	tween(seconds, function() end)
+	moveLift(lift, to)
+end
+
 -- The refit lift: the cradle rises under a floating hull until its keel blocks
 -- meet the keel, then carries the hull up into the dry basin. `hoist(height)`
 -- holds the boat that far above where it floated (nil lets it go). Yields until
@@ -326,9 +349,9 @@ function DrydockLaunch.lift(shop: Model, player: Player, model: Model, hoist: (n
 	}
 	reservations[shop] = lift
 	shop:SetAttribute("LiftingUserId", player.UserId)
-	tween(LIFT_SECONDS, function(alpha)
-		moveLift(lift, drop * alpha)
-	end)
+	-- Park and level the hull where it floats before anything moves.
+	moveLift(lift, 0)
+	travel(lift, 0, drop, LIFT_SECONDS)
 	return lift
 end
 
@@ -340,14 +363,15 @@ function DrydockLaunch.lower(lift)
 	lift.lowering = true
 	local from = lift.rise
 	if from > 0 then
-		tween(LIFT_SECONDS * from / lift.drop, function(alpha)
-			moveLift(lift, from * (1 - alpha))
-		end)
+		travel(lift, from, 0, LIFT_SECONDS * from / lift.drop)
 	end
 	moveLift(lift, 0)
 	pcall(lift.hoist, nil)
 	reservations[lift.shop] = nil
-	lift.shop:SetAttribute("LiftingUserId", nil)
+	local shop = lift.shop
+	for _, name in { "LiftRest", "LiftContact", "LiftFrom", "LiftTo", "LiftSeconds", "LiftStartedAt", "LiftingUserId" } do
+		shop:SetAttribute(name, nil)
+	end
 end
 
 return DrydockLaunch

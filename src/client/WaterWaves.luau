@@ -8,6 +8,19 @@ local RunService = game:GetService("RunService")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local WaterQuality = require(script.Parent.WaterQuality)
+local TerrainProbe = require(script.Parent.TerrainProbe)
+
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
 
 local WaterWaves = {}
 local GRID = 7
@@ -217,7 +230,7 @@ function WaterWaves.start()
 	-- Characters and boats move, so the filter is rebuilt in any frame that raycasts
 	local filtered = false
 	local function refreshFilter()
-		local excluded = { root }
+		local excluded: { Instance } = { root, workspace.Terrain }
 		for _, player in Players:GetPlayers() do
 			if player.Character then
 				table.insert(excluded, player.Character)
@@ -234,14 +247,17 @@ function WaterWaves.start()
 			filtered = true
 			refreshFilter()
 		end
-		-- Include the island's mesh parts as well as terrain, so water under the
-		-- low-poly shore can never receive floating crests over dry land.
-		local hit = workspace:Raycast(
+		-- Terrain from voxels (a terrain ray builds collision for unqueried chunks:
+		-- buildKDTree spikes), then a ray for the island's mesh parts so water under
+		-- the low-poly shore can never receive floating crests over dry land.
+		if not TerrainProbe.isWater(position.X, position.Z) then
+			return false
+		end
+		return workspace:Raycast(
 			Vector3.new(position.X, Biomes.WaterLevel + 512, position.Z),
-			Vector3.new(0, -600, 0),
+			Vector3.new(0, -512, 0),
 			parameters
-		)
-		return hit ~= nil and hit.Material == Enum.Material.Water
+		) == nil
 	end
 	local coloredAt = -math.huge
 	local lastCamera: Vector3? = nil
@@ -300,7 +316,7 @@ function WaterWaves.start()
 		return lastExposure
 	end
 	-- Every frame: throttled updates stepped the crests visibly against the camera.
-	RunService.RenderStepped:Connect(function(dt: number)
+	RunService.RenderStepped:Connect(profiled("WaterWaves", function(dt: number)
 		local step = dt
 		local camera = workspace.CurrentCamera
 		if not camera then
@@ -315,7 +331,9 @@ function WaterWaves.start()
 		local cameraPosition = camera.CFrame.Position
 		-- The engine derives wave phase from elapsed time * speed, so any change in
 		-- speed (gusts, coastal exposure) jumps every ripple. Wind shows in the size.
-		terrain.WaterWaveSpeed = WATER_WAVE_SPEED
+		if terrain.WaterWaveSpeed ~= WATER_WAVE_SPEED then
+			terrain.WaterWaveSpeed = WATER_WAVE_SPEED
+		end
 		local direction = Vector3.new(state.windDirection.X, 0, state.windDirection.Z)
 		direction = if direction.Magnitude > 0.001 then direction.Unit else Vector3.xAxis
 		local across = Vector3.new(-direction.Z, 0, direction.X)
@@ -369,7 +387,12 @@ function WaterWaves.start()
 		local ripple = (0.025 + (MAX_RIPPLE_SIZE - 0.025) * windStrength ^ 1.3)
 			* math.sqrt(Weather.lakeExposure(projected))
 			* coastalExposure
-		terrain.WaterWaveSize += (ripple - terrain.WaterWaveSize) * (1 - math.exp(-step * 3))
+		-- Terrain water settings are engine state: skip the write once the easing has
+		-- settled instead of nudging it by a hair every frame.
+		local waveSize = terrain.WaterWaveSize
+		if math.abs(ripple - waveSize) > 0.0005 then
+			terrain.WaterWaveSize = waveSize + (ripple - waveSize) * (1 - math.exp(-step * 3))
+		end
 		if not WaterQuality.layeredEnabled() then
 			table.clear(hullBounds)
 			for _, ribbon in ribbons do
@@ -468,7 +491,7 @@ function WaterWaves.start()
 				ribbon.edge.Color = ColorSequence.new(Color3.fromRGB(205, 229, 230))
 			end
 		end
-	end)
+	end))
 end
 
 return WaterWaves

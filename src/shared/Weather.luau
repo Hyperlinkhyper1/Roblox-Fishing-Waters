@@ -5,6 +5,7 @@ export type State = {
 	kind: string,
 	rain: number,
 	storm: number,
+	fog: number,
 	cloudCover: number,
 	windSpeed: number,
 	windDirection: Vector3,
@@ -23,15 +24,17 @@ export type Supercell = { position: Vector3, motion: Vector3, strength: number, 
 export type Tornado = { id: number, position: Vector3, radius: number, strength: number, age: number, duration: number }
 
 Weather.Presets = {
-	Clear = { rain = 0, storm = 0, cloudCover = 0, windSpeed = 6 },
-	LightRain = { rain = 0.24, storm = 0, cloudCover = 0.5, windSpeed = 18 },
-	Rain = { rain = 0.62, storm = 0, cloudCover = 0.8, windSpeed = 32 },
-	Storm = { rain = 1, storm = 1, cloudCover = 1, windSpeed = 52 },
+	Clear = { rain = 0, storm = 0, fog = 0, cloudCover = 0, windSpeed = 6 },
+	-- Calm marine fog: no precipitation, with a low stratus deck above the mist.
+	Foggy = { rain = 0, storm = 0, fog = 1, cloudCover = 0.9, windSpeed = 4 },
+	LightRain = { rain = 0.24, storm = 0, fog = 0, cloudCover = 0.5, windSpeed = 18 },
+	Rain = { rain = 0.62, storm = 0, fog = 0, cloudCover = 0.8, windSpeed = 32 },
+	Storm = { rain = 1, storm = 1, fog = 0, cloudCover = 1, windSpeed = 52 },
 	-- The gloomy weather around a forced supercell; the cell itself (Weather.supercell)
 	-- brings the extreme wind and tornadoes. Natural supercells are rare forecast events.
-	Supercell = { rain = 0.5, storm = 0.35, cloudCover = 0.95, windSpeed = 34 },
+	Supercell = { rain = 0.5, storm = 0.35, fog = 0, cloudCover = 0.95, windSpeed = 34 },
 	-- Admin-only event: deliberately absent from the automatic forecast.
-	BlackHole = { rain = 0.28, storm = 0, cloudCover = 1, windSpeed = 26 },
+	BlackHole = { rain = 0.28, storm = 0, fog = 0, cloudCover = 1, windSpeed = 26 },
 }
 
 -- A full front passes over the islands, with a twenty-second blend at each change.
@@ -42,6 +45,7 @@ Weather.Schedule = {
 	{ kind = "Storm", duration = 150 },
 	{ kind = "Rain", duration = 120 },
 	{ kind = "LightRain", duration = 120 },
+	{ kind = "Foggy", duration = 180 },
 	{ kind = "Clear", duration = 150 },
 }
 Weather.TransitionSeconds = 20
@@ -433,6 +437,7 @@ function Weather.getState(serverTime: number?, position: Vector3?): State
 		kind = if type(override) == "string" and Weather.Presets[override] then override else stage.kind,
 		rain = mix("rain"),
 		storm = mix("storm"),
+		fog = mix("fog"),
 		cloudCover = mix("cloudCover"),
 		windSpeed = wind,
 		windDirection = Vector3.new(math.cos(angle), 0, math.sin(angle)),
@@ -455,6 +460,7 @@ function Weather.getState(serverTime: number?, position: Vector3?): State
 			elseif state.storm > 0.38 then "Storm"
 			elseif state.rain > 0.4 then "Rain"
 			elseif state.rain > 0.06 then "LightRain"
+			elseif state.fog > 0.35 then "Foggy"
 			else "Clear"
 	end
 	return state

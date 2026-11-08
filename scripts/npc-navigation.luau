@@ -42,7 +42,8 @@ local sweepWalls
 local function positionAt(point)
 	local height = if config.groundHeight then config.groundHeight(point.X, point.Z) else point.Y
 	local nextPosition = Vector3.new(point.X, height + 3, point.Z)
-	if sweepWalls and sweepWalls(npc.root.Position, Vector3.new(3, 4, 3), nextPosition - npc.root.Position) then return end
+	local body = config.body or 3
+	if sweepWalls and sweepWalls(npc.root.Position, Vector3.new(body, 4, body), nextPosition - npc.root.Position) then return end
 	npc.root.Position = nextPosition
 end
 local task = {}
@@ -69,8 +70,13 @@ end
 local workspace = {}
 -- Axis-aligned solid walls, expanded by the swept body's footprint. This
 -- catches corner cutting instead of assuming every MoveTo is unobstructed.
-sweepWalls = function(start, size, direction)
+sweepWalls = function(start, size, direction, shapecast)
 	for _, wall in config.walls or {} do
+		-- Like Roblox shapecasts, ignore walls the box already overlaps.
+		if shapecast and math.abs(start.X - (wall.min.X + wall.max.X) / 2) < (wall.max.X - wall.min.X + size.X) / 2
+			and math.abs(start.Z - (wall.min.Z + wall.max.Z) / 2) < (wall.max.Z - wall.min.Z + size.Z) / 2 then
+			continue
+		end
 		local low, high = 0, 1
 		for _, axis in { "X", "Z" } do
 			local origin, step = start[axis], direction[axis]
@@ -91,7 +97,7 @@ function workspace:Blockcast(frame, size, direction, params)
 	check(params.FilterDescendantsInstances[1] == npc.model and params.RespectCanCollide
 		and params.CollisionGroup == npc.root.CollisionGroup, "Body queries use the rig's collision rules")
 	if config.onCast then return config.onCast(frame, size, direction) end
-	return sweepWalls(frame.Position, size, direction)
+	return sweepWalls(frame.Position, size, direction, true)
 end
 function workspace:GetPartBoundsInBox(frame, size, params)
 	boxes += 1
@@ -505,6 +511,22 @@ for _, speed in { 9, 16 } do
 		check(#paths == 0, "Lobby doorway works without navmesh fallback")
 		clean()
 	end
+end
+
+-- The planning box is wider than the rig, so a porter standing in the nook
+-- between the lobby door and the front wall already overlaps both walls.
+-- Shapecasts skip parts overlapping their start, which once made the straight
+-- line to the front door look clear and pinned him in that corner.
+for _, start in { ground(8.25, 14.35), ground(7.4, 11.25), ground(13.5, 14.35) } do
+	reset({ ground = true, walls = lobbyWalls, noPath = true, body = 2 })
+	npc.gridFrame = gridFrame
+	npc.humanoid.WalkSpeed = 16
+	npc.root.Position = Vector3.new(start.X, 3, start.Z)
+	check(not sweepWalls(npc.root.Position, Vector3.new(2, 4, 2), Vector3.zero), "Wall-hugging start position is physically valid")
+	check(Navigation.walk(npc, ground(0, 18.6), nil, true),
+		string.format("Porter beside the storage walls at %.2f,%.2f still finds the lobby doorway", start.X, start.Z))
+	check(#paths == 0, "Wall-hugging porter stays on the grid")
+	clean()
 end
 
 local blockedLobby = table.clone(lobbyWalls)

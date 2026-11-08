@@ -86,6 +86,7 @@ local manualNear = false
 local function near() return manualNear end
 local function notify() end
 local function refreshDisplay() end
+local function refreshShelves() end
 local function leave(customer) customer.leaving = true end
 local function describeFish() return "Trout" end
 local function bubble() end
@@ -125,7 +126,7 @@ local function reset()
 		model = { Parent = true },
 	}
 	shop = { base = base, frame = CFrame.new(), staff = { Seller = worker, Porter = worker } }
-	customer = { shop = shop, active = true, root = { Position = Vector3.new(0, 0, 0) }, record = record }
+	customer = { shop = shop, active = true, root = { Position = Vector3.new(0, 0, 0) }, items = { { record = record } } }
 	failSave, beforeTransform, onWalk, manualNear, walkCount = false, nil, nil, false, 0
 	furnitureRefreshes = 0
 end

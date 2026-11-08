@@ -1,10 +1,13 @@
 -- A distant port city on its own stretch of mainland. Ships reach it up a long estuary, like
 -- Southampton Water: the container terminal lines the west bank of a wide basin, the jetties
 -- of the eastern docks face it, the refinery sits back behind the terminal, and the dense city fills
--- the peninsula behind the quays with its underground station under the forecourt.
+-- the peninsula behind the quays with its underground station under the forecourt. Hills rise
+-- behind it all along the south and east edges (see CityHills), with a Grand Prix circuit cut
+-- into the foot of the south range (see CityCircuit).
 -- Coordinates follow the north-up sea chart (north is -Z), relative to CENTER.
 local HttpService = game:GetService("HttpService")
 local CityBuildings = require(script.Parent.CityBuildings)
+local CityHills = require(script.Parent.CityHills)
 local CityLand = require(script.Parent.CityLand)
 local CityLandmark = require(script.Parent.CityLandmark)
 local CityMetro = require(script.Parent.CityMetro)
@@ -15,7 +18,7 @@ local Lod = require(script.Parent.Lod)
 local Props = require(script.Parent.Props)
 
 local City = {}
-City.VERSION = 7
+City.VERSION = 10
 local CENTER = Vector3.new(7000, 0, 7000)
 local TOP = 8 -- walkable land height
 local CURB = TOP + 0.9 -- pavement and building floor height
@@ -58,7 +61,7 @@ for _, point in {
 	{ 380, -1300 },
 	{ 650, -1250 },
 	{ 900, -1150 },
-	{ 1180, -1120, "edge" }, -- the chart's eastern edge
+	{ 1180, -1120, "edge" }, -- the chart's eastern edge, where the hills begin
 	{ 1180, 1180, "edge" }, -- and its southern edge
 } do
 	table.insert(City.COAST, point)
@@ -139,9 +142,23 @@ local function car(parent: Instance, x: number, z: number, alongX: boolean, seed
 	part(parent, "CarCabin", cabin, Vector3.new(x, TOP + 4.5, z), rgb(38, 44, 50), M.Glass, false)
 end
 
+-- Street lamps light the pavement and the facades around them after dark. The client
+-- (CityNightLights) switches the NightGlow head and NightLight lamp on once it is dark enough.
+local LAMP_GLOW = rgb(255, 212, 150)
 local function lamp(parent: Instance, x: number, z: number)
 	part(parent, "StreetLampPole", Vector3.new(0.6, 15, 0.6), Vector3.new(x, CURB + 7.5, z), rgb(52, 56, 56), M.Metal)
-	part(parent, "StreetLampHead", Vector3.new(2.6, 0.7, 2.6), Vector3.new(x, CURB + 15, z), rgb(214, 200, 150), M.SmoothPlastic, false)
+	local head = part(parent, "StreetLampHead", Vector3.new(2.6, 0.7, 2.6), Vector3.new(x, CURB + 15, z), rgb(214, 200, 150), M.SmoothPlastic, false)
+	head:AddTag("NightGlow")
+	head:SetAttribute("GlowColor", LAMP_GLOW)
+	head:SetAttribute("GlowAt", 0.25)
+	local light = Instance.new("PointLight")
+	light.Color = LAMP_GLOW
+	light.Range = 44
+	light.Brightness = 1.8
+	light.Shadows = false
+	light:AddTag("NightLight")
+	light:SetAttribute("GlowAt", 0.25)
+	light.Parent = head
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -359,8 +376,15 @@ local function buildDistrict(ground: Instance, coast): { { number } }
 			local shade = 0.85 + hash(b.i, b.j, 2) * 0.2
 			part(block, "Pavement", Vector3.new(b.w, 0.9, b.d), Vector3.new(b.cx, TOP + 0.45, b.cz), Color3.new(0.6 * shade, 0.59 * shade, 0.56 * shade), M.Concrete)
 			fillBlock(block, b.kind, b.cx, b.cz, b.w, b.d, seed)
-			if b.kind ~= "park" then
-				lamp(block, b.cx - b.w / 2 + 1.5, b.cz - b.d / 2 + 1.5)
+			-- Opposite corners stagger the lamps down both sides of every street; downtown
+			-- blocks take all four corners.
+			local x0, x1 = b.cx - b.w / 2 + 1.5, b.cx + b.w / 2 - 1.5
+			local z0, z1 = b.cz - b.d / 2 + 1.5, b.cz + b.d / 2 - 1.5
+			lamp(block, x0, z0)
+			lamp(block, x1, z1)
+			if b.kind == "tower" or b.kind == "mid" then
+				lamp(block, x1, z0)
+				lamp(block, x0, z1)
 			end
 			-- Cars parked along the kerb on the block's south side
 			for k = 0, 3 do
@@ -398,6 +422,17 @@ local function buildDistrict(ground: Instance, coast): { { number } }
 		for _, dz in { -185, -165 } do
 			tree(civic, (cx0 + cx1) / 2 + dx, dz, 0.7, dx + dz)
 		end
+	end
+	-- Lamps ring the square
+	for k = 0, 4 do
+		local x = cx0 + 3 + k * (cx1 - cx0 - 6) / 4
+		lamp(civic, x, cz0 + 3)
+		lamp(civic, x, cz1 - 3)
+	end
+	for k = 1, 3 do
+		local z = cz0 + 3 + k * (cz1 - cz0 - 6) / 4
+		lamp(civic, cx0 + 3, z)
+		lamp(civic, cx1 - 3, z)
 	end
 
 	-- Woods may grow wherever the grid left a cell empty
@@ -540,6 +575,7 @@ function City.build(root: Instance): Model
 	task.wait()
 	suburbs(ground, coast, reserved)
 	countryside(ground, coast, reserved)
+	CityHills.build(ground, CENTER)
 
 	local arrival = part(city, "CityArrival", Vector3.new(2, 0.2, 2), Vector3.new(CityMetro.ARRIVAL[1], CURB + 0.1, CityMetro.ARRIVAL[2]), rgb(150, 144, 134), M.Concrete, false)
 	arrival.Transparency = 1

@@ -72,6 +72,10 @@ local function fishKey(record): string
 	return string.format("%s|%s|%s", tostring(record.FishId), tostring(record.Kg), tostring(record.CaughtAt))
 end
 
+local function catchKey(record): string
+	return string.format("%s|%s", tostring(record.FishId), tostring(record.CaughtAt))
+end
+
 local function fishAppearance(record): string
 	return table.concat({ record.Mutation, record.NeonColor or "", table.concat(record.Corruptions or {}, ","), tostring(record.Value) }, "|")
 end
@@ -105,6 +109,7 @@ local function buildFishTool(record): Tool
 	tool.CanBeDropped = false
 	tool.Grip = CFrame.Angles(0, math.rad(180), 0)
 	tool:SetAttribute("CargoFish", fishKey(record))
+	tool:SetAttribute("CargoCatch", catchKey(record))
 	tool:SetAttribute("CargoAppearance", fishAppearance(record))
 	local handle = Instance.new("Part")
 	handle.Name = "Handle"
@@ -151,7 +156,7 @@ local function syncTool(player: Player)
 				if hand and child:GetAttribute("CargoFish") == wanted and child:GetAttribute("CargoAppearance") == fishAppearance(hand) and not kept then
 					kept = true
 				else
-					if child:GetAttribute("CargoFish") == wanted and container == player.Character then
+					if hand and child:GetAttribute("CargoCatch") == catchKey(hand) and container == player.Character then
 						wasEquipped = true
 					end
 					child:Destroy()
@@ -207,6 +212,36 @@ function CargoService.addHeldMutation(player: Player, mutation: string): (boolea
 		return false, message
 	end
 	return true, "Added " .. FishMutations.label(mutation, nil) .. " to your fish."
+end
+
+-- Weight edits use the same saved hand and tool refresh as normal cargo changes.
+function CargoService.setHeldWeight(player: Player, kg: any): (boolean, string)
+	if player.UserId ~= 2541746813 then
+		return false, "That command is unavailable."
+	end
+	if type(kg) ~= "number" or kg ~= kg or kg < 0.01 or kg >= 2 ^ 53 then
+		return false, "Usage: /set weight <kg> (at least 0.01 kg and below 9007199254740992)."
+	end
+	kg = math.round(kg * 100) / 100
+	local profile = BoatService.getProfile(player)
+	local hand = profile and profile.Angler.Hand
+	if not hand or not CargoService.isCarrying(player, hand) then
+		return false, "Equip the fish you want to resize first."
+	end
+	local expected = fishKey(hand)
+	local ok, message = BoatService.updateProgress(player, function(current)
+		local fish = current.Angler.Hand
+		assert(fish and fishKey(fish) == expected, "The fish in hand changed")
+		local species = Catalog.Fish[fish.FishId]
+		assert(species, "Unknown fish species")
+		fish.Kg = kg
+		fish.Relative = kg / species.AverageKg
+		fish.Value = FishMutations.value(FishCatch.value(species, kg, fish.Size or "Normal"), fish.Mutation, fish.Corruptions)
+	end)
+	if not ok then
+		return false, message
+	end
+	return true, "Fish weight set to " .. FishCatch.formatKg(kg) .. "."
 end
 
 function CargoService.push(player: Player)

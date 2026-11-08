@@ -34,6 +34,10 @@ local function loadShopDesk()
 	-- SHOPDESK_SOURCE --
 end
 dependencies.ShopDesk = loadShopDesk()
+local function loadOfficeDesk()
+	-- OFFICEDESK_SOURCE --
+end
+dependencies.OfficeDesk = loadOfficeDesk()
 local function loadFishFreezerGeometry()
 	-- FISHFREEZERGEOMETRY_SOURCE --
 end

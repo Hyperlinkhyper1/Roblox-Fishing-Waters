@@ -8,6 +8,18 @@ local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local BlackHoleBackpack = {}
 local started = false
 
@@ -164,7 +176,7 @@ function BlackHoleBackpack.start()
 	end
 	-- Packs that streamed in before their joints did are retried here.
 	local nextScan = 0
-	RunService.RenderStepped:Connect(function()
+	RunService.RenderStepped:Connect(profiled("BlackHoleBackpack", function()
 		local now = os.clock()
 		if now >= nextScan then
 			nextScan = now + 2
@@ -194,7 +206,7 @@ function BlackHoleBackpack.start()
 				end
 			end
 		end
-	end)
+	end))
 end
 
 return BlackHoleBackpack

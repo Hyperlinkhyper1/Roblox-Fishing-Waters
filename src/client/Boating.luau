@@ -17,6 +17,18 @@ local BoatPreview = require(script.Parent.BoatPreview)
 local BoatCamera = require(script.Parent.BoatCamera)
 local BoatDriving = require(script.Parent.BoatDriving)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local Boating = {}
 
 local function formatPrice(price: number): string
@@ -314,6 +326,17 @@ function Boating.start()
 	end
 	-- A narrow funnel under the cloud marks a supercell.
 	local funnel = weatherPart("Funnel", 16, 24, 6, 12, sunColor)
+	local fogLines = {}
+	for index = 1, 3 do
+		fogLines[index] = weatherPart(
+			"Fog" .. index,
+			if index == 2 then 7 else 2,
+			7 + (index - 1) * 10,
+			if index == 2 then 26 else 34,
+			3,
+			sunColor
+		)
+	end
 	local lightning =
 		label(weatherIcon, "ϟ", UDim2.fromOffset(21, 17), UDim2.fromOffset(17, 22), 25, sunColor)
 	lightning.Name = "Lightning"
@@ -328,19 +351,23 @@ function Boating.start()
 		currentWeather = kind
 		local blackHole = kind == "BlackHole"
 		local supercell = kind == "Supercell"
-		weatherIcon.Visible = blackHole or supercell or kind == "LightRain" or kind == "Rain" or kind == "Storm"
+		local foggy = kind == "Foggy"
+		weatherIcon.Visible = blackHole or supercell or foggy or kind == "LightRain" or kind == "Rain" or kind == "Storm"
 		voidRing.Visible = blackHole
 		weatherText.Text = kind:gsub("(%l)(%u)", "%1 %2")
 		if not weatherIcon.Visible then
 			weatherText.Visible = false
 		end
 		for _, cloud in clouds do
-			cloud.Visible = not blackHole
+			cloud.Visible = not blackHole and not foggy
+		end
+		for _, line in fogLines do
+			line.Visible = foggy
 		end
 		funnel.Visible = supercell
 		lightning.Visible = kind == "Storm" or supercell
 		for index, drop in drops do
-			drop.Visible = not blackHole
+			drop.Visible = not blackHole and not foggy
 				and (
 					if kind == "Storm"
 						then index <= 2
@@ -457,60 +484,100 @@ function Boating.start()
 	overlay.AutoButtonColor = false
 	overlay.Visible = false
 	overlay.Parent = gui
+	-- Smoked glass over the live slipway camera: a rounded card, a blue accent
+	-- eyebrow, chip tabs and stat tiles with relative bars.
+	local accent = Color3.fromRGB(120, 192, 246)
+	local dim = Color3.fromRGB(176, 184, 194)
 	local card = Instance.new("Frame")
 	card.Name = "DrydockShop"
 	card.Active = true
 	card.AnchorPoint = Vector2.new(0, 0.5)
 	card.Position = UDim2.new(0, 20, 0.5, 0)
 	card.Size = UDim2.fromOffset(380, 500)
-	card.BackgroundColor3 = navy
+	card.ClipsDescendants = true
 	card.Parent = overlay
 	Theme.window(card)
+	Theme.glassWindow(card)
+	card.BackgroundColor3 = Color3.fromRGB(10, 14, 20)
+	card.BackgroundTransparency = 0.12
+	Theme.corner(card, 14)
+	Theme.corner(card.ThemeInnerRim, 10)
+	card.GlassTexture.HeaderRule.Visible = false
+	for index = 1, 4 do
+		card["ThemeBolt" .. index].Visible = false
+	end
 	local scale = Instance.new("UIScale")
 	scale.Parent = card
+	-- Section helpers: an eyebrow with an accent pip, a hairline and a soft tile.
+	local function eyebrow(parent: Instance, text: string, y: number): TextLabel
+		local pip = Instance.new("Frame")
+		pip.Name = "AccentPip"
+		pip.Position, pip.Size = UDim2.fromOffset(24, y + 6), UDim2.fromOffset(16, 4)
+		pip.BackgroundColor3, pip.BorderSizePixel = accent, 0
+		pip.Parent = parent
+		Theme.corner(pip, 2)
+		local item = label(parent, text, UDim2.fromOffset(48, y), UDim2.fromOffset(260, 16), 11, accent)
+		return item
+	end
+	local function hairline(parent: Instance, y: number): Frame
+		local line = Instance.new("Frame")
+		line.Name = "Divider"
+		line.Position, line.Size = UDim2.fromOffset(24, y), UDim2.new(1, -48, 0, 1)
+		line.BackgroundColor3, line.BackgroundTransparency, line.BorderSizePixel = Color3.new(1, 1, 1), 0.88, 0
+		line.Parent = parent
+		return line
+	end
+	local function tile(parent: Instance, position: UDim2, size: UDim2): Frame
+		local frame = Instance.new("Frame")
+		frame.Position, frame.Size = position, size
+		frame.Parent = parent
+		Theme.glassPanel(frame, true)
+		frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		frame.BackgroundTransparency = 0.95
+		frame.ThemeBorder.Transparency = 0.82
+		Theme.corner(frame, 10)
+		return frame
+	end
+
 	local product = Instance.new("Frame")
 	product.Name = "BoatOffer"
 	product.Size = UDim2.fromScale(1, 1)
 	product.BackgroundTransparency = 1
 	product.Parent = card
-	label(product, "DRYDOCK · SHIP PREVIEW", UDim2.fromOffset(24, 23), UDim2.fromOffset(276, 22), 12, cream)
-	local title = label(product, spec.Name, UDim2.fromOffset(24, 61), UDim2.fromOffset(332, 38), 27, cream)
-	title.Font = Enum.Font.GothamBold
-	local description = label(
-		product,
-		"Inspect your boat on the slipway. After purchase, we lower it into the water and put you aboard.",
-		UDim2.fromOffset(24, 155),
-		UDim2.fromOffset(332, 43),
-		14,
-		muted
-	)
+	eyebrow(product, "SHIPYARD  ·  SHIP PREVIEW", 22)
+	local title = label(product, spec.Name, UDim2.fromOffset(24, 44), UDim2.fromOffset(290, 34), 26, cream)
+	title.TextTruncate = Enum.TextTruncate.AtEnd
+	title.TextWrapped = false
+	hairline(product, 88)
 	local tabs = Instance.new("ScrollingFrame")
 	tabs.Name = "BoatTabs"
-	tabs.Position, tabs.Size = UDim2.fromOffset(24, 105), UDim2.fromOffset(332, 46)
+	tabs.Position, tabs.Size = UDim2.fromOffset(24, 100), UDim2.fromOffset(332, 42)
 	tabs.BackgroundTransparency, tabs.BorderSizePixel = 1, 0
-	tabs.ScrollBarThickness = 3
+	tabs.ScrollBarThickness = 2
+	tabs.ScrollBarImageColor3 = accent
+	tabs.ScrollBarImageTransparency = 0.4
 	tabs.ScrollingDirection = Enum.ScrollingDirection.X
-	tabs.CanvasSize = UDim2.fromOffset(#boatIds * 114, 0)
+	tabs.CanvasSize = UDim2.fromOffset(#boatIds * 106 - 8, 0)
 	tabs.Parent = product
 	local boatTabs = {}
 	for index, boatId in boatIds do
 		local tab = Instance.new("TextButton")
 		tab.Name = "Select" .. boatId
-		tab.Position = UDim2.fromOffset((index - 1) * 114, 0)
-		tab.Size = UDim2.fromOffset(106, 42)
+		tab.Position = UDim2.fromOffset((index - 1) * 106, 0)
+		tab.Size = UDim2.fromOffset(98, 34)
 		tab.TextWrapped = true
 		tab.Text = if boatId == "Rowboat"
 			then "Rowboat"
 			elseif boatId == "FishingBoat" then "Fishing boat"
 			elseif boatId == "Speedboat" then "Speedboat"
 			elseif boatId == "RacingSpeedboat" then "Racing"
-			elseif boatId == "Trawler" then "Fishing trawler"
+			elseif boatId == "Trawler" then "Trawler"
 			elseif boatId == "Tugboat" then "Tugboat"
 			elseif boatId == "Hovercraft" then "Hovercraft"
 			else "Patrol cruiser"
 		tab.Font, tab.TextSize = Enum.Font.GothamBold, 12
 		tab.Parent = tabs
-		Theme.button(tab)
+		Theme.glassButton(tab)
 		boatTabs[boatId] = tab
 		tab.Activated:Connect(function()
 			if not isLaunching then
@@ -518,41 +585,81 @@ function Boating.start()
 			end
 		end)
 	end
-	local statValues = {}
-	for index, statName in { "Forward speed", "Reverse speed", "Turning", "Hull / seats" } do
-		label(product, statName, UDim2.fromOffset(24, 208 + (index - 1) * 28), UDim2.fromOffset(154, 25), 14, muted)
-		local value =
-			label(product, "", UDim2.fromOffset(178, 208 + (index - 1) * 28), UDim2.fromOffset(178, 25), 14, cream)
-		value.TextXAlignment = Enum.TextXAlignment.Right
-		statValues[index] = value
+	local description = label(
+		product,
+		"Inspect your boat on the slipway. After purchase, we lower it into the water and put you aboard.",
+		UDim2.fromOffset(24, 148),
+		UDim2.fromOffset(332, 42),
+		13,
+		dim
+	)
+	description.TextYAlignment = Enum.TextYAlignment.Top
+	-- Bars compare each boat against the best in the yard.
+	local best = { speed = 1, reverse = 1, turn = 0.01, seats = 1 }
+	for _, boatSpec in BoatCatalog do
+		best.speed = math.max(best.speed, boatSpec.ForwardSpeed)
+		best.reverse = math.max(best.reverse, boatSpec.ReverseSpeed)
+		best.turn = math.max(best.turn, boatSpec.TurnRate)
+		best.seats = math.max(best.seats, boatSpec.Seats)
 	end
+	local statValues, statBars = {}, {}
+	for index, statName in { "TOP SPEED", "REVERSE", "TURNING", "HULL  ·  SEATS" } do
+		local column, row = (index - 1) % 2, (index - 1) // 2
+		local stat = tile(product, UDim2.fromOffset(24 + column * 170, 198 + row * 62), UDim2.fromOffset(162, 54))
+		stat.Name = "Stat" .. index
+		label(stat, statName, UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 14), 10, dim)
+		local value = label(stat, "", UDim2.fromOffset(12, 22), UDim2.new(1, -24, 0, 20), 14, cream)
+		value.TextWrapped = false
+		value.TextTruncate = Enum.TextTruncate.AtEnd
+		statValues[index] = value
+		local track = Instance.new("Frame")
+		track.Name = "Track"
+		track.Position, track.Size = UDim2.new(0, 12, 1, -9), UDim2.new(1, -24, 0, 3)
+		track.BackgroundColor3, track.BackgroundTransparency, track.BorderSizePixel = Color3.new(1, 1, 1), 0.86, 0
+		track.Parent = stat
+		Theme.corner(track, 2)
+		local fill = Instance.new("Frame")
+		fill.Name = "Fill"
+		fill.Size = UDim2.fromScale(0, 1)
+		fill.BackgroundColor3, fill.BorderSizePixel = accent, 0
+		fill.Parent = track
+		Theme.corner(fill, 2)
+		statBars[index] = fill
+	end
+	hairline(product, 332)
+	label(product, "PRICE", UDim2.fromOffset(24, 342), UDim2.fromOffset(150, 14), 10, dim)
 	local price =
-		label(product, formatPrice(spec.Price), UDim2.fromOffset(24, 329), UDim2.fromOffset(130, 35), 29, gold)
+		label(product, formatPrice(spec.Price), UDim2.fromOffset(24, 356), UDim2.fromOffset(170, 32), 28, gold)
 	Theme.text(price, Theme.Colors.Green)
-	local balance = label(product, "Your cash: $0", UDim2.fromOffset(154, 329), UDim2.fromOffset(202, 35), 14, cream)
+	local cashCaption = label(product, "YOUR CASH", UDim2.fromOffset(206, 342), UDim2.fromOffset(150, 14), 10, dim)
+	cashCaption.TextXAlignment = Enum.TextXAlignment.Right
+	local balance = label(product, "$0", UDim2.fromOffset(176, 358), UDim2.fromOffset(180, 28), 18, cream)
 	balance.TextXAlignment = Enum.TextXAlignment.Right
-	local status = label(product, "", UDim2.fromOffset(24, 373), UDim2.fromOffset(332, 46), 14, muted)
+	local statusDot = Instance.new("Frame")
+	statusDot.Name = "StatusDot"
+	statusDot.Position, statusDot.Size = UDim2.fromOffset(24, 398), UDim2.fromOffset(8, 8)
+	statusDot.BackgroundColor3, statusDot.BorderSizePixel = dim, 0
+	statusDot.Parent = product
+	Theme.corner(statusDot, 4)
+	local status = label(product, "", UDim2.fromOffset(40, 392), UDim2.fromOffset(316, 32), 12, dim)
+	status.TextYAlignment = Enum.TextYAlignment.Top
 	local buy = Instance.new("TextButton")
 	buy.Name = "BuyBoat"
 	buy.Position = UDim2.fromOffset(24, 428)
-	buy.Size = UDim2.fromOffset(332, 48)
+	buy.Size = UDim2.fromOffset(332, 50)
 	buy.Font = Enum.Font.GothamBold
 	buy.TextSize = 16
-	buy.TextColor3 = navy
-	buy.BackgroundColor3 = gold
 	buy.Parent = product
-	Theme.button(buy, "Selected")
+	Theme.glassButton(buy, "Selected")
 	local close = Instance.new("TextButton")
 	close.Name = "CloseShop"
-	close.Position = UDim2.new(1, -52, 0, 13)
-	close.Size = UDim2.fromOffset(40, 40)
-	close.BackgroundTransparency = 1
+	close.Position = UDim2.new(1, -54, 0, 18)
+	close.Size = UDim2.fromOffset(32, 32)
 	close.Text = "×"
-	close.Font = Enum.Font.Gotham
-	close.TextColor3 = cream
-	close.TextSize = 28
+	close.Font = Enum.Font.GothamBold
+	close.TextSize = 22
 	close.Parent = card
-	Theme.button(close, "Danger")
+	Theme.glassButton(close, "Danger")
 
 	local dialogue = Instance.new("Frame")
 	dialogue.Name = "ShipwrightDialogue"
@@ -560,51 +667,64 @@ function Boating.start()
 	dialogue.BackgroundTransparency = 1
 	dialogue.Visible = false
 	dialogue.Parent = card
-	label(dialogue, "MARA · SHIPWRIGHT", UDim2.fromOffset(24, 23), UDim2.fromOffset(276, 22), 12, cream)
+	eyebrow(dialogue, "SHIPWRIGHT", 22)
+	local avatar = Instance.new("Frame")
+	avatar.Name = "Avatar"
+	avatar.Position, avatar.Size = UDim2.fromOffset(24, 52), UDim2.fromOffset(52, 52)
+	avatar.BackgroundColor3, avatar.BorderSizePixel = Color3.new(1, 1, 1), 0
+	avatar.Parent = dialogue
+	Theme.corner(avatar, 26)
+	local avatarWash = Instance.new("UIGradient")
+	avatarWash.Color = ColorSequence.new(Color3.fromRGB(96, 178, 240), Color3.fromRGB(30, 82, 132))
+	avatarWash.Rotation = 90
+	avatarWash.Parent = avatar
+	local initial = label(avatar, "M", UDim2.fromScale(0, 0), UDim2.fromScale(1, 1), 24, cream)
+	initial.TextXAlignment = Enum.TextXAlignment.Center
+	label(dialogue, "Mara", UDim2.fromOffset(90, 56), UDim2.fromOffset(220, 26), 20, cream)
+	label(dialogue, "Harbour shipwright", UDim2.fromOffset(90, 82), UDim2.fromOffset(220, 18), 12, dim)
+	hairline(dialogue, 120)
 	local greetingTitle =
-		label(dialogue, "Welcome to the drydock.", UDim2.fromOffset(24, 65), UDim2.fromOffset(332, 68), 25, cream)
-	greetingTitle.Font = Enum.Font.GothamBold
-	local greeting = label(dialogue, "", UDim2.fromOffset(24, 150), UDim2.fromOffset(332, 130), 17, cream)
+		label(dialogue, "Welcome to the drydock.", UDim2.fromOffset(24, 136), UDim2.fromOffset(332, 30), 21, cream)
+	local bubble = tile(dialogue, UDim2.fromOffset(24, 176), UDim2.fromOffset(332, 132))
+	bubble.Name = "SpeechBubble"
+	local greeting = label(bubble, "", UDim2.fromOffset(16, 14), UDim2.new(1, -32, 1, -28), 15, cream)
 	greeting.TextYAlignment = Enum.TextYAlignment.Top
 	local browse = Instance.new("TextButton")
 	browse.Name = "BrowseBoats"
-	browse.Position = UDim2.fromOffset(24, 325)
-	browse.Size = UDim2.fromOffset(332, 51)
-	browse.BackgroundColor3 = gold
-	browse.TextColor3 = navy
-	browse.Text = "Show me the boats"
+	browse.Position = UDim2.fromOffset(24, 352)
+	browse.Size = UDim2.fromOffset(332, 50)
+	browse.Text = "Show me the boats  →"
 	browse.Font = Enum.Font.GothamBold
 	browse.TextSize = 16
 	browse.Parent = dialogue
-	Theme.button(browse, "Selected")
+	Theme.glassButton(browse, "Selected")
 	local leave = Instance.new("TextButton")
 	leave.Name = "LeaveConversation"
-	leave.Position = UDim2.fromOffset(24, 400)
-	leave.Size = UDim2.fromOffset(332, 42)
-	leave.BackgroundTransparency = 1
-	leave.TextColor3 = muted
+	leave.Position = UDim2.fromOffset(24, 414)
+	leave.Size = UDim2.fromOffset(332, 44)
 	leave.Text = "Maybe later"
-	leave.Font = Enum.Font.Gotham
-	leave.TextSize = 15
+	leave.Font = Enum.Font.GothamBold
+	leave.TextSize = 14
 	leave.Parent = dialogue
-	Theme.button(leave)
+	Theme.glassButton(leave)
 	local dock = Instance.new("Frame")
 	dock.Name = "DockBoatChooser"
 	dock.Size = UDim2.fromScale(1, 1)
 	dock.BackgroundTransparency = 1
 	dock.Visible = false
 	dock.Parent = card
-	label(dock, "HOME DOCK  /  YOUR FLEET", UDim2.fromOffset(24, 20), UDim2.fromOffset(280, 20), 12, gold)
-	local dockTitle = label(dock, "Ready to set sail?", UDim2.fromOffset(24, 47), UDim2.fromOffset(332, 38), 28, cream)
-	dockTitle.Font = Enum.Font.GothamBold
+	eyebrow(dock, "HOME DOCK  ·  YOUR FLEET", 22)
+	local dockTitle = label(dock, "Ready to set sail?", UDim2.fromOffset(24, 44), UDim2.fromOffset(332, 34), 26, cream)
+	dockTitle.TextWrapped = false
 	local dockDescription = label(
 		dock,
 		"Choose a boat from your fleet and launch it at your dock.",
-		UDim2.fromOffset(24, 85),
-		UDim2.fromOffset(740, 28),
-		14,
-		muted
+		UDim2.fromOffset(24, 80),
+		UDim2.fromOffset(740, 22),
+		13,
+		dim
 	)
+	local dockRule = hairline(dock, 112)
 	local previewPanel = Instance.new("Frame")
 	previewPanel.Name = "BoatPreviewPanel"
 	previewPanel.ClipsDescendants = true
@@ -612,8 +732,10 @@ function Boating.start()
 	Theme.glassPanel(previewPanel, true)
 	previewPanel.BackgroundColor3 = Color3.new(1, 1, 1)
 	previewPanel.BackgroundTransparency = 0
+	previewPanel.ThemeBorder.Transparency = 0.8
+	Theme.corner(previewPanel, 12)
 	local previewWash = Instance.new("UIGradient")
-	previewWash.Color = ColorSequence.new(Color3.fromRGB(47, 74, 88), Color3.fromRGB(13, 22, 31))
+	previewWash.Color = ColorSequence.new(Color3.fromRGB(44, 78, 100), Color3.fromRGB(10, 18, 26))
 	previewWash.Rotation = 90
 	previewWash.Parent = previewPanel
 	local viewport = Instance.new("ViewportFrame")
@@ -622,36 +744,43 @@ function Boating.start()
 	viewport.Position = UDim2.fromOffset(12, 12)
 	viewport.BackgroundTransparency = 1
 	viewport.Parent = previewPanel
-	local previewStatus = label(previewPanel, "", UDim2.fromOffset(16, 12), UDim2.new(1, -32, 1, -56), 16, muted)
+	local previewStatus = label(previewPanel, "", UDim2.fromOffset(16, 12), UDim2.new(1, -32, 1, -56), 15, dim)
 	previewStatus.TextXAlignment = Enum.TextXAlignment.Center
 	local previewHint = label(
 		previewPanel,
 		"Drag to rotate  ·  3D preview",
-		UDim2.new(0, 16, 1, -36),
-		UDim2.new(1, -32, 0, 24),
-		12,
-		muted
+		UDim2.new(0, 16, 1, -34),
+		UDim2.new(1, -32, 0, 20),
+		11,
+		dim
 	)
 	previewHint.TextXAlignment = Enum.TextXAlignment.Center
 	local dockPreview = BoatPreview.new(viewport, remotes, previewStatus)
 	local dockBoatName = label(dock, "", UDim2.fromOffset(478, 126), UDim2.fromOffset(298, 30), 20, cream)
-	local fleetLabel = label(dock, "YOUR BOATS", UDim2.fromOffset(478, 168), UDim2.fromOffset(298, 20), 11, muted)
+	dockBoatName.TextWrapped = false
+	dockBoatName.TextTruncate = Enum.TextTruncate.AtEnd
+	local fleetLabel = label(dock, "YOUR BOATS", UDim2.fromOffset(478, 168), UDim2.fromOffset(298, 20), 10, dim)
 	local fleet = Instance.new("ScrollingFrame")
 	fleet.Name = "FleetChoices"
 	fleet.BackgroundTransparency, fleet.BorderSizePixel = 1, 0
-	fleet.ScrollBarThickness = 4
-	fleet.CanvasSize = UDim2.fromOffset(0, #boatIds * 48)
+	fleet.ScrollBarThickness = 2
+	fleet.ScrollBarImageColor3 = accent
+	fleet.ScrollBarImageTransparency = 0.4
+	fleet.CanvasSize = UDim2.fromOffset(0, #boatIds * 52)
 	fleet.ScrollingDirection = Enum.ScrollingDirection.Y
 	fleet.Parent = dock
 	local dockChoices = {}
 	for _, boatId in boatIds do
 		local choice = Instance.new("TextButton")
 		choice.Name = "Launch" .. boatId
-		choice.Size = UDim2.fromOffset(298, 44)
-		choice.Font, choice.TextSize = Enum.Font.GothamBold, 14
+		choice.Size = UDim2.fromOffset(298, 46)
+		choice.Font, choice.TextSize = Enum.Font.GothamBold, 13
 		choice.TextWrapped = true
+		choice.TextXAlignment = Enum.TextXAlignment.Left
 		choice.Parent = fleet
 		Theme.glassButton(choice)
+		choice.ThemeCaption.Position = UDim2.fromOffset(14, 2)
+		choice.ThemeCaption.Size = UDim2.new(1, -24, 1, -4)
 		dockChoices[boatId] = choice
 	end
 	local dockStats = Instance.new("Frame")
@@ -660,18 +789,14 @@ function Boating.start()
 	dockStats.Parent = dock
 	local dockStatValues = {}
 	for index, name in { "STUDS / S", "SEATS", "CARGO SLOTS" } do
-		local stat = Instance.new("Frame")
-		stat.Position = UDim2.new((index - 1) / 3, 0, 0, 0)
-		stat.Size = UDim2.new(1 / 3, -6, 1, 0)
-		stat.Parent = dockStats
-		Theme.glassPanel(stat, true)
-		local value = label(stat, "—", UDim2.fromOffset(4, 8), UDim2.new(1, -8, 0, 25), 19, cream)
+		local stat = tile(dockStats, UDim2.new((index - 1) / 3, 0, 0, 0), UDim2.new(1 / 3, -6, 1, 0))
+		local value = label(stat, "—", UDim2.fromOffset(4, 9), UDim2.new(1, -8, 0, 24), 19, cream)
 		value.TextXAlignment = Enum.TextXAlignment.Center
 		dockStatValues[index] = value
-		local caption = label(stat, name, UDim2.fromOffset(4, 36), UDim2.new(1, -8, 0, 18), 10, muted)
+		local caption = label(stat, name, UDim2.fromOffset(4, 36), UDim2.new(1, -8, 0, 16), 10, dim)
 		caption.TextXAlignment = Enum.TextXAlignment.Center
 	end
-	local dockStatus = label(dock, "", UDim2.fromOffset(24, 484), UDim2.fromOffset(430, 48), 13, muted)
+	local dockStatus = label(dock, "", UDim2.fromOffset(24, 484), UDim2.fromOffset(430, 48), 12, dim)
 	local launch = Instance.new("TextButton")
 	launch.Name = "LaunchSelectedBoat"
 	launch.Font, launch.TextSize = Enum.Font.GothamBold, 16
@@ -679,19 +804,20 @@ function Boating.start()
 	Theme.glassButton(launch, "Selected")
 	local function layoutDock(compact: boolean)
 		card.Size = UDim2.fromOffset(if compact then 400 else 800, if compact then 774 else 560)
-		dockDescription.Size = UDim2.fromOffset(if compact then 352 else 740, 28)
-		dockDescription.TextSize = if compact then 12 else 14
+		dockDescription.Size = UDim2.fromOffset(if compact then 352 else 740, 22)
+		dockDescription.TextSize = if compact then 12 else 13
+		dockRule.Position = UDim2.fromOffset(24, 112)
 		previewPanel.Position = UDim2.fromOffset(24, 126)
 		previewPanel.Size = UDim2.fromOffset(if compact then 352 else 430, if compact then 238 else 342)
 		dockBoatName.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 376 else 126)
 		dockBoatName.Size = UDim2.fromOffset(if compact then 352 else 298, 30)
-		fleetLabel.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 409 else 168)
-		fleet.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 434 else 198)
-		fleet.Size = UDim2.fromOffset(if compact then 352 else 298, 156)
+		fleetLabel.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 409 else 164)
+		fleet.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 434 else 188)
+		fleet.Size = UDim2.fromOffset(if compact then 352 else 298, if compact then 156 else 166)
 		for index, boatId in boatIds do
 			local choice = dockChoices[boatId]
-			choice.Position = UDim2.fromOffset(0, (index - 1) * 48)
-			choice.Size = UDim2.fromOffset(if compact then 342 else 288, 44)
+			choice.Position = UDim2.fromOffset(0, (index - 1) * 52)
+			choice.Size = UDim2.fromOffset(if compact then 344 else 290, 46)
 		end
 		dockStats.Position = UDim2.fromOffset(if compact then 24 else 478, if compact then 598 else 366)
 		dockStats.Size = UDim2.fromOffset(if compact then 358 else 304, 62)
@@ -855,18 +981,33 @@ function Boating.start()
 			.. tostring(spec.Beam)
 			.. " studs / "
 			.. tostring(spec.Seats)
+		for index, ratio in {
+			spec.ForwardSpeed / best.speed,
+			spec.ReverseSpeed / best.reverse,
+			spec.TurnRate / best.turn,
+			spec.Seats / best.seats,
+		} do
+			statBars[index].Size = UDim2.fromScale(math.clamp(ratio, 0.04, 1), 1)
+		end
 		price.Text = formatPrice(spec.Price)
 		for boatId, tab in boatTabs do
-			Theme.button(tab, if boatId == selectedBoatId then "Selected" else nil)
+			Theme.glassButton(tab, if boatId == selectedBoatId then "Selected" else nil)
 		end
 		local formatted = tostring(amount):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
 		cash.Text = if ready then formatted .. " $" else "—"
-		balance.Text = if ready then "Your cash: $" .. tostring(amount) else "Wallet unavailable"
+		balance.Text = if ready then "$" .. formatted else "Unavailable"
 		local occupied = previewShop and previewShop:GetAttribute("LaunchingUserId") ~= nil
 		buy.Active = ready and not owned and not locked and amount >= spec.Price and not occupied and not isLaunching
 		buy.Selectable = buy.Active
 		buy.AutoButtonColor = buy.Active
-		Theme.button(buy, if buy.Active then "Selected" else "Disabled")
+		Theme.glassButton(buy, if buy.Active then "Selected" else "Disabled")
+		-- The dot repeats the status in colour; the sentence beside it carries the meaning.
+		statusDot.BackgroundColor3 = if dataStatus == "Unavailable"
+			then Color3.fromRGB(238, 107, 111)
+			elseif not ready or occupied then Color3.fromRGB(240, 196, 92)
+			elseif owned then accent
+			elseif locked or amount < spec.Price then Color3.fromRGB(240, 160, 92)
+			else Theme.Colors.Green
 		buy.Text = if owned
 			then "Boat owned"
 			elseif locked then "Unlocks with " .. pathName
@@ -1152,7 +1293,7 @@ function Boating.start()
 	local sentThrottle: number?, sentSteer: number? = nil, nil
 	local previousSeat: VehicleSeat? = nil
 	local sinceWeatherCheck = 0
-	RunService.Heartbeat:Connect(function(dt)
+	RunService.Heartbeat:Connect(profiled("Boating", function(dt)
 		sinceWeatherCheck += dt
 		if sinceWeatherCheck >= 0.5 then
 			sinceWeatherCheck = 0
@@ -1271,7 +1412,7 @@ function Boating.start()
 				overlay.Visible = false
 			end
 		end
-	end)
+	end))
 end
 
 return Boating

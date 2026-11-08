@@ -13,7 +13,7 @@ local LowPoly = require(script.Parent.LowPoly)
 local Props = require(script.Parent.Props)
 local Lod = require(script.Parent.Lod)
 
-local Islands = { VERSION = 4 }
+local Islands = { VERSION = 5 }
 local rgb, M = Color3.fromRGB, Enum.Material
 local ROCK, SAND, GRASS = rgb(100, 107, 105), rgb(191, 177, 142), rgb(107, 123, 80)
 local WOOD, TRIM, ROOF = rgb(133, 100, 72), rgb(66, 61, 51), rgb(69, 83, 87)
@@ -22,29 +22,13 @@ local LEAVES = { rgb(70, 98, 60), rgb(86, 114, 66), rgb(58, 86, 58), rgb(104, 12
 local PINES = { rgb(52, 73, 56), rgb(46, 66, 52), rgb(60, 82, 60) }
 local ACCENTS = { rgb(116, 150, 147), rgb(170, 118, 95), rgb(178, 157, 107), rgb(125, 148, 115), rgb(136, 144, 169), rgb(179, 144, 120) }
 local TERRACE, BEACH = 24.4, 4.4
+local TAU = math.pi * 2
 local v2 = Vector2.new
--- A wide beach in front for the docks; round the back the cliffs drop straight
--- into the sea, so the coast hugs the terrace there.
-local COAST = {
-	v2(-64, -97), v2(-92, -84), v2(-108, -52), v2(-104, -22), v2(-95, 6), v2(-90, 38), v2(-100, 62),
-	v2(-84, 92), v2(-50, 101), v2(-12, 95), v2(22, 105), v2(60, 97), v2(88, 75), v2(101, 40),
-	v2(96, 10), v2(106, -20), v2(100, -58), v2(88, -86), v2(64, -97),
-}
--- The terrace cliff: a straight front along the square, ragged everywhere else, and a
--- cut (NOTCH wide, back to NOTCH_BACK) that the stair climbs through.
-local FRONT, NOTCH, NOTCH_BACK = -26, 9.5, 2
-local UPPER = {
-	v2(-NOTCH, FRONT), v2(-64, FRONT), v2(-84, -12), v2(-90, 10), v2(-85, 38), v2(-95, 62), v2(-80, 88),
-	v2(-48, 97), v2(-12, 91), v2(22, 101), v2(58, 93), v2(84, 72), v2(97, 40), v2(90, 10), v2(95, -14),
-	v2(64, FRONT), v2(NOTCH, FRONT), v2(NOTCH, NOTCH_BACK), v2(-NOTCH, NOTCH_BACK),
-}
--- Rocky knolls standing above the terrace on either flank of the plot.
-local RIDGES = {
-	{ top = 35, outline = { v2(-68, 14), v2(-80, 4), v2(-86, 14), v2(-81, 38), v2(-89, 60), v2(-76, 82), v2(-62, 84), v2(-66, 58), v2(-62, 34) } },
-	{ top = 32, outline = { v2(66, 40), v2(80, 30), v2(90, 40), v2(82, 60), v2(74, 76), v2(64, 72), v2(68, 56) } },
-}
--- Sea stacks standing off the back of the island.
-local STACKS = { v2(-124, 66), v2(120, 98), v2(-38, 124) }
+-- The terrace cliff runs straight along the square for FRONT_HALF studs either side,
+-- with a cut (NOTCH wide, back to NOTCH_BACK) that the stair climbs through; the
+-- beach ends in a straight quay front at QUAY_FRONT. Everything else about the
+-- outlines differs per island (shapeOf).
+local FRONT, NOTCH, NOTCH_BACK, FRONT_HALF, QUAY_FRONT = -26, 9.5, 2, 64, -97
 -- The stair: 32 risers of 0.625 studs, starting this far out on the beach.
 local STAIR_START, STAIR_RUN = -38, 1.25
 -- Lod streams a model of up to PIECE_PARTS parts as one piece and splits bigger ones
@@ -195,28 +179,339 @@ local function insidePolygon(outline, x: number, z: number): boolean
 	return result
 end
 
--- Height of the upper ground (a ridge or the terrace) at island-local x, z; nil off it.
-local function groundLevel(x: number, z: number): number?
-	for _, ridge in RIDGES do
-		if insidePolygon(ridge.outline, x, z) then
-			return ridge.top
+----------------------------------------------------------------------------------------------------
+-- Landform. Each island grows from its own seed. Only what the docks, the square, the
+-- stair and the plot stand on is fixed: the quay front, the cliff front behind the
+-- square and the terrace round the plot. The rest of the coast (headlands, coves,
+-- beach spits), the rocky knolls, the grassy hill and the sea stacks differ.
+
+-- Outlines are drawn as radii around HUB, in SAMPLES steps.
+local HUB, SAMPLES = v2(0, 26), 48
+-- Terrace keep-outs for knolls and the hill: the stair cut and overlook, the plot
+-- with its lamps and fence, and the village flag.
+local KEEP_OUT = { { -68, -32, 68, 86 }, { 64, -16, 82, 4 } }
+-- Island-local radius limit of the coast, inside Layout.FOOTPRINT with the piers.
+local MAX_COAST = 172
+
+-- Radius of a superellipse (a across, `down` toward -Z, `up` toward +Z) at `theta`.
+local function superellipse(theta: number, a: number, down: number, up: number, n: number): number
+	local s = math.sin(theta)
+	return (math.abs(math.cos(theta) / a) ^ n + math.abs(s / (if s < 0 then down else up)) ^ n) ^ (-1 / n)
+end
+
+local function smoothstep(lo: number, hi: number, x: number): number
+	local t = math.clamp((x - lo) / (hi - lo), 0, 1)
+	return t * t * (3 - 2 * t)
+end
+
+-- A smooth periodic wobble: harmonics `from`..`to` with random phases.
+local function wobble(rng: Random, amplitude: number, from: number, to: number): (number) -> number
+	local terms = {}
+	for k = from, to do
+		table.insert(terms, { k, amplitude * rng:NextNumber(0.4, 1) / (k - from + 1), rng:NextNumber(0, TAU) })
+	end
+	return function(theta)
+		local sum = 0
+		for _, t in terms do
+			sum += t[2] * math.cos(t[1] * theta + t[3])
+		end
+		return sum
+	end
+end
+
+-- Bumps on random bearings round the back and sides: headlands or beach spits. Also
+-- returns the bearing of the first one.
+local function lobes(rng: Random, count: number, lo: number, hi: number, wide: number?): ((number) -> number, number?)
+	local list = {}
+	for _ = 1, count do
+		table.insert(list, { rng:NextNumber(-0.3, math.pi + 0.3), rng:NextNumber(0.22, wide or 0.5), rng:NextNumber(lo, hi) })
+	end
+	return function(theta)
+		local sum = 0
+		for _, lobe in list do
+			local d = (theta - lobe[1] + math.pi) % TAU - math.pi
+			sum += lobe[3] * math.exp(-(d / lobe[2]) ^ 2)
+		end
+		return sum
+	end, if list[1] then list[1][1] else nil
+end
+
+-- The part of a closed ring above `line` (in Y) as one open polyline, from where it
+-- rises over the line to where it drops back. The ring starts below the line; any
+-- dip back below between those crossings is lifted just over it.
+local function above(ring: { Vector2 }, line: number): { Vector2 }
+	local first, last
+	for index, p in ring do
+		if p.Y > line then
+			first = first or index
+			last = index
 		end
 	end
-	return if insidePolygon(UPPER, x, z) then TERRACE else nil
+	local function cross(p: Vector2, q: Vector2): Vector2
+		return v2(p.X + (q.X - p.X) * (line - p.Y) / (q.Y - p.Y), line)
+	end
+	local result = { cross(ring[first - 1], ring[first]) }
+	for index = first, last do
+		local p = ring[index]
+		table.insert(result, if p.Y > line then p else v2(p.X, line + 1))
+	end
+	table.insert(result, cross(ring[last], ring[last % #ring + 1]))
+	return result
+end
+
+local function bounds(outline: { Vector2 }): (number, number, number, number)
+	local x0, z0, x1, z1 = math.huge, math.huge, -math.huge, -math.huge
+	for _, p in outline do
+		x0, z0, x1, z1 = math.min(x0, p.X), math.min(z0, p.Y), math.max(x1, p.X), math.max(z1, p.Y)
+	end
+	return x0, z0, x1, z1
+end
+
+-- A grassy hill: rings of vertices rising to an off-centre crown, as triangles in
+-- island-local space, with its base outline and the height of its surface.
+local HILL_SIDES, HILL_RINGS = 14, { 1, 0.8, 0.58, 0.34 }
+local function hillMesh(rng: Random, base: { Vector2 }, center: Vector2, radius: number)
+	local height = radius * rng:NextNumber(0.6, 0.95)
+	local crown = v2(rng:NextNumber(-0.22, 0.22), rng:NextNumber(-0.22, 0.22)) * radius
+	local rings = {}
+	for j, rho in HILL_RINGS do
+		local t = 1 - rho
+		local y = TERRACE - 0.6 + height * t * t * (3 - 2 * t)
+		local ring = {}
+		for i, p in base do
+			local s = if j == 1 then 1 else rng:NextNumber(0.94, 1.06)
+			local q = center + crown * t + (p - center) * rho * s
+			ring[i] = Vector3.new(q.X, y + (if j == 1 then 0 else rng:NextNumber(-0.05, 0.05) * height), q.Y)
+		end
+		rings[j] = ring
+	end
+	local top = center + crown
+	local apex = Vector3.new(top.X, TERRACE - 0.6 + height, top.Y)
+	local tris = {}
+	for j = 1, #rings do
+		local ring, inner = rings[j], rings[j + 1]
+		for i = 1, #base do
+			local n = i % #base + 1
+			if inner then
+				table.insert(tris, { ring[i], ring[n], inner[n] })
+				table.insert(tris, { ring[i], inner[n], inner[i] })
+			else
+				table.insert(tris, { ring[i], ring[n], apex })
+			end
+		end
+	end
+	local hill = { base = base, tris = tris, center = center, radius = radius, top = apex.Y }
+	-- The mesh's own height at x, z (barycentric over its triangles); nil off it.
+	function hill.heightAt(x: number, z: number): number?
+		for _, tri in tris do
+			local a, b, c = tri[1], tri[2], tri[3]
+			local det = (b.Z - c.Z) * (a.X - c.X) + (c.X - b.X) * (a.Z - c.Z)
+			if math.abs(det) > 1e-6 then
+				local u = ((b.Z - c.Z) * (x - c.X) + (c.X - b.X) * (z - c.Z)) / det
+				local w = ((c.Z - a.Z) * (x - c.X) + (a.X - c.X) * (z - c.Z)) / det
+				if u >= -1e-6 and w >= -1e-6 and u + w <= 1 + 1e-6 then
+					return a.Y * u + b.Y * w + c.Y * (1 - u - w)
+				end
+			end
+		end
+		return nil
+	end
+	return hill
+end
+
+local shapes = {}
+
+-- The island's outlines (coast and terrace), knolls, hill and sea stacks. Pure and
+-- cached per id, so the ground and both dressings always agree.
+local function shapeOf(id: number)
+	if shapes[id] then
+		return shapes[id]
+	end
+	local rng = Random.new(7300 + id * 37)
+	local size = rng:NextNumber(0, 14)
+	local spread = wobble(rng, rng:NextNumber(6, 12), 2, 5)
+	-- One broad headland on every island (where the hill goes), maybe a couple more.
+	local head, headBearing = lobes(rng, 1, 34, 58, 0.7)
+	local more = lobes(rng, rng:NextInteger(0, 2), 12, 36)
+	local function heads(theta: number): number
+		return head(theta) + more(theta)
+	end
+	local shore = wobble(rng, 9, 1, 4)
+	-- Narrow sandy points, and a beach in front that is wider on one side than the other.
+	local spits = lobes(rng, rng:NextInteger(1, 3), 18, 50, 0.3)
+	local wideLeft, wideRight = rng:NextNumber(84, 112), rng:NextNumber(84, 112)
+	local upperRing, coastRing = {}, {}
+	for index = 0, SAMPLES - 1 do
+		-- Clockwise from straight ahead (-Z): left flank, back, right flank.
+		local theta = -math.pi / 2 - (index + rng:NextNumber(-0.3, 0.3)) * TAU / SAMPLES
+		local dir = v2(math.cos(theta), math.sin(theta))
+		-- Nothing grows along the front, so the square and the stair keep their ground.
+		local open = smoothstep(-0.8, -0.35, dir.Y)
+		local r = superellipse(theta, 80, 64, 62, 6) + 3
+		r = math.min(r + open * (math.max(0, size + spread(theta) + heads(theta)) + rng:NextNumber(-1, 2.5)), 128)
+		local beach = superellipse(theta, if dir.X < 0 then wideLeft else wideRight, 130, 70, 4) * (1 - smoothstep(-0.45, -0.15, dir.Y))
+		local c = math.max(beach + rng:NextNumber(2, 4), r + 6 + open * math.max(0, 8 + shore(theta) + spits(theta)))
+		table.insert(upperRing, HUB + dir * r)
+		table.insert(coastRing, HUB + dir * math.min(c, MAX_COAST - HUB.Magnitude))
+	end
+	-- The terrace: the straight front with the stair cut, ragged everywhere else.
+	local arc = above(upperRing, FRONT)
+	local upper = { v2(-NOTCH, FRONT), v2(-FRONT_HALF, FRONT) }
+	if arc[1].X < -FRONT_HALF - 1 then
+		table.insert(upper, arc[1])
+	end
+	for index = 2, #arc - 1 do
+		table.insert(upper, arc[index])
+	end
+	if arc[#arc].X > FRONT_HALF + 1 then
+		table.insert(upper, arc[#arc])
+	end
+	for _, p in { v2(FRONT_HALF, FRONT), v2(NOTCH, FRONT), v2(NOTCH, NOTCH_BACK), v2(-NOTCH, NOTCH_BACK) } do
+		table.insert(upper, p)
+	end
+	-- The coast closes along the straight quay front.
+	local shape = { coast = above(coastRing, QUAY_FRONT), upper = upper, ridges = {}, stacks = {} }
+	local x0, _, x1, z1 = bounds(upper)
+	shape.box = { x0, FRONT, x1, z1 }
+
+	-- A spot on the terrace at least `margin` from its edge and from the keep-outs.
+	local function clear(p: Vector2, margin: number): boolean
+		for _, d in { v2(0, 0), v2(margin, 0), v2(-margin, 0), v2(0, margin), v2(0, -margin) } do
+			if not insidePolygon(upper, p.X + d.X, p.Y + d.Y) then
+				return false
+			end
+		end
+		for _, box in KEEP_OUT do
+			if p.X > box[1] - margin and p.X < box[3] + margin and p.Y > box[2] - margin and p.Y < box[4] + margin then
+				return false
+			end
+		end
+		return true
+	end
+	local function covers(outline: { Vector2 }): boolean
+		for _, box in KEEP_OUT do
+			for _, f in { { 0, 0 }, { 0.5, 0 }, { 1, 0 }, { 0, 0.5 }, { 1, 0.5 }, { 0, 1 }, { 0.5, 1 }, { 1, 1 } } do
+				if insidePolygon(outline, box[1] + (box[3] - box[1]) * f[1], box[2] + (box[4] - box[2]) * f[2]) then
+					return true
+				end
+			end
+		end
+		return false
+	end
+	-- A ragged blob of `sides` points, or nil where it would not fit.
+	local features = {}
+	local function blob(center: Vector2, radius: number, sides: number, ragged: number, margin: number): { Vector2 }?
+		for _, other in features do
+			if (other.center - center).Magnitude < other.radius + radius * (1 + ragged) + 6 then
+				return nil
+			end
+		end
+		local stretch, turn = rng:NextNumber(0, 0.3), rng:NextNumber(0, TAU)
+		local outline = {}
+		for i = 1, sides do
+			local theta = (i - 1) / sides * TAU
+			local r = radius * (1 + stretch * math.cos(2 * (theta - turn))) * rng:NextNumber(1 - ragged, 1 + ragged)
+			local p = center + v2(math.cos(theta), math.sin(theta)) * r
+			if not clear(p, margin) then
+				return nil
+			end
+			outline[i] = p
+		end
+		if covers(outline) then
+			return nil
+		end
+		table.insert(features, { center = center, radius = radius * (1 + ragged) })
+		return outline
+	end
+	local function spot(): Vector2
+		return v2(rng:NextNumber(x0, x1), rng:NextNumber(FRONT, z1))
+	end
+
+	-- Most islands rise to a grassy hill wherever the outline left room for one.
+	if rng:NextNumber() < 0.85 then
+		for attempt = 1, 90 do
+			local radius = rng:NextNumber(18, 34) * (1 - attempt / 160)
+			-- First out on the big headland, against its cliffs; then anywhere.
+			local center = spot()
+			if attempt <= 50 then
+				local best, gap = upperRing[1], math.huge
+				for _, p in upperRing do
+					local d = math.abs((math.atan2(p.Y - HUB.Y, p.X) - headBearing + math.pi) % TAU - math.pi)
+					if d < gap then
+						best, gap = p, d
+					end
+				end
+				local out = best - HUB
+				center = HUB + out.Unit * (out.Magnitude - radius * rng:NextNumber(1.1, 1.6) - 6) + v2(rng:NextNumber(-8, 8), rng:NextNumber(-8, 8))
+			end
+			local base = blob(center, radius, HILL_SIDES, 0.06, 5)
+			if base then
+				shape.hill = hillMesh(rng, base, center, radius)
+				break
+			end
+		end
+	end
+	-- Rocky knolls: flat-topped, cliff-sided outcrops above the terrace.
+	local knolls = rng:NextInteger(if shape.hill then 1 else 2, if shape.hill then 3 else 4)
+	for attempt = 1, 150 do
+		if #shape.ridges >= knolls then
+			break
+		end
+		local center = spot()
+		-- Later tries shrink, so even a tight terrace gets an outcrop.
+		local outline = blob(center, rng:NextNumber(9, 19) * (1 - attempt / 220), rng:NextInteger(7, 10), 0.18, 6)
+		if outline then
+			table.insert(shape.ridges, { top = TERRACE + rng:NextNumber(6, 13), outline = outline })
+		end
+	end
+	-- Sea stacks off the back and flanks.
+	for _ = 1, rng:NextInteger(1, 4) do
+		local p = coastRing[rng:NextInteger(1, #coastRing)]
+		local dir = (p - HUB).Unit
+		local stack = p + dir * rng:NextNumber(14, 30)
+		if dir.Y > -0.2 and not insidePolygon(shape.coast, stack.X, stack.Y) and stack.Magnitude < MAX_COAST + 25 then
+			table.insert(shape.stacks, stack)
+		end
+	end
+	shapes[id] = shape
+	return shape
+end
+Islands.shapeOf = shapeOf
+
+-- Height of the upper ground (the hill, a knoll or the terrace) at island-local x, z,
+-- and which of them it is; nil off it.
+local function groundLevel(shape, x: number, z: number): (number?, any)
+	local hill = shape.hill
+	if hill and insidePolygon(hill.base, x, z) then
+		local y = hill.heightAt(x, z)
+		if y then
+			return y, hill
+		end
+	end
+	for _, ridge in shape.ridges do
+		if insidePolygon(ridge.outline, x, z) then
+			return ridge.top, ridge
+		end
+	end
+	if insidePolygon(shape.upper, x, z) then
+		return TERRACE, shape.upper
+	end
+	return nil, nil
 end
 
 local function notchEdge(a: Vector2, b: Vector2): boolean
 	return a.X == b.X and math.abs(a.X) == NOTCH
 end
 
+-- The stretch of cliff behind the square: bare rock or the village's harbour wall.
 local function frontEdge(a: Vector2, b: Vector2): boolean
-	return a.Y == FRONT and b.Y == FRONT and not notchEdge(a, b)
+	return a.Y == FRONT and b.Y == FRONT and not notchEdge(a, b) and math.abs(a.X) <= FRONT_HALF and math.abs(b.X) <= FRONT_HALF
 end
 
 -- Island-local helpers shared by both dressings. `yaw` turns an island-local
 -- heading (0 faces -Z, toward Gullhaven) into the world angle Props expects.
-local function kit(frame: CFrame, parent: Model, rng: Random)
-	local self = {}
+local function kit(frame: CFrame, parent: Model, rng: Random, shape)
+	local self = { shape = shape }
 	function self.at(x: number, y: number, z: number): Vector3
 		return frame * Vector3.new(x, y, z)
 	end
@@ -227,14 +522,20 @@ local function kit(frame: CFrame, parent: Model, rng: Random)
 		local look = frame * Vector3.new(-math.sin(turn), 0, -math.cos(turn)) - frame.Position
 		return math.atan2(-look.X, -look.Z)
 	end
-	-- A random spot on the terrace or a ridge, at least `margin` from any cliff edge and
-	-- outside the `avoid` boxes, with the ground height there.
-	function self.terraceSpot(margin: number, avoid: { { number } }): (number?, number?, number?)
+	-- A random spot on the terrace, a knoll or the hill, at least `margin` from any
+	-- edge between them and outside the `avoid` boxes, with the ground height there.
+	-- `flat` keeps to the terrace itself.
+	function self.terraceSpot(margin: number, avoid: { { number } }, flat: boolean?): (number?, number?, number?)
+		local box = shape.box
 		for _ = 1, 40 do
-			local x, z = rng:NextNumber(-96, 98), rng:NextNumber(-26, 102)
-			local level = groundLevel(x, z)
+			local x, z = rng:NextNumber(box[1], box[3]), rng:NextNumber(box[2], box[4])
+			local level, surface = groundLevel(shape, x, z)
+			if flat and surface ~= shape.upper then
+				level = nil
+			end
 			for _, offset in { { margin, 0 }, { -margin, 0 }, { 0, margin }, { 0, -margin } } do
-				if groundLevel(x + offset[1], z + offset[2]) ~= level then
+				local _, other = groundLevel(shape, x + offset[1], z + offset[2])
+				if other ~= surface then
 					level = nil
 				end
 			end
@@ -339,6 +640,7 @@ end
 local function shoreRocks(k, skip: (number, number) -> boolean)
 	local rng = k.rng
 	local rocks = group(k.parent, "ShoreRocks")
+	local COAST, UPPER = k.shape.coast, k.shape.upper
 	local edges = normals(COAST)
 	local gap = rng:NextNumber(0, 10)
 	for index, a in COAST do
@@ -364,6 +666,7 @@ end
 local function cliffRocks(k, skip: (number, number) -> boolean)
 	local rng = k.rng
 	local rocks = group(k.parent, "CliffRocks")
+	local COAST, UPPER = k.shape.coast, k.shape.upper
 	local edges = normals(UPPER)
 	for index, a in UPPER do
 		local b = UPPER[index % #UPPER + 1]
@@ -384,6 +687,9 @@ end
 local function woodland(k, trees: number, bushes: number, avoid: { { number } })
 	local rng = k.rng
 	local wood = group(k.parent, "Woodland")
+	-- Bigger terraces carry more trees.
+	local scale = math.clamp(math.abs(signedArea(k.shape.upper)) / 21000, 0.8, 1.7)
+	trees, bushes = math.round(trees * scale), math.round(bushes * scale)
 	for index = 1, trees do
 		local x, z, y = k.terraceSpot(7, avoid)
 		if x then
@@ -469,6 +775,26 @@ local function roughSteps(k)
 	return steps
 end
 
+-- A random spot on open sand behind `zMin`, clear of the cliffs and the water's edge.
+local function sandSpot(k, zMin: number): (number?, number?)
+	local coast, upper = k.shape.coast, k.shape.upper
+	local x0, _, x1, z1 = bounds(coast)
+	for _ = 1, 30 do
+		local x, z = k.rng:NextNumber(x0, x1), k.rng:NextNumber(zMin, z1)
+		-- Not on the stair's foot.
+		local ok = not (math.abs(x) < 22 and z < FRONT)
+		for _, d in { { 0, 0 }, { 4, 0 }, { -4, 0 }, { 0, 4 }, { 0, -4 } } do
+			if not insidePolygon(coast, x + d[1], z + d[2]) or insidePolygon(upper, x + d[1], z + d[2]) then
+				ok = false
+			end
+		end
+		if ok then
+			return x, z
+		end
+	end
+	return nil, nil
+end
+
 -- Keeps the docks, the stair's foot and the boat approach free of rocks.
 local function clearOfLanding(x: number, z: number): boolean
 	return (z < -78 and math.abs(x) < 75) or (math.abs(x) < 20 and z < FRONT and z > STAIR_START - 10)
@@ -479,7 +805,8 @@ local function buildWild(island: Model, frame: CFrame, id: number): Model
 	dressing.Name = "Dressing"
 	dressing:SetAttribute("Kind", "Wild")
 	local rng = Random.new(5100 + id)
-	local k = kit(frame, dressing, rng)
+	local k = kit(frame, dressing, rng, shapeOf(id))
+	local COAST, UPPER = k.shape.coast, k.shape.upper
 	shoreRocks(k, clearOfLanding)
 	cliffRocks(k, clearOfLanding)
 	-- Bare rock on the cliff front too; the village lays a harbour wall there instead.
@@ -496,7 +823,7 @@ local function buildWild(island: Model, frame: CFrame, id: number): Model
 	-- Mossy mounds roll the flat terrace top into a wooded hill.
 	local mounds = group(dressing, "Mounds")
 	for _ = 1, 9 do
-		local x, z, y = k.terraceSpot(12, { { -16, -30, 16, 12 } })
+		local x, z, y = k.terraceSpot(12, { { -16, -30, 16, 12 } }, true)
 		if x then
 			local radius = rng:NextNumber(6, 11)
 			LowPoly.boulder(k.at(x, y - radius * 0.55, z), radius, rng, shade(GRASS, rng, 0.08), mounds, M.Grass)
@@ -515,6 +842,19 @@ local function buildWild(island: Model, frame: CFrame, id: number): Model
 				Props.rock(beach, k.at(x, BEACH, z), rng, rng:NextNumber(1.2, 2.6), ROCK)
 			else
 				Props.bush(beach, k.at(x, BEACH, z), rng, { rgb(150, 150, 96), rgb(128, 138, 84) })
+			end
+		end
+	end
+	-- Flotsam and dune grass round the rest of the shore, where there is any sand.
+	for index = 1, 18 do
+		local x, z = sandSpot(k, -40)
+		if x then
+			if index % 3 == 0 then
+				Props.driftwood(beach, k.at(x, BEACH, z), rng)
+			elseif index % 3 == 1 then
+				Props.bush(beach, k.at(x, BEACH, z), rng, { rgb(150, 150, 96), rgb(128, 138, 84) })
+			else
+				Props.shells(beach, k.at(x, BEACH, z), rng)
 			end
 		end
 	end
@@ -609,7 +949,7 @@ local function buildVillage(island: Model, frame: CFrame, id: number, pause: () 
 	dressing.Name = "Dressing"
 	dressing:SetAttribute("Kind", "Village")
 	local rng = Random.new(6100 + id)
-	local k = kit(frame, dressing, rng)
+	local k = kit(frame, dressing, rng, shapeOf(id))
 	local accent = ACCENTS[(id - 1) % #ACCENTS + 1]
 	shoreRocks(k, clearOfLanding)
 	cliffRocks(k, function(x, z) return clearOfLanding(x, z) or z < FRONT - 1 and math.abs(x) < 70 end)
@@ -795,9 +1135,9 @@ local function buildVillage(island: Model, frame: CFrame, id: number, pause: () 
 
 	-- Reeds and driftwood on the open shore beyond the square.
 	local shore = group(dressing, "Shore")
-	for index = 1, 14 do
-		local x, z = rng:NextNumber(-100, 100), rng:NextNumber(-60, 90)
-		if insidePolygon(COAST, x * 1.03, z * 1.03) and not (insidePolygon(UPPER, x, z) or insidePolygon(UPPER, x * 0.95, z * 0.95)) and z > -60 then
+	for index = 1, 16 do
+		local x, z = sandSpot(k, FRONT + 2)
+		if x then
 			if index % 2 == 0 then
 				Props.driftwood(shore, k.at(x, BEACH, z), rng)
 			else
@@ -856,12 +1196,14 @@ function Islands.dress(island: Model, owned: boolean)
 	end)
 end
 
--- The permanent landform both dressings share: the beach, the terrace and its two
--- knolls clad in stacked rock, the cut the stair climbs through and the sea stacks.
--- The straight cliff front is left to the dressing (bare rock or a harbour wall).
+-- The permanent landform both dressings share: the beach, the terrace and its knolls
+-- clad in stacked rock, the grassy hill, the cut the stair climbs through and the sea
+-- stacks. The straight cliff front is left to the dressing (bare rock or a harbour wall).
 local function buildGround(ground: Model, frame: CFrame, id: number)
 	local rng = Random.new(4100 + id)
-	local k = kit(frame, ground, rng)
+	local shape = shapeOf(id)
+	local k = kit(frame, ground, rng, shape)
+	local COAST, UPPER = shape.coast, shape.upper
 	plateau(ground, frame, COAST, BEACH, -20, 7, SAND, M.Sand)
 	plateau(ground, frame, UPPER, TERRACE, BEACH, 1, GRASS, M.Grass)
 	local edges = normals(UPPER)
@@ -873,7 +1215,7 @@ local function buildGround(ground: Model, frame: CFrame, id: number)
 			cliffFace(ground, k, a, b, edges[index], TERRACE, -3, 2.5)
 		end
 	end
-	for _, ridge in RIDGES do
+	for _, ridge in shape.ridges do
 		plateau(ground, frame, ridge.outline, ridge.top, TERRACE, 1, GRASS, M.Grass)
 		local ridgeEdges = normals(ridge.outline)
 		for index, a in ridge.outline do
@@ -892,9 +1234,29 @@ local function buildGround(ground: Model, frame: CFrame, id: number)
 			z = z2
 		end
 	end
-	for _, spot in STACKS do
-		local y, radius = -6, rng:NextNumber(7, 10)
-		for _ = 1, rng:NextInteger(3, 4) do
+	local hill = shape.hill
+	if hill then
+		local mound = group(ground, "Hill")
+		for _, tri in hill.tris do
+			local a, b, c = frame * tri[1], frame * tri[2], frame * tri[3]
+			-- Steep faces show bare rock through the grass.
+			local steep = math.abs((tri[2] - tri[1]):Cross(tri[3] - tri[1]).Unit.Y) < 0.6
+			local color = if steep then shade(ROCK, rng, 0.08) else shade(GRASS, rng, 0.07)
+			LowPoly.triangle(a, b, c, (a + b + c) / 3 - frame.UpVector * 2, color, mound, if steep then M.Slate else M.Grass)
+		end
+		-- Boulders breaking through the slopes.
+		for _ = 1, rng:NextInteger(3, 7) do
+			local angle, reach = rng:NextNumber(0, TAU), rng:NextNumber(0.15, 0.8) * hill.radius
+			local x, z = hill.center.X + math.cos(angle) * reach, hill.center.Y + math.sin(angle) * reach
+			local y = hill.heightAt(x, z)
+			if y then
+				stone(mound, k, x, y - 0.6, z, rng:NextNumber(2.5, 5))
+			end
+		end
+	end
+	for _, spot in shape.stacks do
+		local y, radius = -6, rng:NextNumber(6, 11)
+		for _ = 1, rng:NextInteger(2, 6) do
 			local h = rng:NextNumber(5, 8)
 			local tilt = CFrame.Angles(rng:NextNumber(-0.06, 0.06), 0, rng:NextNumber(-0.06, 0.06))
 			part(ground, "SeaStack", Vector3.new(radius * rng:NextNumber(1.7, 2.2), h + 0.6, radius * rng:NextNumber(1.7, 2.2)), k.cf(spot.X + rng:NextNumber(-1, 1), y + h / 2, spot.Y + rng:NextNumber(-1, 1), rng:NextNumber(0, math.pi)) * tilt, shade(ROCK, rng, 0.1), M.Slate)
@@ -915,7 +1277,12 @@ local function build(root: Instance, id: number)
 	island:SetAttribute("OwnerUserId", 0)
 	island:SetAttribute("LodRoot", true)
 	island:SetAttribute("LodRadial", true)
-	island:SetAttribute("Radius", 128)
+	local shape = shapeOf(id)
+	local reach = 0
+	for _, point in shape.coast do
+		reach = math.max(reach, point.Magnitude)
+	end
+	island:SetAttribute("Radius", math.ceil(reach))
 	local frame = Layout.frame(id)
 	island:SetAttribute("IslandFrame", frame)
 	island:SetAttribute("PlotFrame", Layout.plotFrame(id))
@@ -923,7 +1290,7 @@ local function build(root: Instance, id: number)
 	local ground = group(island, "Ground")
 	buildGround(ground, frame, id)
 	local chart = {}
-	for _, point in COAST do
+	for _, point in shape.coast do
 		local world = frame * Vector3.new(point.X, 0, point.Y)
 		table.insert(chart, { world.X, world.Z })
 	end

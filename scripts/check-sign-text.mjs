@@ -40,6 +40,7 @@ const modules = {
   SHOPDESKGEOMETRY: 'src/server/Map/ShopDeskGeometry.luau',
   CASHREGISTERGEOMETRY: 'src/server/Map/CashRegisterGeometry.luau',
   SHOPDESK: 'src/server/Map/ShopDesk.luau',
+  OFFICEDESK: 'src/server/Map/OfficeDesk.luau',
   BASEHOUSE: 'src/server/Map/BaseHouse.luau', MEDITERRANEAN: 'src/server/Map/Mediterranean.luau',
   BEACHDETAILS: 'src/server/Map/BeachDetails.luau', ROWBOAT: 'src/server/Rowboat.luau',
   FISHINGBOAT: 'src/server/FishingBoat.luau',

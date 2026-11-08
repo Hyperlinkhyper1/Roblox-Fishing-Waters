@@ -7,6 +7,18 @@ local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Cargo = require(ReplicatedStorage.Shared.Cargo)
 local Models = require(ReplicatedStorage.Shared.BackpackModels)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
+
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
 local Shop = {}
 local started = false
 local function make(class, parent, properties)
@@ -187,12 +199,12 @@ function Shop.start()
 		overlay.Visible = true
 		invoke("Get")
 	end)
-	RunService.RenderStepped:Connect(function()
+	RunService.RenderStepped:Connect(profiled("BackpackShop", function()
 		if overlay.Visible and workspace.CurrentCamera then
 			local viewport = workspace.CurrentCamera.ViewportSize
 			scale.Scale = math.min(1, (viewport.X - 24) / 540, (viewport.Y - 32) / 580)
 		end
-	end)
+	end))
 	render()
 end
 return Shop

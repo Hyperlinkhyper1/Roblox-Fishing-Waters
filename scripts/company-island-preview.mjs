@@ -1,11 +1,12 @@
-// Top-down PNG of the parts check-company-islands.mjs dumps with --preview: the wild
-// island on the left, the owned village on the right. Painter's order by height,
+// Top-down PNG of the parts check-company-islands.mjs dumps with --preview: one tile per
+// dumped island (the wild one, the owned village, then a few more wild ones), three a row. Painter's order by height,
 // blocks and wedges filled as the convex hull of their corners seen from above.
 import { writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 
-const SCALE = 4; // pixels per stud
-const HALF = 140; // studs either side of the island centre, local -Z (the docks) at the bottom
+const SCALE = 2; // pixels per stud
+const HALF = 185; // studs either side of the island centre, local -Z (the docks) at the bottom
+const COLUMNS = 3;
 const SIZE = HALF * 2 * SCALE;
 
 function hull(points) {
@@ -23,10 +24,11 @@ function hull(points) {
   return lower.slice(0, -1).concat(upper.slice(0, -1));
 }
 
-function fill(image, width, offset, polygon, color) {
+function fill(image, width, [ox, oy], polygon, color) {
   let minY = Infinity, maxY = -Infinity;
   for (const [, y] of polygon) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
   for (let y = Math.max(0, Math.floor(minY)); y <= Math.min(SIZE - 1, Math.ceil(maxY)); y++) {
+    const row = y + oy;
     const xs = [];
     for (let i = 0; i < polygon.length; i++) {
       const [x1, y1] = polygon[i], [x2, y2] = polygon[(i + 1) % polygon.length];
@@ -35,7 +37,7 @@ function fill(image, width, offset, polygon, color) {
     xs.sort((a, b) => a - b);
     for (let i = 0; i + 1 < xs.length; i += 2) {
       for (let x = Math.max(0, Math.round(xs[i])); x < Math.min(SIZE, Math.round(xs[i + 1])); x++) {
-        const at = (y * width + offset + x) * 3;
+        const at = (row * width + ox + x) * 3;
         image[at] = color[0]; image[at + 1] = color[1]; image[at + 2] = color[2];
       }
     }
@@ -70,9 +72,9 @@ function png(width, height, rgb) {
 
 // lines: "@P <tag> <W|B> px py pz rx ry rz ux uy uz bx by bz sx sy sz r g b", island-local.
 export async function renderPreview(lines, path) {
-  const tags = ['Wild', 'Village'];
-  const width = SIZE * tags.length;
-  const image = Buffer.alloc(width * SIZE * 3);
+  const tags = [...new Set(lines.map(line => line.trim().split(/\s+/)[1]))];
+  const width = SIZE * Math.min(COLUMNS, tags.length), height = SIZE * Math.ceil(tags.length / COLUMNS);
+  const image = Buffer.alloc(width * height * 3);
   for (let i = 0; i < image.length; i += 3) { image[i] = 38; image[i + 1] = 74; image[i + 2] = 96; }
   const parts = lines.map(line => {
     const [, tag, kind, ...n] = line.trim().split(/\s+/);
@@ -89,12 +91,12 @@ export async function renderPreview(lines, path) {
   for (const part of parts) part.points = corners(part), part.top = Math.max(...part.points.map(q => q[1]));
   parts.sort((a, b) => a.top - b.top);
   for (const part of parts) {
-    const offset = tags.indexOf(part.tag) * SIZE;
-    if (offset < 0) continue;
+    const tile = tags.indexOf(part.tag);
+    const offset = [(tile % COLUMNS) * SIZE, Math.floor(tile / COLUMNS) * SIZE];
     // Island-local +X to the right, -Z (towards Gullhaven) at the bottom of the picture.
     const polygon = hull(part.points.map(q => [(q[0] + HALF) * SCALE, (HALF - q[2]) * SCALE]));
     const light = Math.min(1.15, 0.7 + Math.max(0, part.top) / 60);
     fill(image, width, offset, polygon, part.c.map(c => Math.min(255, Math.round(c * 255 * light))));
   }
-  await writeFile(path, png(width, SIZE, image));
+  await writeFile(path, png(width, height, image));
 }

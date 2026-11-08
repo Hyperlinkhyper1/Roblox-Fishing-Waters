@@ -10,7 +10,12 @@ const previewAt = process.argv.indexOf('--preview');
 const previewPath = previewAt > 0 ? process.argv[previewAt + 1] : null;
 const read = path => readFile(path, 'utf8');
 const harbourFootprint = Number((await read('src/server/Map/Harbour.luau')).match(/Harbour\.FOOTPRINT = (\d+)/)[1]);
-const primitives = (await read('scripts/harbour-geometry.luau')).split('local CFrame = {}')[0];
+// Other fixed places the properties must keep clear of: Pirate Cove and the other biomes.
+const cove = (await read('src/shared/PirateCove.luau')).match(/PirateCove\.CENTER = \{ (-?\d+), (-?\d+) \}/).slice(1).map(Number);
+const biomes = [...(await read('src/shared/Biomes.luau')).matchAll(/center = Vector2\.new\((-?\d+), (-?\d+)\),\s*radius = (\d+)/g)]
+  .map(m => m.slice(1).map(Number)).filter(([x, z]) => x !== 0 || z !== 0);
+if (biomes.length < 4) throw new Error('Could not read the biome layout');
+const primitives =(await read('scripts/harbour-geometry.luau')).split('local CFrame = {}')[0];
 const mocks = (await read('scripts/drydock-geometry.luau')).split('local function loadBoatCatalog()')[0]
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
 const module = async path => (await read(path)).replace(/^local (\w+) = require\(.*$/gm, 'local $1 = dependencies.$1');
@@ -198,14 +203,95 @@ for id = 1, Layout.COUNT do
   check(type(Layout.Names[id]) == "string" and Layout.Names[id] ~= "" and not names[Layout.Names[id]], "Every property has a distinct visible name")
   names[Layout.Names[id]] = true
   local frame = island:GetAttribute("IslandFrame")
-  check((Vector2.new(frame.X, frame.Z) - Layout.position(id)).Magnitude < 0.001, "Properties use the shared ring layout")
+  check((Vector2.new(frame.X, frame.Z) - Layout.position(id)).Magnitude < 0.001, "Properties use the shared site layout")
   check(Layout.position(id).Magnitude - Layout.FOOTPRINT > ${harbourFootprint}, "The approach clears Gullhaven's current footprint")
-  check(frame.LookVector:Dot((-frame.Position).Unit) > 0.999, "Every company dock faces the main island")
+  local facing = frame.LookVector:Dot((-frame.Position).Unit)
+  check(facing > math.cos(math.rad(40)) and facing < 0.9999, "Every company dock faces roughly toward the main island, turned its own way")
   for other = id + 1, Layout.COUNT do
     check((Layout.position(id) - Layout.position(other)).Magnitude > 2 * Layout.FOOTPRINT, "Property reservations never overlap")
   end
-  check(island:GetAttribute("ChartCoast") == "coast:19", "Chart coast is published")
+  check(tonumber(string.match(island:GetAttribute("ChartCoast"), "^coast:(%d+)$")) >= 20, "Chart coast is published")
   checkWild(island)
+end
+-- Scattered at different distances and each with its own landform.
+do
+  local function inside(outline, x, z)
+    local result = false
+    for index, a in outline do
+      local b = outline[index % #outline + 1]
+      if (a.Y > z) ~= (b.Y > z) and x < (b.X - a.X) * (z - a.Y) / (b.Y - a.Y) + a.X then result = not result end
+    end
+    return result
+  end
+  local function area(outline)
+    local sum = 0
+    for index, a in outline do local b = outline[index % #outline + 1]; sum += a.X * b.Y - b.X * a.Y end
+    return math.abs(sum / 2)
+  end
+  local nearest, farthest, hills, areas, gaps, bearings = math.huge, 0, 0, {}, {}, {}
+  for id = 1, Layout.COUNT do
+    local position = Layout.position(id)
+    nearest, farthest = math.min(nearest, position.Magnitude), math.max(farthest, position.Magnitude)
+    local bearing = math.deg(math.atan2(position.Y, position.X)) % 360
+    table.insert(bearings, bearing)
+    check(math.abs(bearing - 180) > 13, "The western shipping entrance stays open")
+    check((position - Vector2.new(${cove[0]}, ${cove[1]})).Magnitude > 600, "Properties keep clear of Pirate Cove")
+    for _, biome in { ${biomes.map(b => '{' + b.join(', ') + '}').join(', ')} } do
+      check((position - Vector2.new(biome[1], biome[2])).Magnitude > biome[3] + Layout.FOOTPRINT, "Properties stay out of the neighbouring biomes")
+    end
+    local shape = MapIslands.shapeOf(id)
+    check(MapIslands.shapeOf(id) == shape, "Island shapes are cached, so ground and dressings agree")
+    local coast, upper = shape.coast, shape.upper
+    for _, p in upper do
+      check(inside(coast, p.X, p.Y), "The terrace stands on the beach")
+    end
+    for _, p in coast do
+      check(p.Magnitude <= Layout.FOOTPRINT - 70, "The coast stays inside the property reservation")
+    end
+    -- The fixed ground the docks, square, stair and plot need.
+    -- The quay (to x = 56) and the square's props (to x = 74).
+    for x = -74, 74, 4 do
+      for z = -94, -30, 4 do
+        if z > -70 or math.abs(x) <= 56 then
+          check(inside(coast, x, z) and not inside(upper, x, z), "The square and quay stand on open beach")
+        end
+      end
+    end
+    for x = -66, 66, 3 do
+      for z = -24, 86, 3 do
+        check(inside(upper, x, z) or (math.abs(x) < 9.5 and z < 2), "The terrace covers the plot, the overlook and the stair head")
+        check(not (shape.hill and inside(shape.hill.base, x, z)), "The hill stays clear of the plot")
+        for _, ridge in shape.ridges do
+          check(not inside(ridge.outline, x, z), "Knolls stay clear of the plot")
+        end
+      end
+    end
+    check(inside(upper, 72, -6) and not (shape.hill and inside(shape.hill.base, 72, -6)), "The village flag stands on the terrace")
+    for _, ridge in shape.ridges do
+      check(not inside(ridge.outline, 72, -6), "The village flag stands clear of the knolls")
+      for _, p in ridge.outline do check(inside(upper, p.X, p.Y), "Knolls stand on the terrace") end
+    end
+    if shape.hill then
+      hills += 1
+      for _, p in shape.hill.base do check(inside(upper, p.X, p.Y), "The hill stands on the terrace") end
+      local crest = shape.hill.heightAt(shape.hill.center.X, shape.hill.center.Y)
+      check(crest and crest > 24.4 + 5 and crest <= shape.hill.top + 0.001, "The hill rises above the terrace")
+    end
+    check(shape.hill or #shape.ridges >= 1, "Every island rises above its terrace somewhere")
+    for _, stack in shape.stacks do check(not inside(coast, stack.X, stack.Y), "Sea stacks stand in the water") end
+    table.insert(areas, area(coast))
+    print(string.format("@S island %d at %.0f studs, bearing %.0f: coast %d pts, area %.0f, hill %s, knolls %d, stacks %d", id, position.Magnitude, bearing, #coast, area(coast), if shape.hill then string.format("r%.0f h%.0f", shape.hill.radius, shape.hill.top - 24.4) else "none", #shape.ridges, #shape.stacks))
+  end
+  check(farthest - nearest > 600, "Properties sit at clearly different distances from the harbour, not on a ring")
+  table.sort(bearings)
+  for index = 2, #bearings do table.insert(gaps, bearings[index] - bearings[index - 1]) end
+  table.sort(gaps)
+  check(gaps[#gaps] - gaps[1] > 8, "Properties are spaced unevenly round the harbour")
+  check(hills >= Layout.COUNT // 2, "Most islands rise to a hill")
+  table.sort(areas)
+  -- The docks, square and plot are the same everywhere, so most of an island is fixed.
+  check(areas[#areas] > areas[1] * 1.2, "Islands differ in size")
+  for index = 2, #areas do check(areas[index] - areas[index - 1] > 1, "No two islands share an outline") end
 end
 -- Old seeded scenery can occupy the new reservations in a Studio bake.
 map:FindFirstChild("Company Island " .. Layout.COUNT):Destroy()
@@ -361,6 +447,7 @@ if ${previewPath ? 'true' : 'false'} then
   end
   dump(map:FindFirstChild("Company Island 2"), "Wild")
   dump(first, "Village")
+  for _, id in { 4, 6, 9, 12 } do dump(map:FindFirstChild("Company Island " .. id), "Island" .. id) end
 end
 approach(buyer, 2)
 check(not request.OnServerInvoke(buyer, "Buy", 2).Ok and profiles[buyer].Cash == 50000, "An owner cannot purchase twice")

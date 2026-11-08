@@ -268,6 +268,43 @@ surfaceFog()
 assert(rgbEqual(Terrain.WaterColor, Biomes.Normal.look.waterColor) and grading.Brightness == 0,
   'Ending black-hole weather restores the current biome and ordinary grading')
 print('PASS black-hole purple/dark atmosphere, underwater visibility and normal-weather restoration')
+
+weather = { kind = 'Foggy', fog = 1, rain = 0, storm = 0, cloudCover = 0.9 }
+attributes.ClockOverride = 12
+for _, biome in Biomes.list do
+  move(biome.center.X, 5, biome.center.Y, 0.6)
+  surfaceFog()
+  assert(atmosphere.Density > 0.6 and atmosphere.Density <= 0.7 and atmosphere.Haze > biome.look.haze,
+    'Foggy must obscure distant scenery throughout every biome')
+  assert(not sky.CelestialBodiesShown and grading.Contrast < 0,
+    'Dense fog softens contrast and hides celestial bodies')
+  local groundDensity = atmosphere.Density
+  move(biome.center.X, 300, biome.center.Y, 0.6)
+  assert(atmosphere.Density < groundDensity, 'Marine fog thins at higher elevations')
+end
+move(0, 5, 0, 0.6)
+local fogDayColor, fogDayBrightness = atmosphere.Color, Lighting.Brightness
+local tweenCount = #pending
+for _ = 1, 10 do render(1/60) end
+assert(#pending == tweenCount, 'Fog must reuse the half-second atmosphere update, without per-frame tweens')
+attributes.ClockOverride = 23
+move(0, 5, 0, 0.6)
+assert(sum(atmosphere.Color) < sum(fogDayColor) and Lighting.Brightness < fogDayBrightness,
+  'Fog responds to night lighting instead of glowing white')
+deferTweens = true
+move(0, -0.001, 0)
+underwaterFog()
+deferTweens = false
+move(0, 5, 0)
+surfaceFog()
+assert(atmosphere.Density > 0.6, 'Resurfacing restores current fog weather')
+weather = { kind = 'Clear', fog = 0, rain = 0, storm = 0, cloudCover = 0 }
+attributes.ClockOverride = 12
+move(0, 5, 0, 0.6)
+surfaceFog()
+assert(atmosphere.Density < 0.6 and sky.CelestialBodiesShown and grading.Contrast >= 0,
+  'Ending fog restores the ordinary biome atmosphere and sky')
+print('PASS Foggy biome coverage, marine layer, low update rate, night palette, dive safety and clearing')
 `;
 const temporary = mkdtempSync(join(tmpdir(), 'fishing-underwater-'));
 try {

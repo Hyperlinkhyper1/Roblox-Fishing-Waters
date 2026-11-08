@@ -228,7 +228,7 @@ local function builtinTargets(builtins, id)
 	return result
 end
 
-local function paint(data, payload, builtins): string?
+local function paint(data, payload, builtins, single): string?
 	if type(payload) ~= "table" or not validId(payload.Id) then return "Select a building piece first." end
 	local custom, index = find(data.Pieces, payload.Id)
 	local target = custom or builtins[payload.Id]
@@ -244,7 +244,8 @@ local function paint(data, payload, builtins): string?
 		normalized.Id = custom.Id
 		data.Pieces[index] = normalized
 	else
-		for _, id in builtinTargets(builtins, payload.Id) do
+		-- `single` paints just this surface instead of its whole roof group.
+		for _, id in (if single then { payload.Id } else builtinTargets(builtins, payload.Id)) do
 			local override = data.Overrides[id] or {}
 			override.Material, override.Color = normalized.Material, clone(normalized.Color)
 			data.Overrides[id] = override
@@ -294,9 +295,21 @@ local function change(profile, site, action, payload, builtins, record)
 		for id, entry in availableBuiltins(builtins, data) do
 			if entry.Kind == "Wall" then table.insert(ids, id) end
 		end
+		-- The plaster triangles under a pitched roof ("Gable", "ShopGable") are
+		-- captured as Roof parts but read as wall. Paint each one on its own so
+		-- the roof group they share keeps its tiles.
+		local gables = {}
+		for id, entry in availableBuiltins(builtins, data) do
+			local name = id:match("([^/]+)$") or ""
+			if entry.Kind == "Roof" and name:match("^%w*Gable_%d+$") then table.insert(gables, id) end
+		end
 		if #ids == 0 then return nil, "There are no walls to paint on this property." end
 		for _, id in ids do
 			local problem = paint(data, { Id = id, Material = payload.Material, Color = payload.Color }, builtins)
+			if problem then return nil, problem end
+		end
+		for _, id in gables do
+			local problem = paint(data, { Id = id, Material = payload.Material, Color = payload.Color }, builtins, true)
 			if problem then return nil, problem end
 		end
 	elseif action == "Paint" or action == "PaintBatch" then

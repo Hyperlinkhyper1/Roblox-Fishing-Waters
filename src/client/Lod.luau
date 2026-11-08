@@ -22,6 +22,18 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local Lod = {}
 
 local FADE_TIME = 0.6
@@ -258,7 +270,7 @@ function Lod.start()
 		end)
 	end
 
-	RunService.Heartbeat:Connect(function()
+	RunService.Heartbeat:Connect(profiled("Lod", function()
 		local now = os.clock()
 		for visual, started in fading do
 			local alpha = math.min((now - started) / FADE_TIME, 1)
@@ -274,7 +286,7 @@ function Lod.start()
 				fading[visual] = nil
 			end
 		end
-	end)
+	end))
 
 	-- Ask for the water ahead of the boat early, so islands have time to stream in piece by piece
 	-- before you sail up to them. Only while driving: on foot this kept dragging whole islands in

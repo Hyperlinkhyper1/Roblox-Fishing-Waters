@@ -11,6 +11,7 @@ local Weather = require(ReplicatedStorage.Shared.Weather)
 local MeshFeatures = require(ReplicatedStorage.Shared.MeshFeatures)
 local WaterQuality = require(script.Parent.WaterQuality)
 local EditableMeshBudget = require(script.Parent.EditableMeshBudget)
+local TerrainProbe = require(script.Parent.TerrainProbe)
 
 local SwellSurface = {}
 -- World-fixed vertex grid around the camera: COUNT cells of SPACING studs a side.
@@ -43,6 +44,10 @@ local FLAT_AMPLITUDE = 0.03
 -- Hull boxes are rigid with the root; GetBoundingBox walks every part, so it is
 -- redone this often rather than every frame for every boat in range.
 local HULL_BOX_REFRESH = 2
+-- Vertices within this many cells of the centre update every frame: everywhere the swell is
+-- at full strength, so hulls always sit on the exact surface. Only the EDGE_FADE rim, where
+-- heights already ease to zero, alternates frames.
+local INNER_RING = (HALF - EDGE_FADE) // SPACING
 local started = false
 
 local function smoothstep(t: number): number
@@ -127,7 +132,7 @@ function SwellSurface.start()
 		parameters.FilterType = Enum.RaycastFilterType.Exclude
 		parameters.IgnoreWater = false
 		local function refreshFilter()
-			local excluded = { part }
+			local excluded: { Instance } = { part, workspace.Terrain }
 			for _, player in Players:GetPlayers() do
 				if player.Character then
 					table.insert(excluded, player.Character)
@@ -139,10 +144,16 @@ function SwellSurface.start()
 			end
 			parameters.FilterDescendantsInstances = excluded
 		end
+		-- Terrain comes from voxels: a terrain ray builds collision for every chunk it
+		-- crosses that this client never queried (RaycastTerrain > buildKDTree, ~100 ms
+		-- frames). The ray, with Terrain excluded, only looks for piers and island meshes
+		-- above the surface.
 		local function isWater(x: number, z: number): boolean
-			local hit =
-				workspace:Raycast(Vector3.new(x, Biomes.WaterLevel + 512, z), Vector3.new(0, -600, 0), parameters)
-			return hit ~= nil and hit.Material == Enum.Material.Water
+			if not TerrainProbe.isWater(x, z) then
+				return false
+			end
+			return workspace:Raycast(Vector3.new(x, Biomes.WaterLevel + 512, z), Vector3.new(0, -512, 0), parameters)
+				== nil
 		end
 
 		-- World grid cells, kept while inside the sheet: wet probe and swell strength.
@@ -166,6 +177,24 @@ function SwellSurface.start()
 			end
 			return root.CFrame * cached.offset, cached.extents
 		end
+		-- Per-vertex data that never changes: local X/Z, the edge fade, and whether the vertex
+		-- is in the inner ring that updates every frame. Vertices in the fading rim (over
+		-- 190 studs out, already easing to flat) update on alternate frames in a checkerboard,
+		-- which halves their mesh writes.
+		local localX, localZ, edges, inner =
+			table.create(size * size), table.create(size * size), table.create(size * size), table.create(size * size)
+		for row = 0, COUNT do
+			local edgeZ = HALF - math.abs(row * SPACING - HALF)
+			for column = 0, COUNT do
+				local index = row * size + column + 1
+				localX[index], localZ[index] = column * SPACING - HALF, row * SPACING - HALF
+				edges[index] = smoothstep(math.min(edgeZ, HALF - math.abs(column * SPACING - HALF)) / EDGE_FADE)
+				inner[index] = math.max(math.abs(row - COUNT / 2), math.abs(column - COUNT / 2)) <= INNER_RING
+			end
+		end
+		-- The grid cell under each vertex, rebuilt only when the sheet moves.
+		local cellOf = table.create(size * size)
+		local frameParity = 0
 		local originX, originZ = math.huge, math.huge
 		local probeCursor, probeDue = 0, 0
 		local refreshCursor, refreshDue = 0, 0
@@ -211,14 +240,19 @@ function SwellSurface.start()
 				part.LocalTransparencyModifier = 1
 				return
 			end
-			part.LocalTransparencyModifier = 0
+			if part.LocalTransparencyModifier ~= 0 then
+				part.LocalTransparencyModifier = 0
+			end
 			local now = workspace:GetServerTimeNow()
 			local state = Weather.getState(now)
 			local centerX = math.round(cameraPosition.X / SPACING)
 			local centerZ = math.round(cameraPosition.Z / SPACING)
 			local firstX, firstZ = centerX - COUNT / 2, centerZ - COUNT / 2
+			local moved = false
 			if firstX ~= originX or firstZ ~= originZ then
 				originX, originZ = firstX, firstZ
+				-- The part just moved a cell: every vertex must be rewritten this frame.
+				moved = true
 				unprobed = true
 				part.CFrame = CFrame.new(centerX * SPACING, Biomes.WaterLevel, centerZ * SPACING)
 				table.clear(flat)
@@ -328,21 +362,40 @@ function SwellSurface.start()
 				end
 			end
 
+			local profiling = debug.profilebegin ~= nil -- absent in test runners
+			if profiling then
+				debug.profilebegin("SwellSurface/Vertices")
+			end
+			if cellOf[1] == nil or cellOf[1].x ~= firstX or cellOf[1].z ~= firstZ then
+				for row = 0, COUNT do
+					for column = 0, COUNT do
+						cellOf[row * size + column + 1] = cellAt(firstX + column, firstZ + row)
+					end
+				end
+			end
+			frameParity = 1 - frameParity
 			local direction = state.windDirection
 			local ease = 1 - math.exp(-dt * 4)
+			-- Outer vertices skip every other frame, so they ease by two frames' worth.
+			local outerEase = 1 - math.exp(-dt * 8)
 			for row = 0, COUNT do
-				local edgeZ = HALF - math.abs(row * SPACING - HALF)
 				for column = 0, COUNT do
 					local index = row * size + column + 1
-					local cell = cellAt(firstX + column, firstZ + row)
-					cell.shown += (cell.shore - cell.shown) * ease
-					local edge = smoothstep(math.min(edgeZ, HALF - math.abs(column * SPACING - HALF)) / EDGE_FADE)
-					local amplitude = cell.amplitude * cell.shown * edge
+					local cell = cellOf[index]
+					if not inner[index] and not moved then
+						if (row + column) % 2 ~= frameParity then
+							continue
+						end
+						cell.shown += (cell.shore - cell.shown) * outerEase
+					else
+						cell.shown += (cell.shore - cell.shown) * ease
+					end
+					local amplitude = cell.amplitude * cell.shown * edges[index]
 					if amplitude < FLAT_AMPLITUDE then
 						if not flat[index] then
 							flat[index] = true
 							local y = if cell.shown < 0.01 then SUNKEN else 0
-							mesh:SetPosition(vertices[index], Vector3.new(column * SPACING - HALF, y, row * SPACING - HALF))
+							mesh:SetPosition(vertices[index], Vector3.new(localX[index], y, localZ[index]))
 							mesh:SetNormal(normals[index], Vector3.yAxis)
 							if alphas[index] ~= 0 then
 								alphas[index] = 0
@@ -352,8 +405,7 @@ function SwellSurface.start()
 						continue
 					end
 					flat[index] = false
-					local x, z = cell.x * SPACING, cell.z * SPACING
-					local unit, sx, sz = Weather.swell(x, z, now, direction)
+					local unit, sx, sz = Weather.swell(cell.x * SPACING, cell.z * SPACING, now, direction)
 					local height = unit * amplitude
 					local cap = caps[index]
 					if cap and height > cap then
@@ -362,13 +414,16 @@ function SwellSurface.start()
 					local alpha = smoothstep((height - FADE_FROM) / FADE_HEIGHT)
 					-- Land cells drop out of sight beneath the shore.
 					local y = if cell.shown < 0.01 then SUNKEN else height
-					mesh:SetPosition(vertices[index], Vector3.new(column * SPACING - HALF, y, row * SPACING - HALF))
+					mesh:SetPosition(vertices[index], Vector3.new(localX[index], y, localZ[index]))
 					mesh:SetNormal(normals[index], Vector3.new(-amplitude * sx, 1, -amplitude * sz).Unit)
 					if math.abs(alpha - alphas[index]) > 0.02 or (alpha == 0) ~= (alphas[index] == 0) then
 						alphas[index] = alpha
 						mesh:SetColorAlpha(colors[index], alpha)
 					end
 				end
+			end
+			if profiling then
+				debug.profileend()
 			end
 		end)
 	end)

@@ -5,6 +5,18 @@ local RunService = game:GetService("RunService")
 
 local WaterQuality = require(script.Parent.WaterQuality)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local ShoreWaves = {}
 local TAG = "ShoreWaveSource"
 local PERIOD = 9.2
@@ -133,7 +145,7 @@ function ShoreWaves.start()
 
 	-- Shore foam is close to the camera: stepping it at 30 Hz visibly judders
 	-- on higher-refresh displays. Server time still keeps every frame in phase.
-	RunService.RenderStepped:Connect(function()
+	RunService.RenderStepped:Connect(profiled("ShoreWaves", function()
 		local camera = workspace.CurrentCamera
 		local cameraPosition = camera and camera.CFrame.Position
 		local time = workspace:GetServerTimeNow()
@@ -171,7 +183,7 @@ function ShoreWaves.start()
 				beam.LocalTransparencyModifier = 1 - opacity * state.fade
 			end
 		end
-	end)
+	end))
 end
 
 return ShoreWaves

@@ -759,6 +759,7 @@ function FurnitureService.start()
 				Exotic = 0,
 				Divine = 0,
 				Limited = 0,
+				Admin = 0,
 			}
 			for _, list in { profile.Angler.Freezer, profile.Angler.Storage } do
 				for _, fish in list do

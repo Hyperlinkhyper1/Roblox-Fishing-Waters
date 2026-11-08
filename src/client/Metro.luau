@@ -4,6 +4,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Schedule = require(ReplicatedStorage.Shared.MetroSchedule)
 local Train = require(ReplicatedStorage.Shared.MetroTrain)
+
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
 local Metro = {}
 local started = false
 
@@ -107,7 +119,7 @@ function Metro.start()
 	for _, stop in CollectionService:GetTagged("MetroStop") do added(stop) end
 	-- A preloaded destination can arrive while the camera is still at the source.
 	-- Build only nearby trains, outside the render callback, one per Heartbeat.
-	RunService.Heartbeat:Connect(function()
+	RunService.Heartbeat:Connect(profiled("Metro", function()
 		local camera = workspace.CurrentCamera
 		if not camera or transit:GetAttribute("Ready") ~= true then return end
 		for _, train in trains do
@@ -118,9 +130,9 @@ function Metro.start()
 				return
 			end
 		end
-	end)
+	end))
 	local lastSecond = -1
-	RunService:BindToRenderStep("Metro", Enum.RenderPriority.Camera.Value + 1, function()
+	RunService:BindToRenderStep("Metro", Enum.RenderPriority.Camera.Value + 1, profiled("Metro/2", function()
 		local now = workspace:GetServerTimeNow()
 		local state, active = Schedule.state(now), transit:GetAttribute("Ready") == true
 		local second = math.floor(now)
@@ -137,7 +149,7 @@ function Metro.start()
 			end
 			if second ~= lastSecond then
 				local message = if not active then "Service preparing" elseif state.boarding then "Doors open · Departs in " .. state.seconds .. "s"
-					elseif state.phase < 8 then "Arriving · Stand back" elseif state.phase < 36 then "Doors closed · Next in " .. state.seconds .. "s"
+					elseif state.phase < Schedule.OPEN then "Arriving · Stand back" elseif state.phase < Schedule.TUNNEL then "Doors closed · Next in " .. state.seconds .. "s"
 					else "Next train  0:" .. string.format("%02d", state.seconds)
 				for _, board in train.boards do board.label.Text = "1  " .. board.destination .. "\n" .. message end
 			end
@@ -153,8 +165,8 @@ function Metro.start()
 			streak.Visible = darkness > 0.9
 			streak.Position = UDim2.fromScale(1 - ((now * (0.25 + i * 0.017) + i / 12) % 1), i / 14)
 		end
-		status.Text = if onArrival then "Arriving at " .. ride.destination elseif state.phase < 28 then "Doors closing · Please stand clear"
-			elseif state.phase < 36 then "Departing " .. ride.origin else "Travelling to " .. ride.destination .. " · " .. math.max(0, math.ceil(ride.arrival - now)) .. "s"
+		status.Text = if onArrival then "Arriving at " .. ride.destination elseif state.phase < Schedule.DEPART then "Doors closing · Please stand clear"
+			elseif state.phase < Schedule.TUNNEL then "Departing " .. ride.origin else "Travelling to " .. ride.destination .. " · " .. math.max(0, math.ceil(ride.arrival - now)) .. "s"
 		if camera then
 			if not savedCamera then savedCamera = { kind = camera.CameraType, fov = camera.FieldOfView, subject = camera.CameraSubject } end
 			camera.CameraType, camera.FieldOfView = Enum.CameraType.Scriptable, 68
@@ -163,7 +175,7 @@ function Metro.start()
 		end
 		-- A missing completion packet must not leave the player in a scripted camera.
 		if now > ride.arrival + 8 then restore() end
-	end)
+	end))
 end
 
 return Metro

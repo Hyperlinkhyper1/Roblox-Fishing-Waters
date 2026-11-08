@@ -1,11 +1,15 @@
 -- One absolute clock drives both termini, doors, indicators and passenger journeys.
 local Schedule = {}
-Schedule.PERIOD = 60
-Schedule.OPEN = 8
-Schedule.CLOSE = 26
-Schedule.DEPART = 28
-Schedule.TUNNEL = 36
-Schedule.TRANSFER = 48
+-- A ride is 5 s: the train pulls out at DEPART and has stopped at the far
+-- platform ARRIVE seconds into the next cycle (PERIOD - DEPART + ARRIVE).
+Schedule.PERIOD = 29
+Schedule.ARRIVE = 2
+Schedule.OPEN = 3
+Schedule.CLOSE = 24
+Schedule.DEPART = 26
+Schedule.TUNNEL = 29
+Schedule.TRANSFER = 28
+Schedule.RIDE = Schedule.PERIOD - Schedule.DEPART + Schedule.ARRIVE
 Schedule.RUN = 250
 Schedule.OTHER = { Harbour = "City", City = "Harbour" }
 Schedule.NAMES = { Harbour = "Gullhaven", City = "Hafen Mitte" }
@@ -14,17 +18,17 @@ function Schedule.state(now)
 	local cycle = math.floor(now / Schedule.PERIOD)
 	local phase = now - cycle * Schedule.PERIOD
 	local offset, doors, status = 0, 0, "Boarding"
-	if phase < 6 then
-		local t = phase / 6
+	if phase < Schedule.ARRIVE then
+		local t = phase / Schedule.ARRIVE
 		offset, status = -Schedule.RUN * (1 - t) ^ 2, "Arriving"
 	elseif phase < Schedule.OPEN then
-		doors, status = (phase - 6) / 2, "Doors opening"
+		doors, status = (phase - Schedule.ARRIVE) / (Schedule.OPEN - Schedule.ARRIVE), "Doors opening"
 	elseif phase < Schedule.CLOSE then
 		doors = 1
 	elseif phase < Schedule.DEPART then
-		doors, status = 1 - (phase - Schedule.CLOSE) / 2, "Doors closing"
+		doors, status = 1 - (phase - Schedule.CLOSE) / (Schedule.DEPART - Schedule.CLOSE), "Doors closing"
 	elseif phase < Schedule.TUNNEL then
-		offset, status = Schedule.RUN * ((phase - Schedule.DEPART) / 8) ^ 2, "Departing"
+		offset, status = Schedule.RUN * ((phase - Schedule.DEPART) / (Schedule.TUNNEL - Schedule.DEPART)) ^ 2, "Departing"
 	else
 		offset, status = Schedule.RUN, "Next train"
 	end

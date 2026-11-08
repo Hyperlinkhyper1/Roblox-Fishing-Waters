@@ -11,12 +11,30 @@ const read = path => readFileSync(join(root, path), 'utf8');
 const primitives = read('scripts/harbour-geometry.luau').split('local CFrame = {}')[0];
 let program = read('scripts/drydock-geometry.luau').split('local dependencies =')[0]
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
-program += '\nlocal dependencies = {}\nlocal RaycastParams = { new = function() return {} end }\n';
-for (const name of ['Biomes', 'LowPoly', 'Props', 'Harbour', 'Seabed', 'SeabedLife', 'SeabedDetails']) {
-  const path = name === 'Biomes' ? 'src/shared/Biomes.luau' : `src/server/Map/${name}.luau`;
+program += `
+local dependencies = {}
+local RaycastParams = { new = function() return {} end }
+-- A real (mock) ReplicatedStorage, so the published carpet templates can be inspected
+local replicatedStorage = Instance.new('Folder')
+replicatedStorage.Name = 'ReplicatedStorage'
+local baseGetService = game.GetService
+game.GetService = function(self, name)
+  if name == 'ReplicatedStorage' then return replicatedStorage end
+  if name == 'RunService' then return { Heartbeat = { Connect = function() end } } end
+  return baseGetService(self, name)
+end
+`;
+const sources = {
+  Biomes: 'src/shared/Biomes.luau',
+  SeabedCarpet: 'src/shared/SeabedCarpet.luau',
+  SeabedCarpetClient: 'src/client/SeabedCarpet.luau',
+};
+for (const name of ['Biomes', 'SeabedCarpet', 'LowPoly', 'Props', 'Harbour', 'Seabed', 'SeabedLife', 'SeabedDetails', 'SeabedCarpetClient']) {
+  const path = sources[name] ?? `src/server/Map/${name}.luau`;
   let source = read(path)
     .replace(/require\(script\.Parent\.(\w+)\)/g, 'dependencies.$1')
-    .replace('require(ReplicatedStorage.Shared.Biomes)', 'dependencies.Biomes');
+    .replace('require(ReplicatedStorage.Shared.Biomes)', 'dependencies.Biomes')
+    .replace('require(ReplicatedStorage.Shared.SeabedCarpet)', 'dependencies.SeabedCarpet');
   if (name === 'SeabedDetails') {
     source = source.replace(/return SeabedDetails\s*$/, 'return { ensure = SeabedDetails.ensure, sample = sample }');
   }

@@ -12,9 +12,22 @@ local CastAnimation = require(script.Parent.CastAnimation)
 local FishingAudio = require(script.Parent.FishingAudio)
 local Reel = require(script.Parent.ReelMinigame)
 local CatchPopup = require(script.Parent.CatchPopup)
+local CatchFling = require(script.Parent.CatchFling)
 local FishingBobber = require(ReplicatedStorage.Shared.FishingBobber)
 local CastTiming = require(ReplicatedStorage.Shared.CastTiming)
 local CharacterMeter = require(script.Parent.CharacterMeter)
+
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
 
 local Casting = {}
 local MIN_CAST, MAX_CAST = 10, 58
@@ -556,11 +569,15 @@ function Casting.start()
 			FishingAudio.catch()
 			reel:dismiss()
 			popup:showCatch(payload)
+		elseif kind == "Fling" then
+			-- Sent to everyone, for any angler's catch.
+			CatchFling.fling(payload)
+			return
 		end
 		refreshHud()
 	end)
 	local lines = {}
-	RunService.RenderStepped:Connect(function()
+	RunService.RenderStepped:Connect(profiled("Casting", function()
 		local now = os.clock()
 		local onScreen = CharacterMeter.position(hud, player, 1)
 		hud.Visible = rod ~= nil and phase ~= "Fighting" and onScreen
@@ -622,7 +639,7 @@ function Casting.start()
 				lines[tool] = nil
 			end
 		end
-	end)
+	end))
 	refreshHud()
 end
 

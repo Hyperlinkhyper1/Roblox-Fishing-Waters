@@ -1,10 +1,12 @@
 -- Map streaming must not block shop input or equipment initialization.
 local player = game:GetService("Players").LocalPlayer
 local modules = {
+	"OverlayInset",
 	"AdminFly",
 	"Leaderboard",
 	"ServerUpdates",
 	"BiomeAtmosphere",
+	"AreaBanner",
 	"Lod",
 	"Metro",
 	"Oxygen",
@@ -17,6 +19,8 @@ local modules = {
 	"CoastalAmbience",
 	"BackgroundMusic",
 	"ParkedBoats",
+	"DrydockLift",
+	"Pedestrians",
 	"Fishing",
 	"RodWorkshop",
 	"RodCrates",
@@ -40,6 +44,7 @@ local modules = {
 	"CompanyIslands",
 	"CrabCages",
 	"MusselNets",
+	"OfficeComputer",
 
 	"PlayerMenu",
 	"WorldMap",
@@ -56,7 +61,9 @@ local modules = {
 	"WeatherRadar",
 	"WaterWaves",
 	"SwellSurface",
+	"SeabedCarpet",
 	"SeasonFoliage",
+	"CityNightLights",
 }
 local required = { Boating = true, Fishing = true, Oxygen = true, RodPhysics = true, PlayerMenu = true }
 local ready = 0

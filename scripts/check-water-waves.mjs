@@ -16,7 +16,9 @@ const quality = read('scripts/water-quality.luau')
 const source = read('src/client/WaterWaves.luau')
   .replace(/local Biomes = require\(ReplicatedStorage.Shared.Biomes\)/, 'local Biomes = dependencies.Biomes')
   .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather')
-  .replace(/local WaterQuality = require\(script.Parent.WaterQuality\)/, 'local WaterQuality = dependencies.WaterQuality');
+  .replace(/local WaterQuality = require\(script.Parent.WaterQuality\)/, 'local WaterQuality = dependencies.WaterQuality')
+  .replace(/local TerrainProbe = require\(script\.Parent\.TerrainProbe\)/, () => `local TerrainProbe = (function()\n${read('src/client/TerrainProbe.luau')
+    .replace(/require\(ReplicatedStorage\.Shared\.Biomes\)/, 'dependencies.Biomes')}\nend)()`);
 const program = read('scripts/water-waves.luau')
   .replace('-- MOCKS --', () => `${mocks}\n${quality}`)
   .replace('-- BIOMES --', () => read('src/shared/Biomes.luau'))

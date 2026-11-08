@@ -5,6 +5,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Weather = require(ReplicatedStorage.Shared.Weather)
+
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
 local Controller = {}
 local started = false
 local TAU = math.pi * 2
@@ -84,7 +96,7 @@ function Controller.start()
 		end
 		model.Parent = workspace
 	end
-	RunService.RenderStepped:Connect(function(dt)
+	RunService.RenderStepped:Connect(profiled("BlackHoleWeather", function(dt)
 		elapsed += dt
 		if elapsed < 1 / 30 then
 			return
@@ -124,7 +136,7 @@ function Controller.start()
 				point.Position = Vector3.new(math.cos(angle) * radius, height, math.sin(angle) * radius)
 			end
 		end
-	end)
+	end))
 end
 
 return Controller

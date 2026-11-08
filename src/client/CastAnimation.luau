@@ -4,8 +4,9 @@ local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CastAnimation = {}
--- Shoulder pitch in torso space: 0 hangs down, pi/2 holds the rod forward.
-local REST, COCKED, FOLLOW = math.pi / 2, 2.9, 1.0
+-- Shoulder pitch in torso space: 0 hangs down, pi/2 holds the rod forward and
+-- past pi the arm (and rod) is cocked back behind the head.
+local REST, COCKED, FOLLOW = math.pi / 2, 3.3, 0.95
 local HOLD_WEIGHT = 0.92
 local BACKSWING, WHIP, SETTLE = 0.12, 0.16, 0.45
 local started = false
@@ -61,10 +62,12 @@ function CastAnimation.cancel(tool: Tool)
 	intents[tool] = nil
 end
 
-local function findJoint(character: Model, names: { string }): Motor6D?
+-- Avatars using the joint upgrade swap Motor6Ds for AnimationConstraints with
+-- the same names; both expose Transform, so animate whichever the rig has.
+local function findJoint(character: Model, names: { string }): Instance?
 	for _, name in names do
 		local joint = character:FindFirstChild(name, true)
-		if joint and joint:IsA("Motor6D") then
+		if joint and (joint:IsA("Motor6D") or joint:IsA("AnimationConstraint")) then
 			return joint
 		end
 	end
@@ -77,7 +80,12 @@ local EXTRA_JOINTS = {
 	leftElbow = { "LeftElbow" },
 	rightWrist = { "RightWrist" },
 	leftWrist = { "LeftWrist" },
+	-- R15 bends at the waist; R6 has to tilt the whole torso from the root.
+	waist = { "Waist" },
+	root = { "RootJoint" },
 }
+-- R6's root also carries the legs, so its lean and twist are toned down.
+local BODY_SCALE = { waist = 1, root = 0.5 }
 
 local function restore(pose)
 	if pose.joint.Parent then
@@ -90,8 +98,13 @@ local function restore(pose)
 	end
 end
 
-local function inJointSpace(joint: Motor6D, target: CFrame): CFrame
-	local rotation = joint.C0.Rotation
+local function inJointSpace(joint: any, target: CFrame): CFrame
+	local rotation = CFrame.identity
+	if joint:IsA("Motor6D") then
+		rotation = joint.C0.Rotation
+	elseif joint.Attachment0 then
+		rotation = joint.Attachment0.CFrame.Rotation
+	end
 	return rotation:Inverse() * target * rotation
 end
 
@@ -200,16 +213,27 @@ function CastAnimation.start()
 				targets.rightWrist = CFrame.Angles(-0.12, 0, 0)
 			elseif angle then
 				local wind = math.clamp((angle - FOLLOW) / (COCKED - FOLLOW), 0, 1)
-				targets.rightElbow = CFrame.Angles(wind * 0.65, 0, 0)
-				targets.rightWrist = CFrame.Angles(-wind * 0.3, 0, 0)
-				targets.leftShoulder = CFrame.Angles(0.5 + wind * 0.35, -0.25, 0.25)
-				targets.leftElbow = CFrame.Angles(0.65, 0, 0)
+				targets.rightElbow = CFrame.Angles(wind * 0.75, 0, 0)
+				targets.rightWrist = CFrame.Angles(-wind * 0.35, 0, 0)
+				-- The free hand comes up with the rod over the head, then drops away
+				-- on the follow-through.
+				targets.leftShoulder = CFrame.Angles(0.45 + wind * 1.35, -0.35, 0.3)
+				targets.leftElbow = CFrame.Angles(0.7 + wind * 0.4, 0, 0)
+				-- Lean back and turn the rod shoulder away while cocked, then drive the
+				-- chest forward and round through the whip.
+				local body = CFrame.Angles(-0.24 + wind * 0.44, 0.3 - wind * 0.65, 0)
+				targets.waist = body
+				targets.root = body
 			end
 			for key, entry in pose.extra do
 				if not entry.joint:IsDescendantOf(character) then
 					continue
 				end
 				local extraTarget = targets[key]
+				local scale = BODY_SCALE[key]
+				if extraTarget and scale and scale ~= 1 then
+					extraTarget = CFrame.identity:Lerp(extraTarget, scale)
+				end
 				entry.target = entry.target:Lerp(extraTarget or CFrame.identity, blend)
 				entry.weight += ((if extraTarget then 1 else 0) - entry.weight) * blend
 				if entry.weight > 0.001 then

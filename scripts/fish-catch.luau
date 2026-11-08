@@ -26,7 +26,7 @@ local function rng()
 end
 
 -- New tiers sit above Legendary in this order; Limited bites only when switched on.
-for index, tier in { "Legendary", "Mythical", "Exotic", "Divine", "Limited" } do
+for index, tier in { "Legendary", "Mythical", "Exotic", "Divine", "Limited", "Admin" } do
 	check(Catalog.Rarities[tier] and Catalog.Rarities[tier].Order == 4 + index, tier .. " is tier " .. 4 + index)
 end
 do
@@ -101,8 +101,33 @@ for _ = 1, rolls do
 	tiers[fish.Rarity] = (tiers[fish.Rarity] or 0) + 1
 	hardest, easiest = math.max(hardest, roll.Difficulty), math.min(easiest, roll.Difficulty)
 end
+-- Admin species are far too rare to turn up in a sample; they are checked below.
+local function admin(id)
+	return Catalog.Fish[id].Rarity == "Admin"
+end
 for _, id in pool.Fish do
-	check((counts[id] or 0) > 0, "Every species can be caught: " .. id)
+	check(admin(id) or (counts[id] or 0) > 0, "Every species can be caught: " .. id)
+end
+do
+	local rarest, admins = 0, 0
+	for _, fish in Catalog.Fish do
+		if fish.Rarity ~= "Admin" and fish.Rarity ~= "Junk" then
+			rarest = math.max(rarest, fish.RarityDenominator)
+		end
+	end
+	for id, fish in Catalog.Fish do
+		if admin(id) then
+			admins += 1
+			check(fish.RarityDenominator >= rarest * 1000, "Admin fish are the rarest by far: " .. id)
+			local only = { Fish = { "Trout", id }, Junk = {} }
+			local picked = FishCatch.pickSpecies(only, Catalog.Fish, function()
+				return 1 - 1e-12
+			end)
+			check(picked == id, "An Admin fish can still be landed: " .. id)
+			check((counts[id] or 0) <= 1, "Admin fish almost never bite: " .. id)
+		end
+	end
+	check(admins >= 2, "The Nescio Fih and its hairy variant are Admin fish")
 end
 for _, id in pool.Junk do
 	check(math.abs((counts[id] or 0) / rolls - 0.02) < 0.002, "Junk appears in about 2% of catches: " .. id)
@@ -131,7 +156,8 @@ for _, id in { "Clownfish", "Yellowshark", "GreenSturgeon", "Albacore", "Crimson
 	check(table.find(sea.Fish, id), "Open sea lists " .. id)
 end
 -- Only these species live in both the lake and the open sea.
-local shared = { Crimsonfish = true, TigerTrout = true, Glacierfish = true }
+local shared =
+	{ Crimsonfish = true, TigerTrout = true, Glacierfish = true, NescioFih = true, HairyNescioFih = true }
 local function averageValue(fishPool)
 	local total, seen = 0, {}
 	for _ = 1, 50000 do
@@ -147,7 +173,7 @@ for _, id in sea.Fish do
 	local fish = Catalog.Fish[id]
 	check(fish ~= nil and fish.Shapes ~= nil, "Sea species is fully defined: " .. id)
 	check(fish.MinKg < fish.AverageKg and fish.AverageKg < fish.MaxKg, "Normal weight sits inside the range: " .. id)
-	check(seaSeen[id], "Every sea species can be caught: " .. id)
+	check(admin(id) or seaSeen[id], "Every sea species can be caught: " .. id)
 	check(shared[id] or table.find(pool.Fish, id) == nil, "Sea species stay out of the lake: " .. id)
 end
 for id in shared do
@@ -332,4 +358,37 @@ print(
 	)
 )
 print(string.format("Average catch value: lake $%.1f, open sea $%.1f", lakeAverage, seaAverage))
+
+-- Better rods hook less junk: stock rod at the full chance, maxed rod cut by JUNK_CUT_AT_BEST_ROD.
+do
+	local stock = { reel = 1, handling = 1, size = 1, luck = 0 }
+	local maxed = { reel = 1.7, handling = 1.7, size = 2.5, luck = 0.3 }
+	local half = { reel = 1.35, handling = 1.35, size = 1.75, luck = 0.15 }
+	check(FishCatch.rodQuality(nil) == 0 and FishCatch.rodQuality(stock) == 0, "A stock rod has quality 0")
+	check(math.abs(FishCatch.rodQuality(maxed) - 1) < 1e-9, "A maxed rod has quality 1")
+	check(math.abs(FishCatch.rodQuality(half) - 0.5) < 1e-9, "A half-upgraded rod has quality 0.5")
+	check(FishCatch.junkChance(0) == FishCatch.JUNK_CHANCE, "Stock rods keep the base junk chance")
+	check(
+		math.abs(FishCatch.junkChance(1) - FishCatch.JUNK_CHANCE * (1 - FishCatch.JUNK_CUT_AT_BEST_ROD)) < 1e-9,
+		"Maxed rods get the reduced junk chance"
+	)
+	check(FishCatch.junkChance(0.5) < FishCatch.junkChance(0.2), "Junk chance falls as the rod improves")
+	local junkPool = { Fish = { "Trout" }, Junk = { "Boot" } }
+	local junkSpecies = { Trout = { Rarity = "Common", RarityDenominator = 1 }, Boot = { Rarity = "Junk" } }
+	local function rate(quality)
+		local hits = 0
+		for _ = 1, 40000 do
+			if FishCatch.pickSpecies(junkPool, junkSpecies, rng, 0, quality) == "Boot" then
+				hits += 1
+			end
+		end
+		return hits / 40000
+	end
+	local stockRate, maxedRate = rate(0), rate(1)
+	check(math.abs(stockRate - FishCatch.junkChance(0)) < 0.01, "Stock rod junk rate matches (" .. stockRate .. ")")
+	check(math.abs(maxedRate - FishCatch.junkChance(1)) < 0.005, "Maxed rod junk rate matches (" .. maxedRate .. ")")
+	-- A boot-only pool still lands junk with the best rod.
+	check(FishCatch.pickSpecies({ Fish = {}, Junk = { "Boot" } }, junkSpecies, rng, 0, 1) == "Boot", "Out of season still lands junk")
+	print(string.format("Junk chance: stock rod %.1f%%, maxed rod %.1f%%", stockRate * 100, maxedRate * 100))
+end
 print("Fish catch rules: " .. checks .. " checks passed (pure data; no Roblox runtime).")

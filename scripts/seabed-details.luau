@@ -1,4 +1,5 @@
 local Biomes, Details = dependencies.Biomes, dependencies.SeabedDetails
+local Carpet, CarpetClient = dependencies.SeabedCarpet, dependencies.SeabedCarpetClient
 local checks = 0
 local function check(condition, message)
 	checks += 1
@@ -138,32 +139,145 @@ for _, object in details:GetDescendants() do
 end
 check(remoteGardens > 20, 'Full gardens, including coral and sand drifts, must reach the city approaches')
 
-local oceanCount, lakeCount, cityCount, slopedCount = 0, 0, 0, 0
-local cells = {}
-for _, copy in copies do
-	local frame = copy.PlacedFrame
-	local point = frame.Position
-	check(Biomes.inOceanBounds(point) and point.Y < Biomes.WaterLevel - 8, 'All floor copies must sit on underwater ground')
-	check(copy.ModelScale >= 0.9 and copy.ModelScale <= 1.25, 'Copied patches must retain a modest scale')
-	local lake = copy.Parent.Name == 'LakeFloor'
-	local cell = if lake then 24 else 48
-	local key = tostring(lake) .. ':' .. math.floor(point.X / cell) .. ',' .. math.floor(point.Z / cell)
-	check(not cells[key], 'Each grid cell must contain at most one filler patch')
-	cells[key] = true
-	if lake then lakeCount += 1 else oceanCount += 1 end
-	if point.X > Biomes.MapHalfSize or point.Z > Biomes.MapHalfSize then cityCount += 1 end
-	if point.Y == -30 then
-		slopedCount += 1
-		check((frame.UpVector - incline).Magnitude < 0.00001, 'Copies must tilt onto the sampled slope')
+-- The floor carpet is no longer cloned on the server (~700k parts crashed live servers):
+-- only its templates are published, and each client builds the cells near its camera.
+check(#copies == 0, 'The server must not clone the floor carpet')
+local published = replicatedStorage:FindFirstChild(Carpet.FOLDER)
+check(published ~= nil, 'Carpet templates must be published in ReplicatedStorage')
+check(published:GetAttribute('Version') == details:GetAttribute('Version'), 'Published carpet carries the scenery version')
+check(type(published:GetAttribute('Seed')) == 'number', 'Published carpet carries its seed')
+local templateParts = 0
+for _, id in Carpet.STYLES do
+	local folder = published:FindFirstChild(id)
+	check(folder ~= nil, 'Every style publishes templates: ' .. id)
+	for index = 1, Carpet.TEMPLATES do
+		local template = folder:FindFirstChild(tostring(index))
+		check(template ~= nil and template:IsA('Model'), 'Templates are numbered models')
+		local parts = 0
+		for _, part in template:GetDescendants() do
+			if part:IsA('BasePart') then
+				parts += 1
+				check(part.Anchored and not part.CanCollide and not part.CanTouch and not part.CanQuery and not part.CastShadow,
+					'Every carpet part must be static, non-interactive and shadow-free')
+			end
+		end
+		check(parts > 0, 'Templates must contain visible geometry')
+		templateParts += parts
+	end
+end
+check(templateParts < 4000, 'Published templates stay small: ' .. templateParts)
+local lakeOutline = Carpet.decode(published:FindFirstChild('Lake').Value)
+local gardenPoints = Carpet.decode(published:FindFirstChild('Gardens').Value)
+check(#lakeOutline >= 3, 'The lake outline is published')
+check(#gardenPoints > 500, 'Garden cells are published so the carpet leaves them bare')
+local encoded = Carpet.decode(Carpet.encode({ Vector2.new(-12.25, 40), Vector2.new(7, -3.5) }))
+check(#encoded == 2 and math.abs(encoded[1].X + 12.25) < 0.06 and encoded[2].Y == -3.5, 'Point lists round-trip')
+
+-- Whole-ocean coverage with the shared cell rules and the production ground acceptance
+local inLake = Carpet.lakeTest(lakeOutline)
+local seed = published:GetAttribute('Seed')
+local oceanCount, lakeCount, cityCount, slopedCount, bareCount = 0, 0, 0, 0, 0
+local function serverSample(x, z)
+	return Details.sample(params, x, z), false
+end
+for _, grid in Carpet.grids() do
+	local taken = Carpet.occupied(grid, gardenPoints)
+	local x0, x1, z0, z1 = Carpet.range(grid, 0, 0, 1e6)
+	for cx = x0, x1 do
+		for cz = z0, z1 do
+			if taken[Carpet.key(grid, cx, cz)] then
+				bareCount += 1
+				continue
+			end
+			local hit, rng = Carpet.plan(grid, cx, cz, seed, inLake, serverSample)
+			if hit then
+				local frame, template, scale = Carpet.frame(hit, rng)
+				local point = frame.Position
+				check(Biomes.inOceanBounds(point) and point.Y < Biomes.WaterLevel - 8, 'All floor copies must sit on underwater ground')
+				check(scale >= 0.9 and scale <= 1.25, 'Copied patches must retain a modest scale')
+				check(template >= 1 and template <= Carpet.TEMPLATES, 'Patch choice stays within the templates')
+				check(math.floor(point.X / grid.cell) == cx and math.floor(point.Z / grid.cell) == cz, 'A patch stays inside its own cell')
+				check(published:FindFirstChild(Carpet.style(point)) ~= nil, 'Every floor style has templates')
+				if grid.lake then lakeCount += 1 else oceanCount += 1 end
+				if point.X > Biomes.MapHalfSize or point.Z > Biomes.MapHalfSize then cityCount += 1 end
+				if point.Y == -30 then
+					slopedCount += 1
+					check((frame.UpVector - incline).Magnitude < 0.00001, 'Copies must tilt onto the sampled slope')
+				end
+			end
+		end
 	end
 end
 check(oceanCount > 45000, 'Denser scenery must cover the whole ocean')
 check(lakeCount > 700, 'The whole lake bottom needs its own denser coverage')
 check(cityCount > 5000, 'Scenery must reach the southeast city approaches')
 check(slopedCount > 0, 'Scenery must follow underwater island slopes')
-check(maxBatch <= 40 and yields > 1000, 'Generation must yield between small batches of clones')
+check(bareCount > 0, 'Garden cells stay bare')
+local hitA, rngA = Carpet.plan(Carpet.grids()[2], 40, -12, seed, inLake, serverSample)
+local hitB, rngB = Carpet.plan(Carpet.grids()[2], 40, -12, seed, inLake, serverSample)
+local _, templateA, scaleA = Carpet.frame(hitA, rngA)
+local _, templateB, scaleB = Carpet.frame(hitB, rngB)
+check(templateA == templateB and scaleA == scaleB, 'Every client builds the same patch in a cell')
+
+-- Client tracker: only cells near the camera exist, far ones are dropped, misses retry.
+local built, destroyed = 0, 0
+local function place(style, template, frame, scale)
+	built += 1
+	return { Destroy = function() destroyed += 1 end, frame = frame }
+end
+local misses = {}
+local function clientSample(x, z)
+	local key = math.floor(x / 48) .. ',' .. math.floor(z / 48)
+	if misses[key] then
+		misses[key] -= 1
+		if misses[key] <= 0 then misses[key] = nil end
+		return nil, true -- not streamed in yet
+	end
+	return Details.sample(params, x, z), false
+end
+local update, cells = CarpetClient.tracker({ seed = seed, lake = lakeOutline, gardens = gardenPoints }, clientSample, place)
+local camera = Vector3.new(2600, 20, 2600)
+misses['54,54'] = 5
+local now = 0
+for _ = 1, 200 do
+	now += 0.2
+	update(camera, now)
+end
+local live = 0
+for _, entry in cells do
+	if entry.model then
+		live += 1
+		check(math.abs(entry.x - camera.X) <= 420 and math.abs(entry.z - camera.Z) <= 420, 'Only cells near the camera are built')
+	end
+end
+check(live > 150 and live < 260, 'The camera gets a full neighbourhood of patches: ' .. live)
+local retried = cells[Carpet.key(Carpet.grids()[2], 54, 54)]
+check(retried ~= nil and retried.model ~= nil, 'A cell whose ground streamed in late is built on retry')
+local before = built
+update(camera, now + 1)
+check(built == before, 'A settled neighbourhood builds nothing more')
+camera = Vector3.new(-2600, 20, -2600)
+for _ = 1, 200 do
+	now += 0.2
+	update(camera, now)
+end
+check(destroyed >= live, 'Cells left behind are removed')
+local liveAfter = 0
+for _, entry in cells do
+	if entry.model then liveAfter += 1 end
+end
+check(liveAfter < 300, 'The client keeps only the current neighbourhood: ' .. liveAfter)
+
 local beforeRays, beforeCopies, beforeTiles = rays, #copies, #sandTiles
 Details.ensure(root)
 check(rays == beforeRays and #copies == beforeCopies and #sandTiles == beforeTiles,
 	'Refreshing current scenery and sand must be idempotent')
-print(`Seabed scenery: {checks} checks passed; {oceanCount} ocean, {lakeCount} lake, {cityCount} city-approach copies`)
+check(replicatedStorage:FindFirstChild(Carpet.FOLDER) == published, 'Current templates are kept')
+-- A baked map with current scenery but no published templates (a fresh server) republishes them
+published:Destroy()
+Details.ensure(root)
+local republished = replicatedStorage:FindFirstChild(Carpet.FOLDER)
+check(republished ~= nil and #Carpet.decode(republished:FindFirstChild('Gardens').Value) == #gardenPoints,
+	'Baked scenery republishes the templates with its own garden cells')
+check(rays == beforeRays, 'Republishing casts no rays')
+print(`Seabed scenery: {checks} checks passed; {oceanCount} ocean, {lakeCount} lake, {cityCount} city-approach cells (client-built); {templateParts} template parts on the server`)

@@ -4,6 +4,18 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Aboard = require(game:GetService("ReplicatedStorage").Shared.Aboard)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local BoatHealth = {}
 local started = false
 
@@ -137,7 +149,7 @@ function BoatHealth.start()
 
 	local elapsed = 0
 	local lastFound = 0
-	RunService.Heartbeat:Connect(function(dt)
+	RunService.Heartbeat:Connect(profiled("BoatHealth", function(dt)
 		elapsed += dt
 		if elapsed < 0.2 then
 			return
@@ -177,7 +189,7 @@ function BoatHealth.start()
 		elseif not currentBoat or not currentBoat:IsDescendantOf(boats) or os.clock() - lastFound > 0.6 then
 			setBoat(nil)
 		end
-	end)
+	end))
 end
 
 return BoatHealth

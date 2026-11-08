@@ -89,13 +89,16 @@ function Fishing.start()
 			end
 		end)
 	end
-	feedback.OnClientEvent:Connect(function(kind, message)
+	feedback.OnClientEvent:Connect(function(kind, message, detail)
 		if kind == "DoorFade" and typeof(message) == "number" then
 			fadeIn(message)
 		elseif kind == "DoorArrived" and message == fadeTrip then
 			fadeOut()
 		elseif kind == "Notice" and typeof(message) == "string" then
 			notice(message)
+		elseif (kind == "BaitOpenResult" or kind == "BaitEquipResult") and typeof(detail) == "string" then
+			-- Bait is opened and equipped from the equipment bag, which has no status line of its own.
+			notice(detail)
 		end
 	end)
 end

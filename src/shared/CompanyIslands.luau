@@ -3,7 +3,16 @@ local CompanyIslands = {}
 
 CompanyIslands.COUNT = 15
 CompanyIslands.PRICE = 50000
-CompanyIslands.RING_RADIUS = 1600
+-- Hand-placed around Gullhaven at uneven bearings and distances, so the properties
+-- read as a scattered archipelago rather than a ring: { bearing in degrees
+-- (atan2 of z over x), distance from the harbour centre, degrees the dock turns
+-- away from facing the harbour }. The western shipping entrance (bearing 180) stays
+-- open and every property keeps clear of Pirate Cove and the neighbouring biomes.
+CompanyIslands.Sites = {
+	{ -100, 1480, 12 }, { -78, 1890, -20 }, { -58, 1410, 28 }, { -31, 2050, -8 }, { -12, 1560, 18 },
+	{ 9, 1340, -30 }, { 33, 1720, 5 }, { 52, 2180, -15 }, { 71, 1450, 25 }, { 93, 1760, -25 },
+	{ 118, 1380, 10 }, { 143, 1990, -12 }, { 158, 1420, 30 }, { 204, 1650, -22 }, { 229, 2280, 15 },
+}
 -- Includes the long piers and the approach to the harbour mouth.
 CompanyIslands.FOOTPRINT = 245
 CompanyIslands.TAG = "CompanyIsland"
@@ -18,16 +27,16 @@ function CompanyIslands.validId(id): boolean
 end
 
 function CompanyIslands.position(id: number): Vector2
-	-- The western bay entrance points between two properties, preserving a
-	-- shipping lane while every player has room for a separate company dock.
-	local angle = math.rad(-96 + (id - 1) * 360 / CompanyIslands.COUNT)
-	return Vector2.new(math.cos(angle), math.sin(angle)) * CompanyIslands.RING_RADIUS
+	local site = CompanyIslands.Sites[id]
+	local angle = math.rad(site[1])
+	return Vector2.new(math.cos(angle), math.sin(angle)) * site[2]
 end
 
 function CompanyIslands.frame(id: number): CFrame
 	local position = CompanyIslands.position(id)
-	-- Every dock faces the main island, leaving the outer shore quiet.
+	-- Docks face roughly toward the main island, each turned a little its own way.
 	return CFrame.lookAt(Vector3.new(position.X, 0, position.Y), Vector3.zero)
+		* CFrame.Angles(0, math.rad(CompanyIslands.Sites[id][3]), 0)
 end
 
 -- The fenced building plot on the upper terrace, centred this far behind the

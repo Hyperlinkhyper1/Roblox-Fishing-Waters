@@ -17,7 +17,7 @@ RodSkins.Rarities = {
 }
 
 -- Reel adds to the reel progress per hit (0.05 = +5%), Size to the big and huge
--- fish odds (0.1 = +10%), Handling to green-hit progress (0.1 = +10%), Mutation to the chance of any mutation, and Astral to
+-- fish odds (0.1 = +10%), Handling to green-zone width and green-hit progress (0.1 = +10%), Mutation to the chance of any mutation, and Astral to
 -- the chance of the night-only Astral mutation after dark.
 RodSkins.Skins = {
 	TideboundRod = {

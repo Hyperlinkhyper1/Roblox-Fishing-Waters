@@ -15,16 +15,22 @@ frameMeta.__mul = function(a, b)
 	return frame(a.x + b.x, a.y + b.y, a.z + b.z)
 end
 local CFrame = { identity = frame(), Angles = frame }
-local function avatar(shoulderName)
+local function avatar(shoulderName, jointClass)
+	jointClass = jointClass or "Motor6D"
 	local character = { inWorld = true }
 	local joints = {}
 	local names = if shoulderName == "RightShoulder"
-		then { shoulderName, "LeftShoulder", "RightElbow", "LeftElbow", "RightWrist", "LeftWrist" }
-		else { shoulderName, "Left Shoulder" }
+		then { shoulderName, "LeftShoulder", "RightElbow", "LeftElbow", "RightWrist", "LeftWrist", "Waist" }
+		else { shoulderName, "Left Shoulder", "RootJoint" }
 	for _, name in names do
-		local joint = { Name = name, Parent = character, C0 = { Rotation = frame() }, Transform = frame() }
+		local joint = { Name = name, Parent = character, Transform = frame() }
+		if jointClass == "Motor6D" then
+			joint.C0 = { Rotation = frame() }
+		else
+			joint.Attachment0 = { CFrame = { Rotation = frame() } }
+		end
 		function joint:IsA(kind)
-			return kind == "Motor6D"
+			return kind == jointClass
 		end
 		function joint:IsDescendantOf(parent)
 			return self.Parent == parent
@@ -55,7 +61,8 @@ local function rod(character)
 end
 local mine, myShoulder, myJoints, myHumanoid = avatar("RightShoulder")
 local theirs, theirShoulder, theirJoints = avatar("Right Shoulder")
-local myRod, theirRod = rod(mine), rod(theirs)
+local upgraded, upgradedShoulder, upgradedJoints = avatar("RightShoulder", "AnimationConstraint")
+local myRod, theirRod, upgradedRod = rod(mine), rod(theirs), rod(upgraded)
 local clock, serverTime = 0, 100
 local os = {
 	clock = function()
@@ -70,7 +77,7 @@ local callback, beforeAnimation, connections = nil, nil, 0
 local services = {
 	CollectionService = {
 		GetTagged = function()
-			return { myRod, theirRod }
+			return { myRod, theirRod, upgradedRod }
 		end,
 	},
 	Players = { LocalPlayer = { Character = mine } },
@@ -102,7 +109,7 @@ local function step(frames, sway)
 		local animated = if sway
 			then CFrame.Angles(0, math.sin(clock * 12) * 0.65, math.cos(clock * 12) * 0.5)
 			else CFrame.identity
-		for _, joints in { myJoints, theirJoints } do
+		for _, joints in { myJoints, theirJoints, upgradedJoints } do
 			for _, joint in joints do
 				joint.Transform = if string.find(joint.Name, "Shoulder") then animated else CFrame.identity
 			end
@@ -120,6 +127,11 @@ assert(
 	math.abs(myShoulder.Transform.x - hold) < 0.02 and math.abs(theirShoulder.Transform.x - hold) < 0.02,
 	"Equipped rods must blend into a steady hold for R15 and R6"
 )
+assert(
+	math.abs(upgradedShoulder.Transform.x - hold) < 0.02,
+	"Rigs with AnimationConstraint joints (avatar joint upgrade) must hold the rod too"
+)
+assert(math.abs(myJoints.Waist.Transform.x) < 0.001, "Holding the rod must not bend the waist")
 for _ = 1, 120 do
 	step(1, true)
 	for _, joint in { myShoulder, theirShoulder } do
@@ -134,12 +146,19 @@ Animation.windUp(myRod)
 step(1)
 assert(myShoulder.Transform.x > hold and myShoulder.Transform.x < hold + 0.3, "Wind-up must blend in rather than snap")
 step(40)
-assert(myShoulder.Transform.x > 2.6, "Charging must cock the arm back overhead")
+assert(myShoulder.Transform.x > math.pi, "Charging must cock the arm back behind the head")
+assert(myJoints.Waist.Transform.x > 0.1, "Charging must lean the chest back")
+assert(myJoints.Waist.Transform.y < -0.2, "Charging must turn the rod shoulder away")
+assert(myJoints.LeftShoulder.Transform.x > 1.4, "The free hand must come up with the rod")
 Animation.swing(myRod)
 step(9)
 assert(myShoulder.Transform.x < 1.4, "Release must whip the arm forward past the hold pose")
+step(4)
+assert(myJoints.Waist.Transform.x < -0.1, "The whip must drive the chest forward")
+assert(myJoints.Waist.Transform.y > 0.1, "The whip must rotate the rod shoulder through")
 step(60)
 assert(math.abs(myShoulder.Transform.x - hold) < 0.02, "Swing must return to the steady hold")
+assert(math.abs(myJoints.Waist.Transform.x) < 0.005, "The waist must straighten after the cast")
 step(10)
 assert(math.abs(myShoulder.Transform.x - hold) < 0.02, "Finished swing must keep the rod steady")
 
@@ -153,19 +172,25 @@ local beforeCancel = myShoulder.Transform.x
 Animation.cancel(myRod)
 step(1)
 assert(
-	myShoulder.Transform.x > hold and beforeCancel - myShoulder.Transform.x < 0.4,
+	myShoulder.Transform.x > hold and beforeCancel - myShoulder.Transform.x < (beforeCancel - hold) * 0.3,
 	"Cancelling must ease back into the hold without snapping"
 )
 step(60)
 assert(math.abs(myShoulder.Transform.x - hold) < 0.02, "Cancelled cast must return to the hold")
 
 theirRod.attributes.CastAt = serverTime
+upgradedRod.attributes.CastAt = serverTime
 step(6)
 assert(theirShoulder.Transform.x > 1.8, "Other anglers must back-swing from CastAt")
+assert(upgradedShoulder.Transform.x > 1.8, "AnimationConstraint rigs must back-swing too")
+local rootLean = theirJoints.RootJoint.Transform.x
+assert(rootLean > 0.02 and rootLean < 0.15, "R6 casts must lean the torso back gently from the root")
 step(14)
 assert(theirShoulder.Transform.x < 1.4, "Other anglers must whip forward")
 step(60)
 assert(math.abs(theirShoulder.Transform.x - hold) < 0.02, "Other anglers' swings must return to the hold")
+assert(math.abs(theirJoints.RootJoint.Transform.x) < 0.005, "R6 roots must straighten after the cast")
+upgradedRod.attributes.CastAt = nil
 
 theirRod.attributes.CastAt = serverTime - 30
 step(5)

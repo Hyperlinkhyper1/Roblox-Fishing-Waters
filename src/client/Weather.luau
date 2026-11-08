@@ -10,6 +10,18 @@ local SoundService = game:GetService("SoundService")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local WeatherController = {}
 local started = false
 local CELL_SIZE = 22
@@ -170,7 +182,7 @@ function WeatherController.start()
 		wind:Clear()
 	end
 
-	RunService:BindToRenderStep("WeatherEffects", Enum.RenderPriority.Camera.Value + 2, function(dt: number)
+	RunService:BindToRenderStep("WeatherEffects", Enum.RenderPriority.Camera.Value + 2, profiled("Weather", function(dt: number)
 		local camera = workspace.CurrentCamera
 		if not camera then
 			rainSound.Volume = 0
@@ -338,7 +350,7 @@ function WeatherController.start()
 			else 0
 		flash.Enabled = effectsEnabled and pulse > 0 and state.storm > 0.1 and not submerged
 		flash.Brightness = pulse * (0.12 + state.storm * 0.2)
-	end)
+	end))
 end
 
 return WeatherController

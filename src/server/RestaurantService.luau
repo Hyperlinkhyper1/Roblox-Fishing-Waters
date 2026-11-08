@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
 local CustomerService = require(script.Parent.CustomerService)
+local Streets = require(script.Parent.StreetPedestrians)
 local DiningRoom = require(script.Parent.Map.DiningRoom)
 local Kitchen = require(script.Parent.Map.Kitchen)
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
@@ -165,6 +166,7 @@ local function finish(restaurant, diner)
 	if diner.seat then
 		restaurant.seated[diner.seat] = nil
 	end
+	npc.returnPedestrian(diner)
 	for _, item in { diner.plate, diner.model } do
 		if item then
 			item:Destroy()
@@ -186,9 +188,12 @@ end
 
 local function visit(restaurant, diner)
 	local base = restaurant.base
-	diner.model = npc.spawn(at(restaurant, STREET))
+	local guest = diner.guest
+	if not guest or not guest.valid() or diner.leaving then return end
+	diner.model = npc.spawn(guest.position, nil, guest)
 	diner.humanoid = diner.model:FindFirstChildOfClass("Humanoid")
 	diner.root = diner.model:FindFirstChild("HumanoidRootPart")
+	if diner.leaving or not guest.begin(diner.model) then return end
 	diner.humanoid.Died:Once(function()
 		diner.active = false
 	end)
@@ -201,14 +206,17 @@ local function visit(restaurant, diner)
 	end
 	local seat = diner.seat :: Seat
 	local beside = (seat.CFrame * CFrame.new(1.6, -seat.Size.Y / 2 - 1.4, 0)).Position
-	local entered = going(at(restaurant, DiningRoom.ARRIVAL))
+	local entered = going(at(restaurant, STREET))
+		and going(at(restaurant, DiningRoom.ARRIVAL))
 		and going(at(restaurant, DiningRoom.INSIDE))
 	if not diner.active or diner.leaving then
 		return
 	end
-	-- Squeezing between tables can defeat pathfinding; step up to the chair instead.
 	if not (entered and going(beside)) then
-		diner.model:PivotTo(CFrame.new(beside + Vector3.new(0, 3, 0)))
+		-- A failed approach leaves without seating or charging the pedestrian.
+		stand(diner)
+		npc.walk(diner, guest.position)
+		return
 	end
 	if not diner.active or diner.leaving or seat.Occupant then
 		return
@@ -252,6 +260,7 @@ local function visit(restaurant, diner)
 			return
 		end
 	end
+	npc.walk(diner, guest.position)
 end
 
 local function serve(player: Player, diner)
@@ -303,17 +312,19 @@ local function serve(player: Player, diner)
 	npc.notify(player, string.format("Served %s for $%d.", string.lower(recipe.Name), price))
 end
 
-local function arrive(restaurant)
+local function arrive(restaurant, guest): boolean
+	if not guest or not guest.valid() or os.clock() < restaurant.nextArrival then return false end
 	local _, profile = profileOf(restaurant.base)
 	if not open(profile) then
-		return
+		return false
 	end
 	local seats = freeSeats(restaurant)
 	if #seats == 0 then
-		return
+		return false
 	end
 	local choice = seats[random:NextInteger(1, #seats)]
 	local diner = {
+		guest = guest,
 		restaurant = restaurant,
 		order = chooseOrder(profile),
 		seat = choice.seat,
@@ -330,6 +341,7 @@ local function arrive(restaurant)
 		end
 		finish(restaurant, diner)
 	end)
+	return true
 end
 
 local function register(base: Instance)
@@ -345,9 +357,15 @@ local function register(base: Instance)
 		frame = frame,
 		diners = {},
 		seated = {},
-		nextArrival = os.clock() + ARRIVAL_SECONDS,
+		nextArrival = os.clock(),
 	}
 	restaurants[base] = restaurant
+	Streets.register(base, frame, "Restaurant", Vector3.new(STREET.X, 0, 49), function(guest)
+		return arrive(restaurant, guest)
+	end, function()
+		local _, profile = profileOf(base)
+		return if open(profile) and os.clock() >= restaurant.nextArrival then 0.25 else 0
+	end)
 	base:GetAttributeChangedSignal("OwnerUserId"):Connect(function()
 		-- A new owner never inherits the previous owner's diners or room.
 		for _, diner in restaurant.diners do
@@ -355,7 +373,7 @@ local function register(base: Instance)
 			stand(diner)
 		end
 		syncRoom(restaurant)
-		restaurant.nextArrival = os.clock() + ARRIVAL_SECONDS
+		restaurant.nextArrival = os.clock()
 	end)
 	syncRoom(restaurant)
 end
@@ -401,9 +419,6 @@ function RestaurantService.start()
 				end
 				for _, diner in restaurant.diners do
 					updatePrompt(diner, profile)
-				end
-				if owner and os.clock() >= restaurant.nextArrival then
-					arrive(restaurant)
 				end
 			end
 		end

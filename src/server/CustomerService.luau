@@ -1,5 +1,5 @@
 -- Shop customers. Owners carry fish individually to their base freezers; a customer
--- wearing a random Roblox avatar takes displayed fish or dishes to a register
+-- walking past the shop takes displayed fish or dishes to a register
 -- and waits until served. Each register serves one customer at a time. A sale
 -- commits the whole basket in one profile update.
 local CollectionService = game:GetService("CollectionService")
@@ -13,6 +13,7 @@ local CargoService = require(script.Parent.CargoService)
 local FurnitureService = require(script.Parent.FurnitureService)
 local NpcCollision = require(script.Parent.NpcCollision)
 local NpcNavigation = require(script.Parent.NpcNavigation)
+local Streets = require(script.Parent.StreetPedestrians)
 local FishFreezer = require(script.Parent.Map.FishFreezer)
 local ShopDesk = require(script.Parent.Map.ShopDesk)
 local StorageRack = require(script.Parent.Map.StorageRack)
@@ -26,6 +27,7 @@ local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local StaffCatalog = require(ReplicatedStorage.Shared.StaffCatalog)
 local ShopUpgrades = require(ReplicatedStorage.Shared.ShopUpgrades)
+local Pedestrians = require(ReplicatedStorage.Shared.Pedestrians)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local CustomerService = {}
@@ -37,6 +39,8 @@ local WAIT_SECONDS = 150
 local ARRIVAL_SECONDS = 25
 local SERVE_DISTANCE = 14
 local MAX_USER_ID = 3_000_000_000
+local avatarTemplates: { [number]: Model } = {}
+local buildingAvatar: { [number]: boolean } = {}
 -- Default R15 animations; NPCs have no Animate script of their own.
 local IDLE_ANIMATION = "rbxassetid://507766666"
 local WALK_ANIMATION = "rbxassetid://507777826"
@@ -172,13 +176,40 @@ local function bubble(customer, text: string)
 	label.Text = text
 end
 
-local function spawnCustomer(position: Vector3, staffRole: string?): Model
-	local description = if staffRole then StaffCatalog.description(staffRole) else randomAvatar()
-	local ok, model =
-		pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
-	description:Destroy()
-	if not ok then
-		error(model)
+local function pedestrianModel(guest): Model
+	assert(guest.valid(), "This pedestrian has already left.")
+	local slot = Pedestrians.avatarSlot(guest.look)
+	local deadline = os.clock() + 30
+	while buildingAvatar[slot] do
+		task.wait(0.1)
+		assert(guest.valid(), "This pedestrian has already left.")
+		assert(os.clock() < deadline, "Pedestrian appearance took too long to load.")
+	end
+	if not avatarTemplates[slot] then
+		local avatars = ReplicatedStorage:FindFirstChild(Pedestrians.AVATAR_FOLDER)
+		local description = avatars and avatars:FindFirstChild(tostring(slot))
+		assert(description and description:IsA("HumanoidDescription"), "Pedestrian appearance is not ready.")
+		buildingAvatar[slot] = true
+		local ok, template = pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
+		buildingAvatar[slot] = nil
+		if not ok then error(template) end
+		template.Archivable = true
+		avatarTemplates[slot] = template
+	end
+	assert(guest.valid(), "This pedestrian has already left.")
+	return avatarTemplates[slot]:Clone()
+end
+
+local function spawnCustomer(position: Vector3, staffRole: string?, guest: any?): Model
+	local model: Model
+	if guest then
+		model = pedestrianModel(guest)
+	else
+		local description = if staffRole then StaffCatalog.description(staffRole) else randomAvatar()
+		local ok, built = pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
+		description:Destroy()
+		if not ok then error(built) end
+		model = built
 	end
 	if staffRole then
 		StaffCatalog.finishModel(model)
@@ -186,17 +217,30 @@ local function spawnCustomer(position: Vector3, staffRole: string?): Model
 	model.Name = "Customer"
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-	humanoid.WalkSpeed = if staffRole then STAFF_WALK_SPEED else WALK_SPEED
+	humanoid.WalkSpeed = if staffRole then STAFF_WALK_SPEED elseif guest then guest.speed else WALK_SPEED
 	humanoid.BreakJointsOnDeath = false
 	-- NPCs pass through one another so two can share a doorway.
 	NpcCollision.bind(model)
-	model:PivotTo(CFrame.new(position + Vector3.new(0, model:GetExtentsSize().Y / 2, 0)))
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+	local lift = humanoid.HipHeight + root.Size.Y / 2
+	model.PrimaryPart = root
+	model:PivotTo(CFrame.new(position + Vector3.new(0, lift, 0)) * CFrame.Angles(0, if guest then guest.yaw else 0, 0))
 	model.Parent = folder
 	-- Server-owned so a nearby player's client never takes over the walk.
-	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
 	pcall(root.SetNetworkOwner, root, nil)
 	animate(humanoid)
 	return model
+end
+
+local function returnPedestrian(npc, bought: boolean?)
+	local guest = npc.guest
+	if not guest then return end
+	npc.guest = nil
+	local root, humanoid = npc.root, npc.humanoid
+	local feet = if root and root.Parent and humanoid and humanoid.Health > 0
+		then root.Position - Vector3.new(0, humanoid.HipHeight + root.Size.Y / 2, 0)
+		else nil
+	guest.finish(feet, bought)
 end
 
 -- Returns the fish at its catch's world size, plus its scaled size
@@ -590,6 +634,7 @@ local function finish(shop, customer)
 			item.counterFish:Destroy()
 		end
 	end
+	returnPedestrian(customer, customer.sold)
 	if customer.model then
 		customer.model:Destroy()
 	end
@@ -620,19 +665,13 @@ local function visit(shop, customer)
 	local deskFrame = customer.register
 	local counterTop = deskFrame * CFrame.new(0.2 * ShopDesk.WIDTH, ShopDesk.HEIGHT, -ShopDesk.DEPTH / 4)
 
-	-- Arrive from the road outside the shop's entrance when there is ground there.
-	local parameters = RaycastParams.new()
-	parameters.FilterType = Enum.RaycastFilterType.Exclude
-	parameters.FilterDescendantsInstances = { folder }
-	parameters.RespectCanCollide = true
-	parameters.IgnoreWater = true
-	local street = at(0, BaseGrid.SHOP_FRONT - 7)
-	local hit = workspace:Raycast(street + Vector3.new(0, 10, 0), Vector3.new(0, -20, 0), parameters)
-	local entry = if hit then hit.Position else at(0, SHOP_DOOR_Z)
-
-	customer.model = spawnCustomer(entry)
+	local guest = customer.guest
+	if not guest or not guest.valid() or customer.leaving then return end
+	local entry = guest.position
+	customer.model = spawnCustomer(entry, nil, guest)
 	customer.humanoid = customer.model:FindFirstChildOfClass("Humanoid")
 	customer.root = customer.model:FindFirstChild("HumanoidRootPart")
+	if customer.leaving or not guest.begin(customer.model) then return end
 	local clearance = NpcNavigation.clearance(customer) + 0.4
 	local counterSpot = (deskFrame * CFrame.new(0.15 * ShopDesk.WIDTH, 0, -ShopDesk.DEPTH / 2 - clearance)).Position
 	local name = if #customer.items == 1 then describeFish(customer.items[1].record) else tostring(#customer.items) .. " items"
@@ -1471,11 +1510,12 @@ local function takeFrozenFish(player: Player, shop, prompt: ProximityPrompt)
 	end
 end
 
-local function arrive(shop)
+local function arrive(shop, guest): boolean
+	if not guest or not guest.valid() or os.clock() < shop.nextArrival then return false end
 	local owner = ownerOf(shop.base)
 	local profile = owner and BoatService.getProfile(owner)
 	if not profile or (#profile.Angler.Freezer == 0 and #profile.Angler.Pantry == 0) then
-		return
+		return false
 	end
 	-- The advertisement allows one waiting customer behind each active register.
 	local advertised = ShopUpgrades.hasAdvertisement(profile.Angler)
@@ -1500,7 +1540,7 @@ local function arrive(shop)
 		end
 	end
 	if not register then
-		return
+		return false
 	end
 	-- Only choose fish that actually fit on the ice, have a displayed model and
 	-- aren't already wanted by another customer.
@@ -1509,13 +1549,13 @@ local function arrive(shop)
 		for _, item in list do
 			local key = if item.food then "food " .. dishKey(item.record) else recordKey(item.record)
 			seen[key] = (seen[key] or 0) + 1
-			if seen[key] > (claimed[key] or 0) then
+			if seen[key] > (claimed[key] or 0) and not item.record.Locked then
 				table.insert(choices, item)
 			end
 		end
 	end
 	if #choices == 0 then
-		return
+		return false
 	end
 	local items = {}
 	local count = if ShopUpgrades.hasBaskets(profile.Angler) then math.min(3, #choices) else 1
@@ -1524,6 +1564,7 @@ local function arrive(shop)
 		table.insert(items, { record = choice.record, freezer = choice.freezer, food = choice.food })
 	end
 	local customer = {
+		guest = guest,
 		shop = shop,
 		items = items,
 		register = register,
@@ -1531,7 +1572,7 @@ local function arrive(shop)
 		active = true,
 	}
 	table.insert(shop.customers, customer)
-	-- Alternate 17 and 18 seconds: two evenly spaced arrivals per 35 seconds.
+	-- Advertisement shortens the cooldown between accepted passers-by.
 	local interval = ARRIVAL_SECONDS
 	if advertised then
 		interval = if shop.shortArrival then 17 else 18
@@ -1545,6 +1586,7 @@ local function arrive(shop)
 		end
 		finish(shop, customer)
 	end)
+	return true
 end
 
 local function registerShop(base: Model)
@@ -1570,11 +1612,20 @@ local function registerShop(base: Model)
 		staff = {},
 		spawning = {},
 		customers = {},
-		nextArrival = os.clock() + ARRIVAL_SECONDS,
+		nextArrival = os.clock(),
 	}
 	shop.freezerPrompt = ownerPrompt(anchor, "StockFreezerPrompt", "Place fish", "Freezer")
 	shop.freezerPrompt.MaxActivationDistance = 5
 	shops[base] = shop
+	Streets.register(base, frame, "Shop", Vector3.new(0, 0, SHOP_DOOR_Z), function(guest)
+		return arrive(shop, guest)
+	end, function()
+		local owner = ownerOf(base)
+		local profile = owner and BoatService.getProfile(owner)
+		if not profile or os.clock() < shop.nextArrival
+			or (#profile.Angler.Freezer == 0 and #profile.Angler.Pantry == 0) then return 0 end
+		return if ShopUpgrades.hasAdvertisement(profile.Angler) then 0.6 else 0.35
+	end)
 	local function owned()
 		removeStaff(shop)
 		local userId = base:GetAttribute("OwnerUserId")
@@ -1586,7 +1637,7 @@ local function registerShop(base: Model)
 			-- A new or departed owner never inherits the previous customers.
 			leave(customer)
 		end
-		shop.nextArrival = os.clock() + ARRIVAL_SECONDS
+		shop.nextArrival = os.clock()
 		shop.shortArrival = false
 	end
 	base:GetAttributeChangedSignal("OwnerUserId"):Connect(owned)
@@ -1600,9 +1651,10 @@ end
 
 -- Shared NPC helpers for the restaurant's diners and the hired fisherman.
 CustomerService.npc = {
-	spawn = function(position: Vector3, staffRole: string?): Model
-		return spawnCustomer(position, staffRole)
+	spawn = function(position: Vector3, staffRole: string?, guest: any?): Model
+		return spawnCustomer(position, staffRole, guest)
 	end,
+	returnPedestrian = returnPedestrian,
 	walk = walk,
 	face = face,
 	bubble = bubble,
@@ -1703,9 +1755,6 @@ function CustomerService.start()
 					end
 				end
 				refreshShelves(shop)
-				if owner and os.clock() >= shop.nextArrival then
-					arrive(shop)
-				end
 			end
 		end
 	end)

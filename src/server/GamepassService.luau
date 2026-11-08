@@ -56,6 +56,11 @@ function Service.ownsBlackHoleBackpack(player: Player): boolean
 	return owns(player, "BlackHoleBackpack")
 end
 
+-- Unlocks buying and placing boat furniture at the drydock refit dock.
+function Service.ownsBoatCustomization(player: Player): boolean
+	return owns(player, "BoatCustomization")
+end
+
 function Service.grantForSession(player: Player, key: string): (boolean, string)
 	if player.UserId ~= COMMAND_USER_ID or player.Parent ~= Players then
 		return false, "This command is unavailable."

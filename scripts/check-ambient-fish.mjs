@@ -11,9 +11,12 @@ const read = (path) => readFileSync(join(root, path), 'utf8');
 const primitives = read('scripts/harbour-geometry.luau').split('local CFrame = {}')[0];
 const mocks = read('scripts/drydock-geometry.luau').split('local function loadBoatCatalog()')[0]
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
+const terrainProbe = `local TerrainProbe = (function()\n${read('src/client/TerrainProbe.luau')
+  .replace(/require\(ReplicatedStorage\.Shared\.Biomes\)/, 'dependencies.Biomes')}\nend)()`;
 const client = read('src/client/AmbientFish.luau')
   .replace(/require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'dependencies.$1')
-  .replace(/: Weather\.State\?/g, '');
+  .replace(/: Weather\.State\?/g, '')
+  .replace(/local TerrainProbe = require\(script\.Parent\.TerrainProbe\)/, () => terrainProbe);
 const program = 'local METRO_ONLY = ' + process.argv.includes('--metro-only') + '\n' + read('scripts/ambient-fish.luau')
   .replace('-- MOCKS --', () => mocks)
   .replace('-- CLIENT --', () => client);

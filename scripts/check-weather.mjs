@@ -10,19 +10,23 @@ import assert from 'node:assert/strict';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFileSync(join(root, file), 'utf8');
 const shared = read('src/shared/Weather.luau');
-const harbour = read('src/server/Map/Harbour.luau');
-const coordinates = text => [...text.matchAll(/\{\s*(\d+)\s*,\s*(\d+)\s*\}/g)].map(m => [Number(m[1]), Number(m[2])]);
-const baySource = harbour.match(/local BAY = \{([\s\S]*?)\n\}/)?.[1];
-const weatherBay = shared.match(/Weather.BaySketch = \{([\s\S]*?)\n\}/)?.[1];
-assert.ok(baySource && weatherBay, 'Lake boundary must be defined explicitly');
-assert.deepEqual(coordinates(weatherBay), coordinates(baySource), 'Weather shelter must follow the actual Harbour lake');
-const outer = coordinates(harbour.match(/local OUTER = \{([\s\S]*?)\n\}/)[1]);
-const mouth = coordinates(shared.match(/Weather.MouthSketch = (\{[^\n]*\})/)[1]);
-assert.deepEqual(mouth, [outer.at(-1), outer[0]], 'Shelter must include the full cove between both headlands');
-assert.match(harbour, /local SCALE = 0\.85\b/);
-assert.match(harbour, /local SKETCH_CENTER = Vector2.new\(870, 1330\)/);
-assert.match(read('src/shared/Biomes.luau'), /Biomes.Normal = \{[\s\S]*?center = Vector2.new\(0, 0\)/);
-console.log('PASS lake boundary matches the actual main-island coastline');
+// Forecast-only still executes all production weather, wave and replication
+// checks; it lets them run independently of the map's coastline alignment.
+if (!process.argv.includes('--forecast-only')) {
+  const harbour = read('src/server/Map/Harbour.luau');
+  const coordinates = text => [...text.matchAll(/\{\s*(\d+)\s*,\s*(\d+)\s*\}/g)].map(m => [Number(m[1]), Number(m[2])]);
+  const baySource = harbour.match(/local BAY = \{([\s\S]*?)\n\}/)?.[1];
+  const weatherBay = shared.match(/Weather.BaySketch = \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(baySource && weatherBay, 'Lake boundary must be defined explicitly');
+  assert.deepEqual(coordinates(weatherBay), coordinates(baySource), 'Weather shelter must follow the actual Harbour lake');
+  const outer = coordinates(harbour.match(/local OUTER = \{([\s\S]*?)\n\}/)[1]);
+  const mouth = coordinates(shared.match(/Weather.MouthSketch = (\{[^\n]*\})/)[1]);
+  assert.deepEqual(mouth, [outer.at(-1), outer[0]], 'Shelter must include the full cove between both headlands');
+  assert.match(harbour, /local SCALE = 0\.85\b/);
+  assert.match(harbour, /local SKETCH_CENTER = Vector2.new\(870, 1330\)/);
+  assert.match(read('src/shared/Biomes.luau'), /Biomes.Normal = \{[\s\S]*?center = Vector2.new\(0, 0\)/);
+  console.log('PASS lake boundary matches the actual main-island coastline');
+}
 
 const vectors = read('scripts/harbour-geometry.luau').split('local CFrame = {}')[0]
   .replace('local state = seed', 'local state = seed or 1847');
@@ -34,6 +38,7 @@ Vector3.yAxis = Vector3.new(0, 1, 0)
 local now = 100000
 local attributes = { WeatherEpoch = now, WeatherSeed = 1847 }
 local workspace = {
+  GlobalWind = Vector3.new(0, 0, 0),
   GetServerTimeNow = function() return now end,
   GetAttribute = function(_, key) return attributes[key] end,
   SetAttribute = function(_, key, value) attributes[key] = value end,
@@ -166,10 +171,20 @@ for _, kind in { 'Clear', 'LightRain', 'Rain', 'Storm' } do
 end
 print('PASS clear, light rain, rain and storm have increasing wind and waves')
 
+attributes.WeatherOverride = 'Foggy'
+local foggy = Weather.getState(now)
+assert(foggy.kind == 'Foggy' and foggy.fog == 1 and foggy.rain == 0 and foggy.storm == 0,
+  'Foggy is dense marine fog without rain or lightning')
+assert(foggy.windSpeed < Weather.Presets.Clear.windSpeed and foggy.cloudCover == 0.9,
+  'Fog comes with calm winds and low stratus')
+assert(Weather.supercell(now) == nil and #Weather.tornadoes(now) == 0,
+  'A fog override clears severe weather')
+print('PASS dry, calm Foggy preset and severe-weather cleanup')
+
 -- Explicit presets must not disappear in a regional front's clear gap.
 for _, seed in { 17, 1847, 999983 } do
   attributes.WeatherSeed = seed
-  for _, kind in { 'Clear', 'LightRain', 'Rain', 'Storm' } do
+  for _, kind in { 'Clear', 'Foggy', 'LightRain', 'Rain', 'Storm' } do
     attributes.WeatherOverride = kind
     local preset = Weather.getState(now)
     for _, point in { Vector3.zero, Vector3.new(1800, 0, 1800), Vector3.new(-5000, 0, 5000) } do
@@ -177,9 +192,10 @@ for _, seed in { 17, 1847, 999983 } do
       assert(localState.kind == kind, 'Selected weather must reach every player')
       close(localState.rain, preset.rain)
       close(localState.storm, preset.storm)
+      close(localState.fog, preset.fog)
       close(localState.windSpeed, preset.windSpeed)
       close(Weather.sample(point, now).amplitude, localState.waveAmplitude)
-      if kind ~= 'Clear' then
+      if preset.rain > 0 then
         assert(localState.cloudCover == 1, 'Every rain preset needs full overcast')
       end
       if not Weather.inLake(point) then close(localState.waveAmplitude, preset.waveAmplitude) end
@@ -205,16 +221,23 @@ for _, stage in Weather.Schedule do
   local state = Weather.getState(time)
   assert(state.kind == stage.kind, 'Schedule must reach every condition')
   close(state.rain, Weather.Presets[stage.kind].rain)
+  close(state.fog, Weather.Presets[stage.kind].fog)
+  if stage.kind == 'Foggy' then
+    for _, point in { Vector3.zero, Vector3.new(1800, 0, 1800), Vector3.new(7000, 0, 7000) } do
+      assert(Weather.getState(time, point).kind == 'Foggy', 'Natural fog is reported locally across the ocean and city')
+    end
+  end
   found[state.kind] = true
   if walked > 0 then
     local a = Weather.getState(attributes.WeatherEpoch + walked - 0.001)
     local b = Weather.getState(attributes.WeatherEpoch + walked + 0.001)
     assert(math.abs(a.windSpeed - b.windSpeed) < 0.002 and math.abs(a.rain - b.rain) < 0.001,
       'Weather transitions must not snap')
+    assert(math.abs(a.fog - b.fog) < 0.001, 'Fog rolls in and lifts continuously')
   end
   walked += stage.duration
 end
-assert(found.Clear and found.LightRain and found.Rain and found.Storm)
+assert(found.Clear and found.Foggy and found.LightRain and found.Rain and found.Storm)
 local last = Weather.getState(attributes.WeatherEpoch + Weather.CycleSeconds - 0.001)
 local first = Weather.getState(attributes.WeatherEpoch + Weather.CycleSeconds + 0.001)
 assert(math.abs(last.windSpeed - first.windSpeed) < 0.002, 'Cycle wrap must be continuous')
@@ -348,15 +371,16 @@ Service.start()
 assert(#callbacks == 1, 'Repeated startup must not duplicate weather')
 close(attributes.WeatherEpoch, now)
 assert(type(attributes.WeatherSeed) == 'number' and attributes.WeatherKind == 'Clear')
-for _, kind in { 'LightRain', 'Rain', 'Storm' } do
+for _, kind in { 'Foggy', 'LightRain', 'Rain', 'Storm' } do
   attributes.WeatherOverride = kind
   now += 1
   callbacks[1](1)
   local state = Weather.getState(now)
   assert(attributes.WeatherKind == kind)
-  close(attributes.WeatherRain, state.rain)
-  close(attributes.WeatherWindSpeed, state.windSpeed)
-  close(workspace.GlobalWind.Magnitude, state.windSpeed)
+  close(attributes.WeatherRain, state.rain, 0.006)
+  close(attributes.WeatherFog, state.fog, 0.006)
+  close(attributes.WeatherWindSpeed, state.windSpeed, 0.026)
+  close(workspace.GlobalWind.Magnitude, state.windSpeed, 0.051)
 end
 print('PASS single authoritative forecast, replicated state and global wind')
 

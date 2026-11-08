@@ -41,9 +41,10 @@ function DayNight.clockTime(serverTime: number?): number
 end
 
 -- Lighting.ClockTime moves the sun, and every move re-renders the shadow maps and
--- relights the scene. Stepping it once per in-game minute (one real second, a
--- quarter of a degree of sun) looks continuous instead of costing that every frame.
-DayNight.LIGHTING_STEP_HOURS = 1 / 60
+-- relights the scene. Stepping it every quarter in-game minute (a quarter of a real
+-- second, ~0.06 degrees of sun) keeps shadows sliding smoothly at 4 updates a second
+-- instead of costing that every frame (60+). A whole-second step made shadows lag.
+DayNight.LIGHTING_STEP_HOURS = 1 / 240
 
 function DayNight.lightingClock(serverTime: number?): number
 	local step = DayNight.LIGHTING_STEP_HOURS

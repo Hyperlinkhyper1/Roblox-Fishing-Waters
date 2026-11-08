@@ -8,6 +8,18 @@ local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local Popup = {}
 Popup.__index = Popup
 
@@ -175,11 +187,11 @@ function Popup.new(gui: ScreenGui)
 		table.insert(self.lines, { label = label, stroke = outline })
 	end
 
-	RunService.RenderStepped:Connect(function()
+	RunService.RenderStepped:Connect(profiled("CatchPopup", function()
 		if root.Visible then
 			self:animate(os.clock() - self.shownAt)
 		end
-	end)
+	end))
 	return self
 end
 
@@ -298,6 +310,10 @@ function Popup:showCatch(payload)
 	local color = if rarity then rarity.Color else WHITE
 	local mutation = FishMutations.label(payload.Mutation, payload.NeonColor)
 	local name = (if mutation ~= "" then mutation .. " " else "") .. (if fish then fish.Name else payload.FishId)
+	-- Mutation words keep their own colours; the species name keeps the rarity colour.
+	local richMutation = FishMutations.richLabel(payload.Mutation, payload.NeonColor)
+	local title = (if richMutation ~= "" then "<b>" .. richMutation .. "</b> " else "")
+		.. paint(if fish then fish.Name else payload.FishId, color, true)
 	local size = if payload.Size == "Huge"
 		then paint("Huge ", GOLD, true)
 		elseif payload.Size == "Big" then paint("Big ", GOLD, true)
@@ -307,7 +323,7 @@ function Popup:showCatch(payload)
 		"You just caught %s %s%s at %s",
 		lead,
 		size,
-		paint(name, color, true),
+		title,
 		paint("%s", MUTED, true)
 	) .. "kg!"
 	if type(payload.Count) == "number" then

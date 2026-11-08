@@ -41,6 +41,7 @@ local RARITY_ORDER = {
 	Exotic = 7,
 	Divine = 8,
 	Limited = 9,
+	Admin = 10,
 }
 
 -- Kind "Shop" opens the rod trader, "Buyer" the galley; everyone else gives quests.

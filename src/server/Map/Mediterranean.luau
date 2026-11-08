@@ -374,6 +374,7 @@ function Med.bougainvillea(parent: Instance, face: CFrame, rng: Random, height: 
 		local color = if rng:NextNumber() < 0.75 then shade(pick(rng, BLOOMS), rng, 0.08) else LEAF
 		blob(m, p.Position, Vector3.new(s, s * 0.8, s * 0.6), rng, color, M.LeafyGrass).CanCollide = false
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -433,6 +434,7 @@ function Med.pot(parent: Instance, ground: Vector3, rng: Random, plant: string?)
 			blob(m, at, Vector3.new(1, 0.8, 1), rng, pick(rng, BLOOMS), M.LeafyGrass)
 		end
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -449,6 +451,7 @@ function Med.lavender(parent: Instance, ground: Vector3, rng: Random): Model
 			M.LeafyGrass
 		)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -484,6 +487,7 @@ function Med.olive(parent: Instance, ground: Vector3, rng: Random, scale: number
 			M.LeafyGrass
 		)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -540,6 +544,7 @@ function Med.stonePine(parent: Instance, ground: Vector3, rng: Random): Model
 			M.LeafyGrass
 		)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 

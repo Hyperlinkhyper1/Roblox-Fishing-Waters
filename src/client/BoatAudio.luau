@@ -3,6 +3,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local BoatAudio = {}
 local started = false
 local DISCOVERY_INTERVAL = 0.25
@@ -15,7 +27,7 @@ function BoatAudio.start()
 	local records = {}
 	local previousFolder = nil
 	local discovery = DISCOVERY_INTERVAL
-	RunService.Heartbeat:Connect(function(dt)
+	RunService.Heartbeat:Connect(profiled("BoatAudio", function(dt)
 		local folder = workspace:FindFirstChild("PlayerBoats")
 		discovery += dt
 		-- Only discovery scans the hierarchy; existing engines still blend every frame.
@@ -79,7 +91,7 @@ function BoatAudio.start()
 				end
 			end
 		end
-	end)
+	end))
 end
 
 return BoatAudio

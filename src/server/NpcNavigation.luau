@@ -260,10 +260,24 @@ function NpcNavigation.walk(
 			local function clearAt(position: Vector3): boolean
 				return #workspace:GetPartBoundsInBox(bodyFrame(position), bodySize, overlap) == 0
 			end
+			-- Narrower than any torso's thinnest side, so a rig that is not
+			-- clipping into geometry never overlaps anything with this box.
+			local coreSize = Vector3.new(0.9, bodyHeight, 0.9)
+			local function sweepClear(from: Vector3, delta: Vector3): boolean
+				if workspace:Blockcast(bodyFrame(from), bodySize, delta, parameters) ~= nil then
+					return false
+				end
+				-- Shapecasts skip parts the box already overlaps at its start. The
+				-- planning box is wider than the rig, so one standing beside a wall
+				-- overlaps it and the sweep would pass straight through that wall
+				-- (a porter in the storage corner by the lobby door walked into
+				-- the corner forever). Recheck those starts with the thin core.
+				return clearAt(from) or workspace:Blockcast(bodyFrame(from), coreSize, delta, parameters) == nil
+			end
 			local function clearBetween(from: Vector3, to: Vector3): boolean
 				local delta = to - from
 				return math.abs(delta.Y) <= 2
-					and (delta.Magnitude < 0.05 or workspace:Blockcast(bodyFrame(from), bodySize, delta, parameters) == nil)
+					and (delta.Magnitude < 0.05 or sweepClear(from, delta))
 					-- Route search samples at one-stud intervals; follow() checks
 					-- the actual segment again at half-stud intervals before moving.
 					and supportedBetween(from, to, true, 1)

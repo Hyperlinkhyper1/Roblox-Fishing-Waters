@@ -6,6 +6,18 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local ParkedBoats = {}
 local started = false
 -- Rolling a hull rewrites every part in it, and the renderer pays per moved part
@@ -19,6 +31,7 @@ local MID_STRIDE = 3
 -- water or a sheltered berth would otherwise rewrite the hull for nothing.
 local MIN_MOVE = 0.005
 local TILT_ARM = 20
+local HULL_REFRESH = 1
 
 function ParkedBoats.start()
 	if started then
@@ -30,8 +43,30 @@ function ParkedBoats.start()
 	local frame = 0
 	local slots: { [Instance]: number } = setmetatable({}, { __mode = "k" }) :: any
 	local nextSlot = 0
+	-- Each parked hull's parts and their offsets from the root. Rebuilt when the hull parks
+	-- again, its root changes, or every HULL_REFRESH seconds (planks and fittings can be
+	-- added or removed while it sits at the berth).
+	type Hull = { root: BasePart, parkedAt: number, at: number, parts: { BasePart }, offsets: { CFrame }, frames: { CFrame } }
+	local hulls: { [Model]: Hull } = setmetatable({}, { __mode = "k" }) :: any
+	local function hullOf(model: Model, root: BasePart, parkedAt: number): Hull
+		local clock = os.clock()
+		local hull = hulls[model]
+		if not hull or hull.root ~= root or hull.parkedAt ~= parkedAt or clock - hull.at > HULL_REFRESH then
+			local parts, offsets = {}, {}
+			local frame = root.CFrame
+			for _, piece in model:GetDescendants() do
+				if piece:IsA("BasePart") then
+					table.insert(parts, piece)
+					table.insert(offsets, frame:ToObjectSpace(piece.CFrame))
+				end
+			end
+			hull = { root = root, parkedAt = parkedAt, at = clock, parts = parts, offsets = offsets, frames = table.create(#parts) }
+			hulls[model] = hull
+		end
+		return hull
+	end
 	-- Before physics, so a local character standing on deck collides with this pose.
-	RunService.PreSimulation:Connect(function()
+	RunService.PreSimulation:Connect(profiled("ParkedBoats", function()
 		frame += 1
 		local camera = workspace.CurrentCamera
 		local eye = camera and camera.CFrame.Position
@@ -120,9 +155,15 @@ function ParkedBoats.start()
 					+ ((goal.LookVector - before.LookVector).Magnitude + (goal.UpVector - before.UpVector).Magnitude)
 						* TILT_ARM
 				if change >= MIN_MOVE then
-					-- The hull is rigid, so its pivot keeps one offset from the root.
-					local pivot = rest * before:ToObjectSpace(model:GetPivot())
-					model:PivotTo(offset * pivot)
+					-- The hull is rigid: every part keeps one offset from the root, and the root
+					-- goes to offset * rest (what PivotTo(offset * pivot) produced). One engine
+					-- call for the whole hull instead of PivotTo setting each part in turn.
+					local hull = hullOf(model, root, parkedAt)
+					local frames = hull.frames
+					for index, relative in hull.offsets do
+						frames[index] = goal * relative
+					end
+					workspace:BulkMoveTo(hull.parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
 				end
 				if riding then
 					local position = before:PointToObjectSpace(avatarRoot.Position)
@@ -154,7 +195,7 @@ function ParkedBoats.start()
 		if not holding then
 			heldRoot, heldBoat, heldAt, heldPosition = nil, nil, nil, nil
 		end
-	end)
+	end))
 end
 
 return ParkedBoats

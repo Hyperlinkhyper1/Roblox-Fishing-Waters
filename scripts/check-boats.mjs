@@ -19,6 +19,7 @@ try {
   const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
   const spearSkins = await readFile(join(root, 'src/shared/SpearSkins.luau'), 'utf8');
   const bobberSkins = await readFile(join(root, 'src/shared/BobberSkins.luau'), 'utf8');
+  const baitSource = await readFile(join(root, 'src/shared/Bait.luau'), 'utf8');
   const data = (await readFile(join(root, 'src/server/BoatData.luau'), 'utf8')).replace(
     'local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")',
     `local AnglerData = (function()\n${anglerData}\nend)()`,
@@ -26,6 +27,7 @@ try {
     .replace(/local RodSkins = if script[\s\S]*?"\.\.\/shared\/RodSkins"\)/, () => `local RodSkins = (function()\n${rodSkins}\nend)()`)
     .replace(/local SpearSkins = if script[\s\S]*?"\.\.\/shared\/SpearSkins"\)/, () => `local SpearSkins = (function()\n${spearSkins}\nend)()`)
     .replace(/local BobberSkins = if script[\s\S]*?"\.\.\/shared\/BobberSkins"\)/, () => `local BobberSkins = (function()\n${bobberSkins}\nend)()`)
+    .replace(/local Bait = if script[\s\S]*?"\.\.\/shared\/Bait"\)/, () => `local Bait = (function()\n${baitSource}\nend)()`)
     .replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
   let service = await readFile(join(root, 'src/server/BoatService.luau'), 'utf8');
   const rodSerialSource = (await readFile(join(root, 'src/server/RodSerials.luau'), 'utf8'))

@@ -10,6 +10,18 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local BoatDrive = require(ReplicatedStorage.Shared.BoatDrive)
 local BoatMotion = require(ReplicatedStorage.Shared.BoatMotion)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local BoatDriving = {}
 local started = false
 local helm: Model? = nil
@@ -81,7 +93,7 @@ function BoatDriving.start()
 	started = true
 	local player = Players.LocalPlayer
 	-- Before the solver, like the server's loop, so each step uses one coherent set of targets.
-	RunService.PreSimulation:Connect(function(dt)
+	RunService.PreSimulation:Connect(profiled("BoatDriving", function(dt)
 		local model = helm
 		if
 			not model
@@ -103,7 +115,7 @@ function BoatDriving.start()
 		readSpec(model, hull.spec)
 		local speed, turn = BoatMotion.step(hull.speed, hull.turn, helmThrottle, helmSteer, hull.spec, dt)
 		BoatDrive.apply(hull, speed, turn, helmThrottle, helmSteer, dt, workspace:GetServerTimeNow(), nil)
-	end)
+	end))
 end
 
 return BoatDriving

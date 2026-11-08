@@ -15,6 +15,18 @@ local RunService = game:GetService("RunService")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local Clouds = {}
 local started = false
 local TAU = math.pi * 2
@@ -330,7 +342,7 @@ local function startRainCanopy(player: Player)
 	end
 	-- Entering the supercell rain or teleporting under it gets coverage in the
 	-- same rendered frame. Low graphics reduce detail, never remove the deck.
-	RunService.RenderStepped:Connect(function(dt: number)
+	RunService.RenderStepped:Connect(profiled("VolumetricClouds", function(dt: number)
 		local camera = workspace.CurrentCamera
 		if not camera then
 			clear()
@@ -499,7 +511,7 @@ local function startRainCanopy(player: Player)
 		if folder and next(tiles) == nil then
 			clear()
 		end
-	end)
+	end))
 end
 
 function Clouds.start()

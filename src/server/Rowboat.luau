@@ -199,10 +199,11 @@ function Rowboat.build(frame: CFrame, anchored: boolean?): Model
 		triangle("FloorSeal", a, c, d, inside, WOOD[i % #WOOD + 1])
 	end
 
-	-- Narrow boards retain the planked appearance above the fitted sole.
+	-- Narrow boards retain the planked appearance above the fitted sole. The sole is the
+	-- walking surface; the boards are visual, so the moving hull carries 7 fewer colliders.
 	for i = -3, 3 do
 		local length = 11.6 - math.abs(i) * 1.0
-		part("Floorboard", Vector3.new(0.51, 0.20, length), CFrame.new(i * 0.53, FLOOR_HEIGHT - 0.08, 0), WOOD[(i + 3) % #WOOD + 1])
+		part("Floorboard", Vector3.new(0.51, 0.20, length), CFrame.new(i * 0.53, FLOOR_HEIGHT - 0.08, 0), WOOD[(i + 3) % #WOOD + 1], nil, false)
 	end
 	part("Keel", Vector3.new(0.26, 0.25, 13.5), CFrame.new(0, -0.51, 0), WOOD[1])
 	for _, z in { -7.05, 7.05 } do
@@ -212,7 +213,8 @@ function Rowboat.build(frame: CFrame, anchored: boolean?): Model
 		local width = if z == 0.6 then 5.55 else 4.9
 		part("Bench", Vector3.new(width, 0.24, 1.05), CFrame.new(0, 0.9, z), RAIL)
 		for _, side in { -1, 1 } do
-			part("BenchSupport", Vector3.new(0.22, 0.9, 0.5), CFrame.new(side * (width / 2 - 0.4), 0.34, z), WOOD[1])
+			-- Hidden under the bench, which already gives the solid body.
+			part("BenchSupport", Vector3.new(0.22, 0.9, 0.5), CFrame.new(side * (width / 2 - 0.4), 0.34, z), WOOD[1], nil, false)
 		end
 	end
 

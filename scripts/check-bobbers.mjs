@@ -21,7 +21,7 @@ try {
       .replace('require(script.Parent.RodSkins)', '{ DefaultWear = 0.2 }')
       .replace('require(script.Parent.FishingBobber)', 'FishingBobber')
       .replace('require(ReplicatedStorage.Shared.FishingBobber)', 'FishingBobber')
-      .replace(/require\(script.Parent.(?:CastAnimation|CatchPopup|FishingAudio|ReelMinigame)\)/g, '{}');
+      .replace(/require\(script.Parent.(?:CastAnimation|CatchPopup|CatchFling|FishingAudio|ReelMinigame)\)/g, '{}');
     if (marker === 'CASTING') source = source.replace(/return Casting\s*$/, 'return {newLine = newLine, updateLine = updateLine, setBuiltInBobber = setBuiltInBobber, destroyLine = destroyLine}');
     program = program.replace(`-- ${marker}_SOURCE --`, () => source);
   }

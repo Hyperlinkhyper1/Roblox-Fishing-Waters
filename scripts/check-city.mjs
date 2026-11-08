@@ -1,6 +1,7 @@
 // Builds the real distant city (ModernCity, CityLand, CityPort, CityRefinery, CityMetro,
 // CityBuildings, the station and landmark, Props and the server Lod) against recording mocks,
-// then checks its geography: the estuary stays navigable, buildings stand on land, the metro
+// then checks its geography: the estuary stays navigable, buildings stand on land, the hills
+// behind the city meet the mainland without a step and dress their facets exactly, the metro
 // is walkable from the plaza to both platforms and stays inside its dry pocket, parts stay
 // within Roblox limits, streaming pieces stay small and the distant shell comes in
 // ground-counted tiles.
@@ -15,7 +16,7 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewIndex = process.argv.indexOf('--preview');
 const previewPath = previewIndex > 0 ? resolve(process.argv[previewIndex + 1]) : null;
-const modules = ['LowPoly', 'Props', 'CityLand', 'CityBuildings', 'CityLandmark', 'CityStation', 'CityPort', 'CityRefinery', 'CityMetro', 'MetroStations', 'Lod', 'ModernCity', 'Biomes'];
+const modules = ['LowPoly', 'Props', 'CityLand', 'CityCircuit', 'CityHills', 'CityBuildings', 'CityLandmark', 'CityStation', 'CityPort', 'CityRefinery', 'CityMetro', 'MetroStations', 'Lod', 'ModernCity', 'Biomes'];
 const sources = {};
 for (const name of modules) {
   const folder = name === 'Biomes' ? 'src/shared' : 'src/server/Map';
@@ -428,6 +429,225 @@ check(gangways == 2, "Two gangways lead up from the marina")
 check(blockedAt(CENTER + v3(-1000, TOP - 0.2, 300)) ~= nil and blockedAt(CENTER + v3(-1000, TOP + 0.4, 300)) == nil, "Countryside ground is at the walkable height")
 check(blockedAt(CENTER + v3(-600, 2, -1000)) == nil, "Open water in the middle of the estuary")
 
+-- The hills behind the city
+local CityHills = require({ __module = "CityHills" })
+local CityCircuit = require({ __module = "CityCircuit" })
+local EDGE = CityHills.EDGE
+local facets, dressing, hillTop = {}, {}, -math.huge
+for _, model in ground:GetChildren() do
+  if model.Name == "HillSlope" then
+    for _, p in model:GetDescendants() do
+      if p:IsA("BasePart") then
+        if p:GetAttribute("LodKeep") then
+          table.insert(facets, p)
+          hillTop = math.max(hillTop, p.CFrame.p.Y)
+        else
+          table.insert(dressing, p)
+        end
+        check(p.CFrame.p.X - CENTER.X > EDGE - 3 or p.CFrame.p.Z - CENTER.Z > EDGE - 3, p.Name .. " of the hills stays off the mainland")
+      end
+    end
+  end
+end
+check(#facets > 3000 and hillTop > 200, "Hills have " .. #facets .. " facets rising to " .. fmt(hillTop))
+check(#facets % 2 == 0, "Every hill facet is a whole triangle")
+local function facetAt(point)
+  for _, p in facets do
+    local h, c = halfExtent(p), p.CFrame.p
+    if math.abs(point.X - c.X) <= h.X and math.abs(point.Y - c.Y) <= h.Y and math.abs(point.Z - c.Z) <= h.Z and contains(p, point) then return p end
+  end
+  return nil
+end
+-- No step where the mainland ends and the hills begin
+for x = -1150, 1170, 37 do
+  local y = CityHills.surface(x, EDGE + 1)
+  check(math.abs(y - TOP) < 1.5, "South foothills start level with the land at x " .. x .. " (" .. fmt(y) .. ")")
+  check(blockedAt(CENTER + v3(x, TOP - 0.3, EDGE - 1)) ~= nil and facetAt(CENTER + v3(x, y - 0.3, EDGE + 1)) ~= nil, "South edge is solid on both sides at x " .. x)
+end
+for z = -1100, 1170, 37 do
+  local y = CityHills.surface(EDGE + 1, z)
+  check(math.abs(y - TOP) < 1.5, "East foothills start level with the land at z " .. z .. " (" .. fmt(y) .. ")")
+  check(blockedAt(CENTER + v3(EDGE - 1, TOP - 0.3, z)) ~= nil and facetAt(CENTER + v3(EDGE + 1, y - 0.3, z)) ~= nil, "East edge is solid on both sides at z " .. z)
+end
+-- CityHills.surface is the ground you stand on
+local probes = 0
+-- Off the grid lines, where neighbouring facets meet at a crease
+for x = -1100.5, 1800, 83 do
+  for z = -1000.5, 1800, 83 do
+    if CityHills.covers(x, z) and not CityCircuit.covered(x, z) then
+      probes += 1
+      local y = CityHills.surface(x, z)
+      check(facetAt(CENTER + v3(x, y - 0.3, z)) ~= nil and facetAt(CENTER + v3(x, y + 0.3, z)) == nil, "Hill surface is the facet at " .. x .. "," .. z .. " (" .. fmt(y) .. ")")
+    end
+  end
+end
+check(probes > 200, probes .. " hill surface probes")
+check(CityHills.surface(-1225, 1300) < 0 and CityHills.surface(1300, -1170) < 0, "Both tips of the range run down into the sea")
+-- The track climbs from the suburbs to the mast at a walkable pitch, on the ground
+local trackParts, steepest = 0, 0
+for _, model in ground:GetChildren() do
+  if model.Name == "HillTrack" then
+    for _, p in model:GetChildren() do
+      if p.Name == "HillTrack" then
+        trackParts += 1
+        local c = p.CFrame.p
+        steepest = math.max(steepest, math.abs(p.CFrame.LookVector.Y))
+        local y = CityHills.surface(c.X - CENTER.X, c.Z - CENTER.Z)
+        check(c.Y > y - 0.2 and c.Y < y + 1, "Track rests on the ground at " .. fmt(c.X - CENTER.X) .. "," .. fmt(c.Z - CENTER.Z))
+      end
+    end
+  end
+end
+check(trackParts > 80 and steepest < math.sin(math.rad(32)), trackParts .. " track pieces, steepest pitch " .. fmt(math.deg(math.asin(steepest))) .. " degrees")
+local track = CityHills.TRACK
+check(track[1][1] < 1120 and math.abs(track[1][2] - 1110) < 7, "Track starts on the last suburb road")
+check(track[#track][1] == CityHills.SUMMIT[1] and track[#track][2] == CityHills.SUMMIT[2], "Track ends at the summit")
+local summit = ground:FindFirstChild("HillSummit")
+check(summit ~= nil and summit:FindFirstChild("RadioMast") ~= nil and summit:FindFirstChild("MastLight") ~= nil, "A radio mast stands on the summit")
+-- Trees, hedges and tors stand on the facets
+local hillTrees, hedges, sheep, tors = 0, 0, 0, 0
+for _, p in dressing do
+  local c, y = p.CFrame.p, CityHills.surface(p.CFrame.p.X - CENTER.X, p.CFrame.p.Z - CENTER.Z)
+  if p.Name == "TreeTrunk" or p.Name == "PineTrunk" then
+    hillTrees += 1
+    local bottom = c.Y - p.Size.Y / 2
+    check(bottom <= y and bottom > y - 3, p.Name .. " is rooted in the hillside at " .. fmt(c.X - CENTER.X) .. "," .. fmt(c.Z - CENTER.Z))
+  elseif p.Name == "Hedgerow" then
+    hedges += 1
+    check(math.abs(c.Y - 1 - y) < 0.3, "Hedgerow follows the ground")
+  elseif p.Name == "Sheep" then
+    sheep += 1
+  elseif p.Name == "Tor" then
+    tors += 1
+  end
+end
+check(hillTrees > 300 and hedges > 60 and sheep > 20 and tors > 6, "Hills are dressed: " .. hillTrees .. " trees, " .. hedges .. " hedges, " .. sheep .. " sheep, " .. tors .. " tor slabs")
+
+-- The Grand Prix circuit cut into the foot of the south range
+do
+  local laps = CityCircuit.samples()
+  local HALF = CityCircuit.WIDTH / 2
+  check(CityCircuit.LENGTH > 2800, "Circuit lap is " .. CityCircuit.LENGTH .. " studs")
+  local circuitParts, asphalt = {}, {}
+  for _, model in ground:GetChildren() do
+    local name = model.Name
+    if name:match("^Circuit") or name == "PitBuilding" or name == "Paddock" or name:match("Grandstand$") then
+      check(model:HasTag("LodPiece"), name .. " is a streaming piece")
+      for _, p in model:GetDescendants() do
+        if p:IsA("BasePart") then
+          table.insert(circuitParts, p)
+          if name == "CircuitTrack" then table.insert(asphalt, p) end
+        end
+      end
+    end
+  end
+  local function asphaltAt(point)
+    for _, p in asphalt do
+      local h, c = halfExtent(p), p.CFrame.p
+      if math.abs(point.X - c.X) <= h.X and math.abs(point.Y - c.Y) <= h.Y and math.abs(point.Z - c.Z) <= h.Z and contains(p, point) then return p end
+    end
+    return nil
+  end
+  local function across(s, o) return s[1] - s[8] * o, s[2] + s[7] * o end
+  local steepest, lowest, highest, worstLip = 0, math.huge, -math.huge, 0
+  for k, s in laps do
+    local nxt = laps[k % #laps + 1]
+    local run = math.sqrt((nxt[1] - s[1]) ^ 2 + (nxt[2] - s[2]) ^ 2)
+    check(run > 1.9 and run < 2.1, "Circuit centreline is continuous at sample " .. k)
+    steepest = math.max(steepest, math.abs(nxt[3] - s[3]) / run)
+    lowest, highest = math.min(lowest, s[3]), math.max(highest, s[3])
+    -- All of it, run-off included, on the hills and well back from the mainland edge
+    for _, o in { -(HALF + s[4] + 2), HALF + s[5] + 2 } do
+      local x, z = across(s, o)
+      check(z > EDGE + 55 and CityHills.covers(x, z), "Circuit stays on the hills at " .. fmt(x) .. "," .. fmt(z))
+    end
+    -- The ground stays under the road all the way across
+    for _, o in { -HALF, -HALF / 2, 0, HALF / 2, HALF } do
+      local x, z = across(s, o)
+      local y = CityHills.surface(x, z)
+      check(y < s[3] - 0.3, "Ground stays under the road at " .. fmt(x) .. "," .. fmt(z) .. " (" .. fmt(y) .. " vs " .. fmt(s[3]) .. ")")
+      if math.abs(o) == HALF then worstLip = math.max(worstLip, s[3] - y) end
+    end
+  end
+  check(steepest < 0.115, "Circuit gradient peaks at " .. fmt(steepest * 100) .. "%")
+  check(highest - lowest > 60, "Circuit climbs " .. fmt(highest - lowest) .. " studs from its lowest to its highest point")
+  check(worstLip < 3, "The 3-stud asphalt slab reaches the ground at every edge (worst gap " .. fmt(worstLip) .. ")")
+  -- The asphalt is one continuous solid surface at the circuit's level. Probes sit part way
+  -- between samples and off the centre, so none lands exactly on a seam between facets.
+  for k = 1, #laps, 5 do
+    local s, n = laps[k], laps[k % #laps + 1]
+    local mid = {}
+    for i = 1, 8 do mid[i] = s[i] + (n[i] - s[i]) * 0.37 end
+    for _, o in { -HALF + 1.3, 0.7, HALF - 1.3 } do
+      local x, z = across(mid, o)
+      local p = CENTER + v3(x, mid[3] - 0.15, z)
+      check(asphaltAt(p) ~= nil, "Asphalt under foot at " .. fmt(x) .. "," .. fmt(z))
+      check(asphaltAt(p + v3(0, 0.4, 0)) == nil, "Road surface is at the circuit level at " .. fmt(x) .. "," .. fmt(z))
+    end
+  end
+  local function centreDistance(x, z)
+    local best = math.huge
+    for _, s in laps do best = math.min(best, (s[1] - x) ^ 2 + (s[2] - z) ^ 2) end
+    return math.sqrt(best)
+  end
+  local count = {}
+  local keep, red, white = 0, 0, 0
+  for _, p in circuitParts do
+    count[p.Name] = (count[p.Name] or 0) + 1
+    local c = p.CFrame.p - CENTER
+    if p.Name == "Kerb" then
+      if p.Color.R > 0.7 and p.Color.G < 0.3 then red += 1 elseif p.Color.G > 0.8 then white += 1 end
+    elseif p.Name == "BarrierPost" then
+      local y = CityHills.surface(c.X, c.Z)
+      local bottom = p.CFrame.p.Y - p.Size.Y / 2
+      check(bottom < y and bottom > y - 1.5, "Barrier post stands on the ground at " .. fmt(c.X) .. "," .. fmt(c.Z))
+      check(centreDistance(c.X, c.Z) > HALF + 3, "Barrier stands off the track at " .. fmt(c.X) .. "," .. fmt(c.Z))
+    elseif p.Name == "StandStep" then
+      local y = CityHills.surface(c.X, c.Z)
+      check(p.CFrame.p.Y - p.Size.Y / 2 < y, "Grandstand step reaches the ground at " .. fmt(c.X) .. "," .. fmt(c.Z))
+      check((CityCircuit.level(c.X, c.Z)) > 0, "Grandstand stands off the circuit at " .. fmt(c.X) .. "," .. fmt(c.Z))
+    elseif p.Name == "BridgeTower" then
+      check(centreDistance(c.X, c.Z) > HALF + 8, "Footbridge towers stand off the track")
+    elseif p.Name == "PitLane" then
+      local top = p.CFrame.p.Y + p.Size.Y / 2
+      check(math.abs(top - CityCircuit.startLevel(c.X)) < 0.1, "Pit lane is level with the start straight at x " .. fmt(c.X))
+    end
+    if p:GetAttribute("LodKeep") then keep += 1 end
+  end
+  check(red > 150 and white > 150, "Corners have red and white kerbs (" .. red .. "/" .. white .. ")")
+  check((count.BarrierPost or 0) > 150 and (count.Armco or 0) > 200, "Armco lines the run-off (" .. (count.Armco or 0) .. " rails)")
+  check(#asphalt > 400 and keep == #asphalt, "All " .. #asphalt .. " asphalt facets stand in the distant shell")
+  check(count.StartLight == 5 and count.GridSlot == 12 and count.RaceControl == 1, "Start line has its lights, grid and race control")
+  check(count.GarageWall == 26 and count.TeamBoard == 25 and (count.Transporter or 0) >= 8, "Pit building has 25 garages and the paddock its transporters")
+  check((count.StandStep or 0) > 60 and count.BridgeDeck == 1 and (count.Wedge or 0) == 0, "Grandstands and the footbridge are built")
+  -- The paddock road climbs from the last suburb road between the houses
+  local road = ground:FindFirstChild("Paddock"):FindFirstChild("PaddockRoad")
+  local look = road.CFrame.LookVector
+  local low, high = road.CFrame.p - look * (road.Size.Z / 2), road.CFrame.p + look * (road.Size.Z / 2)
+  if low.Y > high.Y then low, high = high, low end
+  check(low.Z - CENTER.Z < 1118 and math.abs(low.Y + 0.3 - (TOP + 0.2)) < 0.3, "Paddock road starts on the last suburb road")
+  check(high.Z - CENTER.Z > CityCircuit.PADDOCK_NORTH and math.abs(high.Y + 0.3 - CityCircuit.startLevel(CityCircuit.ACCESS_X)) < 0.3, "Paddock road reaches the paddock")
+  check(math.abs(look.Y) < math.sin(math.rad(20)), "Paddock road is a drivable slope")
+  for _, d in ground:GetDescendants() do
+    if d.Name == "House" then
+      local c = d.CFrame.p - CENTER
+      check(math.abs(c.X - CityCircuit.ACCESS_X) > 14 or c.Z < 1110, "No house stands on the paddock road")
+    end
+  end
+  -- Nothing of the hills grows or grazes on the circuit
+  for _, p in dressing do
+    if p.Name == "TreeTrunk" or p.Name == "PineTrunk" or p.Name == "Sheep" or p.Name == "Hedgerow" or p.Name == "Farmhouse" or p.Name == "Tor" then
+      local c = p.CFrame.p - CENTER
+      check(CityCircuit.clearance(c.X, c.Z) > 0, p.Name .. " keeps off the circuit at " .. fmt(c.X) .. "," .. fmt(c.Z))
+    end
+  end
+  -- The farm track up to the mast keeps well clear of it
+  for _, point in CityHills.TRACK do
+    check(CityCircuit.clearance(point[1], point[2]) > 60, "Farm track keeps clear of the circuit")
+  end
+  print("Circuit: " .. CityCircuit.LENGTH .. " studs, " .. #circuitParts .. " parts, level " .. fmt(lowest) .. " to " .. fmt(highest) .. ", steepest " .. fmt(steepest * 100) .. "%, widest edge gap " .. fmt(worstLip))
+end
+
 -- The metro: walkable from the plaza down to both platforms, and dry
 local CityMetro = require({ __module = "CityMetro" })
 local Biomes = require({ __module = "Biomes" })
@@ -541,6 +761,13 @@ for _, tile in shell:GetChildren() do
   end
 end
 check(tiles > 40 and waiting == tiles, "Every one of " .. tiles .. " shell tiles waits for real ground under it (" .. waiting .. ")")
+do
+  local size, ox, oz = shell:GetAttribute("TileSize"), shell:GetAttribute("TileOriginX"), shell:GetAttribute("TileOriginZ")
+  for _, spot in { CityHills.SUMMIT, { 1600, 0 }, { 0, 1500 } } do
+    local key = math.floor((CENTER.X + spot[1] - ox) / size) .. "," .. math.floor((CENTER.Z + spot[2] - oz) / size)
+    check(shell:FindFirstChild(key) ~= nil, "The distant shell shows the hills at " .. spot[1] .. "," .. spot[2])
+  end
+end
 
 -- A baked map keeps a current shell, and rebuilds it once the city changes
 local before = shell

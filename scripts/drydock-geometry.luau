@@ -329,6 +329,10 @@ local function loadShopDesk()
 	-- SHOPDESK_SOURCE --
 end
 dependencies.ShopDesk = loadShopDesk()
+-- No new top-level local here: this chunk is at Luau's 200-local limit.
+dependencies.OfficeDesk = (function()
+	-- OFFICEDESK_SOURCE --
+end)()
 local function loadFishFreezerGeometry()
 	-- FISHFREEZERGEOMETRY_SOURCE --
 end

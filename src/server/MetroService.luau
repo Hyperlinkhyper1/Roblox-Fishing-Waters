@@ -73,8 +73,8 @@ local function beginRide(player, source, state)
 	player:SetAttribute("MetroRiding", true)
 	remote:FireClient(player, "Depart", {
 		origin = Schedule.NAMES[id], destination = Schedule.NAMES[Schedule.OTHER[id]],
-		dock = source.TrainDock.CFrame, departure = state.cycle * 60 + Schedule.CLOSE,
-		arrival = (state.cycle + 1) * 60 + Schedule.OPEN,
+		dock = source.TrainDock.CFrame, departure = state.cycle * Schedule.PERIOD + Schedule.CLOSE,
+		arrival = (state.cycle + 1) * Schedule.PERIOD + Schedule.OPEN,
 	})
 	-- Preload during the actual journey, with a separate task per passenger.
 	task.spawn(function()
@@ -193,11 +193,11 @@ function Service.start()
 				finish(player, ride, ride.source, true)
 				continue
 			end
-			if now >= ride.cycle * 60 + Schedule.TRANSFER and not ride.transferred and ride.streamed then
+			if now >= ride.cycle * Schedule.PERIOD + Schedule.TRANSFER and not ride.transferred and ride.streamed then
 				ride.current, ride.transferred = ride.destination, true
 				remote:FireClient(player, "Transfer", { dock = ride.destination.TrainDock.CFrame })
 			end
-			if now >= (ride.cycle + 1) * 60 + Schedule.OPEN then
+			if now >= (ride.cycle + 1) * Schedule.PERIOD + Schedule.OPEN then
 				finish(player, ride, if ride.transferred then ride.destination else ride.source, not ride.transferred)
 			else
 				ride.character:PivotTo(Schedule.frame(ride.current.TrainDock.CFrame, now) * ride.offset)

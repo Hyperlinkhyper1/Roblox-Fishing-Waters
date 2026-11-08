@@ -7,11 +7,12 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local RodUpgrades = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("RodUpgrades"))
+local Bait = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Bait"))
 
 local RodWorkshop = {}
 local started = false
 
-local WIDTH, HEIGHT = 842, 452
+local WIDTH, HEIGHT = 842, 516
 local CARD_WIDTH, CARD_GAP = 188, 14
 local GOLD = Color3.fromRGB(244, 196, 76)
 local AFFORD = Color3.fromRGB(111, 202, 125)
@@ -197,6 +198,34 @@ function RodWorkshop.start()
 		}
 	end
 
+	-- Bait crates: bought here, opened from the equipment bag.
+	local baitStrip =
+		frame(window, "BaitCrates", UDim2.fromOffset((WIDTH - rowWidth) / 2, 404), UDim2.fromOffset(rowWidth, 56), Theme.Colors.Panel)
+	Theme.panel(baitStrip, false, 8)
+	label(baitStrip, "BAIT CRATE", UDim2.fromOffset(14, 6), UDim2.fromOffset(300, 18), 14, GOLD)
+	local baitInfo = label(
+		baitStrip,
+		string.format("%d–%d bait each · used up per catch · rarer bait, better stats", Bait.Crate.MinBait, Bait.Crate.MaxBait),
+		UDim2.fromOffset(14, 26),
+		UDim2.new(1, -330, 0, 22),
+		12,
+		muted
+	)
+	baitInfo.Font = Enum.Font.GothamMedium
+	local baitButtons = {}
+	for index, count in Bait.BuyCounts do
+		local buy = Instance.new("TextButton")
+		buy.Name = "BuyBaitCrate" .. count
+		buy.AnchorPoint = Vector2.new(1, 0.5)
+		buy.Position = UDim2.new(1, -12 - (#Bait.BuyCounts - index) * 150, 0.5, 0)
+		buy.Size = UDim2.fromOffset(140, 40)
+		buy.TextSize = 14
+		buy.RichText = true
+		buy.Parent = baitStrip
+		Theme.button(buy, "Selected")
+		baitButtons[count] = buy
+	end
+
 	local status = label(window, "", UDim2.fromOffset(24, HEIGHT - 50), UDim2.new(1, -48, 0, 32), 14, muted)
 	status.TextXAlignment = Enum.TextXAlignment.Center
 	status.Font = Enum.Font.GothamMedium
@@ -246,6 +275,21 @@ function RodWorkshop.start()
 				Theme.button(view.buy, if enabled then "Selected" elseif pending == stat then "Normal" else "Disabled")
 			end
 			view.buy.Active, view.buy.Selectable, view.buy.AutoButtonColor = enabled, enabled, enabled
+		end
+		for count, buy in baitButtons do
+			local price = Bait.Crate.Price * count
+			local afford = money >= price
+			local enabled = ready and afford and pending == nil
+			buy.Text = if pending == "Bait" .. count
+				then "Buying…"
+				else string.format(
+					'BUY %d <font color="%s">$%s</font>',
+					count,
+					if afford then "#a6f0b2" else "#ff9a9d",
+					commas(price)
+				)
+			Theme.button(buy, if enabled then "Selected" else "Disabled")
+			buy.Active, buy.Selectable, buy.AutoButtonColor = enabled, enabled, enabled
 		end
 		if not ready then
 			status.Text = "Loading your wallet…"
@@ -320,6 +364,26 @@ function RodWorkshop.start()
 			end)
 		end)
 	end
+	for count, buy in baitButtons do
+		buy.Activated:Connect(function()
+			if pending or not buy.Active or os.clock() - lastRequest < 0.5 then
+				return
+			end
+			lastRequest = os.clock()
+			pending, pendingId = "Bait" .. count, pendingId + 1
+			local current = pendingId
+			setStatus("Finn is fetching your bait…", muted)
+			refresh()
+			request:FireServer("BuyBaitCrate", count)
+			task.delay(8, function()
+				if pendingId == current and pending then
+					pending = nil
+					setStatus("That took too long. Please try again.", SHORT)
+					refresh()
+				end
+			end)
+		end)
+	end
 	close.Activated:Connect(closeWorkshop)
 	overlay.Activated:Connect(closeWorkshop)
 	UserInputService.InputBegan:Connect(function(input)
@@ -345,6 +409,10 @@ function RodWorkshop.start()
 					celebrate(stat)
 				end
 			end)
+			setStatus(b, if a == true then AFFORD else SHORT)
+		elseif kind == "BaitCrateResult" and type(b) == "string" then
+			pending = nil
+			task.delay(0.15, refresh)
 			setStatus(b, if a == true then AFFORD else SHORT)
 		end
 	end)

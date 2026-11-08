@@ -18,6 +18,7 @@ local BoatCatalog = require(Shared:WaitForChild("BoatCatalog"))
 local BoatUpgrades = require(Shared:WaitForChild("BoatUpgrades"))
 local Cargo = require(Shared:WaitForChild("Cargo"))
 local Catalog = require(Shared:WaitForChild("AnglerCatalog"))
+local BoatFurnitureMenu = require(script.Parent:WaitForChild("BoatFurnitureMenu"))
 
 local BoatRefit = {}
 local started = false
@@ -45,6 +46,7 @@ function BoatRefit.start()
 		return
 	end
 	started = true
+	task.spawn(BoatFurnitureMenu.start)
 	local player = Players.LocalPlayer
 	local remote = ReplicatedStorage:WaitForChild("BoatRefit") :: RemoteFunction
 	local cream, muted = Theme.Colors.Text, Theme.Colors.Muted
@@ -117,7 +119,16 @@ function BoatRefit.start()
 	wash.Color = ColorSequence.new(Color3.fromRGB(47, 74, 88), Color3.fromRGB(24, 38, 48))
 	wash.Parent = header
 	label(header, "REFIT DOCK", UDim2.fromOffset(18, 10), UDim2.fromOffset(300, 18), 13, GOLD)
-	local boatName = label(header, "", UDim2.fromOffset(18, 30), UDim2.new(1, -280, 0, 32), 24, cream)
+	local boatName = label(header, "", UDim2.fromOffset(18, 30), UDim2.new(1, -420, 0, 32), 24, cream)
+	-- Boat furniture (Boat Customization pass) opens its own catalog over the lift.
+	local furniture = Instance.new("TextButton")
+	furniture.Name = "OpenBoatFurniture"
+	furniture.Position = UDim2.new(1, -398, 0, 17)
+	furniture.Size = UDim2.fromOffset(142, 40)
+	furniture.Text = "FURNITURE"
+	furniture.TextSize = 15
+	furniture.Parent = header
+	Theme.button(furniture, "Selected")
 	local cargoPanel = frame(header, "Cargo", UDim2.new(1, -244, 0, 14), UDim2.fromOffset(184, 46), Theme.Colors.Inset)
 	Theme.panel(cargoPanel, true, 23)
 	label(cargoPanel, "FREE CARGO SPACE", UDim2.fromOffset(16, 4), UDim2.new(1, -24, 0, 14), 11, muted)
@@ -479,6 +490,7 @@ function BoatRefit.start()
 		-- Drop any scheduled restore; the menu is going away for good.
 		restoreToken += 1
 		placing = false
+		BoatFurnitureMenu.close()
 		if overlay.Visible or player:GetAttribute("BoatRefitOpen") then
 			overlay.Visible = false
 			player:SetAttribute("BoatRefitOpen", false)
@@ -524,6 +536,27 @@ function BoatRefit.start()
 		end)
 	end
 	close.Activated:Connect(closeRefit)
+	-- The furniture catalog takes the screen while the hull stays on the lift;
+	-- its back button brings the refit window up again.
+	furniture.Activated:Connect(function()
+		if not overlay.Visible or pending or not (snapshot and snapshot.Lifted) then
+			return
+		end
+		overlay.Visible = false
+		BoatFurnitureMenu.open(function()
+			if not player:GetAttribute("BoatRefitOpen") then
+				return
+			end
+			overlay.Visible = true
+			setStatus(HINT, muted)
+			render()
+			fetch()
+			window.Position = UDim2.new(0.5, 0, 1, 24)
+			TweenService
+				:Create(window, TweenInfo.new(0.25, Enum.EasingStyle.Back), { Position = UDim2.new(0.5, 0, 1, -16) })
+				:Play()
+		end)
+	end)
 	overlay.Activated:Connect(closeRefit)
 
 	-- Fitting a part hides the window while Inventory confirms the fitting, then
@@ -565,7 +598,7 @@ function BoatRefit.start()
 	UserInputService.InputBegan:Connect(function(input)
 		-- While a part waits for confirmation, Esc belongs to Inventory and
 		-- only cancels the placement.
-		if player:GetAttribute("RefitPending") ~= nil then
+		if player:GetAttribute("RefitPending") ~= nil or BoatFurnitureMenu.isOpen() then
 			return
 		end
 		if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB then

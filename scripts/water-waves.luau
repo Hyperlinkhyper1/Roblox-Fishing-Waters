@@ -41,8 +41,7 @@ function workspace:GetServerTimeNow()
 	return now
 end
 function workspace:Raycast(origin, direction, parameters)
-	rays += 1
-	assert(direction.Y < 0 and not parameters.IgnoreWater, "Water rays must include the surface")
+	assert(direction.Y < 0, "Part probes look down at the surface")
 	assert(table.find(parameters.FilterDescendantsInstances, localPlayer.Character), "Local character must be excluded")
 	assert(
 		table.find(parameters.FilterDescendantsInstances, otherPlayer.Character),
@@ -52,7 +51,23 @@ function workspace:Raycast(origin, direction, parameters)
 	if boats then
 		assert(table.find(parameters.FilterDescendantsInstances, boats), "Moving boats must not count as shoreline")
 	end
-	return { Material = if dry or origin.X < -1000 then Enum.Material.Sand else Enum.Material.Water }
+	assert(
+		table.find(parameters.FilterDescendantsInstances, workspace.Terrain),
+		"Terrain must come from voxels: a terrain ray builds chunk collision mid-frame"
+	)
+	return nil
+end
+Region3 = {
+	new = function(low, high)
+		return { low = low, high = high }
+	end,
+}
+-- Each wet probe reads one surface voxel; count those as the probes.
+function workspace.Terrain:ReadVoxels(region, resolution)
+	rays += 1
+	assert(resolution == 4 and region.high.Y - region.low.Y == 4, "Wet probes read one surface voxel")
+	local material = if dry or region.low.X < -1000 then Enum.Material.Sand else Enum.Material.Water
+	return { { { material } } }, { { { 1 } } }
 end
 local camera = { CFrame = CFrame.new(1500, 12, 0) }
 workspace.CurrentCamera = camera

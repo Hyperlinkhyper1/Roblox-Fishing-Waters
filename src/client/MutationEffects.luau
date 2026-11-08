@@ -7,6 +7,18 @@ local RunService = game:GetService("RunService")
 
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local MutationEffects = {}
 local CYCLE_SECONDS = 4
 local STEP_SECONDS = 1 / 20
@@ -108,7 +120,7 @@ function MutationEffects.start()
 		voids[model] = nil
 	end)
 	local elapsed = 0
-	RunService.RenderStepped:Connect(function(dt)
+	RunService.RenderStepped:Connect(profiled("MutationEffects", function(dt)
 		elapsed += dt
 		if elapsed < STEP_SECONDS then
 			return
@@ -148,7 +160,7 @@ function MutationEffects.start()
 				animateVoid(model, os.clock())
 			end
 		end
-	end)
+	end))
 end
 
 return MutationEffects

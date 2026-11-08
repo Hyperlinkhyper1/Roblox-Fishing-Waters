@@ -21,6 +21,8 @@ local RodSkins = require(ReplicatedStorage.Shared.RodSkins)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local RodUpgrades = require(ReplicatedStorage.Shared.RodUpgrades)
 local Seasons = require(ReplicatedStorage.Shared.Seasons)
+local Bait = require(ReplicatedStorage.Shared.Bait)
+local FishingService = require(script.Parent.FishingService)
 
 local CatchService = {}
 local MAX_CAST_DISTANCE = 64
@@ -138,7 +140,15 @@ local function cast(player: Player, target: any, heldSeconds: any)
 		profile and profile.EquippedRodSkin,
 		profile and BoatData.equippedRodWear(profile)
 	)
+	boosts.rodQuality = FishCatch.rodQuality(boosts)
 	boosts = BobberSkins.apply(boosts, profile and profile.EquippedBobberSkin)
+	-- The bait on the hook at the cast is the one used up when this catch is reeled in.
+	local baitId = profile.EquippedBait
+	if baitId and (profile.Bait[baitId] or 0) > 0 then
+		boosts = Bait.apply(boosts, baitId)
+	else
+		baitId = nil
+	end
 	local perfect = charge ~= nil
 		and charge.tool == tool
 		and CastTiming.validRelease(heldSeconds, os.clock() - charge.startedAt)
@@ -146,7 +156,8 @@ local function cast(player: Player, target: any, heldSeconds: any)
 	if perfect then
 		boosts.luck += CastTiming.PerfectLuck
 	end
-	local state = { tool = tool, target = surface, phase = "Waiting", boosts = boosts, perfectThrow = perfect }
+	local state =
+		{ tool = tool, target = surface, phase = "Waiting", boosts = boosts, perfectThrow = perfect, bait = baitId }
 	casts[player] = state
 	tool:SetAttribute("CastTarget", surface)
 	tool:SetAttribute("CastAt", workspace:GetServerTimeNow())
@@ -192,6 +203,33 @@ local function cast(player: Player, target: any, heldSeconds: any)
 	end)
 end
 
+-- After a saved catch: use up the bait it was hooked with and, rarely, hand
+-- over a bait crate that came up with it.
+local function settleBait(player: Player, baitId: string?)
+	local foundCrate = random:NextNumber() < Bait.FISH_UP_CHANCE
+	if not baitId and not foundCrate then
+		return
+	end
+	local ranOut = false
+	local ok = BoatService.updateProgress(player, function(current)
+		if baitId and BoatData.consumeBait(current, baitId) == "Consumed" then
+			ranOut = (current.Bait[baitId] or 0) == 0
+		end
+		if foundCrate then
+			current.BaitCrates += 1
+		end
+	end)
+	if not ok then
+		return
+	end
+	if foundCrate then
+		FishingService.notify(player, "A Bait Crate came up with your catch! Open it from your equipment bag.")
+	end
+	if ranOut then
+		FishingService.notify(player, "You're out of " .. Bait.Types[baitId :: string].Name .. " bait.")
+	end
+end
+
 local function award(player: Player, roll)
 	local saved = false
 	local autoStored = false
@@ -220,7 +258,11 @@ local function award(player: Player, roll)
 		BackpackStored = saved and destination == "Backpack",
 		Stored = saved and destination == "Hand",
 		Count = count,
+		Bait = if saved then roll.Bait else nil,
 	})
+	if saved then
+		task.spawn(settleBait, player, roll.Bait)
+	end
 end
 
 local function reel(player: Player, landed: any, noMistakes: any)
@@ -234,6 +276,7 @@ local function reel(player: Player, landed: any, noMistakes: any)
 		return
 	end
 	local roll = state.roll
+	local hookedAt = state.target
 	local reelBoost = state.boosts.reel
 	local elapsed = os.clock() - state.hookedAt
 	clear(player)
@@ -247,6 +290,20 @@ local function reel(player: Player, landed: any, noMistakes: any)
 	end
 	-- Reeling runs on the client; only the server-validated throw can qualify it.
 	roll.PerfectCatch = state.perfectThrow == true and noMistakes == true
+	roll.Bait = state.bait
+	-- Every client throws a look-alike of the fish behind this angler (CatchFling).
+	-- Visual only, so it goes out as soon as the fish lands rather than after saving.
+	update:FireAllClients("Fling", {
+		UserId = player.UserId,
+		-- The water spot it was hooked at, where it leaps out toward the angler.
+		From = hookedAt,
+		FishId = roll.FishId,
+		Kg = roll.Kg,
+		Size = roll.Size,
+		Mutation = roll.Traits.Mutation,
+		NeonColor = roll.Traits.NeonColor,
+		Corruptions = roll.Traits.Corruptions,
+	})
 	task.spawn(award, player, roll)
 end
 

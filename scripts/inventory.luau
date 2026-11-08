@@ -51,6 +51,25 @@ check(inHand.Hand.Locked and #inHand.Holds.TestBoat == 1, "Taking in hand preser
 check(not move(inHand, "Hand", "Hand", "Release"), "Held favorite cannot be released")
 local sold, soldCount = Data.sellToCove(inHand, 1, 10, true)
 check(soldCount == 0 and sold.Hand, "Held favorite cannot be sold")
+do
+	-- "Sell all" keeps favorites however the lock is stored (backpack entry or the fish record itself).
+	local stock = Data.decode(nil)
+	stock.Backpack = { item("Cod", 1, 30, true), item("Cod", 2, 40), item("Cod", 3, 50) }
+	stock.Backpack[3].Fish.Locked = true
+	local kept, keptCount, keptCash = Data.sellToCove(stock, 1, 10, false)
+	check(keptCount == 1 and keptCash == 40 and #kept.Backpack == 2, "Sell all only sells fish that are not favorites")
+	check(kept.Backpack[1].Locked and kept.Backpack[2].Fish.Locked, "Sell all leaves every favorite in the backpack")
+	check(Data.deliverFish(stock, function(record) return record.Value ~= 40 end) == nil, "Quest delivery skips favorites in the backpack")
+	-- Shop customers only buy from the freezer: stocking skips favorites, and a favorite there still cannot be bought.
+	local frozen, frozenCount = Data.stockFreezer(stock, false)
+	check(frozenCount == 1 and #frozen.Freezer == 1 and frozen.Freezer[1].Value == 40 and #frozen.Backpack == 2, "Freezer stocking leaves every favorite behind")
+	local shelf = Data.decode(nil)
+	shelf.Freezer = { fish("Cod", 7, 25), fish("Cod", 8, 35) }
+	shelf.Freezer[2].Locked = true
+	check(Data.sellFrozen(shelf, shelf.Freezer[2]) == nil, "Customers cannot buy a favorite")
+	local bought, paid = Data.sellFrozen(shelf, shelf.Freezer[1])
+	check(bought and paid == 25 and #bought.Freezer == 1 and bought.Freezer[1].Locked, "Customers still buy fish that are not favorites")
+end
 local delivered, record = Data.deliverFish(inHand, function() return true end)
 check(record and record.CaughtAt ~= inHand.Hand.CaughtAt and delivered.Hand.Locked, "Delivery skips held favorites")
 local stocked, count = Data.stockFreezer({ Hand = inHand.Hand })
@@ -274,6 +293,8 @@ panel.ViewFish.Activated:Fire()
 check(panel.EmptyInventory.Visible, "Items view stays empty when only gear is carried")
 panel.ViewFish.Activated:Fire()
 local first = panel.InventoryItems:GetChildren()[1]
+check(first.FishName.RichText and first.FishName.Text == Catalog.Fish.Cod.Name,
+	"Normal fish cards show the plain species name in a RichText label")
 first.Activated:Fire()
 check(panel.ActionFavorite.Visible and panel.ActionHand.Visible, "Card selection exposes touch-friendly fish actions")
 panel.ActionFavorite.Activated:Fire()

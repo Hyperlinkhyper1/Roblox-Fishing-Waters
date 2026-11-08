@@ -17,6 +17,18 @@ local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
+
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
 local CargoHold = {}
 local rgb = Color3.fromRGB
 local INK, HULL, EDGE = rgb(18, 19, 23), rgb(5, 6, 8), rgb(48, 49, 55)
@@ -102,23 +114,23 @@ end
 -- Small pictograms are drawn as strokes on a colored circular badge. They do
 -- not depend on platform-specific emoji or uploaded image assets.
 local MUTATION_ICONS = {
-	Corrupted = { rgb(180, 55, 77), { {2,2,10,10}, {10,2,2,10}, {6,2,6,10} } },
-	VoidTouched = { rgb(95, 61, 151), { {2,6,4,2}, {4,2,8,2}, {8,2,10,6}, {10,6,8,10}, {8,10,4,10}, {4,10,2,6}, {6,4,6,8} } },
-	Windy = { rgb(55, 151, 170), { {1,4,9,4}, {9,4,10,2}, {1,7,10,7}, {10,7,9,9} } },
-	Ascended = { rgb(190, 151, 57), { {2,5,6,1}, {6,1,10,5}, {6,1,6,10}, {2,10,10,10} } },
-	Floral = { rgb(205, 92, 146), { {6,1,6,11}, {1,6,11,6}, {3,3,9,9}, {9,3,3,9} } },
-	Snowy = { rgb(72, 155, 199), { {6,1,6,11}, {1,3,11,9}, {1,9,11,3}, {4,2,6,4}, {8,2,6,4} } },
-	Tryhard = { rgb(196, 91, 51), { {2,2,10,10}, {10,2,2,10}, {1,3,4,3}, {8,3,11,3}, {1,10,3,10}, {9,10,11,10} } },
-	JackOFish = { rgb(227, 112, 25), { {3,3,9,3}, {9,3,11,6}, {11,6,9,10}, {9,10,3,10}, {3,10,1,6}, {1,6,3,3}, {6,3,7,1}, {3,6,4,6}, {8,6,9,6}, {4,8,8,8} } },
-	JacksPet = { rgb(117, 77, 159), { {2,5,3,9}, {3,9,9,9}, {9,9,10,5}, {10,5,8,2}, {8,2,6,4}, {6,4,4,2}, {4,2,2,5}, {4,6,4,6}, {8,6,8,6} } },
-	ZeusStruck = { rgb(194, 154, 29), { {7,1,3,6}, {3,6,6,6}, {6,6,5,11}, {5,11,10,5}, {10,5,7,5}, {7,5,7,1} } },
-	Nightmare = { rgb(151, 47, 73), { {1,6,4,3}, {4,3,8,3}, {8,3,11,6}, {11,6,8,9}, {8,9,4,9}, {4,9,1,6}, {6,4,6,8} } },
-	Obsidian = { rgb(88, 70, 109), { {6,1,10,4}, {10,4,9,9}, {9,9,6,11}, {6,11,2,8}, {2,8,2,4}, {2,4,6,1}, {6,1,6,11}, {2,4,10,4} } },
-	Gusty = { rgb(57, 160, 125), { {1,3,8,3}, {8,3,10,5}, {10,5,8,7}, {8,7,5,7}, {1,6,6,6}, {1,9,7,9} } },
-	Astral = { rgb(185, 139, 47), { {6,1,6,11}, {1,6,11,6}, {3,3,9,9}, {9,3,3,9} } },
-	Rainbow = { rgb(109, 97, 179), { {1,9,2,5}, {2,5,5,2}, {5,2,8,2}, {8,2,11,5}, {11,5,11,9}, {3,9,4,6}, {4,6,6,5}, {6,5,8,6}, {8,6,9,9} } },
-	Neon = { rgb(40, 164, 185), { {1,8,3,8}, {3,8,4,3}, {4,3,6,3}, {6,3,6,9}, {6,9,8,9}, {8,9,9,4}, {9,4,11,4} } },
-	Albino = { rgb(151, 164, 181), { {1,6,4,3}, {4,3,8,3}, {8,3,11,6}, {11,6,8,9}, {8,9,4,9}, {4,9,1,6}, {5,6,5,6} } },
+	Corrupted = { { {2,2,10,10}, {10,2,2,10}, {6,2,6,10} } },
+	VoidTouched = { { {2,6,4,2}, {4,2,8,2}, {8,2,10,6}, {10,6,8,10}, {8,10,4,10}, {4,10,2,6}, {6,4,6,8} } },
+	Windy = { { {1,4,9,4}, {9,4,10,2}, {1,7,10,7}, {10,7,9,9} } },
+	Ascended = { { {2,5,6,1}, {6,1,10,5}, {6,1,6,10}, {2,10,10,10} } },
+	Floral = { { {6,1,6,11}, {1,6,11,6}, {3,3,9,9}, {9,3,3,9} } },
+	Snowy = { { {6,1,6,11}, {1,3,11,9}, {1,9,11,3}, {4,2,6,4}, {8,2,6,4} } },
+	Tryhard = { { {2,2,10,10}, {10,2,2,10}, {1,3,4,3}, {8,3,11,3}, {1,10,3,10}, {9,10,11,10} } },
+	JackOFish = { { {3,3,9,3}, {9,3,11,6}, {11,6,9,10}, {9,10,3,10}, {3,10,1,6}, {1,6,3,3}, {6,3,7,1}, {3,6,4,6}, {8,6,9,6}, {4,8,8,8} } },
+	JacksPet = { { {2,5,3,9}, {3,9,9,9}, {9,9,10,5}, {10,5,8,2}, {8,2,6,4}, {6,4,4,2}, {4,2,2,5}, {4,6,4,6}, {8,6,8,6} } },
+	ZeusStruck = { { {7,1,3,6}, {3,6,6,6}, {6,6,5,11}, {5,11,10,5}, {10,5,7,5}, {7,5,7,1} } },
+	Nightmare = { { {1,6,4,3}, {4,3,8,3}, {8,3,11,6}, {11,6,8,9}, {8,9,4,9}, {4,9,1,6}, {6,4,6,8} } },
+	Obsidian = { { {6,1,10,4}, {10,4,9,9}, {9,9,6,11}, {6,11,2,8}, {2,8,2,4}, {2,4,6,1}, {6,1,6,11}, {2,4,10,4} } },
+	Gusty = { { {1,3,8,3}, {8,3,10,5}, {10,5,8,7}, {8,7,5,7}, {1,6,6,6}, {1,9,7,9} } },
+	Astral = { { {6,1,6,11}, {1,6,11,6}, {3,3,9,9}, {9,3,3,9} } },
+	Rainbow = { { {1,9,2,5}, {2,5,5,2}, {5,2,8,2}, {8,2,11,5}, {11,5,11,9}, {3,9,4,6}, {4,6,6,5}, {6,5,8,6}, {8,6,9,9} } },
+	Neon = { { {1,8,3,8}, {3,8,4,3}, {4,3,6,3}, {6,3,6,9}, {6,9,8,9}, {8,9,9,4}, {9,4,11,4} } },
+	Albino = { { {1,6,4,3}, {4,3,8,3}, {8,3,11,6}, {11,6,8,9}, {8,9,4,9}, {4,9,1,6}, {5,6,5,6} } },
 }
 
 local function mutationBadge(parent: Instance, record)
@@ -127,8 +139,10 @@ local function mutationBadge(parent: Instance, record)
 	end
 	local index = 0
 	for name in string.gmatch(record.Mutation, "[^+]+") do
-		local style = MUTATION_ICONS[name] or { MUTED, { {2,6,10,6}, {6,2,6,10} } }
-		local color = style[1]
+		-- Badge colours are shared with the coloured mutation names (FishMutations.Colors).
+		local strokes = (MUTATION_ICONS[name] or { { {2,6,10,6}, {6,2,6,10} } })[1]
+		local base = FishMutations.Colors[name]
+		local color = if base then rgb(base[1], base[2], base[3]) else MUTED
 		local neon = name == "Neon" and FishMutations.NeonColors[record.NeonColor or ""]
 		if neon then
 			color = rgb(neon[1], neon[2], neon[3])
@@ -147,15 +161,15 @@ local function mutationBadge(parent: Instance, record)
 			ZIndex = 4,
 		})
 		round(badge)
-		for lineIndex, line in style[2] do
+		for lineIndex, line in strokes do
 			local dx, dy = line[3] - line[1], line[4] - line[2]
-			local rainbowColors = { rgb(255, 116, 125), rgb(255, 216, 111), rgb(143, 244, 177), rgb(150, 205, 255) }
+			local rainbow = FishMutations.RainbowColors[(lineIndex - 1) % #FishMutations.RainbowColors + 1]
 			local mark = make("Frame", badge, {
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.fromOffset(2 + (line[1] + line[3]) / 2, 2 + (line[2] + line[4]) / 2),
 				Size = UDim2.fromOffset(math.max(1.5, math.sqrt(dx * dx + dy * dy)), 1.5),
 				Rotation = math.deg(math.atan2(dy, dx)),
-				BackgroundColor3 = if name == "Rainbow" then rainbowColors[(lineIndex - 1) % #rainbowColors + 1] else WHITE,
+				BackgroundColor3 = if name == "Rainbow" then rgb(rainbow[1], rainbow[2], rainbow[3]) else WHITE,
 				BorderSizePixel = 0,
 				ZIndex = 5,
 			})
@@ -163,6 +177,14 @@ local function mutationBadge(parent: Instance, record)
 		end
 		index += 1
 	end
+end
+
+-- RichText card title: the coloured mutation label before the plain name.
+local function fishTitle(entry): string
+	local name = string.gsub(string.gsub(string.gsub(entry.Name, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+	local fish = entry.Item and entry.Item.Fish
+	local mutation = if fish then FishMutations.richLabel(fish.Mutation, fish.NeonColor) else ""
+	return if mutation ~= "" then mutation .. " " .. name else name
 end
 
 -- Fit every bounds corner after rolling the camera, including perspective depth.
@@ -311,7 +333,7 @@ function CargoHold.start()
 	text(panel, "Select a card for actions.\nRight-click a fish to favorite it.", { Position = UDim2.fromOffset(1026, 230),
 		Size = UDim2.fromOffset(134, 66), TextSize = 12, TextColor3 = MUTED, TextWrapped = true })
 	local detail = text(panel, "Select an item", { Name = "SelectedItem", Position = UDim2.fromOffset(LEFT, 404),
-		Size = UDim2.fromOffset(CONTENT, 24), TextSize = 15, TextTruncate = Enum.TextTruncate.AtEnd })
+		Size = UDim2.fromOffset(CONTENT, 24), TextSize = 15, RichText = true, TextTruncate = Enum.TextTruncate.AtEnd })
 	local actions = {}
 	for index, spec in { { "Hand", "Take in hand", CYAN }, { "Backpack", "To backpack", CYAN },
 		{ "Boat", "To boat", VIOLET }, { "Favorite", "Favorite", GOLD }, { "Release", "Release", RED } } do
@@ -459,9 +481,13 @@ function CargoHold.start()
 				make("UIGradient", tile, { Rotation = 90, Color = ColorSequence.new(INK, tint:Lerp(HULL, 0.6)) })
 				make("Frame", tile, { Position = UDim2.new(0, 0, 1, -2), Size = UDim2.new(1, 0, 0, 2),
 					BackgroundColor3 = tint, BorderSizePixel = 0, ZIndex = 3 })
-				text(tile, entry.Name, { Position = UDim2.fromOffset(4, 44), Size = UDim2.fromOffset(CARD - 8, 32),
-					TextSize = 13, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Center,
+				-- "Corrupted Tiger Trout": each mutation word in its own colour; long
+				-- stacked mutations shrink to fit the card instead of spilling out.
+				local nameLabel = text(tile, fishTitle(entry), { Name = "FishName", Position = UDim2.fromOffset(4, 44),
+					Size = UDim2.fromOffset(CARD - 8, 32), RichText = true, TextScaled = true,
+					TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Center,
 					TextStrokeTransparency = 0.3, ZIndex = 3 })
+				make("UITextSizeConstraint", nameLabel, { MaxTextSize = 13, MinTextSize = 7 })
 				text(tile, if fish then FishCatch.formatKg(fish.Kg) else "Fitted", {
 					Position = UDim2.fromOffset(4, CARD_HEIGHT - 19), Size = UDim2.fromOffset(CARD - 8, 16),
 					TextSize = 11, TextColor3 = CREAM, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 3 })
@@ -505,7 +531,7 @@ function CargoHold.start()
 		end
 		fitPart.Visible, cancelPart.Visible = reserved, reserved
 		detail.Text = if reserved then "Reserved boat fitting · confirm to use cargo space."
-			elseif fish then string.format("%s · %s · %s · %d space · %s%s", selected.Name,
+			elseif fish then string.format("%s · %s · %s · %d space · %s%s", fishTitle(selected),
 				FishCatch.formatKg(fish.Kg), money(fish.Value), Cargo.space(selected.Item, Catalog.Fish),
 				selected.Source, if selected.Locked then " · Favorite" else "")
 			elseif selected then selected.Name .. " · Installed boat fitting"
@@ -592,7 +618,7 @@ function CargoHold.start()
 	player:GetAttributeChangedSignal("OwnsAutoStore"):Connect(function() render() end)
 	player:GetAttributeChangedSignal("OwnsBlackHoleBackpack"):Connect(function() render() end)
 	local nextCheck = 0
-	RunService.Heartbeat:Connect(function()
+	RunService.Heartbeat:Connect(profiled("CargoHold", function()
 		if os.clock() < nextCheck then return end
 		nextCheck = os.clock() + 0.25
 		local id = player:GetAttribute("ActiveBoatId")
@@ -600,10 +626,10 @@ function CargoHold.start()
 		local model = if type(id) == "string" and boats then boats:FindFirstChild(id .. "_" .. player.UserId) else nil
 		local now = Aboard(player.Character, model)
 		if now ~= aboard then aboard = now render() elseif open then render() end
-	end)
-	RunService.RenderStepped:Connect(function()
+	end))
+	RunService.RenderStepped:Connect(profiled("CargoHold/2", function()
 		if open then updateLayout() end
-	end)
+	end))
 	update.OnClientEvent:Connect(applyState)
 	local ok, response = pcall(request.InvokeServer, request, "Get")
 	if ok and type(response) == "table" then applyState(response.State) else render() end

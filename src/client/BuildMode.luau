@@ -281,7 +281,8 @@ function BuildMode.start()
 	local editRack = button(actions, "Edit rack", { Name = "EditRack", LayoutOrder = 0, Size = UDim2.fromOffset(110, 30) })
 	local rackEditor = make("Frame", gui, {
 		Name = "RackEditor", Active = true, AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -178), Size = UDim2.new(1, -24, 0, 164), Visible = false,
+		-- Sits above the Furniture/Decorate/Build tabs (StructureEditor, bottom edge at -210, 34 tall).
+		Position = UDim2.new(0.5, 0, 1, -252), Size = UDim2.new(1, -24, 0, 164), Visible = false,
 	})
 	make("UISizeConstraint", rackEditor, { MaxSize = Vector2.new(520, 164) })
 	Theme.glassWindow(rackEditor)

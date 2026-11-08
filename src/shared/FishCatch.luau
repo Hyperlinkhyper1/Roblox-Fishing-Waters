@@ -4,6 +4,8 @@
 local FishCatch = {}
 
 FishCatch.JUNK_CHANCE = 0.06 -- 2% each for the branch, boot and seaweed, in every stocked pool.
+-- A fully upgraded rod cuts that by this fraction (6% -> 1.2%).
+FishCatch.JUNK_CUT_AT_BEST_ROD = 0.8
 FishCatch.BIG_CHANCE = 0.06
 FishCatch.HUGE_CHANCE = 0.012
 FishCatch.START_PROGRESS = 0.3
@@ -122,7 +124,28 @@ end
 -- id; DashboardService fills this); one that is off or missing never bites.
 FishCatch.limited = {} :: { [string]: number }
 
-function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?): string
+-- How good the rod is, 0 (stock rod) to 1 (every Finn upgrade maxed), from the
+-- rod's boosts (RodUpgrades.boosts plus RodSkins.apply). Each stat counts as a
+-- share of its maxed-upgrade bonus, so a strong skin raises quality too.
+local ROD_STAT_MAX = { reel = 0.7, handling = 0.7, size = 1.5, luck = 0.3 }
+function FishCatch.rodQuality(boosts: any?): number
+	if type(boosts) ~= "table" then
+		return 0
+	end
+	local total = 0
+	total += math.clamp(((boosts.reel or 1) - 1) / ROD_STAT_MAX.reel, 0, 1)
+	total += math.clamp(((boosts.handling or 1) - 1) / ROD_STAT_MAX.handling, 0, 1)
+	total += math.clamp(((boosts.size or 1) - 1) / ROD_STAT_MAX.size, 0, 1)
+	total += math.clamp((boosts.luck or 0) / ROD_STAT_MAX.luck, 0, 1)
+	return total / 4
+end
+
+-- Chance a stocked pool bites with junk for a rod of `quality` (0..1).
+function FishCatch.junkChance(quality: number?): number
+	return FishCatch.JUNK_CHANCE * (1 - FishCatch.JUNK_CUT_AT_BEST_ROD * math.clamp(quality or 0, 0, 1))
+end
+
+function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?, rodQuality: number?): string
 	local bias = math.clamp(luck or 0, 0, 0.9)
 	local regular = pool.Fish
 	for _, id in pool.Fish do
@@ -146,12 +169,13 @@ function FishCatch.pickSpecies(pool, species, rng: () -> number, luck: number?):
 	local pick = rng()
 	if pool.Junk and #pool.Junk > 0 then
 		-- Out of season, junk is all that bites.
-		local junkChance = if #regular == 0 then 1 else FishCatch.JUNK_CHANCE
+		-- Better rods hook less junk.
+		local junkChance = if #regular == 0 then 1 else FishCatch.junkChance(rodQuality)
 		if pick < junkChance then
 			return pool.Junk[math.floor(pick / junkChance * #pool.Junk) + 1]
 		end
 		-- Keep the existing relative fish odds within the remaining catch chance.
-		pick = (pick - FishCatch.JUNK_CHANCE) / (1 - FishCatch.JUNK_CHANCE)
+		pick = (pick - junkChance) / (1 - junkChance)
 	end
 	local total = 0
 	for _, id in regular do
@@ -216,7 +240,10 @@ end
 
 -- `boosts` are the angler's rod upgrades (RodUpgrades.boosts); nil rolls a plain rod.
 function FishCatch.roll(pool, species, rarities, rng: () -> number, boosts: any?): Roll
-	local id = FishCatch.pickSpecies(pool, species, rng, boosts and boosts.luck)
+	-- CatchService stores the rod's quality before cast bonuses (perfect throw,
+	-- bobber) so only the rod itself cuts junk; otherwise derive it here.
+	local quality = if boosts then boosts.rodQuality or FishCatch.rodQuality(boosts) else 0
+	local id = FishCatch.pickSpecies(pool, species, rng, boosts and boosts.luck, quality)
 	local fish = species[id]
 	local kg, size = FishCatch.rollWeight(fish, rng, boosts and boosts.size)
 	local relative = kg / fish.AverageKg
@@ -233,12 +260,16 @@ end
 -- Reel minigame tuning. Progress starts at START_PROGRESS; reaching 1 lands the
 -- fish and reaching 0 lets it escape. `reelBoost` (the Reel Speed upgrade)
 -- and handlingBoost scale progress per green hit; higher Handling needs fewer hits.
+-- Handling also widens the green zone (capped so the zone still fits ahead of
+-- the needle, which ReelMinigame starts at 0.3 of the arc or later).
+FishCatch.MAX_ZONE_SIZE = 0.5
 function FishCatch.tuning(difficulty: number, reelBoost: number?, handlingBoost: number?)
 	local d = math.clamp(difficulty, 0, 1)
-	local boost = math.max(1, reelBoost or 1) * math.max(0.1, handlingBoost or 1)
+	local handling = math.max(0.1, handlingBoost or 1)
+	local boost = math.max(1, reelBoost or 1) * handling
 	return {
 		needleSpeed = lerp(0.55, 1.65, d), -- arc lengths per second
-		zoneSize = lerp(0.3, 0.09, d), -- fraction of the arc
+		zoneSize = math.min(lerp(0.3, 0.09, d) * handling, FishCatch.MAX_ZONE_SIZE), -- fraction of the arc
 		zoneDrift = if d > 0.45 then lerp(0, 0.38, (d - 0.45) / 0.55) else 0,
 		erratic = d > 0.72,
 		gain = lerp(0.25, 0.12, d) * boost,
@@ -263,6 +294,7 @@ local titles = {
 	Exotic = "SHIMMERING WATER",
 	Divine = "RADIANT WATER",
 	Limited = "UNHEARD-OF WATER",
+	Admin = "WRONG WATER",
 }
 function FishCatch.title(fish): string
 	return titles[fish.Rarity] or "DISTURBED WATER"

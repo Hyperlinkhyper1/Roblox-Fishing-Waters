@@ -65,6 +65,12 @@ local now, waveScale = 0, 1
 function workspace:GetServerTimeNow()
 	return now
 end
+function workspace:BulkMoveTo(parts, frames)
+	assert(#parts == #frames, "BulkMoveTo needs one frame per part")
+	for index, piece in parts do
+		piece.CFrame = frames[index]
+	end
+end
 local ground, raycasts
 raycasts = 0
 function workspace:Raycast(origin, direction, parameters)

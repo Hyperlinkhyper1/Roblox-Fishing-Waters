@@ -707,7 +707,7 @@ Catalog.Mutations.Albino = { Name = "Albino", RarityMultiplier = 100 }
 profile.Angler = Data.recordCatch(profile.Angler, "Trout", "Albino", 3.25, 48, 100, Catalog.Fish, Catalog.Mutations)
 open("Bestiary")
 open("Bestiary")
-check(contains("3.25 kg") and contains("Albino ×1"), "Bestiary renders actual weight and mutations")
+check(contains("3.25 kg") and contains('<font color="#5B626D">Albino</font> ×1'), "Bestiary renders actual weight and mutations in their own (paper-dark) colour")
 local fishImage = false
 for _, item in content:GetDescendants() do
 	if item.ClassName == "ImageLabel" and item.Image == "mock-fish-image" then

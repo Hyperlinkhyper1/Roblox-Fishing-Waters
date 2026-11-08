@@ -6,6 +6,18 @@ local Cargo = require(ReplicatedStorage.Shared.Cargo)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local BoatSpray = {}
 local started = false
 local MAX_DISTANCE = 280
@@ -75,7 +87,7 @@ function BoatSpray.start()
 	local records = {}
 	local scan = 0.3
 	local elapsed = 0
-	RunService.Heartbeat:Connect(function(dt)
+	RunService.Heartbeat:Connect(profiled("BoatSpray", function(dt)
 		elapsed += dt
 		if elapsed < UPDATE_INTERVAL then return end
 		-- Emitters simulate continuously; only their settings need a 20 Hz update.
@@ -155,7 +167,7 @@ function BoatSpray.start()
 			record.nearby = nearby == true
 			if changed then record.strength = strength end
 		end
-	end)
+	end))
 end
 
 return BoatSpray

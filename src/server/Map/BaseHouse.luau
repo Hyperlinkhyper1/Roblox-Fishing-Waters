@@ -8,6 +8,7 @@ local BaseGrid = require(game:GetService("ReplicatedStorage").Shared.BaseGrid)
 local Props = require(script.Parent.Props)
 local FishFreezer = require(script.Parent.FishFreezer)
 local ShopDesk = require(script.Parent.ShopDesk)
+local OfficeDesk = require(script.Parent.OfficeDesk)
 
 local BaseHouse = {}
 local VERSION = 13
@@ -114,6 +115,271 @@ local function ensureLights(house: Model, frame: CFrame)
 			glow.Parent = bulb
 		end
 	end
+end
+
+-- Exterior dressing on the house shell: stone base course and corner quoins,
+-- flower boxes, shutters and folded-back doors at the rear, a tiled porch
+-- canopy, lanterns, planters, gable vents, downpipes and a kitchen chimney.
+-- Everything is decorative (no collision or queries), so walking routes and
+-- NPC navigation are unchanged. Saved houses receive it in place, versioned.
+-- Part names avoid Wall/Window/Door/Roof/Floor so the building editor does not
+-- capture them as structural pieces.
+local EXTERIOR_VERSION = 1
+local FLOWER_COLORS = { rgb(222, 72, 86), rgb(250, 206, 84), rgb(244, 242, 236), rgb(188, 110, 214), rgb(250, 140, 60) }
+
+local function ensureExterior(house: Model, frame: CFrame, accent: Color3)
+	local existing = house:FindFirstChild("Exterior")
+	if existing and existing:GetAttribute("LayoutVersion") == EXTERIOR_VERSION then
+		return
+	end
+	if existing then
+		existing:Destroy()
+	end
+	local exterior = model(house, "Exterior")
+	exterior:SetAttribute("LayoutVersion", EXTERIOR_VERSION)
+	local hx, hz = BaseGrid.HALF_WIDTH, BaseGrid.HALF_LENGTH
+	local face = 0.325 -- half the shell's wall thickness
+	local plinthOut = 0.41 * SCALE_X -- outer face of the side plinths
+	local quoinColor = rgb(186, 174, 147)
+	local leafGreen, darkLeaf = rgb(76, 122, 62), rgb(58, 96, 50)
+
+	local function decorate(item: Instance)
+		for _, piece in if item:IsA("BasePart") then { item } else item:GetDescendants() do
+			if piece:IsA("BasePart") then
+				piece.CanCollide, piece.CanQuery, piece.CanTouch = false, false, false
+			end
+		end
+	end
+	-- `at` is a house-local frame; returns the placed decorative part.
+	local function piece(group: Instance, name: string, size: Vector3, at: CFrame, color: Color3, material: Enum.Material): Part
+		local result = Props.part(group, size, frame * at, color, material)
+		result.Name = name
+		decorate(result)
+		return result
+	end
+	local function glow(part: BasePart, range: number)
+		local light = Instance.new("PointLight")
+		light.Name = "LanternLight"
+		light.Color = rgb(255, 214, 150)
+		light.Range = range
+		light.Brightness = 0.8
+		light.Shadows = false
+		light.Parent = part
+	end
+	-- Each end wall as a frame on its outer face, local +Z pointing outdoors.
+	-- `u` runs along the wall; on the rear wall u = -x.
+	local function endFace(s: number): CFrame
+		return CFrame.new(0, 0, s * (hz + face)) * (if s > 0 then CFrame.identity else CFrame.Angles(0, math.pi, 0))
+	end
+	local function sideFace(sx: number): CFrame
+		return CFrame.new(sx * (hx + face), 0, 0) * CFrame.Angles(0, sx * math.pi / 2, 0)
+	end
+
+	local front, rear = endFace(1), endFace(-1)
+	local frontDoorHalf, rearDoorHalf = 10.5 / 2, 3 * SCALE_X
+	local rearDoorX = -BaseGrid.CELL_SIZE / 2
+	local windowX = 13 * SCALE_X
+	local walls = {
+		{ s = 1, at = front, doorX = 0, doorHalf = frontDoorHalf, windowHalf = 5 * SCALE_X, bottom = 3 },
+		{ s = -1, at = rear, doorX = rearDoorX, doorHalf = rearDoorHalf, windowHalf = 3.5 * SCALE_X, bottom = 4 },
+	}
+
+	-- Stone base course along both end walls, broken by the doorways and
+	-- meeting the side plinths at the corners.
+	local course = model(exterior, "BaseCourse")
+	for _, spec in walls do
+		local doorU = spec.s * spec.doorX
+		local doorLow, doorHigh = doorU - spec.doorHalf - 0.4, doorU + spec.doorHalf + 0.4
+		for _, span in { { -(hx + plinthOut), doorLow }, { doorHigh, hx + plinthOut } } do
+			local length = span[2] - span[1]
+			piece(course, "StoneCourse", Vector3.new(length, 0.8, 0.2), spec.at * CFrame.new((span[1] + span[2]) / 2, 0.4, 0.1), STONE, M.Slate)
+		end
+	end
+
+	-- Alternating long and short quoin stones wrapping all four corners.
+	local quoins = model(exterior, "Quoins")
+	for _, sx in { -1, 1 } do
+		for _, s in { -1, 1 } do
+			local endAt, sideAt = endFace(s), sideFace(sx)
+			-- u of this corner's edge on each face.
+			local endEdge, sideEdge = s * sx * (hx + face + 0.14), -sx * s * (hz + face)
+			for row = 0, 5 do
+				local y = 1.5 + row * 1.55
+				local endLength = if row % 2 == 0 then 1.7 else 1
+				local sideLength = if row % 2 == 0 then 1 else 1.7
+				local endDir, sideDir = -math.sign(endEdge), -math.sign(sideEdge)
+				piece(quoins, "Quoin", Vector3.new(endLength, 1.35, 0.14), endAt * CFrame.new(endEdge + endDir * endLength / 2, y, 0.07), quoinColor, M.Slate)
+				piece(quoins, "Quoin", Vector3.new(sideLength, 1.35, 0.14), sideAt * CFrame.new(sideEdge + sideDir * sideLength / 2, y, 0.07), quoinColor, M.Slate)
+			end
+		end
+	end
+
+	-- Flower boxes on brackets below every window sill.
+	local boxes = model(exterior, "FlowerBoxes")
+	local flowerIndex = 0
+	for _, spec in walls do
+		for _, wx in { -windowX, windowX } do
+			local u = spec.s * wx
+			local width = 2 * spec.windowHalf - 0.8
+			local top = spec.bottom - 0.24
+			local box = model(boxes, "FlowerBox")
+			piece(box, "Planter", Vector3.new(width, 0.75, 0.85), spec.at * CFrame.new(u, top - 0.375, 0.75), WOOD, M.WoodPlanks)
+			piece(box, "PlanterTrim", Vector3.new(width + 0.14, 0.12, 0.95), spec.at * CFrame.new(u, top - 0.02, 0.75), accent, M.Wood)
+			piece(box, "Foliage", Vector3.new(width - 0.3, 0.42, 0.66), spec.at * CFrame.new(u, top + 0.17, 0.78), leafGreen, M.Grass)
+			for _, side in { -1, 1 } do
+				piece(box, "PlanterBracket", Vector3.new(0.2, 0.55, 0.6), spec.at * CFrame.new(u + side * (width / 2 - 0.8), top - 1.0, 0.32), DARK_WOOD, M.Wood)
+			end
+			local count = math.max(3, math.floor(width / 1.15))
+			for index = 1, count do
+				flowerIndex += 1
+				local bloom = piece(
+					box,
+					"Bloom",
+					Vector3.new(0.42, 0.42, 0.42),
+					spec.at * CFrame.new(u - width / 2 + (index - 0.5) * width / count, top + 0.45 + (index % 2) * 0.08, 0.7 + (index % 2) * 0.16),
+					FLOWER_COLORS[(flowerIndex - 1) % #FLOWER_COLORS + 1],
+					M.SmoothPlastic
+				)
+				bloom.Shape = Enum.PartType.Ball
+				bloom.CastShadow = false
+			end
+		end
+	end
+
+	-- The rear (quay-side) door: open shutters on its windows, plank doors
+	-- folded back against the wall and a tiled canopy on carved brackets.
+	local porch = model(exterior, "RearPorch")
+	local rearHalf = 3.5 * SCALE_X
+	for _, wx in { -windowX, windowX } do
+		for _, side in { -1, 1 } do
+			piece(porch, "Shutter", Vector3.new(1.4, 4.9, 0.25), rear * CFrame.new(-wx + side * (rearHalf + 0.8), 6.15, 0.55) * CFrame.Angles(0, side * 0.22, 0), accent, M.WoodPlanks)
+		end
+	end
+	local doorU = -rearDoorX
+	for _, side in { -1, 1 } do
+		local hinge = doorU + side * (rearDoorHalf + 0.35)
+		local center = hinge + side * 1.4
+		piece(porch, "PlankLeaf", Vector3.new(2.8, 7.9, 0.18), rear * CFrame.new(center, 4.15, 0.1), accent, M.WoodPlanks)
+		for _, y in { 1.4, 6.9 } do
+			piece(porch, "StrapHinge", Vector3.new(2.1, 0.18, 0.06), rear * CFrame.new(hinge + side * 1.05, y, 0.22), IRON, M.Metal)
+		end
+	end
+	local tilt, depth, canopyWidth = 0.2, 2.4, 2 * rearDoorHalf + 2
+	local canopyAt = rear * CFrame.new(doorU, 9.75, depth / 2) * CFrame.Angles(tilt, 0, 0)
+	piece(porch, "PorchCanopy", Vector3.new(canopyWidth, 0.3, depth), canopyAt, TERRACOTTA, M.RoofShingles)
+	for course = 0, 3 do
+		piece(porch, "CanopyTiles", Vector3.new(canopyWidth + 0.05, 0.12, 0.14), canopyAt * CFrame.new(0, 0.2, -depth / 2 + 0.3 + course * 0.6), rgb(191, 96, 60), M.Brick)
+	end
+	piece(porch, "CanopyFascia", Vector3.new(canopyWidth + 0.1, 0.4, 0.14), canopyAt * CFrame.new(0, -0.1, depth / 2), CREAM, M.Wood)
+	piece(porch, "CanopyFlashing", Vector3.new(canopyWidth + 0.2, 0.3, 0.2), rear * CFrame.new(doorU, 10.1, 0.1), STONE, M.Slate)
+	for _, side in { -1, 1 } do
+		local u = doorU + side * (canopyWidth / 2 - 0.5)
+		piece(porch, "CanopyBracket", Vector3.new(0.3, 1.5, 0.22), rear * CFrame.new(u, 9.05, 0.11), DARK_WOOD, M.Wood)
+		local strut = Props.beam(porch, (frame * rear * CFrame.new(u, 8.45, 0.2)).Position, (frame * rear * CFrame.new(u, 9.45, 1.9)).Position, 0.22, DARK_WOOD, 0.22, M.Wood)
+		strut.Name = "CanopyStrut"
+		decorate(strut)
+		-- A lantern hangs under each end of the canopy.
+		local lanternU = doorU + side * 3
+		local underside = 9.75 - (1.5 - depth / 2) * math.sin(tilt) - 0.15
+		piece(porch, "LanternChain", Vector3.new(0.08, underside - 9.0, 0.08), rear * CFrame.new(lanternU, (underside + 9.0) / 2, 1.5), IRON, M.Metal)
+		piece(porch, "LanternCap", Vector3.new(0.7, 0.14, 0.7), rear * CFrame.new(lanternU, 8.95, 1.5), IRON, M.Metal)
+		local body = piece(porch, "LanternGlass", Vector3.new(0.5, 0.75, 0.5), rear * CFrame.new(lanternU, 8.5, 1.5), rgb(255, 212, 140), M.Neon)
+		body.CastShadow = false
+		glow(body, 12)
+		piece(porch, "LanternBase", Vector3.new(0.6, 0.12, 0.6), rear * CFrame.new(lanternU, 8.07, 1.5), IRON, M.Metal)
+	end
+	piece(porch, "WelcomeMat", Vector3.new(3.2, 0.04, 1.6), rear * CFrame.new(doorU, 0.17, 1.2), rgb(150, 118, 76), M.Fabric)
+
+	-- Wall lanterns either side of the front door, under the awning.
+	local frontLamps = model(exterior, "FrontLanterns")
+	for _, side in { -1, 1 } do
+		local u = side * (frontDoorHalf + 0.85)
+		piece(frontLamps, "LanternPlate", Vector3.new(0.35, 0.7, 0.12), front * CFrame.new(u, 7.0, 0.06), IRON, M.Metal)
+		piece(frontLamps, "LanternArm", Vector3.new(0.12, 0.12, 0.6), front * CFrame.new(u, 7.1, 0.4), IRON, M.Metal)
+		piece(frontLamps, "LanternCap", Vector3.new(0.65, 0.12, 0.65), front * CFrame.new(u, 6.96, 0.65), IRON, M.Metal)
+		local body = piece(frontLamps, "LanternGlass", Vector3.new(0.48, 0.68, 0.48), front * CFrame.new(u, 6.56, 0.65), rgb(255, 212, 140), M.Neon)
+		body.CastShadow = false
+		glow(body, 12)
+	end
+
+	-- Terracotta pots with clipped shrubs beside both doors.
+	local pots = model(exterior, "Planters")
+	for _, spot in {
+		{ at = rear, u = doorU - 7.35 }, -- house x ≈ 5.1, beside one folded door leaf
+		{ at = rear, u = doorU + 7.25 }, -- house x ≈ -9.5, beside the other
+		{ at = front, u = -7.1 },
+		{ at = front, u = 7.1 },
+	} do
+		local base = spot.at * CFrame.new(spot.u, 0, 0.95)
+		local upright = CFrame.Angles(0, 0, math.pi / 2)
+		local pot = model(pots, "Pot")
+		piece(pot, "PotBody", Vector3.new(1.2, 1.25, 1.25), base * CFrame.new(0, 0.6, 0) * upright, TERRACOTTA, M.Slate).Shape = Enum.PartType.Cylinder
+		piece(pot, "PotRim", Vector3.new(0.22, 1.5, 1.5), base * CFrame.new(0, 1.25, 0) * upright, rgb(186, 94, 60), M.Slate).Shape = Enum.PartType.Cylinder
+		piece(pot, "Shrub", Vector3.new(1.5, 1.5, 1.5), base * CFrame.new(0, 1.95, 0), leafGreen, M.Grass).Shape = Enum.PartType.Ball
+		piece(pot, "Shrub", Vector3.new(0.95, 0.95, 0.95), base * CFrame.new(0.25, 2.55, -0.1), darkLeaf, M.Grass).Shape = Enum.PartType.Ball
+	end
+
+	-- Louvred vents high in both gables.
+	local vents = model(exterior, "GableVents")
+	for _, at in { front, rear } do
+		piece(vents, "VentFrame", Vector3.new(2.5, 1.6, 0.1), at * CFrame.new(0, 14.0, 0.05), CREAM, M.Wood)
+		piece(vents, "VentShadow", Vector3.new(2.1, 1.25, 0.06), at * CFrame.new(0, 14.0, 0.11), DARK_WOOD, M.SmoothPlastic)
+		for _, y in { 13.6, 14.0, 14.4 } do
+			piece(vents, "VentSlat", Vector3.new(2.1, 0.12, 0.22), at * CFrame.new(0, y, 0.2) * CFrame.Angles(0.5, 0, 0), CREAM, M.Wood)
+		end
+	end
+
+	-- Downpipes at all four corners, each with a gutter outlet, wall clips and
+	-- a shoe; the shell already has the pipe at the back-left corner.
+	local pipes = model(exterior, "Downpipes")
+	local pipeX, pipeZ = 23.7 * SCALE_X, 13 * SCALE_Z
+	for _, sx in { -1, 1 } do
+		for _, s in { -1, 1 } do
+			local x, z = sx * pipeX, s * pipeZ
+			if not (sx < 0 and s < 0) then
+				piece(pipes, "Downpipe", Vector3.new(0.24, 10.8, 0.24), CFrame.new(x, 5.8, z), IRON, M.Metal)
+			end
+			piece(pipes, "PipeOutlet", Vector3.new(0.8, 0.24, 0.24), CFrame.new(x + sx * 0.3, 11.3, z), IRON, M.Metal)
+			piece(pipes, "PipeShoe", Vector3.new(0.6, 0.24, 0.3), CFrame.new(x + sx * 0.2, 0.42, z), IRON, M.Metal)
+			for _, y in { 3.5, 8.0 } do
+				local clipLength = math.abs(x) - (hx + face)
+				piece(pipes, "PipeClip", Vector3.new(clipLength, 0.14, 0.14), CFrame.new(sx * (hx + face + clipLength / 2), y, z), IRON, M.Metal)
+			end
+		end
+	end
+
+	-- A rendered kitchen chimney rising through the rear of the left roof slope.
+	-- Its base sits inside the slope's thickness, so it never shows indoors.
+	local chimney = model(exterior, "Chimney")
+	local pitch = math.atan2(4.8, 24)
+	local slopeCenter, half = 12 * SCALE_X, 0.225 / math.cos(pitch)
+	local function roofTop(x: number): number
+		return 14.05 + half - math.tan(pitch) * (math.abs(x) - slopeCenter)
+	end
+	local cx, cz, cw, cd = -6.5, -8.5, 2, 2.4
+	local bottom = roofTop(math.abs(cx) + cw / 2) - 0.03
+	local stackTop = 19.2
+	piece(chimney, "ChimneyStack", Vector3.new(cw, stackTop - bottom, cd), CFrame.new(cx, (stackTop + bottom) / 2, cz), PLASTER, M.Plaster)
+	piece(chimney, "ChimneyBand", Vector3.new(cw + 0.3, 0.3, cd + 0.3), CFrame.new(cx, stackTop + 0.15, cz), STONE, M.Slate)
+	piece(chimney, "ChimneyFlue", Vector3.new(cw - 0.8, 0.75, cd - 0.9), CFrame.new(cx, stackTop + 0.67, cz), rgb(30, 26, 24), M.Slate)
+	for _, dx in { -1, 1 } do
+		for _, dz in { -1, 1 } do
+			piece(chimney, "ChimneyPier", Vector3.new(0.35, 0.75, 0.35), CFrame.new(cx + dx * (cw / 2 - 0.2), stackTop + 0.67, cz + dz * (cd / 2 - 0.2)), PLASTER, M.Plaster)
+		end
+	end
+	piece(chimney, "ChimneyHood", Vector3.new(cw + 0.5, 0.25, cd + 0.5), CFrame.new(cx, stackTop + 1.17, cz), TERRACOTTA, M.RoofShingles)
+	piece(chimney, "ChimneyCrest", Vector3.new(0.45, 0.22, cd + 0.6), CFrame.new(cx, stackTop + 1.4, cz), rgb(195, 101, 66), M.Brick)
+
+	-- Maritime touches on the quay side: a life ring and crossed oars.
+	local ring = Props.lifeRing(exterior, frame * rear * CFrame.new(-(hx - 3.3), 5.6, 0.3))
+	decorate(ring)
+	local oars = model(exterior, "CrossedOars")
+	for _, side in { -1, 1 } do
+		local tiltAt = rear * CFrame.new(hx - 3.4, 5.8, 0.2) * CFrame.Angles(0, 0, side * 0.42)
+		piece(oars, "OarShaft", Vector3.new(0.16, 6.2, 0.12), tiltAt, WOOD, M.Wood)
+		piece(oars, "OarBlade", Vector3.new(0.6, 1.6, 0.08), tiltAt * CFrame.new(0, -2.7, 0.02), accent, M.WoodPlanks)
+	end
+	piece(oars, "OarPeg", Vector3.new(0.3, 0.3, 0.3), rear * CFrame.new(hx - 3.4, 5.8, 0.3), DARK_WOOD, M.Wood)
 end
 
 -- A sign board whose SurfaceGui matches its physical size, so glyphs keep their proportions.
@@ -529,6 +795,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 		true
 	)
 	signText(officeSign, Enum.NormalId.Back, "OFFICE")
+	OfficeDesk.ensure(house, frame)
 
 	-- Recessed windows, divided lights, deep stone sills, and opened shutters.
 	-- Avoid refractive Glass so the sea remains visible through the glazing.
@@ -695,6 +962,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 	FishFreezer.ensure(shop, frame)
 	ShopDesk.ensure(shop, frame)
 	ensureLights(house, frame)
+	ensureExterior(house, frame, accent)
 	Props.simplifyHouseCollision(house)
 	return house
 end
@@ -758,7 +1026,14 @@ function BaseHouse.ensure(base: Model)
 		if shop and shop:IsA("Model") and typeof(houseFrame) == "CFrame" then
 			FishFreezer.ensure(shop, houseFrame)
 			ShopDesk.ensure(shop, houseFrame)
+			OfficeDesk.ensure(existing, houseFrame)
 			ensureLights(existing, houseFrame)
+		end
+		if typeof(houseFrame) == "CFrame" then
+			-- The front shutters carry the plot's accent colour.
+			local shutter = existing:FindFirstChild("Shell") and existing.Shell:FindFirstChild("OpenShutter")
+			local accent = if shutter and shutter:IsA("BasePart") then shutter.Color else rgb(40, 120, 156)
+			ensureExterior(existing, houseFrame, accent)
 		end
 		Props.simplifyHouseCollision(existing)
 		return

@@ -15,7 +15,7 @@ const replacements = {
  'script.Parent.BoatService': 'Boats', 'script.Parent.AnglerData': 'Data',
  'ReplicatedStorage.Shared.Aboard': 'function() return aboard end',
  'ReplicatedStorage.Shared.BoatCatalog': 'BoatCatalog', 'ReplicatedStorage.Shared.AnglerCatalog': 'Catalog',
- 'ReplicatedStorage.Shared.FishCatch': '{formatKg=tostring}', 'ReplicatedStorage.Shared.FishModels': '{show=function() end}', 'ReplicatedStorage.Shared.FishMutations': '{label=function() return "" end}',
+ 'ReplicatedStorage.Shared.FishCatch': '{formatKg=tostring}', 'ReplicatedStorage.Shared.FishModels': '{show=function() end}', 'ReplicatedStorage.Shared.FishMutations': '(function()\n' + await read('src/shared/FishMutations.luau') + '\nend)()',
  'game:GetService("ReplicatedFirst"):WaitForChild("UITheme")': 'Theme',
 };
 function inject(source) { for (const [key,value] of Object.entries(replacements)) source = source.replaceAll('require(' + key + ')', value); return source; }

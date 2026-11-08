@@ -79,10 +79,10 @@ local Weather = {
  blackHolePosition = function() return if attributes.WeatherOverride == "BlackHole" then attributes.BlackHolePosition else nil end,
  radar = function() return { version = 1, resolution = 2, halfSize = 5200,
   cells = { { 0, 0, 6, 0.3 }, { 1, 1, 52, 4.5 }, { 0.5, 0, 25, 1.5 }, { 0, 0, 6, 0.3 } } } end,
- Presets = { Storm = { rain = 1, storm = 1 }, Clear = { rain = 0, storm = 0 }, Rain = { rain = 0.62, storm = 0 }, Supercell = { rain = 0.5, storm = 0.35 }, BlackHole = { rain = 0.28, storm = 0 } },
+ Presets = { Storm = { rain = 1, storm = 1 }, Clear = { rain = 0, storm = 0 }, Foggy = { rain = 0, storm = 0 }, Rain = { rain = 0.62, storm = 0 }, Supercell = { rain = 0.5, storm = 0.35 }, BlackHole = { rain = 0.28, storm = 0 } },
  Schedule = { { kind = "Clear", duration = 150 }, { kind = "Rain", duration = 180 } },
  CycleSeconds = 330,
- getState = function() return { kind = "Rain", rain = 0.6, storm = 0, cloudCover = 0.8, windSpeed = 30,
+ getState = function() return { kind = "Rain", rain = 0.6, storm = 0, fog = 0.7, cloudCover = 0.8, windSpeed = 30,
   windDirection = { X = 0, Z = 1 }, waveAmplitude = 0.5 } end,
 }
 local function step(n) for _ = 1, n or 1 do local ok, err = coroutine.resume(loop) assert(ok, err) end end
@@ -115,10 +115,13 @@ check(body.weather.kind == "Rain" and body.weather.windAngle == 90 and body.weat
 check(body.weather.seed == 77 and body.weather.override == nil, "Reports the radar seed and no override")
 check(body.weather.maxWaveAmplitude == 4.5 and body.weather.radar.version == 1 and #body.weather.radar.cells == 4,
  "Reports the actual regional samples and higher sea limit to the admin dashboard")
-check(body.kinds[1] == "Clear" and body.kinds[3] == "Storm", "Weather kinds go calmest first")
-check(body.kinds[4] == "Supercell" and body.kinds[5] == "BlackHole", "Rare supercell, then the admin-only event, appear after ordinary weather")
+check(body.kinds[1] == "Clear" and body.kinds[2] == "Foggy" and body.kinds[4] == "Storm", "Weather kinds include Foggy after Clear")
+check(body.kinds[5] == "Supercell" and body.kinds[6] == "BlackHole", "Rare supercell, then the admin-only event, appear after ordinary weather")
+check(body.weather.fog == 0.7, "Fog intensity reaches the admin dashboard")
 check(body.weather.supercell == nil and #body.weather.tornadoes == 0, "No supercell or tornadoes are reported in ordinary weather")
-check(body.passes[1].key == "AutoStore" and body.passes[1].id == 3722004182, "Reports the gamepass catalogue")
+local autoStore
+for _, pass in body.passes do if pass.key == "AutoStore" then autoStore = pass end end
+check(autoStore and autoStore.id == 3722004182, "Reports the gamepass catalogue")
 check(#body.schedule == 2 and body.schedule[2].duration == 180, "Reports the forecast schedule")
 
 -- The dashboard's override and grants come back on the reply.
@@ -175,6 +178,17 @@ check(#stormy.tornadoes == 1 and stormy.tornadoes[1].x == 5 and stormy.tornadoes
 reply = { weatherVersion = 16 }
 step(15)
 check(attributes.WeatherOverride == nil and attributes.SupercellPosition == nil and attributes.SupercellSince == nil, "Auto clears the supercell and its location")
+
+reply = { weatherOverride = "Foggy", weatherVersion = 17 }
+step(15)
+check(attributes.WeatherOverride == "Foggy" and attributes.BlackHolePosition == nil and attributes.SupercellPosition == nil,
+ "The dashboard can select Foggy without an event location")
+attributes.WeatherOverride = "Clear"
+step(15)
+check(attributes.WeatherOverride == "Clear", "An unchanged fog command preserves a later in-game command")
+reply = { weatherVersion = 18 }
+step(15)
+check(attributes.WeatherOverride == nil, "Auto releases a fog override")
 
 -- A purchased pass stays owned when a dashboard grant is revoked.
 local buyer = player(77, "buyer")

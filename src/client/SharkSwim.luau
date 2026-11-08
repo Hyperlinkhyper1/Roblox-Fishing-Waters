@@ -2,6 +2,18 @@
 -- Only the visible pieces are interpolated locally between server updates.
 local RunService = game:GetService("RunService")
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local SharkSwim = {}
 -- Joints in server SharkModel: SwimFlex pieces bend at the hips and SwimTail
 -- pieces bend there and again at the tail stalk, so a wave runs down the body.
@@ -33,7 +45,7 @@ function SharkSwim.start()
 	end)
 
 	local frame = 0
-	RunService.RenderStepped:Connect(function(dt)
+	RunService.RenderStepped:Connect(profiled("SharkSwim", function(dt)
 		frame += 1
 		local camera = workspace.CurrentCamera
 		local eye = camera and camera.CFrame.Position
@@ -95,7 +107,7 @@ function SharkSwim.start()
 		if #moved > 0 then
 			workspace:BulkMoveTo(moved, frames, Enum.BulkMoveMode.FireCFrameChanged)
 		end
-	end)
+	end))
 end
 
 return SharkSwim

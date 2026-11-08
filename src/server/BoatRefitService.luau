@@ -14,6 +14,7 @@ local DrydockLaunch = require(script.Parent.DrydockLaunch)
 local TrawlerNetService = require(script.Parent.TrawlerNetService)
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
+local BoatFurniture = require(ReplicatedStorage.Shared.BoatFurniture)
 local BoatUpgrades = require(ReplicatedStorage.Shared.BoatUpgrades)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 
@@ -176,6 +177,8 @@ local function refitBoat(player: Player): (string?, any, Model?, string?)
 	end
 	return boatId, layout, model, nil
 end
+-- BoatFurnitureService places furniture under the same lift rules.
+BoatRefitService.refitBoat = refitBoat
 
 -- The refit dock reserves the part in RefitPending until Inventory confirms it.
 -- Attributes cannot hold tables, so it is a server-owned
@@ -339,6 +342,7 @@ local function outfit(player: Player, boatId: string, model: Model)
 		return nil
 	end
 	BoatRefitService.paint(model, profile.Angler.BoatPaint[boatId])
+	BoatFurniture.dress(model, profile.Angler.BoatFurniture[boatId])
 	TrawlerNetService.dress(player, boatId, model)
 	local items = AnglerData.hold(profile.Angler, boatId, layout)
 	local motorPartId = BoatUpgrades.partId(layout, "Motor")

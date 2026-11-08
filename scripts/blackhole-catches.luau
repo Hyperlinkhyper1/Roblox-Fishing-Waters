@@ -83,6 +83,7 @@ function Instance.new(class)
 	function item:FireClient(_, kind, payload)
 		table.insert(messages, { kind = kind, payload = payload })
 	end
+	function item:FireAllClients() end
 	table.insert(instances, item)
 	return item
 end

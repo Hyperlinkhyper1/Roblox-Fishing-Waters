@@ -274,4 +274,31 @@ check(
 	"Non-canonical keys are rejected"
 )
 
+-- Coloured names: every mutation word has a colour and survives RichText.
+for _, name in FishMutations.Order do
+	check(FishMutations.Colors[name] ~= nil, name .. " has a display colour")
+end
+check(FishMutations.richLabel("Normal") == "", "Normal fish get no coloured label")
+check(
+	FishMutations.richLabel("Corrupted") == '<font color="#C7697A">Corrupted</font>',
+	"Corrupted is written in its lifted badge colour"
+)
+check(
+	string.find(FishMutations.richLabel("Neon", "Red"), '<font color="#FF2E3A">Red Neon</font>', 1, true) ~= nil,
+	"Neon is written in its own neon colour"
+)
+local rainbow = FishMutations.richLabel("Corrupted+Rainbow")
+check(select(2, string.gsub(rainbow, "<font", "")) == 1 + #"Rainbow", "Rainbow is painted letter by letter")
+check(string.find(FishMutations.richLabel("JackOFish"), "Jack O&apos; Fish", 1, true) ~= nil, "Apostrophes are escaped")
+check(
+	FishMutations.richLabel("Albino", nil, true) == '<font color="#5B626D">Albino</font>',
+	"Paper (bestiary) labels darken the badge colour"
+)
+check(
+	not string.find(FishMutations.richLabel("Rainbow+Neon", "Yellow", true), "#FFE828", 1, true),
+	"Paper labels never use the raw bright neon colour"
+)
+local stripped = string.gsub(FishMutations.richLabel("Corrupted+VoidTouched+Rainbow+Neon", "Blue"), "<[^>]+>", "")
+check(stripped == FishMutations.label("Corrupted+VoidTouched+Rainbow+Neon", "Blue"), "Coloured label reads like the plain label")
+
 print(string.format("Fish mutations: %d checks passed (pure data; no Roblox runtime).", checks))

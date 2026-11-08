@@ -150,6 +150,7 @@ local dependencies = {
 	AnglerCatalog = {},
 	DrydockLaunch = {},
 	TrawlerNetService = { dress = function() end, stow = function() end },
+	BoatFurniture = { dress = function() end },
 }
 -- MODULES --
 local checks = 0

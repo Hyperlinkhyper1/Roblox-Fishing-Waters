@@ -19,6 +19,8 @@ Catalog.Rarities = {
 	-- Limited species skip the weighted draw: they only bite while the admin
 	-- dashboard has them switched on, at the chance set there (FishCatch.limited).
 	Limited = { Name = "Limited", Order = 9, Color = Color3.fromRGB(255, 84, 214), Difficulty = 0.66, XP = 2500 },
+	-- The rarest tier by far: a handful of things that should not exist.
+	Admin = { Name = "Admin", Order = 10, Color = Color3.fromRGB(255, 28, 28), Difficulty = 0.66, XP = 25600 },
 }
 
 -- Junk uses the same carrying, cargo and selling path as other catches.

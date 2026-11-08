@@ -3,6 +3,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
+local SeabedCarpet = require(ReplicatedStorage.Shared.SeabedCarpet)
 local Harbour = require(script.Parent.Harbour)
 local LowPoly = require(script.Parent.LowPoly)
 local Props = require(script.Parent.Props)
@@ -10,13 +11,9 @@ local Seabed = require(script.Parent.Seabed)
 local SeabedLife = require(script.Parent.SeabedLife)
 
 local SeabedDetails = {}
-local VERSION = 5
+-- 6: the floor carpet moved to the clients (only templates are published).
+local VERSION = 6
 local TAU = math.pi * 2
--- Reuse small patches across the whole ocean, with a closer weave in the lake.
--- Keep each copy independently streamed rather than cloning whole reef gardens.
-local CELL = 48
-local LAKE_CELL = 24
-local PATCH_TEMPLATES = 24
 local M = Enum.Material
 local rgb = Color3.fromRGB
 
@@ -410,118 +407,62 @@ local function scatter(
 	return placed
 end
 
-local function cellKey(x: number, z: number, cell: number): number
-	return math.floor(x / cell) * 100003 + math.floor(z / cell)
+-- The floor between gardens is carpeted with copies of small prebuilt patches, one per
+-- grid cell. Cloned here that was ~60k copies and ~700k parts, which took live servers
+-- past 6.5 GB and crashed them, so the server only publishes the templates (plus the
+-- lake outline and the garden cells to leave bare) and each client fills the cells
+-- around its own camera (client/SeabedCarpet, rules in shared/SeabedCarpet).
+local function publishCarpet(seed: number, gardens: { Vector2 })
+	local old = ReplicatedStorage:FindFirstChild(SeabedCarpet.FOLDER)
+	if old then
+		old:Destroy()
+	end
+	local rng = Random.new(seed)
+	local carpet = Instance.new("Folder")
+	carpet.Name = SeabedCarpet.FOLDER
+	for _, id in SeabedCarpet.STYLES do
+		local folder = Instance.new("Folder")
+		folder.Name = id
+		for index = 1, SeabedCarpet.TEMPLATES do
+			local patch = patchTemplate(STYLES[id], rng)
+			patch.Name = tostring(index)
+			patch.Parent = folder
+		end
+		folder.Parent = carpet
+	end
+	local lake = Instance.new("StringValue")
+	lake.Name = "Lake"
+	lake.Value = SeabedCarpet.encode(Harbour.lakeOutline(Biomes.Normal.center))
+	lake.Parent = carpet
+	local bare = Instance.new("StringValue")
+	bare.Name = "Gardens"
+	bare.Value = SeabedCarpet.encode(gardens)
+	bare.Parent = carpet
+	carpet:SetAttribute("Seed", seed)
+	carpet:SetAttribute("Version", VERSION)
+	carpet.Parent = ReplicatedStorage
 end
 
--- Fill every grid cell the gardens left bare with a copy of a prebuilt patch, seated on
--- the sampled ground. Islands and steep slopes simply fail the sample and stay clear.
-local function carpet(details: Folder, params: RaycastParams, seed: number, occupied: { Vector2 })
-	local rng = Random.new(seed)
-	local lake = Harbour.lakeOutline(Biomes.Normal.center)
-	local lakeMin, lakeMax = lake[1], lake[1]
-	for _, point in lake do
-		lakeMin, lakeMax = lakeMin:Min(point), lakeMax:Max(point)
-	end
-	local function inLake(position: Vector3): boolean
-		if position.X < lakeMin.X or position.X > lakeMax.X or position.Z < lakeMin.Y or position.Z > lakeMax.Y then
-			return false
-		end
-		local inside = false
-		local previous = lake[#lake]
-		for _, point in lake do
-			if
-				(point.Y > position.Z) ~= (previous.Y > position.Z)
-				and position.X < (previous.X - point.X) * (position.Z - point.Y) / (previous.Y - point.Y) + point.X
-			then
-				inside = not inside
-			end
-			previous = point
-		end
-		return inside
-	end
-	local pools: { [Style]: { Model } } = {}
-	local folders: { [Biomes.Biome]: Folder } = {}
-	local lakeFloor = Instance.new("Folder")
-	lakeFloor.Name = "LakeFloor"
-	lakeFloor.Parent = details:FindFirstChild(Biomes.Normal.name) or details
-	local count = 0
-	local function cover(cell: number, minimum: number, maximum: number, lakeOnly: boolean)
-		local taken: { [number]: boolean } = {}
-		for _, position in occupied do
-			taken[cellKey(position.X, position.Y, cell)] = true
-		end
-		-- Align both sampling and occupied keys to the same world-space grid.
-		local start = math.floor(minimum / cell) * cell
-		for x = start, maximum - 1, cell do
-			for z = start, maximum - 1, cell do
-				if taken[cellKey(x, z, cell)] then
-					continue
-				end
-				local hit: RaycastResult?
-				for _ = 1, 3 do
-					-- Bounded jitter leaves room between neighbouring copies.
-					local px = math.clamp(x + cell * rng:NextNumber(0.25, 0.75), minimum + 1, maximum - 1)
-					local pz = math.clamp(z + cell * rng:NextNumber(0.25, 0.75), minimum + 1, maximum - 1)
-					local position = Vector3.new(px, Biomes.WaterLevel - 1, pz)
-					if not Biomes.inOceanBounds(position) or inLake(position) ~= lakeOnly then
-						continue
-					end
-					hit = sample(params, px, pz)
-					if hit then
-						break
-					end
-				end
-				if not hit then
-					continue
-				end
-				local biome = Biomes.at(hit.Position)
-				local style = if biome == Biomes.OpenSea then STYLES.open else STYLES[biome.id]
-				local pool = pools[style]
-				if not pool then
-					pool = {}
-					for _ = 1, PATCH_TEMPLATES do
-						table.insert(pool, patchTemplate(style, rng))
-					end
-					pools[style] = pool
-				end
-				local folder = if lakeOnly then lakeFloor else folders[biome]
-				if not folder then
-					folder = Instance.new("Folder")
-					folder.Name = "Floor"
-					folder.Parent = details:FindFirstChild(biome.name) or details
-					folders[biome] = folder
-				end
-				local normal = hit.Normal
-				local right = normal:Cross(Vector3.zAxis).Unit
-				local frame = CFrame.fromMatrix(hit.Position, right, normal, right:Cross(normal))
-				local patch = pool[rng:NextInteger(1, #pool)]:Clone()
-				patch:ScaleTo(rng:NextNumber(0.9, 1.25))
-				patch:PivotTo(frame * CFrame.Angles(0, rng:NextNumber(0, TAU), 0))
-				patch.Parent = folder
-				count += 1
-				if count % 40 == 0 then
-					task.wait()
-				end
-			end
-			task.wait()
+-- Garden positions from scenery that is already built (a baked map, or a repeat ensure).
+local function gardensIn(details: Instance): { Vector2 }
+	local gardens = {}
+	for _, object in details:GetDescendants() do
+		if object:IsA("Model") and object.Name == "SeabedGarden" then
+			local pivot = object:GetPivot().Position
+			table.insert(gardens, Vector2.new(pivot.X, pivot.Z))
 		end
 	end
-	-- OceanMax includes the city approaches; inOceanBounds rejects the empty
-	-- northeast/southwest corners and dry rooms before any ground ray is cast.
-	cover(LAKE_CELL, -Biomes.Normal.radius, Biomes.Normal.radius, true)
-	cover(CELL, Biomes.OceanMin, Biomes.OceanMax, false)
-	for _, pool in pools do
-		for _, template in pool do
-			template:Destroy()
-		end
-	end
+	return gardens
 end
 
 function SeabedDetails.ensure(root: Instance)
 	Seabed.ensureSand(root)
 	local old = root:FindFirstChild("SeabedDetails")
 	if old and old:GetAttribute("Version") == VERSION then
+		local published = ReplicatedStorage:FindFirstChild(SeabedCarpet.FOLDER)
+		if not published or published:GetAttribute("Version") ~= VERSION then
+			publishCarpet(Biomes.Seed + 800, gardensIn(old))
+		end
 		return
 	end
 	if old then
@@ -557,7 +498,7 @@ function SeabedDetails.ensure(root: Instance)
 	open.Parent = details
 	local scattered = scatter(open, Biomes.OpenSea, STYLES.open, params, Biomes.Seed + 606)
 	table.move(scattered, 1, #scattered, #gardens + 1, gardens)
-	carpet(details, params, Biomes.Seed + 800, gardens)
+	publishCarpet(Biomes.Seed + 800, gardens)
 	details:SetAttribute("Version", VERSION)
 end
 

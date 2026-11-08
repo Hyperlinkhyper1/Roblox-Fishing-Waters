@@ -3,7 +3,7 @@ local Upgrades = {}
 
 Upgrades.SocialMediaAdvertisement = {
 	Name = "Social Media Advertisement",
-	Description = "You now spawn 2 customers at a time.",
+	Description = "Attracts more passing pedestrians and allows 2 customers per register.",
 	Price = 1000,
 }
 

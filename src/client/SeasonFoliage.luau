@@ -3,6 +3,7 @@
 -- the builders' shading survives. Foliage is any green Grass or LeafyGrass part,
 -- plus the terrain's grass materials, picked up again as islands stream in. The tropics (the Coral
 -- Shallows and Pirate Cove) have no seasons, so their foliage stays as built all year.
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -13,6 +14,7 @@ local SeasonFoliage = {}
 
 local BATCH = 600 -- parts recoloured per frame when the season turns
 local GROUND_AREA = 400 -- a part this wide on top is lawn, not leaves
+local PIECE_TAG = "LodPiece" -- streamed map pieces (server/Map/Lod)
 local rgb = Color3.fromRGB
 
 local SPRING = rgb(132, 198, 84)
@@ -126,7 +128,16 @@ function SeasonFoliage.start()
 		end
 	end
 
-	workspace.DescendantAdded:Connect(consider)
+	-- Map content streams in as LodPiece models that arrive whole (PersistentPerPlayer), so one
+	-- scan per piece picks up its foliage. Watching workspace.DescendantAdded instead resumed a
+	-- script thread for every part, weld and decal streaming in: tens of thousands per island,
+	-- the deferredThreads storms in the MicroProfiler.
+	local function scanPiece(piece: Instance)
+		for _, item in piece:GetDescendants() do
+			consider(item)
+		end
+	end
+	CollectionService:GetInstanceAddedSignal(PIECE_TAG):Connect(scanPiece)
 	task.spawn(function()
 		local count = 0
 		for _, item in workspace:GetDescendants() do

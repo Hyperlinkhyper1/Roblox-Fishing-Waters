@@ -14,6 +14,7 @@ local CrabCages = require(ReplicatedStorage.Shared.CrabCages)
 local MusselNets = require(ReplicatedStorage.Shared.MusselNets)
 local Spears = require(ReplicatedStorage.Shared.Spears)
 local SpearSkins = require(ReplicatedStorage.Shared.SpearSkins)
+local Bait = require(ReplicatedStorage.Shared.Bait)
 
 local FishingService = {}
 local states = {}
@@ -21,10 +22,11 @@ local started = false
 local feedback: RemoteEvent
 
 local function notify(player: Player, message: string)
-	if player.Parent == Players then
+	if player.Parent == Players and feedback then
 		feedback:FireClient(player, "Notice", message)
 	end
 end
+FishingService.notify = notify
 
 local function livingCharacter(player: Player): (Model?, Humanoid?, BasePart?)
 	local character = player.Character
@@ -398,6 +400,76 @@ local function openOwnedRodCrate(player: Player, crateId: any): (boolean, string
 		return false, message
 	end
 	return true, "You unboxed the " .. RodSkins.Skins[skinId].Name .. "!", reward
+end
+
+-- Bait crates: bought at Finn's counter, opened and equipped from the equipment bag.
+local function buyBaitCrates(player: Player, count: any): (boolean, string)
+	if not Bait.validBuyCount(count) then
+		return false, "Choose 1 or 5 bait crates."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your wallet is still loading. Try again in a moment."
+	end
+	if BoatData.buyBaitCrates(profile, count) == "InsufficientFunds" then
+		return false, string.format("You need $%d for %d %s.", Bait.Crate.Price * count, count, Bait.Crate.Name)
+	end
+	local ok, message = BoatService.updateProgress(player, function(current)
+		assert(BoatData.buyBaitCrates(current, count) == "Purchased", "Bait crate purchase failed")
+	end)
+	if not ok then
+		return false, message
+	end
+	return true,
+		if count == 1
+			then "Bait Crate bought! Open it from your equipment bag."
+			else string.format("%d Bait Crates bought! Open them from your equipment bag.", count)
+end
+
+-- Rolled before saving so every UpdateAsync retry awards the same bait.
+local function openBaitCrate(player: Player): (boolean, string, any)
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your inventory is still loading. Try again in a moment."
+	end
+	if profile.BaitCrates < 1 then
+		return false, "You don't have a bait crate."
+	end
+	local baitId, amount = Bait.roll(math.random(), math.random())
+	local ok, message = BoatService.updateProgress(player, function(current)
+		assert(BoatData.openBaitCrate(current, baitId, amount) == "Opened", "Bait crate opening failed")
+	end)
+	if not ok then
+		return false, message
+	end
+	local bait = Bait.Types[baitId]
+	return true,
+		string.format("You found %d× %s bait! (%s)", amount, bait.Name, bait.Rarity),
+		{ BaitId = baitId, Amount = amount }
+end
+
+local function equipBait(player: Player, baitId: any): (boolean, string)
+	if baitId == "" then
+		baitId = nil
+	end
+	if baitId ~= nil and not Bait.valid(baitId) then
+		return false, "That bait doesn't exist."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, "Your inventory is still loading."
+	end
+	local preview = BoatData.equipBait(profile, baitId)
+	if preview ~= "Equipped" then
+		return false, "You don't have any of that bait."
+	end
+	local ok, message = BoatService.updateProgress(player, function(current)
+		assert(BoatData.equipBait(current, baitId) == "Equipped", "Bait equip failed")
+	end)
+	if not ok then
+		return false, message
+	end
+	return true, if baitId then Bait.Types[baitId].Name .. " bait on the hook. It applies from your next cast." else "Bait removed."
 end
 
 local SPEAR_CRATE_PROMPT = "OpenSpearCratePrompt"
@@ -929,6 +1001,9 @@ function FishingService.start()
 			and action ~= "OpenSpearCrate"
 			and action ~= "EquipSpearSkin"
 			and action ~= "ClaimGroupReward"
+			and action ~= "BuyBaitCrate"
+			and action ~= "OpenBaitCrate"
+			and action ~= "EquipBait"
 		then
 			return
 		end
@@ -939,6 +1014,25 @@ function FishingService.start()
 		state.lastRequest = os.clock()
 		if action == "ClaimGroupReward" then
 			claimGroupReward(player)
+		elseif action == "BuyBaitCrate" then
+			if not shopPrompt(player, KEEPER_PROMPT) then
+				feedback:FireClient(player, "BaitCrateResult", false, "Talk to Finn behind the counter to buy bait.")
+				return
+			end
+			local success, message = buyBaitCrates(player, value)
+			if player.Parent == Players then
+				feedback:FireClient(player, "BaitCrateResult", success, message)
+			end
+		elseif action == "OpenBaitCrate" then
+			local success, message, reward = openBaitCrate(player)
+			if player.Parent == Players then
+				feedback:FireClient(player, "BaitOpenResult", success, message, reward)
+			end
+		elseif action == "EquipBait" then
+			local success, message = equipBait(player, value)
+			if player.Parent == Players then
+				feedback:FireClient(player, "BaitEquipResult", success, message)
+			end
 		elseif action == "OpenSpearCrate" then
 			if not shopPrompt(player, SPEAR_CRATE_PROMPT) then
 				feedback:FireClient(

@@ -15,6 +15,7 @@ Recipes.RarityOrder = {
 	Exotic = 7,
 	Divine = 8,
 	Limited = 9,
+	Admin = 10,
 }
 -- Diners in the restaurant pay this much more than shop customers.
 Recipes.RESTAURANT_MARKUP = 1.5

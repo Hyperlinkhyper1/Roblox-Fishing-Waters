@@ -354,10 +354,10 @@ if mode == "baked" then
   object("SpawnLocation", "HarbourSpawn", root)
 end
 local modules = {Biomes=Biomes}
-local script = {ServerUpdates="ServerUpdates", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
+local script = {ServerUpdates="ServerUpdates", ServerHealth="ServerHealth", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
   BoatService="BoatService", FishingService="FishingService", WeatherService="WeatherService",
   AnglerService="AnglerService", LeaderboardService="LeaderboardService"}
-for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "BuildingService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "OxygenService", "DashboardService"} do
+for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "BoatFurnitureService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "BuildingService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "PedestrianService", "OfficeComputerService", "StockMarketService", "OxygenService", "DashboardService"} do
   script[name] = name
   modules[name] = {start=function() record(name) end}
 end
@@ -388,6 +388,7 @@ for _, name in {"ServerUpdates", "BaseService", "BoatService", "FishingService",
     record(name)
   end}
 end
+modules.ServerHealth = {start=function() check(not ready(), "Crash recorder must start before the map"); record("ServerHealth") end}
 local function cosmetic(name)
   check(ready(), name .. " must not delay the playable harbour")
   record(name)

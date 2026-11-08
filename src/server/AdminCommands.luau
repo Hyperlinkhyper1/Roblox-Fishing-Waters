@@ -21,6 +21,7 @@ local help = table.concat({
 	"/mutation list - list fish mutations",
 	"/mutation <mutation> - add a mutation to your equipped fish",
 	"/set cash <amount> - set your cash",
+	"/set weight <kg> - change your equipped fish's weight and size",
 	"/set weather list - list weather types",
 	"/set weather <type> - change the weather",
 	"/set season <spring|summer|autumn|winter|auto> - pin the season or let it follow the clock",
@@ -29,6 +30,7 @@ local help = table.concat({
 	"/tp models - teleport to the full-size scale models",
 	"/fly - toggle flight (WASD, Space up, Ctrl down)",
 	"/fly speed <studs per second> - set flight speed (default 50)",
+	"/health - this server's memory, uptime and worst frame",
 }, "\n")
 
 local function normalize(name: string): string
@@ -100,6 +102,9 @@ function Service.start(reply)
 		else
 			reply(player, "Usage: /event list or /event spawn <event>.")
 		end
+	end)
+	register("HealthCommand", "/health", function(player)
+		reply(player, "Server health: " .. require(script.Parent.ServerHealth).describe())
 	end)
 	register("FlyCommand", "/fly", function(player, message)
 		if message:match("^/fly%s*$") then

@@ -11,6 +11,7 @@ local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishSpecies = require(ReplicatedStorage.Shared.FishSpecies)
 local Seasons = require(ReplicatedStorage.Shared.Seasons)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local TerrainProbe = require(script.Parent.TerrainProbe)
 
 local AmbientFish = {}
 local started = false
@@ -75,12 +76,14 @@ local function between(range: NumberRange, rng: Random): number
 end
 
 local function swims(species): boolean
-	-- Limited species may be switched off on the dashboard, so they never swim past.
+	-- Limited species may be switched off on the dashboard, so they never swim past;
+	-- Admin things are far too rare to be seen idling around.
 	if
 		species.DropOnly
 		or not species.Pools
 		or species.Requires
 		or species.Rarity == "Limited"
+		or species.Rarity == "Admin"
 		or species.Rarity == "Junk"
 	then
 		return false
@@ -174,25 +177,15 @@ function AmbientFish.start()
 	folder.Name = "AmbientFish"
 	folder.Parent = workspace
 	local rng = Random.new()
-	local terrainParams = RaycastParams.new()
-	terrainParams.FilterType = Enum.RaycastFilterType.Include
-	terrainParams.FilterDescendantsInstances = { workspace.Terrain }
 
-	-- Height of the seabed (or dry land) under a point, or nil outside open water.
+	-- Height of the seabed under a point, or nil outside open water. Voxel reads, not
+	-- raycasts: spawn tries land on terrain chunks this client never queried, and a ray
+	-- there built the chunk's collision mid-frame (a ~100 ms buildKDTree spike).
 	local function floorAt(position: Vector3): number?
 		if not Biomes.inOceanBounds(position) then
 			return nil
 		end
-		terrainParams.IgnoreWater = false
-		local top = Vector3.new(position.X, Biomes.WaterLevel + 6, position.Z)
-		local surface = workspace:Raycast(top, Vector3.new(0, -12, 0), terrainParams)
-		if not surface or surface.Material ~= Enum.Material.Water then
-			return nil
-		end
-		terrainParams.IgnoreWater = true
-		local bed =
-			workspace:Raycast(top, Vector3.new(0, -(Biomes.WaterLevel - Biomes.SeaFloor) - 12, 0), terrainParams)
-		return if bed then bed.Position.Y else Biomes.SeaFloor
+		return TerrainProbe.floorBelow(position.X, position.Z, Biomes.SeaFloor - 12)
 	end
 
 	local schools = {}

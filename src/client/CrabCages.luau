@@ -12,6 +12,18 @@ local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme")
 local Biomes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Biomes"))
 local CrabCages = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CrabCages"))
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local CrabCagesClient = {}
 local TOOL_ATTRIBUTE = "CrabCageTool"
 local CAGE_TAG = "CrabCage"
@@ -280,7 +292,7 @@ function CrabCagesClient.start()
 	local poses: { CFrame } = {}
 	-- Update anchored parts before physics, as with the other floating objects,
 	-- instead of moving them during rendering.
-	RunService.PreSimulation:Connect(function()
+	RunService.PreSimulation:Connect(profiled("CrabCages", function()
 		local camera = workspace.CurrentCamera
 		-- A local clock: the synced server clock can step as it corrects itself,
 		-- and nothing else needs to agree with a float's phase.
@@ -321,8 +333,8 @@ function CrabCagesClient.start()
 		if #moved > 0 then
 			workspace:BulkMoveTo(moved, poses, Enum.BulkMoveMode.FireCFrameChanged)
 		end
-	end)
-	RunService.RenderStepped:Connect(function()
+	end))
+	RunService.RenderStepped:Connect(profiled("CrabCages/2", function()
 		local camera = workspace.CurrentCamera
 		if not tool or not ghost or not highlight then
 			return
@@ -343,7 +355,7 @@ function CrabCagesClient.start()
 		highlight.OutlineColor = if ok then VALID else INVALID
 		hint.Text = if ok then verb() .. " the water to drop your crab cage here." else problem or ""
 		hint.TextColor3 = if ok then Theme.Colors.Text else INVALID
-	end)
+	end))
 end
 
 return CrabCagesClient

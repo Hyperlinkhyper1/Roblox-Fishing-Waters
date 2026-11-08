@@ -14,14 +14,14 @@ try {
   let source = await readFile(join(root, 'src/server/FishingService.luau'), 'utf8');
   const harness = await readFile(join(root, 'scripts/fishing-service.luau'), 'utf8');
   const skinSources = {};
-  for (const [name, location] of [['AnglerData', 'server'], ['RodUpgrades', 'shared'], ['RodSkins', 'shared'], ['SpearSkins', 'shared'], ['BobberSkins', 'shared'], ['BoatCatalog', 'shared']]) {
+  for (const [name, location] of [['AnglerData', 'server'], ['RodUpgrades', 'shared'], ['RodSkins', 'shared'], ['SpearSkins', 'shared'], ['BobberSkins', 'shared'], ['Bait', 'shared'], ['BoatCatalog', 'shared']]) {
     skinSources[name] = await readFile(join(root, 'src', location, name + '.luau'), 'utf8');
   }
 
   let skinData = await readFile(join(root, 'src/server/BoatData.luau'), 'utf8');
   skinData = skinData.replace('local AnglerData = if script then require(script.Parent.AnglerData) else require("./AnglerData")',
     () => `local AnglerData = (function()\n${skinSources.AnglerData}\nend)()`);
-  for (const name of ['RodUpgrades', 'RodSkins', 'SpearSkins', 'BobberSkins', 'BoatCatalog']) {
+  for (const name of ['RodUpgrades', 'RodSkins', 'SpearSkins', 'BobberSkins', 'Bait', 'BoatCatalog']) {
     const start = skinData.indexOf('local ' + name + ' = if script');
     const end = skinData.indexOf('\n', skinData.indexOf('else require(', start));
     if (start < 0 || end < 0) throw new Error('Missing data dependency: ' + name);
@@ -36,6 +36,7 @@ try {
     ['local RodSkins = require(ReplicatedStorage.Shared.RodSkins)', `local RodSkins = (function()\n${await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8')}\nend)()`],
     ['local SpearSkins = require(ReplicatedStorage.Shared.SpearSkins)', `local SpearSkins = (function()\n${skinSources.SpearSkins}\nend)()`],
     ['local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)', `local BobberSkins = (function()\n${skinSources.BobberSkins}\nend)()`],
+    ['local Bait = require(ReplicatedStorage.Shared.Bait)', `local Bait = (function()\n${skinSources.Bait}\nend)()`],
     ['local CrabCages = require(ReplicatedStorage.Shared.CrabCages)', `local CrabCages = (function()\n${await readFile(join(root, 'src/shared/CrabCages.luau'), 'utf8')}\nend)()`],
     ['local MusselNets = require(ReplicatedStorage.Shared.MusselNets)', `local MusselNets = (function()\n${await readFile(join(root, 'src/shared/MusselNets.luau'), 'utf8')}\nend)()`],
     ['local Spears = require(ReplicatedStorage.Shared.Spears)', `local Spears = (function()\n${await readFile(join(root, 'src/shared/Spears.luau'), 'utf8')}\nend)()\nSpears.build = dependencies.buildSpear`],

@@ -17,7 +17,9 @@ const source = read('src/client/SwellSurface.luau')
   .replace(/local Biomes = require\(ReplicatedStorage.Shared.Biomes\)/, 'local Biomes = dependencies.Biomes')
   .replace(/local Weather = require\(ReplicatedStorage.Shared.Weather\)/, 'local Weather = dependencies.Weather')
   .replace(/local MeshFeatures = require\(ReplicatedStorage.Shared.MeshFeatures\)/, 'local MeshFeatures = { EditableMeshesEnabled = true }')
-  .replace(/local WaterQuality = require\(script.Parent.WaterQuality\)/, 'local WaterQuality = dependencies.WaterQuality');
+  .replace(/local WaterQuality = require\(script.Parent.WaterQuality\)/, 'local WaterQuality = dependencies.WaterQuality')
+  .replace(/local TerrainProbe = require\(script\.Parent\.TerrainProbe\)/, () => `local TerrainProbe = (function()\n${read('src/client/TerrainProbe.luau')
+    .replace(/require\(ReplicatedStorage\.Shared\.Biomes\)/, 'dependencies.Biomes')}\nend)()`);
 const client = source.replace(/local EditableMeshBudget = require\(script.Parent.EditableMeshBudget\)/,
   () => `local EditableMeshBudget = (function()\n${read('src/client/EditableMeshBudget.luau')}\nend)()`);
 const program = read('scripts/swell-surface.luau')

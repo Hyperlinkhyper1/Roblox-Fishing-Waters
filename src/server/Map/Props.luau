@@ -24,39 +24,198 @@ local BASE_TRIM = {
 	CeilingTie = true,
 }
 
+local M_WOOD = Enum.Material.Wood
+
 local function noCollision(piece: BasePart)
 	piece.CanCollide, piece.CanTouch, piece.CanQuery = false, false, false
 end
 
--- Keep one simple body for small beach props; plants are entirely decorative.
+local DECORATION_COLLISION_VERSION = 2
+-- Trees keep their trunk (and mangrove stilt roots) as the one body you bump into; canopies,
+-- fronds, thin branches and fruit are visual only.
+local TREES = {
+	Tree = true,
+	Palm = true,
+	Pine = true,
+	DeadTree = true,
+	Olive = true,
+	StonePine = true,
+	Mangrove = true,
+}
+local TRUNK_THICKNESS = 0.75
+-- Greenery, coral and hanging lights: nothing a player, diver or boat needs to collide with.
+local NO_HITBOX = {
+	Bush = true,
+	Flowers = true,
+	Reeds = true,
+	LilyPad = true,
+	Coral = true,
+	Seaweed = true,
+	Lavender = true,
+	Bougainvillea = true,
+	StringLights = true,
+	Lantern = true,
+}
+Props.DECORATION_NAMES = table.freeze({
+	Sandcastle = true,
+	BeachBall = true,
+	Pot = true,
+	Tree = true,
+	Palm = true,
+	Pine = true,
+	DeadTree = true,
+	Olive = true,
+	StonePine = true,
+	Mangrove = true,
+	Bush = true,
+	Flowers = true,
+	Reeds = true,
+	LilyPad = true,
+	Coral = true,
+	Seaweed = true,
+	Lavender = true,
+	Bougainvillea = true,
+	StringLights = true,
+	Lantern = true,
+})
+
+-- A solid wooden block at least TRUNK_THICKNESS across its two thinnest sides.
+local function isTrunk(piece: BasePart): boolean
+	if piece.Material ~= M_WOOD or (piece:IsA("Part") and piece.Shape == Enum.PartType.Ball) then
+		return false
+	end
+	local s = piece.Size
+	local thinnest = math.min(s.X, s.Y, s.Z)
+	local middle = s.X + s.Y + s.Z - thinnest - math.max(s.X, s.Y, s.Z)
+	return thinnest >= TRUNK_THICKNESS and middle >= TRUNK_THICKNESS
+end
+
+-- Keep one simple body for small beach props and trees; plants are entirely decorative.
 function Props.simplifyDecorationCollision(model: Model)
-	if model:GetAttribute("DecorationCollisionVersion") == 1 then
+	if (model:GetAttribute("DecorationCollisionVersion") or 0) >= DECORATION_COLLISION_VERSION then
 		return
 	end
+	local name = model.Name
 	for _, piece in model:GetDescendants() do
 		if not piece:IsA("BasePart") then
 			continue
 		end
 		local keep = false
-		if model.Name == "Sandcastle" then
+		if name == "Sandcastle" then
 			keep = piece.Size == Vector3.new(4, 1.2, 4)
-		elseif model.Name == "BeachBall" then
+		elseif name == "BeachBall" then
 			keep = piece:IsA("Part") and piece.Shape == Enum.PartType.Ball
+		elseif name == "Pot" then
+			-- The terracotta pot itself; the plant growing out of it is decoration.
+			keep = piece.Material == Enum.Material.Sandstone
+		elseif TREES[name] then
+			keep = isTrunk(piece)
+		elseif not NO_HITBOX[name] then
+			keep = piece.CanCollide
 		end
 		if not keep then
 			noCollision(piece)
+			-- Leaves and blossoms rarely read in the shadow map; trunks and pots still cast.
+			if TREES[name] or NO_HITBOX[name] then
+				if math.max(piece.Size.X, piece.Size.Y, piece.Size.Z) < 1.5 then
+					piece.CastShadow = false
+				end
+			end
 		end
 	end
-	model:SetAttribute("DecorationCollisionVersion", 1)
+	model:SetAttribute("DecorationCollisionVersion", DECORATION_COLLISION_VERSION)
 end
 
+-- Parts smaller than this on every side are trim (bolts, knobs, bulbs, blossoms, pebbles):
+-- too small to stand on or be stopped by, so they get no hitbox and cast no shadow.
+local DETAIL_SIZE = 1
+-- Places where small parts are interactive or player-built (bases, furniture, shops, owned
+-- islands, cages): leave everything under these alone.
+local KEEP_TAGS = {
+	"PlayerBase",
+	"CompanyIsland",
+	"BoatShop",
+	"RefitDock",
+	"FurnitureShowroom",
+	"FurnitureShop",
+	"FishingRodShop",
+	"BackpackShop",
+	"MetroStop",
+	"WeatherRadarScreen",
+	"ShoreWaveSource",
+	"CrabCage",
+	"MusselNet",
+}
+
+local function isDetail(piece: BasePart): boolean
+	local s = piece.Size
+	return s.X < DETAIL_SIZE and s.Y < DETAIL_SIZE and s.Z < DETAIL_SIZE
+end
+
+local function simplifyDetail(piece: BasePart)
+	if not piece.Anchored or piece.Transparency >= 1 then
+		return
+	end
+	if piece:FindFirstChildWhichIsA("ProximityPrompt", true) or piece:FindFirstChildWhichIsA("ClickDetector") then
+		return
+	end
+	if piece.CanCollide or piece.CanQuery or piece.CanTouch then
+		noCollision(piece)
+	end
+	if piece.CastShadow then
+		piece.CastShadow = false
+	end
+end
+
+-- One walk over the whole map: decoration models by name, plus every tiny anchored detail part
+-- outside player-built and interactive areas. Idempotent, so baked maps pick it up on boot.
 function Props.ensureDecorationCollision(root: Instance, pause: (() -> ())?)
-	for _, model in root:GetDescendants() do
+	local CollectionService = game:GetService("CollectionService")
+	local kept: { [Instance]: boolean } = {}
+	for _, tag in KEEP_TAGS do
+		for _, holder in CollectionService:GetTagged(tag) do
+			if holder:IsDescendantOf(root) then
+				kept[holder] = true
+			end
+		end
+	end
+	local function protected(instance: Instance): boolean
+		local at = instance.Parent
+		while at and at ~= root do
+			if kept[at] then
+				return true
+			end
+			at = at.Parent
+		end
+		return false
+	end
+	-- Ancestor lookups are memoised per parent: siblings share the answer.
+	local parentKept: { [Instance]: boolean } = {}
+	local function underKept(piece: Instance): boolean
+		local parent = piece.Parent
+		if not parent then
+			return true
+		end
+		local known = parentKept[parent]
+		if known == nil then
+			known = kept[parent] == true or protected(parent)
+			parentKept[parent] = known
+		end
+		return known
+	end
+
+	for _, d in root:GetDescendants() do
 		if pause then
 			pause()
 		end
-		if model:IsA("Model") and (model.Name == "Bush" or model.Name == "Flowers" or model.Name == "Sandcastle" or model.Name == "BeachBall") then
-			Props.simplifyDecorationCollision(model)
+		if d:IsA("Model") then
+			if Props.DECORATION_NAMES[d.Name] and not underKept(d) then
+				Props.simplifyDecorationCollision(d)
+			end
+		elseif d:IsA("BasePart") and isDetail(d) and (d.CanCollide or d.CanQuery or d.CastShadow) then
+			if not underKept(d) then
+				simplifyDetail(d)
+			end
 		end
 	end
 end
@@ -301,6 +460,7 @@ function Props.pine(parent: Instance, ground: Vector3, rng: Random, leaves: Colo
 		end
 		LowPoly.pyramid(base, apex, color, m, material)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -320,6 +480,7 @@ function Props.broadleaf(parent: Instance, ground: Vector3, rng: Random, colors:
 		local offset = Vector3.new(rng:NextNumber(-3, 3), rng:NextNumber(0, 3.5), rng:NextNumber(-3, 3))
 		blob(m, top + offset, Vector3.new(s, s * 0.8, s), rng, shade(Props.pick(rng, colors), rng, 0.06), M.LeafyGrass)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -368,6 +529,7 @@ function Props.mangrove(
 			M.LeafyGrass
 		)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -398,6 +560,7 @@ function Props.palm(parent: Instance, ground: Vector3, rng: Random): Model
 	for _ = 1, rng:NextInteger(1, 3) do
 		ball(m, top + Vector3.new(rng:NextNumber(-1, 1), -1, rng:NextNumber(-1, 1)), 1.1, rgb(96, 70, 44), M.Wood)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -418,6 +581,7 @@ function Props.deadTree(parent: Instance, ground: Vector3, rng: Random, color: C
 			)
 		beam(m, from, to, 0.5, color, nil, M.Wood)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -537,6 +701,7 @@ function Props.reeds(parent: Instance, position: Vector3, rng: Random): Model
 		local tip = base + Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(7, 12), rng:NextNumber(-1, 1))
 		beam(m, base, tip, 0.35, shade(rgb(150, 150, 72), rng, 0.12), nil, M.Grass)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -547,6 +712,7 @@ function Props.lilyPad(parent: Instance, position: Vector3, rng: Random): Model
 	if rng:NextNumber() < 0.2 then
 		blob(m, position + Vector3.new(0, 0.5, 0), Vector3.new(0.9, 0.9, 0.9), rng, rgb(230, 170, 190), M.Plastic)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -557,6 +723,7 @@ function Props.coral(parent: Instance, ground: Vector3, rng: Random, colors: { C
 		local offset = Vector3.new(rng:NextNumber(-2, 2), s * 0.4, rng:NextNumber(-2, 2))
 		blob(m, ground + offset, Vector3.new(s * 0.6, s * 1.4, s * 0.6), rng, Props.pick(rng, colors), M.Pebble)
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -1201,6 +1368,7 @@ function Props.lantern(parent: Instance, cframe: CFrame, range: number?, brightn
 	part(m, Vector3.new(1.2, 0.2, 1.2), cframe * CFrame.new(0, -0.6, 0), IRON, M.Metal)
 	local glow = part(m, Vector3.new(0.9, 1, 0.9), cframe, LAMP, M.Neon)
 	light(glow, LAMP, range or 14, brightness or 1)
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -1222,6 +1390,7 @@ function Props.stringLights(parent: Instance, a: Vector3, b: Vector3, rng: Rando
 		end
 		prev = p
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 
@@ -1926,6 +2095,7 @@ function Props.seaweed(parent: Instance, ground: Vector3, rng: Random): Model
 		)
 		strand.CanCollide = false
 	end
+	Props.simplifyDecorationCollision(m)
 	return m
 end
 

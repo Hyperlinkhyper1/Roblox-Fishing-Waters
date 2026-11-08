@@ -1,5 +1,5 @@
--- Background music: a warm harbor playlist while on land and a calmer, more open
--- orchestral playlist out at sea. Every track is from Roblox's licensed music
+-- Background music: a warm harbor playlist while on land and a dark, ominous
+-- drone playlist out on the open sea (the main island's lake counts as land). Every track is from Roblox's licensed music
 -- library (free for every experience). PlayerSettings routes these sounds into
 -- the Music mixer through their AudioCategory, so the Music slider applies.
 local ContentProvider = game:GetService("ContentProvider")
@@ -9,12 +9,13 @@ local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
+local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local BackgroundMusic = {}
 local started = false
--- Both playlists are acoustic; the sea one sits a touch lower so the waves
--- stay in front of it.
-local VOLUMES = { Island = 0.22, Ocean = 0.2 }
+-- Drones are mastered quieter than the acoustic island tracks, so the sea
+-- playlist gets a small lift to land at roughly the same loudness.
+local VOLUMES = { Island = 0.22, Ocean = 0.26 }
 -- Swimming off a dock or stepping onto a moored deck must not flip the music.
 local SWITCH_DELAY = 4
 -- Out at sea the waves carry the quiet between tracks, so leave more of it.
@@ -31,15 +32,18 @@ local PLAYLISTS = {
 		"rbxassetid://1842601084", -- Twilight Beach (James Asher)
 		"rbxassetid://1842613783", -- Castaway - Underscore (Terry Caster)
 	},
-	-- Slow, soft piano and acoustic guitar that sits under the waves instead of
-	-- over them. docs/FISCH_FEEL.md says why each was picked and lists spares.
+	-- Slow, ominous drones and sparse dark piano: the open sea should feel deep
+	-- and a little threatening once the harbour is behind you. No big hits or
+	-- percussion builds, so it still sits under the waves. docs/FISCH_FEEL.md
+	-- says why each was picked and lists spares.
 	Ocean = {
-		"rbxassetid://1838786430", -- The Grace and the Gamble ("soft and lush piano and acoustic guitar")
-		"rbxassetid://1846315728", -- Andante For Guitar And Piano In C Major
-		"rbxassetid://9045573146", -- No Clouds Outside, underscore ("relaxed, peaceful acoustic")
-		"rbxassetid://1839919231", -- Lonely Promises ("calm and laid-back, peaceful guitar bed")
-		"rbxassetid://1839967674", -- In Five b ("tender piano melody, underscore")
-		"rbxassetid://1837380492", -- Happy Birds Fly ("peaceful & fragile, piano")
+		"rbxassetid://9039978890", -- Ominous ("evolving atmospheric pads and foreboding drones")
+		"rbxassetid://1837115429", -- Foreboding ("dark, sparse piano bed with atmospheric elements")
+		"rbxassetid://9042795293", -- Feeling Of Foreboding ("slow, ominous, bleak, evolving drone, sparse piano")
+		"rbxassetid://1838762089", -- Tactics of the Sublime ("deep and ominous synth tones drone")
+		"rbxassetid://1837598570", -- Dark Deep Sea
+		"rbxassetid://1847182538", -- Deep Sea Mystery
+		"rbxassetid://1842765800", -- Deep Foreboding (James Asher)
 	},
 }
 
@@ -60,6 +64,12 @@ local function atSea(character: Model?): boolean?
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not character or not humanoid or humanoid.Health <= 0 then
 		return nil
+	end
+	-- The main island's lake/bay is home waters, not the open sea: swimming or
+	-- boating there keeps the harbour playlist.
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if root and Weather.inLake(root.Position) then
+		return false
 	end
 	if humanoid:GetState() == Enum.HumanoidStateType.Swimming then
 		return true

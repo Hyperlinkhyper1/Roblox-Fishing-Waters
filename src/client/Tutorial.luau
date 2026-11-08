@@ -11,6 +11,18 @@ local UserInputService = game:GetService("UserInputService")
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Tutorial = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Tutorial"))
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local Client = {}
 local started = false
 
@@ -446,7 +458,7 @@ function Client.start()
 	end
 
 	local clock = 0
-	RunService.RenderStepped:Connect(function(dt)
+	RunService.RenderStepped:Connect(profiled("Tutorial", function(dt)
 		clock += dt
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -495,7 +507,7 @@ function Client.start()
 		if not arrow.Parent then
 			arrow.Parent = workspace
 		end
-	end)
+	end))
 end
 
 return Client

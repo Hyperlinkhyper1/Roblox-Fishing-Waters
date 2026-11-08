@@ -62,10 +62,15 @@ player waits for a released plot.
 
 ## Map integration
 
-The shared `CompanyIslands` module controls count, price, names, ring positions and
-the plot frame. Fresh generation reserves their footprints before placing procedural
+The shared `CompanyIslands` module controls count, price, names, the hand-placed
+`Sites` (bearing, distance and dock turn per island, deliberately not a ring) and
+the plot frame. Each island's landform comes from `shapeOf(id)` in the map module:
+only the quay front, the square's beach, the cliff front and the terrace round the
+plot are fixed; the outline, hill, knolls and sea stacks grow from the island's seed.
+Fresh generation reserves their footprints before placing procedural
 scenery. Startup adds or upgrades the islands on older Studio-baked maps (version 3
-replaced the houses, version 4 the landform), clearing overlapping procedural scenery without touching
+replaced the houses, version 4 the landform, version 5 the scattered sites and
+per-island shapes), clearing overlapping procedural scenery without touching
 player bases.
 
 ## Validation

@@ -9,6 +9,18 @@ local SoundService = game:GetService("SoundService")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local EnvironmentAudio = {}
 local started = false
 local SAMPLE_INTERVAL = 0.4
@@ -112,7 +124,7 @@ function EnvironmentAudio.start()
 
 	-- Terrain-only shoreline probes still find water beneath docks and boats.
 	-- Keep this bounded and independent of the number of streamed shore parts.
-	RunService.Heartbeat:Connect(function(dt: number)
+	RunService.Heartbeat:Connect(profiled("EnvironmentAudio", function(dt: number)
 		local camera = workspace.CurrentCamera
 		if not camera then
 			for _, loop in { waves, wind, underwater } do
@@ -163,7 +175,7 @@ function EnvironmentAudio.start()
 		fade(waves, waveVolume * exposure, dt)
 		fade(wind, windVolume * exposure * (if ocean then 1 else 0), dt)
 		fade(underwater, if submerged then 0.12 else 0, dt)
-	end)
+	end))
 
 	-- The default controller rewrites swimming volume every frame and makes
 	-- ordinary jump splashes nearly inaudible. Own the two water cues, using the
@@ -216,7 +228,7 @@ function EnvironmentAudio.start()
 	for _, other in Players:GetPlayers() do
 		watch(other)
 	end
-	RunService.Heartbeat:Connect(function(dt: number)
+	RunService.Heartbeat:Connect(profiled("EnvironmentAudio/2", function(dt: number)
 		local now = os.clock()
 		local camera = workspace.CurrentCamera
 		for character, record in characters do
@@ -289,7 +301,7 @@ function EnvironmentAudio.start()
 			fade(record.Swimming, if moving then 0.22 + math.clamp(speed / 32, 0, 0.3) else 0, dt)
 			record.wet, record.initialized, record.lastDown = wet, true, math.max(0, -velocity.Y)
 		end
-	end)
+	end))
 end
 
 return EnvironmentAudio

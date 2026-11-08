@@ -6,6 +6,18 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local CharacterMeter = require(script.Parent.CharacterMeter)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local Oxygen = {}
 local started = false
 
@@ -219,7 +231,7 @@ function Oxygen.start()
 	setBlackout(player:GetAttribute("OxygenBlackout") == true)
 
 	local bubbleTime = 0
-	RunService.RenderStepped:Connect(function(dt)
+	RunService.RenderStepped:Connect(profiled("Oxygen", function(dt)
 		local onScreen = CharacterMeter.position(meter, player, -1)
 		if shown then
 			meter.Visible = onScreen
@@ -232,7 +244,7 @@ function Oxygen.start()
 			local rise = (bubble.phase + bubbleTime * bubble.speed) % 1
 			bubble.item.Position = UDim2.fromScale(bubble.x + math.sin(bubbleTime + bubble.phase * 8) * 0.025, 1.08 - rise * 1.16)
 		end
-	end)
+	end))
 end
 
 return Oxygen

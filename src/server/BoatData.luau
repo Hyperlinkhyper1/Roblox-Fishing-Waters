@@ -13,6 +13,9 @@ local RodSkins = if script
 local SpearSkins = if script
 	then require(game:GetService("ReplicatedStorage").Shared.SpearSkins)
 	else require("../shared/SpearSkins")
+local Bait = if script
+	then require(game:GetService("ReplicatedStorage").Shared.Bait)
+	else require("../shared/Bait")
 local BoatCatalog = if script
 	then require(game:GetService("ReplicatedStorage").Shared.BoatCatalog)
 	else require("../shared/BoatCatalog")
@@ -51,6 +54,9 @@ export type Profile = {
 	GroupRodClaimed: boolean?,
 	BobberSkins: { [string]: number },
 	EquippedBobberSkin: string?,
+	BaitCrates: number,
+	Bait: { [string]: number },
+	EquippedBait: string?,
 	Angler: any,
 }
 
@@ -70,6 +76,8 @@ function BoatData.decode(raw: any): Profile
 			NextRodSkinSerial = {},
 			RodSerialScope = "GlobalV1",
 			BobberSkins = {},
+			BaitCrates = 0,
+			Bait = {},
 			Angler = AnglerData.decode(nil),
 		}
 	end
@@ -287,6 +295,33 @@ function BoatData.decode(raw: any): Profile
 	profile.EquippedBobberSkin = if BobberSkins.valid(raw.EquippedBobberSkin)
 			and profile.BobberSkins[raw.EquippedBobberSkin]
 		then raw.EquippedBobberSkin
+		else nil
+	-- Profiles from before bait start with an empty tin.
+	assert(
+		raw.BaitCrates == nil
+			or (
+				type(raw.BaitCrates) == "number"
+				and raw.BaitCrates >= 0
+				and raw.BaitCrates < 2 ^ 53
+				and raw.BaitCrates % 1 == 0
+			),
+		"Invalid bait crate count"
+	)
+	profile.BaitCrates = raw.BaitCrates or 0
+	assert(raw.Bait == nil or type(raw.Bait) == "table", "Invalid bait inventory")
+	profile.Bait = {}
+	for id, count in raw.Bait or {} do
+		assert(
+			type(id) == "string" and type(count) == "number" and count >= 0 and count < 2 ^ 53 and count % 1 == 0,
+			"Invalid bait count"
+		)
+		if count > 0 and Bait.valid(id) then
+			profile.Bait[id] = count
+		end
+	end
+	assert(raw.EquippedBait == nil or type(raw.EquippedBait) == "string", "Invalid equipped bait")
+	profile.EquippedBait = if Bait.valid(raw.EquippedBait) and profile.Bait[raw.EquippedBait]
+		then raw.EquippedBait
 		else nil
 	profile.Angler = AnglerData.decode(raw.Angler)
 	return profile
@@ -587,6 +622,62 @@ function BoatData.openBobberCrate(profile: Profile, crateId: string, skinId: str
 	profile.Angler.Stats.CoinsSpent += crate.Price
 	profile.BobberSkins[skinId] = (profile.BobberSkins[skinId] or 0) + 1
 	return "Opened"
+end
+
+function BoatData.buyBaitCrates(profile: Profile, count: number): string
+	if not Bait.validBuyCount(count) then
+		return "InvalidCount"
+	end
+	local price = Bait.Crate.Price * count
+	if profile.Cash < price then
+		return "InsufficientFunds"
+	end
+	profile.Cash -= price
+	profile.Angler.Stats.CoinsSpent += price
+	profile.BaitCrates += count
+	return "Purchased"
+end
+
+-- Opens one owned crate holding `amount` of `baitId`, rolled by the caller so
+-- save retries award the same bait. An empty hook takes the new bait.
+function BoatData.openBaitCrate(profile: Profile, baitId: string, amount: number): string
+	if not Bait.valid(baitId) then
+		return "UnknownBait"
+	end
+	if profile.BaitCrates < 1 then
+		return "NoCrate"
+	end
+	assert(type(amount) == "number" and amount >= 1 and amount % 1 == 0, "Invalid bait amount")
+	profile.BaitCrates -= 1
+	profile.Bait[baitId] = (profile.Bait[baitId] or 0) + amount
+	if profile.EquippedBait == nil then
+		profile.EquippedBait = baitId
+	end
+	return "Opened"
+end
+
+function BoatData.equipBait(profile: Profile, baitId: string?): string
+	if baitId ~= nil and not Bait.valid(baitId) then
+		return "UnknownBait"
+	end
+	if baitId ~= nil and (profile.Bait[baitId] or 0) < 1 then
+		return "NotOwned"
+	end
+	profile.EquippedBait = baitId
+	return "Equipped"
+end
+
+-- One bait is used up per catch reeled in. Running out empties the hook.
+function BoatData.consumeBait(profile: Profile, baitId: string): string
+	local count = profile.Bait[baitId] or 0
+	if count < 1 then
+		return "NoBait"
+	end
+	profile.Bait[baitId] = if count > 1 then count - 1 else nil
+	if count == 1 and profile.EquippedBait == baitId then
+		profile.EquippedBait = nil
+	end
+	return "Consumed"
 end
 
 function BoatData.equipBobberSkin(profile: Profile, skinId: string?): string

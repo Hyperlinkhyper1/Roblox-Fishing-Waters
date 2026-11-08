@@ -137,8 +137,17 @@ end
 
 -- With no callback this still finishes synchronously for the Studio bake command.
 -- Live startup can open the completed harbour while distant islands are built.
-function Map.build(onHarbourReady: ((Folder) -> ())?, onStage: ((string, number) -> ())?): Folder
+-- `step(name, run)` (init.server's) runs each distant generator in a thread of its own once the
+-- harbour is open, so a script timeout names the generator and only ends that one.
+function Map.build(
+	onHarbourReady: ((Folder) -> ())?,
+	onStage: ((string, number) -> ())?,
+	step: ((string, () -> ()) -> ())?
+): Folder
 	local started = os.clock()
+	local run = step or function(_, callback: () -> ())
+		callback()
+	end
 
 	local old = workspace:FindFirstChild("Map")
 	if old then
@@ -201,24 +210,48 @@ function Map.build(onHarbourReady: ((Folder) -> ())?, onStage: ((string, number)
 		task.wait()
 	end)
 
-	Regions.swamp(context(Biomes.Swamp, 2))
-	Regions.tropical(context(Biomes.Tropical, 3))
-	Regions.volcanic(context(Biomes.Volcanic, 4))
-	Regions.ice(context(Biomes.Ice, 5))
-	Regions.openSea(context(Biomes.OpenSea, 6))
-	Map.ensurePirateCove(root)
-	Map.ensureCity(root)
-	SeabedDetails.ensure(root)
-	Lod.build(root)
-	Map.ensureSignText()
+	run("Swamp", function()
+		Regions.swamp(context(Biomes.Swamp, 2))
+	end)
+	run("Tropical", function()
+		Regions.tropical(context(Biomes.Tropical, 3))
+	end)
+	run("Volcanic", function()
+		Regions.volcanic(context(Biomes.Volcanic, 4))
+	end)
+	run("Ice", function()
+		Regions.ice(context(Biomes.Ice, 5))
+	end)
+	run("Open sea", function()
+		Regions.openSea(context(Biomes.OpenSea, 6))
+	end)
+	run("Pirate Cove", function()
+		Map.ensurePirateCove(root)
+	end)
+	run("City", function()
+		Map.ensureCity(root)
+	end)
+	run("Seabed details", function()
+		SeabedDetails.ensure(root)
+	end)
+	run("Lod", function()
+		Lod.build(root)
+	end)
+	run("Sign text", Map.ensureSignText)
 
-	local parts = 0
-	for _, d in root:GetDescendants() do
-		if d:IsA("BasePart") then
-			parts += 1
+	run("Part count", function()
+		local parts, resumed = 0, os.clock()
+		for _, d in root:GetDescendants() do
+			if d:IsA("BasePart") then
+				parts += 1
+			end
+			if os.clock() - resumed > 0.05 then
+				task.wait()
+				resumed = os.clock()
+			end
 		end
-	end
-	print(string.format("[Map] Built %d parts in %.1fs", parts, os.clock() - started))
+		print(string.format("[Map] Built %d parts in %.1fs", parts, os.clock() - started))
+	end)
 	return root
 end
 

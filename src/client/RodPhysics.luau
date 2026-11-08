@@ -5,6 +5,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local RodDynamics = require(ReplicatedStorage.Shared.RodDynamics)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local RodPhysics = {}
 local stopCurrent: (() -> ())? = nil
 
@@ -169,7 +181,7 @@ function RodPhysics.start()
 	table.insert(connections, CollectionService:GetInstanceRemovedSignal("FishingRod"):Connect(remove))
 	table.insert(
 		connections,
-		RunService.PreSimulation:Connect(function(dt)
+		RunService.PreSimulation:Connect(profiled("RodPhysics", function(dt)
 			elapsed += dt
 			for tool, record in records do
 				local character = tool.Parent
@@ -201,7 +213,7 @@ function RodPhysics.start()
 				record.active = true
 				articulate(record, dt)
 			end
-		end)
+		end))
 	)
 	stopCurrent = function()
 		for _, connection in connections do

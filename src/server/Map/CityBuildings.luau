@@ -34,6 +34,38 @@ local function piece(parent: Instance, base: CFrame, name: string, size: Vector3
 	return p
 end
 
+-- Lit windows at night. The client (CityNightLights) turns a NightGlow part to Neon in its
+-- GlowColor once the darkness passes its GlowAt, so the city lights up gradually at dusk.
+local SHOP_GLOW = { rgb(240, 196, 128), rgb(232, 208, 164), rgb(246, 178, 104), rgb(214, 220, 226) }
+local ROOM_GLOW = { rgb(214, 168, 104), rgb(196, 178, 140), rgb(150, 168, 186), rgb(222, 150, 86), rgb(176, 150, 110) }
+local OFFICE_GLOW = { rgb(132, 140, 148), rgb(150, 136, 104), rgb(118, 132, 150) }
+
+local function noise(a: number, b: number): number
+	local v = math.sin(a * 12.9898 + b * 78.233) * 43758.5453
+	return v - math.floor(v)
+end
+
+local function nightGlow(p: BasePart, colors: { Color3 }, seed: number, b: number)
+	local roll = noise(seed, b)
+	p:AddTag("NightGlow")
+	p:SetAttribute("GlowColor", colors[math.floor(roll * #colors) + 1])
+	p:SetAttribute("GlowAt", 0.2 + noise(b, seed) * 0.6)
+end
+
+-- A warm downlight under a canopy or awning, switched with the windows
+local function downlight(p: BasePart, range: number)
+	local light = Instance.new("SpotLight")
+	light.Face = Enum.NormalId.Bottom
+	light.Angle = 140
+	light.Range = range
+	light.Brightness = 2.5
+	light.Color = rgb(255, 208, 150)
+	light.Shadows = false
+	light:AddTag("NightLight")
+	light:SetAttribute("GlowAt", 0.3)
+	light.Parent = p
+end
+
 -- Glazed curtain walls use broad panes and slender structural mullions rather
 -- than one part per window. Both the sides and back remain finished from afar.
 local function curtain(parent: Instance, base: CFrame, cx: number, cz: number, width: number, depth: number, bottom: number, height: number, palette, facadeStyle: number)
@@ -43,8 +75,15 @@ local function curtain(parent: Instance, base: CFrame, cx: number, cz: number, w
 	for _, sign in { -1, 1 } do
 		local z = cz + sign * (depth / 2 + 0.18)
 		local x = cx + sign * (width / 2 + 0.18)
-		piece(parent, base, "CurtainGlass", Vector3.new(width - 1.4, height - 1, 0.35), Vector3.new(cx, y, z), palette.glass, M.Glass)
-		piece(parent, base, "SideGlass", Vector3.new(0.35, height - 1, depth - 1.4), Vector3.new(x, y, cz), palette.glass, M.Glass)
+		local front = piece(parent, base, "CurtainGlass", Vector3.new(width - 1.4, height - 1, 0.35), Vector3.new(cx, y, z), palette.glass, M.Glass)
+		local side = piece(parent, base, "SideGlass", Vector3.new(0.35, height - 1, depth - 1.4), Vector3.new(x, y, cz), palette.glass, M.Glass)
+		-- Offices burn late on most faces, dim enough that the mullions still read
+		local seed = base.Position.X + base.Position.Z * 0.37 + bottom
+		for k, pane in { front, side } do
+			if noise(seed, sign * 3 + k) < 0.65 then
+				nightGlow(pane, OFFICE_GLOW, seed, sign * 5 + k)
+			end
+		end
 		for i = 0, verticalCount do
 			local dx = -width / 2 + i * width / verticalCount
 			piece(parent, base, "StonePier", Vector3.new(if facadeStyle == 2 then 1.5 else 0.85, height, 0.8), Vector3.new(cx + dx, y, z + sign * 0.23), palette.trim, M.Concrete)
@@ -93,18 +132,28 @@ function CityBuildings.build(parent: Instance, base: CFrame, width: number, dept
 	for _, side in { -1, 1 } do
 		local x = side * width * 0.26
 		piece(building, base, "ShopWindowFrame", Vector3.new(width * 0.30, 8.5, 0.6), Vector3.new(x, 6.1, front + 0.4), palette.metal, M.Metal)
-		piece(building, base, "ShopWindow", Vector3.new(width * 0.30 - 1.2, 7.3, 0.7), Vector3.new(x, 6.1, front + 0.55), palette.glass, M.Glass)
+		local shop = piece(building, base, "ShopWindow", Vector3.new(width * 0.30 - 1.2, 7.3, 0.7), Vector3.new(x, 6.1, front + 0.55), palette.glass, M.Glass)
+		nightGlow(shop, SHOP_GLOW, variant, side)
 		piece(building, base, "ShopMullion", Vector3.new(0.55, 7.3, 0.9), Vector3.new(x, 6.1, front + 0.85), palette.metal, M.Metal)
-		piece(building, base, "UpperShopWindow", Vector3.new(width * 0.28, math.max(2, podiumHeight - 12), 0.45), Vector3.new(x, (podiumHeight + 10) / 2, front + 0.34), palette.glass, M.Glass)
-		for _, z in { -depth * 0.26, 0, depth * 0.26 } do
-			piece(building, base, "SideStreetWindow", Vector3.new(0.55, 8, depth * 0.17), Vector3.new(side * (width / 2 + 0.3), 7.5, z), palette.glass, M.Glass)
+		local upper = piece(building, base, "UpperShopWindow", Vector3.new(width * 0.28, math.max(2, podiumHeight - 12), 0.45), Vector3.new(x, (podiumHeight + 10) / 2, front + 0.34), palette.glass, M.Glass)
+		if noise(variant, side + 7) < 0.6 then
+			nightGlow(upper, ROOM_GLOW, variant, side + 9)
+		end
+		for k, z in { -depth * 0.26, 0, depth * 0.26 } do
+			local sideWindow = piece(building, base, "SideStreetWindow", Vector3.new(0.55, 8, depth * 0.17), Vector3.new(side * (width / 2 + 0.3), 7.5, z), palette.glass, M.Glass)
+			if noise(variant, side * 11 + k) < 0.7 then
+				nightGlow(sideWindow, SHOP_GLOW, variant, side * 13 + k)
+			end
 			piece(building, base, "SideStreetSill", Vector3.new(0.85, 0.6, depth * 0.18), Vector3.new(side * (width / 2 + 0.4), 3.3, z), palette.trim, M.Concrete)
 		end
 	end
 	piece(building, base, "EntranceRecess", Vector3.new(8, 10.5, 0.65), Vector3.new(0, 5.25, front + 0.4), palette.metal, M.Metal)
-	piece(building, base, "EntranceGlass", Vector3.new(6.8, 8.6, 0.75), Vector3.new(0, 4.8, front + 0.55), palette.glass, M.Glass)
+	local entrance = piece(building, base, "EntranceGlass", Vector3.new(6.8, 8.6, 0.75), Vector3.new(0, 4.8, front + 0.55), palette.glass, M.Glass)
+	nightGlow(entrance, SHOP_GLOW, variant, 0)
+	entrance:SetAttribute("GlowAt", 0.2)
 	piece(building, base, "DoorDivider", Vector3.new(0.45, 8.6, 0.8), Vector3.new(0, 4.8, front + 0.8), palette.metal, M.Metal)
-	piece(building, base, "EntranceCanopy", Vector3.new(12, 0.65, 4), Vector3.new(0, 11.3, front + 1.8), palette.metal, M.Metal)
+	local canopy = piece(building, base, "EntranceCanopy", Vector3.new(12, 0.65, 4), Vector3.new(0, 11.3, front + 1.8), palette.metal, M.Metal)
+	downlight(canopy, 26)
 	local plaque = piece(building, base, "AddressPlaque", Vector3.new(2.4, 1.8, 0.25), Vector3.new(5.2, 6.2, front + 0.5), palette.metal, M.Metal)
 	local plaqueGui = Instance.new("SurfaceGui")
 	plaqueGui.Face = Enum.NormalId.Back
@@ -198,7 +247,8 @@ function CityBuildings.build(parent: Instance, base: CFrame, width: number, dept
 	else
 		-- A copper-toned vertical bay and a low roof lantern create a distinct crown.
 		piece(building, base, "CopperBay", Vector3.new(shaftWidth * 0.22, shaftHeight * 0.84, 1.5), Vector3.new(shaftX - shaftWidth * 0.25, podiumHeight + shaftHeight * 0.48, shaftZ + shaftDepth / 2 + 0.8), rgb(120, 128, 112), M.Metal)
-		piece(building, base, "RoofLantern", Vector3.new(topWidth * 0.43, 4, topDepth * 0.40), Vector3.new(topX, height + 2, topZ), palette.glass, M.Glass)
+		local lantern = piece(building, base, "RoofLantern", Vector3.new(topWidth * 0.43, 4, topDepth * 0.40), Vector3.new(topX, height + 2, topZ), palette.glass, M.Glass)
+		nightGlow(lantern, SHOP_GLOW, variant, 21)
 		piece(building, base, "LanternCap", Vector3.new(topWidth * 0.46, 0.8, topDepth * 0.43), Vector3.new(topX, height + 4.2, topZ), palette.metal, M.Metal)
 	end
 	return building
@@ -232,11 +282,18 @@ function CityBuildings.block(parent: Instance, base: CFrame, width: number, dept
 
 	piece(building, base, "Body", Vector3.new(width, height, depth), Vector3.new(0, height / 2, 0), look.wall, look.mat, true)
 	piece(building, base, "Plinth", Vector3.new(width + 0.4, 1.6, depth + 0.4), Vector3.new(0, 0.8, 0), look.roof, M.Concrete)
-	piece(building, base, "Shopfronts", Vector3.new(width + 0.3, 6.6, depth + 0.3), Vector3.new(0, 5.1, 0), look.glass, M.Glass)
+	local shopfronts = piece(building, base, "Shopfronts", Vector3.new(width + 0.3, 6.6, depth + 0.3), Vector3.new(0, 5.1, 0), look.glass, M.Glass)
+	if noise(variant, 1) < 0.8 then
+		nightGlow(shopfronts, SHOP_GLOW, variant, 2)
+	end
 	piece(building, base, "Fascia", Vector3.new(width + 0.5, 1.6, depth + 0.5), Vector3.new(0, 9.4, 0), look.trim, M.Concrete)
 	for floor = 1, floors - 1 do
 		local y = GROUND_FLOOR + (floor - 1) * STOREY + 5
-		piece(building, base, "WindowBand", Vector3.new(width + 0.3, 4.4, depth + 0.3), Vector3.new(0, y, 0), look.glass, M.Glass)
+		local band = piece(building, base, "WindowBand", Vector3.new(width + 0.3, 4.4, depth + 0.3), Vector3.new(0, y, 0), look.glass, M.Glass)
+		-- Some flats are home, some aren't: about half the floors light up
+		if noise(variant, floor * 3 + 5) < 0.5 then
+			nightGlow(band, ROOM_GLOW, variant, floor * 7)
+		end
 	end
 	if floors > 1 then
 		local upper = height - GROUND_FLOOR
@@ -294,7 +351,10 @@ function CityBuildings.warehouse(parent: Instance, base: CFrame, width: number, 
 	piece(building, base, "Hall", Vector3.new(width, height, depth), Vector3.new(0, height / 2, 0), brick, M.Brick, true)
 	piece(building, base, "Plinth", Vector3.new(width + 0.4, 2, depth + 0.4), Vector3.new(0, 1, 0), stone, M.Concrete)
 	piece(building, base, "StringCourse", Vector3.new(width + 0.4, 1, depth + 0.4), Vector3.new(0, height * 0.55, 0), stone, M.Concrete)
-	piece(building, base, "UpperWindows", Vector3.new(width - 4, 4, depth + 0.3), Vector3.new(0, height * 0.75, 0), rgb(44, 50, 52), M.Glass)
+	local upper = piece(building, base, "UpperWindows", Vector3.new(width - 4, 4, depth + 0.3), Vector3.new(0, height * 0.75, 0), rgb(44, 50, 52), M.Glass)
+	if noise(variant, 31) < 0.45 then
+		nightGlow(upper, OFFICE_GLOW, variant, 33)
+	end
 	local doors = math.max(2, math.floor(width / 22))
 	for i = 1, doors do
 		local x = -width / 2 + (i - 0.5) * width / doors

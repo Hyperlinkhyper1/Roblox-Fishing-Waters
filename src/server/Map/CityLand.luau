@@ -1,6 +1,7 @@
 -- Mainland geometry for the distant city: an irregular coastline cut by a long estuary.
 -- Coordinates are {x, z} pairs relative to the city centre; a third entry "quay" marks
--- the edge that starts at that point as a straight concrete quay wall.
+-- the edge that starts at that point as a straight concrete quay wall, and "edge" marks a
+-- straight edge where the land carries on as hills (see CityHills) rather than meeting water.
 local LowPoly = require(script.Parent.LowPoly)
 
 local CityLand = {}
@@ -17,7 +18,7 @@ function CityLand.roughen(points: { Point }, segment: number, jitter: number): {
 	for i, a in points do
 		local b = points[i % #points + 1]
 		table.insert(result, a)
-		if a[3] ~= "quay" then
+		if a[3] == nil then
 			local dx, dz = b[1] - a[1], b[2] - a[2]
 			local length = math.sqrt(dx * dx + dz * dz)
 			local steps = math.floor(length / segment)
@@ -168,7 +169,7 @@ function CityLand.shore(parent: Instance, points: { Point }, origin: Vector3, to
 		local b = points[i % #points + 1]
 		local dx, dz = b[1] - a[1], b[2] - a[2]
 		local length = math.sqrt(dx * dx + dz * dz)
-		if length < 1 then
+		if length < 1 or a[3] == "edge" then
 			continue
 		end
 		local mx, mz = (a[1] + b[1]) / 2, (a[2] + b[2]) / 2

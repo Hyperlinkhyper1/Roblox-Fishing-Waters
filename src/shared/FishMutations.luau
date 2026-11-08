@@ -289,25 +289,91 @@ function FishMutations.eventKeys(): { string }
 	return keys
 end
 
--- "Red Neon Albino", "Corrupted Rainbow Neon", or "" for a normal fish.
-function FishMutations.label(key: string?, neonColor: string?): string
+-- Each mutation's own colour (its inventory badge), as RGB. Neon catches use
+-- their NeonColor instead and Rainbow names are painted letter by letter.
+FishMutations.Colors = {
+	Corrupted = { 180, 55, 77 }, VoidTouched = { 95, 61, 151 }, Windy = { 55, 151, 170 },
+	Ascended = { 190, 151, 57 }, Floral = { 205, 92, 146 }, Snowy = { 72, 155, 199 },
+	Tryhard = { 196, 91, 51 }, JackOFish = { 227, 112, 25 }, JacksPet = { 117, 77, 159 },
+	ZeusStruck = { 194, 154, 29 }, Nightmare = { 151, 47, 73 }, Obsidian = { 88, 70, 109 },
+	Gusty = { 57, 160, 125 }, Astral = { 185, 139, 47 }, Rainbow = { 109, 97, 179 },
+	Neon = { 40, 164, 185 }, Albino = { 151, 164, 181 },
+}
+FishMutations.RainbowColors = { { 255, 116, 125 }, { 255, 216, 111 }, { 143, 244, 177 }, { 150, 205, 255 } }
+
+local DISPLAY = { VoidTouched = "Void Touched", JackOFish = "Jack O' Fish", JacksPet = "Jack's Pet", ZeusStruck = "Zeus Struck" }
+
+-- { { Key = "Neon", Text = "Red Neon" }, ... } in display order; empty when normal.
+function FishMutations.labelParts(key: string?, neonColor: string?): { { Key: string, Text: string } }
 	local set = FishMutations.parts(key)
-	local names = {}
+	local parts = {}
 	for _, name in FishMutations.Order do
 		if set[name] then
-			table.insert(
-				names,
-				if name == "Neon" and neonColor
-					then neonColor .. " Neon"
-					elseif name == "VoidTouched" then "Void Touched"
-     elseif name == "JackOFish" then "Jack O' Fish"
-     elseif name == "JacksPet" then "Jack's Pet"
-     elseif name == "ZeusStruck" then "Zeus Struck"
-					else name
-			)
+			local text = if name == "Neon" and neonColor then neonColor .. " Neon" else DISPLAY[name] or name
+			table.insert(parts, { Key = name, Text = text })
 		end
 	end
+	return parts
+end
+
+-- "Red Neon Albino", "Corrupted Rainbow Neon", or "" for a normal fish.
+function FishMutations.label(key: string?, neonColor: string?): string
+	local names = {}
+	for _, part in FishMutations.labelParts(key, neonColor) do
+		table.insert(names, part.Text)
+	end
 	return table.concat(names, " ")
+end
+
+-- Pale paper (the bestiary book) needs the same hue much darker to stay legible.
+local function onPaper(rgb: { number }): { number }
+	return { math.floor(rgb[1] * 0.6 + 0.5), math.floor(rgb[2] * 0.6 + 0.5), math.floor(rgb[3] * 0.6 + 0.5) }
+end
+
+-- The RGB a mutation's name is written in. Text usually sits on dark UI, so
+-- badge colours are lifted a quarter of the way to white; neon colours are
+-- already bright. `light` is for text on pale backgrounds.
+function FishMutations.textColor(name: string, neonColor: string?, light: boolean?): { number }
+	local neon = name == "Neon" and neonColor and FishMutations.NeonColors[neonColor]
+	local rgb = neon or FishMutations.Colors[name] or { 200, 200, 200 }
+	if light then
+		return onPaper(rgb)
+	elseif neon then
+		return neon
+	end
+	local lifted = {}
+	for i = 1, 3 do
+		lifted[i] = math.floor(rgb[i] + (255 - rgb[i]) * 0.25 + 0.5)
+	end
+	return lifted
+end
+
+local function hex(rgb: { number }): string
+	return string.format("#%02X%02X%02X", rgb[1], rgb[2], rgb[3])
+end
+
+-- Roblox RichText for the mutation label: every mutation word in its own
+-- colour, Rainbow letter by letter. "" for a normal fish. `light` darkens the
+-- colours for pale backgrounds such as the bestiary page.
+function FishMutations.richLabel(key: string?, neonColor: string?, light: boolean?): string
+	local words = {}
+	for _, part in FishMutations.labelParts(key, neonColor) do
+		if part.Key == "Rainbow" then
+			local letters = {}
+			for index = 1, #part.Text do
+				local colour = FishMutations.RainbowColors[(index - 1) % #FishMutations.RainbowColors + 1]
+				if light then
+					colour = onPaper(colour)
+				end
+				table.insert(letters, string.format('<font color="%s">%s</font>', hex(colour), string.sub(part.Text, index, index)))
+			end
+			table.insert(words, table.concat(letters))
+		else
+			local text = string.gsub(part.Text, "'", "&apos;")
+			table.insert(words, string.format('<font color="%s">%s</font>', hex(FishMutations.textColor(part.Key, neonColor, light)), text))
+		end
+	end
+	return table.concat(words, " ")
 end
 
 return FishMutations

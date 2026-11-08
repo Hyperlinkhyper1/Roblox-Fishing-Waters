@@ -9,6 +9,7 @@ local SpearSkins = require(ReplicatedStorage.Shared.SpearSkins)
 local Spears = require(ReplicatedStorage.Shared.Spears)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local FishingBobber = require(ReplicatedStorage.Shared.FishingBobber)
+local Bait = require(ReplicatedStorage.Shared.Bait)
 
 local Bag = {}
 local white = Color3.fromRGB(245, 245, 245)
@@ -637,6 +638,89 @@ function Bag.show(parent, profile, player, narrow)
 			if #copies == 0 then
 				empty(itemBody, if state.ItemQuery ~= "" then "No matching spear skins" else "No spear skins yet",
 					if state.ItemQuery ~= "" then "Try another search." else "Open the $350 Spear Case in Tide & Tackle.")
+			end
+			return
+		end
+		if state.Category == "Baits" then
+			local request = ReplicatedStorage.Fishing.Request
+			local ready = player:GetAttribute("BoatDataStatus") == "Ready"
+			local crates = profile.BaitCrates or 0
+			if crates > 0 and state.ItemQuery == "" then
+				local tile = panel(itemBody, "BaitCrate", UDim2.new(), UDim2.new(1, -7, 0, 112))
+				outline(tile, Color3.fromRGB(244, 196, 76))
+				label(tile, Bait.Crate.Name .. "  ×" .. crates, 18, {
+					Position = UDim2.fromOffset(8, 6),
+					Size = UDim2.new(1, -16, 0, 26),
+					TextXAlignment = Enum.TextXAlignment.Center,
+				})
+				label(tile, string.format("%d–%d bait of one kind. Worms are common; rarer bait is stronger.", Bait.Crate.MinBait, Bait.Crate.MaxBait), 14, {
+					Position = UDim2.fromOffset(8, 32),
+					Size = UDim2.new(1, -16, 0, 34),
+					TextColor3 = grey,
+					TextXAlignment = Enum.TextXAlignment.Center,
+				})
+				action(tile, "OpenBaitCrate", "[Open crate]", UDim2.fromOffset(8, 72), UDim2.new(1, -16, 0, 32), function()
+					if ready then
+						request:FireServer("OpenBaitCrate")
+					end
+				end, true)
+			end
+			local ids = {}
+			for _, id in Bait.Order do
+				local count = (profile.Bait or {})[id] or 0
+				if count > 0 and string.find(string.lower(Bait.Types[id].Name), string.lower(state.ItemQuery), 1, true) then
+					table.insert(ids, id)
+				end
+			end
+			if state.Reverse then
+				table.sort(ids, function(a, b)
+					return table.find(Bait.Order, a) > table.find(Bait.Order, b)
+				end)
+			end
+			local equipped = player:GetAttribute("EquippedBait") or ""
+			for index, id in ids do
+				local bait = Bait.Types[id]
+				local selected = equipped == id
+				local color = Color3.fromRGB(table.unpack(Bait.Rarities[bait.Rarity].Color))
+				local tile = panel(itemBody, "Bait:" .. id, UDim2.new(), UDim2.new(1, -7, 0, 150))
+				tile.LayoutOrder = index + 1
+				outline(tile, if selected then mint else edge)
+				local swatch = make("Frame", tile, {
+					Position = UDim2.fromOffset(10, 10),
+					Size = UDim2.fromOffset(26, 26),
+					BackgroundColor3 = Color3.fromRGB(table.unpack(bait.Color)),
+					BackgroundTransparency = 0,
+				})
+				make("UICorner", swatch, { CornerRadius = UDim.new(1, 0) })
+				outline(swatch, color, 2)
+				label(tile, bait.Name .. " bait  ×" .. profile.Bait[id], 18, {
+					Position = UDim2.fromOffset(44, 8),
+					Size = UDim2.new(1, -52, 0, 30),
+				})
+				label(tile, bait.Rarity, 14, {
+					Position = UDim2.fromOffset(10, 40),
+					Size = UDim2.new(1, -20, 0, 18),
+					TextColor3 = color,
+				})
+				label(tile, table.concat(Bait.perks(id), " · ") .. "\nOne is used per catch reeled in.", 14, {
+					Position = UDim2.fromOffset(10, 60),
+					Size = UDim2.new(1, -20, 0, 38),
+					TextColor3 = grey,
+				})
+				action(tile, "EquipBait", if selected then "[On hook · Remove]" else "[Use bait]", UDim2.fromOffset(8, 108), UDim2.new(1, -16, 0, 32), function()
+					if ready then
+						request:FireServer("EquipBait", if selected then "" else id)
+					end
+				end, selected)
+			end
+			if #ids == 0 and (crates == 0 or state.ItemQuery ~= "") then
+				empty(
+					itemBody,
+					if state.ItemQuery ~= "" then "No matching bait" else "No bait yet",
+					if state.ItemQuery ~= ""
+						then "Try another search."
+						else string.format("Buy a $%d Bait Crate from Finn in Tide & Tackle, or get lucky on the line.", Bait.Crate.Price)
+				)
 			end
 			return
 		end

@@ -15,7 +15,7 @@ RodUpgrades.Stats = {
 	},
 	Handling = {
 		Name = "Handling",
-		Description = "More progress per green hit means fewer hits to land a fish.",
+		Description = "A wider green zone, and more progress per green hit means fewer hits to land a fish.",
 		MaxLevel = 10,
 		BasePrice = 160,
 		Growth = 1.45,
@@ -84,7 +84,7 @@ function RodUpgrades.effect(stat: string, level: number): string
 	if stat == "Speed" then
 		return string.format("+%d%% reel per hit", math.floor(REEL_PER_LEVEL * level * 100 + 0.5))
 	elseif stat == "Handling" then
-		return string.format("+%d%% green hit progress", math.floor(HANDLING_PER_LEVEL * level * 100 + 0.5))
+		return string.format("+%d%% green zone & hit progress", math.floor(HANDLING_PER_LEVEL * level * 100 + 0.5))
 	elseif stat == "Strength" then
 		return string.format("+%d%% big fish chance", math.floor(SIZE_PER_LEVEL * level * 100 + 0.5))
 	end

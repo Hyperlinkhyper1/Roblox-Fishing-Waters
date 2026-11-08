@@ -33,6 +33,7 @@ for (const [name, sourcePath] of Object.entries({
   SHOPDESKGEOMETRY: "src/server/Map/ShopDeskGeometry.luau",
   CASHREGISTERGEOMETRY: "src/server/Map/CashRegisterGeometry.luau",
   SHOPDESK: "src/server/Map/ShopDesk.luau",
+  OFFICEDESK: "src/server/Map/OfficeDesk.luau",
   BASEGRID: "src/shared/BaseGrid.luau",
   BASEHOUSE: "src/server/Map/BaseHouse.luau",
   DININGROOM: "src/server/Map/DiningRoom.luau",

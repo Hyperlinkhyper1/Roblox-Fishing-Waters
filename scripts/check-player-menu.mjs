@@ -156,7 +156,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(game:GetService\("ReplicatedFirst"\):WaitForChild\("UITheme"\)\)/g, 'Theme')
       .replace(/require\(script.Parent.BoatService\)/g, 'BoatService')
       .replace(/require\(script.Parent.AnglerData\)/g, 'Data');
-    for (const pure of ['Paths', 'Recipes', 'FishingRanks', 'FishCatch']) {
+    for (const pure of ['Paths', 'Recipes', 'FishingRanks', 'FishCatch', 'FishMutations']) {
       const inlined = `(function() ${await readFile(join(root, `src/shared/${pure}.luau`), 'utf8')} end)()`;
       source = source.replace(new RegExp(`require\\(ReplicatedStorage.Shared.${pure}\\)`, 'g'), () => inlined);
     }

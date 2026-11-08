@@ -27,9 +27,10 @@ Waters.
   wood. On a beach you hear waves rolling up the sand. Out at sea it is a wide,
   soft wash with wind. Changing the layers by location is what makes moving
   around feel like travelling.
-- **Music is soft, slow, acoustic.** At sea it is piano and guitar at roughly
-  80 BPM. It is never dramatic and never has a strong beat, so it sits *under*
-  the waves instead of on top of them.
+- **Music is slow and never has a strong beat.** On land it is warm acoustic
+  guitar. At sea it turns ominous: dark drones and sparse piano that make the
+  open water feel deep and a little threatening. No big hits or percussion
+  builds, so it still sits *under* the waves instead of on top of them.
 - **Music leaves room.** Music sits low in the mix and the ambience carries the
   space between tracks. Minecraft-style breathing room keeps the music from
   becoming wallpaper.
@@ -119,17 +120,28 @@ Effects slider applies.
 
 ### 3.2 `src/client/BackgroundMusic.luau` — Ocean playlist
 
+Made ominous on 2026-11-07 (was soft piano/guitar). All APM, slow or
+no-tempo beds without jump-scare hits.
+
 | Asset | Track | Why |
 | --- | --- | --- |
-| `1838786430` | The Grace and the Gamble | "Soft and lush piano and acoustic guitar" (Kingdom 2, *Charming and Sincere: Acoustic Guitar and Piano*) |
-| `1846315728` | Andante for Guitar and Piano in C Major | Literal piano + guitar duet at andante pace (~76–100 BPM) |
-| `9045573146` | No Clouds Outside (underscore) | "Relaxed, peaceful and feel-good acoustic melody. No lead." |
-| `1839919231` | Lonely Promises | "Calm and laid-back, peaceful guitar bed" |
-| `1839967674` | In Five (b) | "Positive, hopeful tender piano melody. Underscore version" |
-| `1837380492` | Happy Birds Fly | "Peaceful & fragile, piano" |
+| `9039978890` | Ominous (Bruton TV Series) | "Evolving atmospheric pads and foreboding drones beneath scratching string pulses" |
+| `1837115429` | Foreboding (Bibliotheque) | "Dark, sparse piano bed with atmospheric elements drifting in and out. Minimal and edgy." |
+| `9042795293` | Feeling Of Foreboding (Kosinus) | "SLOW - Ominous, Bleak, Evolving Drone, Synth Pulse, Sustained Strings, Sparse Piano" |
+| `1838762089` | Tactics of the Sublime (Kingdom 2) | "Deep and ominous synth tones drone on throughout alien atmospheres" |
+| `1837598570` | Dark Deep Sea | Title only (no store description) |
+| `1847182538` | Deep Sea Mystery (Henri Poch) | Title only (no store description) |
+| `1842765800` | Deep Foreboding (James Asher) | Title only; same composer as the island's *Twilight Beach* |
+
+Ocean volume went from 0.2 to 0.26 because drones are mastered quieter.
 
 **Not yet listen-tested in Studio.** Only the store metadata was checked. If a
-track turns out too upbeat or too sad, swap it from the candidate list in §5.
+track turns out too horror-ish (big hits, screams), swap it for a spare in §5.
+
+The old acoustic sea picks (`1838786430` The Grace and the Gamble,
+`1846315728` Andante for Guitar and Piano, `9045573146` No Clouds Outside,
+`1839919231` Lonely Promises, `1839967674` In Five (b), `1837380492` Happy
+Birds Fly) would still suit a calm-weather or lagoon playlist.
 
 ### 3.3 `src/client/AmbientFish.luau`
 
@@ -209,7 +221,13 @@ Other candidates found but not used yet:
 | `9112750614` | Bow Wash, diesel fishing boat, trolling (36 s) | Boat motion layer |
 | `9112865277` | Sailboat Wake 3 — middle-of-ocean ambience (66 s) | Sailing |
 | `9112870623` | Seagulls 1 — flock overhead, distant (34 s) | Busy harbour |
-| `1838786269` etc. | Rest of *Charming and Sincere* (Merced Falls, Sonora, Ypsilanti, Angels Camp…) | More sea music — untested tempo |
+| `1838786269` etc. | Rest of *Charming and Sincere* (Merced Falls, Sonora, Ypsilanti, Angels Camp…) | Calm acoustic sea music — untested tempo |
+| `9045015599` | Vortex, drone only mix ("dark and eerie soundscapes") | Ominous sea spare |
+| `92305230618831` | Ominous Presence AMBIENT MIX (179 s) | Ominous sea spare |
+| `125322520450801` | Haunting Memory Underscore Ambient Only (188 s) | Ominous sea spare |
+| `1847648166` | Lurking Depths B | Ominous sea spare (no description) |
+| `1841178209` | Black Tide (a) | Ominous sea spare (no description) |
+| `9040206659` | Spatial Abyss (a): "deep, intense hybrid drone… sparse sub booms" | Storms / deep water — may be too heavy |
 | `1842613995` etc. | Easy Acoustic Chill (current Island playlist) | Already used on land |
 
 ---

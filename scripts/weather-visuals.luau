@@ -305,7 +305,11 @@ for _, seed in { 17, 1847, 999983 } do
 		end
 	end
 end
-workspace:SetAttribute("WeatherOverride", "Clear")
-step(5)
-assert(not rain[1].Enabled and not rainSound.IsPlaying, "Real clear preset stops rainfall and rain audio")
+for _, kind in { "Foggy", "Clear" } do
+	workspace:SetAttribute("WeatherOverride", kind)
+	step(5)
+	assert(not rain[1].Enabled and not rainSound.IsPlaying and not flash.Enabled,
+		"Dry presets stop rainfall, rain audio and lightning after a storm")
+end
+assert(#effects:GetChildren() == 10, "Foggy must not allocate an additional particle field")
 print("PASS real forecast to precipitation/audio integration across selected weather, seeds and map positions")

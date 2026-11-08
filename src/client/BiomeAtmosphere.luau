@@ -1,6 +1,6 @@
 -- Blends water colour, fog and colour grading toward whichever biome the camera is in,
--- and shows the area's name when you cross into it. Also runs the day/night clock
--- and darkens every biome's look at night.
+-- runs the day/night clock and darkens every biome's look at night. The area name
+-- banner lives in AreaBanner.
 
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
@@ -13,7 +13,18 @@ local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local PlayerSettings = require(script.Parent.PlayerSettings)
 
-local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local BiomeAtmosphere = {}
 
 local WEATHER_BLEND = TweenInfo.new(0.65, Enum.EasingStyle.Linear)
@@ -25,8 +36,7 @@ local UNDERWATER_VISIBILITY = 10 / 0.28 -- 10 metres in Roblox studs
 -- Terrain uses its own underwater fog instead of Lighting.FogEnd. Calibrated in
 -- Studio: nearby objects remain visible, while a marker at 36 studs fades out.
 local UNDERWATER_TRANSPARENCY = 0.01
-local FADE = TweenInfo.new(1.5, Enum.EasingStyle.Sine)
-local LEAVE_MARGIN = 1.1 -- stay in a biome until this far past its edge, so the title doesn't flicker
+local LEAVE_MARGIN = 1.1 -- stay in a biome until this far past its edge, so the look doesn't flicker
 -- Deep-night targets each biome's look blends toward. The fog matches the night
 -- sky so the horizon doesn't glow as a pale band, and distant islands fade into darkness.
 local NIGHT_FOG = Color3.fromRGB(18, 24, 42)
@@ -89,29 +99,6 @@ local function ensure<T>(parent: Instance, className: string): T
 	return created :: any
 end
 
-local function makeTitle(): TextLabel
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "AreaTitle"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-
-	local label = Instance.new("TextLabel")
-	label.AnchorPoint = Vector2.new(0.5, 0.5)
-	label.Position = UDim2.fromScale(0.5, 0.2)
-	label.Size = UDim2.new(0.8, 0, 0, 60)
-	label.BackgroundTransparency = 1
-	Theme.text(label)
-	label.TextSize = 44
-	label.TextColor3 = Theme.Colors.Text
-	label.TextStrokeColor3 = Theme.Colors.Black
-	label.TextStrokeTransparency = 1
-	label.TextTransparency = 1
-	label.Parent = gui
-
-	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
-	return label
-end
-
 function BiomeAtmosphere.start()
 	local terrain = workspace.Terrain
 	local atmosphere = ensure(Lighting, "Atmosphere") :: Atmosphere
@@ -150,25 +137,11 @@ function BiomeAtmosphere.start()
 	bloom.Size = 28
 	bloom.Threshold = 1.7
 	local wetness, wetClock = 0, os.clock()
-	local title = makeTitle()
-	local titleToken = 0
 	local surfaceAmbient = Lighting.Ambient
 	local surfaceFogColor = Lighting.FogColor
 	local surfaceFogStart = Lighting.FogStart
 	local surfaceFogEnd = Lighting.FogEnd
 	local activeTweens: { Tween } = {}
-
-	local function showTitle(text: string)
-		titleToken += 1
-		local token = titleToken
-		title.Text = text
-		TweenService:Create(title, FADE, { TextTransparency = 0, TextStrokeTransparency = 0 }):Play()
-		task.delay(4, function()
-			if token == titleToken then
-				TweenService:Create(title, FADE, { TextTransparency = 1, TextStrokeTransparency = 1 }):Play()
-			end
-		end)
-	end
 
 	local function apply(biome: Biomes.Biome, underwater: boolean, transition: TweenInfo)
 		for _, tween in activeTweens do
@@ -214,9 +187,16 @@ function BiomeAtmosphere.start()
 		local camera = workspace.CurrentCamera
 		local weather = Weather.getState(now, if camera then camera.CFrame.Position else Vector3.zero)
 		local rain, storm = weather.rain, weather.storm
+		local eye = if camera then camera.CFrame.Position else Vector3.new(0, 0, 0)
+		-- Reuse one engine Atmosphere and this 2 Hz update. Broad drifting banks
+		-- vary visibility without transparent fog meshes or particle overdraw.
+		local bank = BiomeAtmosphere.fogBank(eye.X, eye.Z, now)
+		-- A marine layer is thick near the water, gradually thinning aloft.
+		local fog = (weather.fog or 0) * (0.82 + bank * 0.18)
+			* (1 - smoothstep((eye.Y - Biomes.WaterLevel - 35) / 220) * 0.65)
 		local overcast = math.max(weather.cloudCover, math.clamp(rain / 0.08, 0, 1))
 		-- The built-in sky otherwise draws the moon and stars through rain clouds.
-		sky.CelestialBodiesShown = celestialBodiesShown and overcast < 0.85 and weather.kind ~= "BlackHole"
+		sky.CelestialBodiesShown = celestialBodiesShown and overcast < 0.85 and fog < 0.35 and weather.kind ~= "BlackHole"
 		clouds.Enabled = true
 		local clock = DayNight.clockTime(now)
 		local night = DayNight.darkness(clock)
@@ -224,12 +204,12 @@ function BiomeAtmosphere.start()
 		local wallClock = os.clock()
 		wetness = math.max(rain, wetness - (wallClock - wetClock) / WET_LINGER)
 		wetClock = wallClock
-		local eye = if camera then camera.CFrame.Position else Vector3.new(0, 0, 0)
 		-- Rain and wind break the mist up; a storm leaves none.
-		local mist = BiomeAtmosphere.mistAt(clock)
-			* (0.4 + 0.6 * BiomeAtmosphere.fogBank(eye.X, eye.Z, now))
-			* (1 - storm)
-			* (1 - math.clamp(rain / 0.6, 0, 1) * 0.5)
+		local mist = math.max(
+			fog,
+			BiomeAtmosphere.mistAt(clock) * (0.4 + 0.6 * bank)
+				* (1 - storm) * (1 - math.clamp(rain / 0.6, 0, 1) * 0.5)
+		)
 		local golden = goldenHour(clock) * (1 - overcast)
 		-- Light under a supercell turns dim and faintly green.
 		local cell = if camera then Weather.supercellCover(camera.CFrame.Position, weather.supercell) else 0
@@ -288,32 +268,33 @@ function BiomeAtmosphere.start()
 			local nightFog = NIGHT_FOG:Lerp(NIGHT_CLOUDS, overcast * 0.6)
 			-- Mist glows with whatever light there is: warm at dawn, dim blue at night.
 			local mistColor = MIST_COLOR:Lerp(TWILIGHT_FOG, twilight * 0.5):Lerp(nightFog, night * 0.85)
+			local density = math.min(
+				0.6,
+				look.density + rain * 0.13 + (wetness - rain) * 0.08 + night * 0.06 + mist * 0.2
+			)
 			blend(atmosphere, {
 				-- Mist swallows distant silhouettes instead of leaving a hard horizon.
-				Offset = Biomes.DistanceFogOffset * (1 - mist * 0.8),
+				Offset = Biomes.DistanceFogOffset * (1 - mist * 0.8) * (1 - fog * 0.5),
 				Color = look.atmosphereColor
 					:Lerp(GOLDEN_FOG, golden * 0.3)
 					:Lerp(Color3.fromRGB(112, 125, 142), rain * 0.65)
 					:Lerp(TWILIGHT_FOG, twilight * 0.45)
 					:Lerp(nightFog, night)
-					:Lerp(mistColor, mist * 0.7),
+					:Lerp(mistColor, math.max(mist * 0.7, fog * 0.95)),
 				Decay = look.atmosphereDecay
 					:Lerp(Color3.fromRGB(55, 64, 82), rain * 0.5)
 					:Lerp(TWILIGHT_DECAY, twilight * 0.5)
 					:Lerp(NIGHT_DECAY, night)
-					:Lerp(MIST_DECAY:Lerp(NIGHT_DECAY, night * 0.8), mist * 0.6),
+					:Lerp(MIST_DECAY:Lerp(NIGHT_DECAY, night * 0.8), math.max(mist * 0.6, fog * 0.85)),
 				-- A touch thicker at night so far scenery dissolves into the dark;
 				-- mist and humid post-rain air thicken it most.
-				Density = math.min(
-					0.6,
-					look.density + rain * 0.13 + (wetness - rain) * 0.08 + night * 0.06 + mist * 0.2
-				),
+				Density = density + (0.7 - density) * fog,
 				-- Thin haze on clear nights; a bright haze layer reads as a glowing horizon.
 				Haze = (look.haze + rain * 1.8 + (wetness - rain) * 0.9) * (1 - night * 0.7 * (1 - overcast))
-					+ mist * 2.4,
+					+ mist * 2.4 + fog * 1.4,
 				-- A low sun blooms through the mist.
 				Glare = (look.glare * (1 - night) + twilight * 0.5 + golden * 0.25 + mist * 0.5 * (1 - night))
-					* (1 - rain),
+					* (1 - rain) * (1 - fog * 0.85),
 			})
 		end
 		-- Rays only where there is a sun to see; mist makes them strongest.
@@ -329,8 +310,8 @@ function BiomeAtmosphere.start()
 					:Lerp(NIGHT_TINT, night * 0.6),
 			Brightness = if underwater then 0.06 else 0,
 			Saturation = (if underwater then 0.05 else look.saturation - rain * 0.12 - night * 0.15)
-				- SATURATION_REDUCTION,
-			Contrast = if underwater then 0 else look.contrast + storm * 0.04,
+				- SATURATION_REDUCTION - (if underwater then 0 else fog * 0.08),
+			Contrast = if underwater then 0 else (look.contrast + storm * 0.04) * (1 - fog) - fog * 0.04,
 		})
 		-- Fair-weather cover wanders over a quarter of an hour so the sky is never
 		-- the same twice; overcast still closes it completely.
@@ -350,8 +331,9 @@ function BiomeAtmosphere.start()
 			Ambient = if underwater then Color3.fromRGB(115, 145, 170) else surfaceAmbient,
 			OutdoorAmbient = if underwater
 				then Color3.fromRGB(145, 175, 200)
-				else look.ambient:Lerp(Color3.fromRGB(68, 78, 96), rain * 0.75):Lerp(NIGHT_AMBIENT, night * 0.85),
-			Brightness = (if underwater then 2 else 2 - rain * 0.95 - storm * 0.2 - cell * 0.35) * (1 - night * 0.45),
+				else look.ambient:Lerp(Color3.fromRGB(68, 78, 96), rain * 0.75)
+					:Lerp(Color3.fromRGB(151, 159, 167), fog * 0.35):Lerp(NIGHT_AMBIENT, night * 0.85),
+			Brightness = (if underwater then 2 else 2 - rain * 0.95 - storm * 0.2 - cell * 0.35 - fog * 0.4) * (1 - night * 0.45),
 		})
 	end
 
@@ -361,16 +343,17 @@ function BiomeAtmosphere.start()
 	local weatherElapsed = 0.5
 	local lastClock: number? = nil
 	-- Follow the camera (including third-person/free cameras), not the avatar.
-	RunService:BindToRenderStep("BiomeAtmosphere", Enum.RenderPriority.Camera.Value + 1, function(dt: number)
+	RunService:BindToRenderStep("BiomeAtmosphere", Enum.RenderPriority.Camera.Value + 1, profiled("BiomeAtmosphere", function(dt: number)
 		local camera = workspace.CurrentCamera
 		if not camera then
 			PlayerSettings.setUnderwater(false)
 			return
 		end
 		-- Stepped, and only written when the step changes (see DayNight.lightingClock).
-		-- Compare with what we wrote: ClockTime reads back rounded.
+		-- Compare with what we wrote (ClockTime reads back rounded), but also re-assert
+		-- when the server's replicated write lands late and pulls the sun back a step.
 		local clock = DayNight.lightingClock()
-		if clock ~= lastClock then
+		if clock ~= lastClock or math.abs(Lighting.ClockTime - clock) > 0.001 then
 			lastClock = clock
 			Lighting.ClockTime = clock
 		end
@@ -385,7 +368,6 @@ function BiomeAtmosphere.start()
 			if biome ~= current then
 				current = biome
 				biomeChanged = true
-				showTitle(biome.name)
 			end
 		end
 		-- Enter at the surface immediately; only delay the exit slightly to avoid
@@ -400,7 +382,7 @@ function BiomeAtmosphere.start()
 			weatherElapsed = 0
 			apply(current, underwater, if waterChanged then DIVE_BLEND else WEATHER_BLEND)
 		end
-	end)
+	end))
 end
 
 return BiomeAtmosphere

@@ -14,6 +14,18 @@ local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local CoastalAmbience = {}
 local started = false
 local SAMPLE_INTERVAL = 0.5
@@ -164,7 +176,7 @@ function CoastalAmbience.start()
 		darkness = DayNight.darkness(DayNight.clockTime(now))
 	end
 
-	RunService.Heartbeat:Connect(function(dt: number)
+	RunService.Heartbeat:Connect(profiled("CoastalAmbience", function(dt: number)
 		local camera = workspace.CurrentCamera
 		if not camera then
 			for _, sound in loops do
@@ -216,7 +228,7 @@ function CoastalAmbience.start()
 				gull:Play()
 			end
 		end
-	end)
+	end))
 end
 
 return CoastalAmbience

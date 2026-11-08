@@ -288,6 +288,9 @@ local opening=assert(Building.normalize({Kind="Window",HostId="p1",Offset=4.5,Ma
 profile.Angler.Building.Home={NextId=4,Pieces={bulkWall,upperWall,opening},Overrides={
  ["b:testwall"]={Removed=true},[roofA]={Material="Slate",Color={30,40,50}}
 }}
+local gableA,gableB="b:Shell_1/Gable_1","b:Shell_1/Gable_8"
+builtins[gableA]={Id=gableA,Kind="Roof",X1=-22,Z1=-15,X2=22,Z2=-14,Level=0,Material="Plaster",Color={235,229,211}}
+builtins[gableB]={Id=gableB,Kind="Roof",X1=-3,Z1=15,X2=3,Z2=16,Level=0,Material="Plaster",Color={235,229,211}}
 for index=1,70 do
  local id="b:bulk"..index
  builtins[id]={Id=id,Kind="Wall",X1=-18,Z1=9,X2=-9,Z2=9,Level=index%2,Material="Plaster",Color={235,229,211}}
@@ -308,6 +311,11 @@ for index=1,70 do
 end
 check(result.State.Overrides["b:testwall"].Removed and result.State.Overrides["b:testwall"].Material==nil,"Bulk painting must never restore removed walls")
 check(result.State.Overrides[roofA].Material=="Slate" and result.State.Overrides[shopRoof]==nil,"Bulk painting must preserve roofs and their finishes")
+check(result.State.Overrides[roofB]==nil,"Painting gables must not spread to the rest of their roof group")
+for _,id in {gableA,gableB} do
+ local finish=result.State.Overrides[id]
+ check(finish and finish.Material=="Marble" and finish.Color[3]==51,"Bulk paint must cover the plaster gable triangles under the roof")
+end
 check(profile.Angler.Building.Company.Pieces[1].Material==companyBefore.Pieces[1].Material,"Painting home walls must leave the company property untouched")
 saveCount=saves
 result=invoke("PaintAllWalls",{Material="Marble",Color={17,34,51}})

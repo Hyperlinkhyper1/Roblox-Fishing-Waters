@@ -61,16 +61,34 @@ function workspace:GetServerTimeNow()
 end
 -- Sea everywhere at floorY, except dry land east of shoreX.
 local floorY, shoreX, dryPocket = -30, math.huge, false
-function workspace:Raycast(origin, direction, params)
-	assert(params.FilterType == Enum.RaycastFilterType.Include, "Depth probes must ignore docks and hulls")
-	assert(params.FilterDescendantsInstances[1] == self.Terrain, "Depth probes read Terrain only")
-	if origin.X > shoreX then
-		return { Material = Enum.Material.Sand, Position = Vector3.new(origin.X, 3, origin.Z) }
+function workspace:Raycast()
+	error("Depth probes read voxels: a terrain ray builds chunk collision mid-frame")
+end
+Region3 = {
+	new = function(low, high)
+		return { low = low, high = high }
+	end,
+}
+-- One 4-stud column, bottom cell first, as Terrain:ReadVoxels returns it.
+function workspace.Terrain:ReadVoxels(region, resolution)
+	assert(resolution == 4, "Voxel probes read at 4-stud resolution")
+	local materials, occupancies = {}, {}
+	local y0 = region.low.Y
+	for index = 1, math.round((region.high.Y - y0) / 4) do
+		local low = y0 + (index - 1) * 4
+		local material, occupancy = Enum.Material.Water, 1
+		if region.low.X > shoreX then
+			if low < 3 then
+				material, occupancy = Enum.Material.Sand, math.clamp((3 - low) / 4, 0, 1)
+			else
+				material = Enum.Material.Air
+			end
+		elseif low < floorY then
+			material, occupancy = Enum.Material.Sand, math.min((floorY - low) / 4, 1)
+		end
+		materials[index], occupancies[index] = { material }, { occupancy }
 	end
-	if not params.IgnoreWater then
-		return { Material = Enum.Material.Water, Position = Vector3.new(origin.X, 0, origin.Z) }
-	end
-	return { Material = Enum.Material.Sand, Position = Vector3.new(origin.X, floorY, origin.Z) }
+	return { materials }, { occupancies }
 end
 local moves = 0
 function workspace:BulkMoveTo(parts, frames)

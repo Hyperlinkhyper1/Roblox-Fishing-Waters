@@ -1151,6 +1151,314 @@ local function crab(b, look)
 	b.model:SetAttribute("ViewDirection", Vector3.new(0.9, 0.85, 0.35))
 end
 
+-- Nescio Fih cross-sections, snout first: { x, top, bottom, half width }. A
+-- pointed shark's head on a thin neck, a hunched body, broad hips for the legs
+-- and a long tail narrowing into the paddle.
+local NESCIO_STATIONS = {
+	{ 0.502, -0.04, -0.046, 0.003 },
+	{ 0.494, -0.026, -0.054, 0.01 },
+	{ 0.478, -0.01, -0.061, 0.017 },
+	{ 0.455, 0.006, -0.066, 0.023 },
+	{ 0.425, 0.022, -0.069, 0.028 },
+	{ 0.395, 0.034, -0.069, 0.032 },
+	{ 0.365, 0.04, -0.065, 0.034 },
+	{ 0.335, 0.041, -0.057, 0.033 },
+	{ 0.305, 0.04, -0.048, 0.03 },
+	{ 0.275, 0.047, -0.049, 0.032 },
+	{ 0.235, 0.06, -0.056, 0.039 },
+	{ 0.185, 0.075, -0.063, 0.046 },
+	{ 0.125, 0.086, -0.068, 0.051 },
+	{ 0.065, 0.09, -0.07, 0.053 },
+	{ 0.005, 0.085, -0.07, 0.054 },
+	{ -0.045, 0.074, -0.066, 0.056 },
+	{ -0.095, 0.06, -0.057, 0.051 },
+	{ -0.145, 0.044, -0.045, 0.041 },
+	{ -0.2, 0.031, -0.036, 0.031 },
+	{ -0.26, 0.021, -0.029, 0.023 },
+	{ -0.32, 0.013, -0.023, 0.016 },
+	{ -0.38, 0.007, -0.019, 0.011 },
+	{ -0.43, 0.002, -0.016, 0.007 },
+	{ -0.47, -0.003, -0.013, 0.0035 },
+}
+
+-- A smooth tapered tube through `points` (fish lengths): long overlapping
+-- ellipsoids along a Catmull-Rom curve, the radius running through `radii`
+-- (one per point). Each piece is appended to `samples` (for hair) when given.
+local function fleshTube(b, points: { Vector3 }, radii: { number }, color: Color3, name: string, samples: { any }?)
+	local count = #points
+	local path = {}
+	for index = 1, count - 1 do
+		local p0, p1 = points[math.max(index - 1, 1)], points[index]
+		local p2, p3 = points[index + 1], points[math.min(index + 2, count)]
+		local thinnest = math.min(radii[index], radii[index + 1])
+		local steps = math.max(2, math.ceil((p2 - p1).Magnitude / math.max(thinnest * 0.7, 0.008)))
+		for step = 0, steps - 1 do
+			local t = step / steps
+			table.insert(path, {
+				Vector3.new(
+					catmull(p0.X, p1.X, p2.X, p3.X, t),
+					catmull(p0.Y, p1.Y, p2.Y, p3.Y, t),
+					catmull(p0.Z, p1.Z, p2.Z, p3.Z, t)
+				),
+				radii[index] + (radii[index + 1] - radii[index]) * t,
+			})
+		end
+	end
+	table.insert(path, { points[count], radii[count] })
+	for index = 1, #path - 1 do
+		local a, c = path[index], path[index + 1]
+		local delta = c[1] - a[1]
+		local length = delta.Magnitude
+		if length > 1e-5 then
+			local radius = (a[2] + c[2]) / 2
+			local middle = (a[1] + c[1]) / 2
+			local up = if math.abs(delta.Unit.Y) > 0.98 then Vector3.xAxis else Vector3.yAxis
+			local frame = CFrame.lookAt(middle, c[1], up) * CFrame.Angles(0, math.pi / 2, 0)
+			b:ellipsoid(name, frame, Vector3.new(length * 3.2, radius * 2, radius * 2), color)
+			if samples then
+				table.insert(samples, { point = middle, radius = radius, along = delta.Unit })
+			end
+		end
+	end
+	b:ellipsoid(name, CFrame.new(points[1]), Vector3.one * radii[1] * 2, color)
+	b:ellipsoid(name, CFrame.new(points[count]), Vector3.one * radii[count] * 2, color)
+end
+
+-- The Nescio Fih: a pale, blotchy thing with a pointed shark's head, a hunched
+-- body, two frog-like hind legs folded under it and a long paddle tail.
+-- `p.hairy` grows a coat of brown hair over it (the Hairy Nescio Fih).
+local function nescio(b, p)
+	local colors = p.colors or { back = rgb(232, 200, 186), side = rgb(242, 216, 202), belly = rgb(248, 230, 220) }
+	local flesh, joint = p.flesh or rgb(240, 212, 198), rgb(237, 196, 182)
+	local fold, blush = rgb(220, 170, 156), rgb(226, 160, 146)
+	-- Sphere stand-ins for servers and clients without EditableMesh; the
+	-- smooth skin follows NESCIO_STATIONS on top of them.
+	b:beginSkin(colors)
+	b:layered("Chest", Vector3.new(0.12, 0.01, 0), Vector3.new(0.32, 0.158, 0.106), colors)
+	b:layered("Head", Vector3.new(0.41, -0.016, 0), Vector3.new(0.17, 0.104, 0.066), colors)
+	b:layered("Snout", Vector3.new(0.47, -0.034, 0), Vector3.new(0.07, 0.046, 0.032), colors)
+	b:layered("Neck", Vector3.new(0.3, -0.004, 0), Vector3.new(0.1, 0.088, 0.062), colors)
+	b:layered("Hips", Vector3.new(-0.05, 0.004, 0), Vector3.new(0.17, 0.138, 0.112), colors)
+	b:layered("Rear", Vector3.new(-0.19, -0.003, 0), Vector3.new(0.18, 0.07, 0.064), colors)
+	b:layered("TailStalk", Vector3.new(-0.33, -0.006, 0), Vector3.new(0.17, 0.032, 0.028), colors)
+	b:layered("TailTip", Vector3.new(-0.43, -0.008, 0), Vector3.new(0.09, 0.018, 0.013), colors)
+	b:finishSkin(NESCIO_STATIONS)
+
+	-- Legs: a muscular haunch, thigh forward to the knee, shin back to the
+	-- heel, a long foot and four splayed toes with pads and pale nails.
+	local legSamples = {}
+	local nail = rgb(226, 206, 196)
+	for _, s in { 1, -1 } do
+		local hip = Vector3.new(-0.04, -0.02, s * 0.04)
+		local knee = Vector3.new(0.06, -0.1, s * 0.105)
+		local ankle = Vector3.new(-0.06, -0.14, s * 0.11)
+		local ball = Vector3.new(0.025, -0.162, s * 0.114)
+		local haunch = CFrame.new(-0.015, -0.04, s * 0.05) * CFrame.Angles(0, 0, math.rad(-32))
+		b:ellipsoid("Haunch", haunch, Vector3.new(0.12, 0.08, 0.06), flesh)
+		local thighMid, shinMid = Vector3.new(0.005, -0.07, s * 0.085), Vector3.new(0.005, -0.122, s * 0.11)
+		fleshTube(b, { hip, thighMid, knee }, { 0.04, 0.032, 0.02 }, flesh, "Thigh", legSamples)
+		fleshTube(b, { knee, shinMid, ankle }, { 0.019, 0.015, 0.011 }, flesh, "Shin", legSamples)
+		fleshTube(b, { ankle, Vector3.new(-0.02, -0.156, s * 0.112), ball }, { 0.012, 0.0095, 0.009 }, flesh, "Foot")
+		local kneeCap = knee + Vector3.new(0.004, 0.001, s * 0.002)
+		b:ellipsoid("Knee", CFrame.new(kneeCap), Vector3.new(0.042, 0.038, 0.038), joint)
+		b:ellipsoid("Heel", CFrame.new(ankle + Vector3.new(-0.006, -0.002, 0)), Vector3.new(0.03, 0.027, 0.025), joint)
+		for index, spread in { -0.46, -0.15, 0.15, 0.46 } do
+			local yaw = spread * s
+			local direction = Vector3.new(math.cos(yaw), -0.08, math.sin(yaw)).Unit
+			local length = ({ 0.036, 0.048, 0.05, 0.04 })[index]
+			local base = ball + direction * 0.004
+			local middle = base + direction * length * 0.5 + Vector3.new(0, 0.002, 0)
+			local tip = base + direction * length
+			fleshTube(b, { base, middle, tip }, { 0.0066, 0.0054, 0.0046 }, flesh, "Toe")
+			b:ellipsoid("Knuckle", CFrame.new(middle), Vector3.one * 0.0124, joint)
+			b:ellipsoid("ToePad", CFrame.new(tip + Vector3.new(0, -0.001, 0)), Vector3.new(0.013, 0.0105, 0.012), joint)
+			local nailAt = tip + direction * 0.002 + Vector3.new(0, 0.0036, 0)
+			local nailFrame = CFrame.lookAt(nailAt, tip + direction, Vector3.yAxis)
+			b:ellipsoid("Nail", nailFrame * CFrame.Angles(0, math.pi / 2, 0), Vector3.new(0.008, 0.0028, 0.0066), nail)
+		end
+	end
+
+	-- Small fleshy flaps where a fish keeps its pectoral fins.
+	b:pectoral(0.215, -0.03, 0.055, 0.024, flesh, 0.05)
+
+	-- The paddle: a leaf-shaped fin wrapping the end of the tail, with rays.
+	local paddle, ray = rgb(236, 198, 184), rgb(214, 168, 154)
+	local function base(x: number): (number, number)
+		if x < -0.462 then
+			return -0.008, -0.008
+		end
+		return b:top(x) - 0.003, b:bottom(x) + 0.003
+	end
+	local tip = v2(-0.502, -0.008)
+	for _, upper in { true, false } do
+		local strip = {}
+		for index = 0, 8 do
+			local x = -0.27 - index * (0.2 / 8)
+			local t = (-0.27 - x) / 0.232
+			local height = 0.032 * math.sin(math.pi * t ^ 1.4) * (if upper then 1 else 0.82)
+			local top, bottom = base(x)
+			local rim = if upper then top + height else bottom - height
+			table.insert(strip, { v2(x, if upper then top else bottom), v2(x, rim) })
+		end
+		for index = 1, #strip - 1 do
+			local a, c = strip[index], strip[index + 1]
+			b:fin({ a[1], a[2], c[2], c[1] }, paddle, 0.08)
+			if index % 2 == 1 then
+				b:limb(Vector3.new(a[1].X, a[1].Y, 0), Vector3.new(a[2].X - 0.006, a[2].Y, 0), 0.003, ray, "FinRay")
+			end
+		end
+		local last = strip[#strip]
+		b:fin({ last[1], last[2], tip }, paddle, 0.08)
+	end
+
+	-- Face: a small black eye in a pink lid, nostrils, a long thin smile with a
+	-- pale lip and three faint gill slits behind the head.
+	local eyeX, eyeY = 0.41, 0.012
+	local function crease(points: { Vector2 }, width: number, color: Color3)
+		for index = 1, #points - 1 do
+			local a, c = points[index], points[index + 1]
+			local delta = c - a
+			local steps = math.max(1, math.ceil(delta.Magnitude / 0.011))
+			for step = 0, steps - 1 do
+				local point = a + delta * ((step + 0.5) / steps)
+				b:marks(point.X, point.Y, delta.Magnitude / steps * 1.35, width, color, delta)
+			end
+		end
+	end
+	b:marks(eyeX, eyeY, 0.026, 0.02, blush)
+	b:eye(eyeX, eyeY, 0.015, rgb(16, 12, 12))
+	crease({ v2(0.434, 0.026), v2(0.41, 0.03), v2(0.39, 0.027) }, 0.003, fold)
+	b:marks(0.485, -0.026, 0.0075, 0.0038, rgb(124, 70, 66), v2(1, 0.35))
+	local smile = { v2(0.493, -0.044), v2(0.46, -0.054), v2(0.42, -0.056), v2(0.386, -0.052), v2(0.368, -0.044) }
+	crease(smile, 0.0035, rgb(150, 82, 78))
+	local lip = {}
+	for index, point in smile do
+		lip[index] = point + v2(0, 0.0045)
+	end
+	crease(lip, 0.0028, rgb(250, 224, 214))
+	crease({ v2(0.47, -0.06), v2(0.43, -0.064), v2(0.395, -0.063) }, 0.0028, fold)
+	for index = 0, 2 do
+		local x = 0.336 - index * 0.012
+		crease({ v2(x + 0.003, 0.016), v2(x - 0.002, -0.006), v2(x + 0.002, -0.028) }, 0.003, rgb(222, 170, 158))
+	end
+	crease({ v2(0.292, 0.036), v2(0.286, 0), v2(0.29, -0.04) }, 0.004, rgb(228, 174, 162))
+	-- Throat and hip creases.
+	for index = 0, 2 do
+		local y = -0.038 - index * 0.004
+		crease({ v2(0.318, y), v2(0.296, y - 0.003), v2(0.272, y - 0.002) }, 0.0024, fold)
+	end
+	for index = 0, 2 do
+		local x = -0.075 - index * 0.012
+		crease({ v2(x + 0.004, 0.028), v2(x - 0.004, -0.006), v2(x, -0.042) }, 0.0024, fold)
+	end
+
+	-- Bumps of the spine down the back.
+	for index = 0, 20 do
+		local x = 0.27 - index * 0.028
+		local size = math.clamp(b:top(x) / 0.07, 0.3, 1)
+		b:ellipsoid(
+			"Vertebra",
+			CFrame.new(x, b:top(x) - 0.003 * size, 0),
+			Vector3.new(0.016, 0.008, 0.013) * size,
+			colors.back:Lerp(rgb(160, 110, 100), 0.08)
+		)
+	end
+
+	-- Soft, uneven blotches: each one a few overlapping skewed discs, faintly
+	-- pinker or paler than the skin, plus a scatter of small rosy freckles.
+	local function blotches(count: number, low: number, high: number, color: Color3)
+		for _ = 1, count do
+			local x, y = b.random(-0.3, 0.44), b.random(-0.06, 0.08)
+			local size = b.random(low, high)
+			for _ = 1, 2 do
+				local px, py = x + b.random(-0.5, 0.5) * size, y + b.random(-0.35, 0.35) * size
+				if py < b:top(px) - size * 0.35 and py > b:bottom(px) + size * 0.35 then
+					local heading = v2(b.random(0.2, 1), b.random(-0.6, 0.6))
+					b:marks(px, py, size * b.random(0.7, 1.15), size * b.random(0.4, 0.75), color, heading)
+				end
+			end
+		end
+	end
+	blotches(11, 0.03, 0.06, rgb(237, 204, 190))
+	blotches(7, 0.02, 0.04, rgb(245, 222, 209))
+	blotches(8, 0.012, 0.024, rgb(232, 188, 174))
+	b:speckle(18, v2(-0.26, 0.36), v2(-0.05, 0.07), v2(0.004, 0.008), blush)
+
+	if p.hairy then
+		local shades = { rgb(84, 62, 46), rgb(104, 78, 56), rgb(66, 48, 36), rgb(122, 94, 68), rgb(92, 70, 50) }
+		local function shade(): Color3
+			return shades[math.clamp(math.floor(b.random(1, #shades + 1)), 1, #shades)]
+		end
+		local function jitter(amount: number): Vector3
+			return Vector3.new(b.random(-amount, amount), b.random(-amount, amount), b.random(-amount, amount))
+		end
+		-- A flat lock of hair rooted at `root`, lying along `direction` with
+		-- its broad side against the skin (`normal`).
+		local function lock(root: Vector3, direction: Vector3, normal: Vector3, length: number, width: number)
+			local up = normal - direction * normal:Dot(direction)
+			up = if up.Magnitude > 1e-4 then up.Unit else Vector3.yAxis
+			local center = root + direction * length * 0.42 - up * 0.0015
+			b:ellipsoid("Hair", CFrame.fromMatrix(center, direction, up), Vector3.new(length, 0.0045, width), shade())
+		end
+		local back, down = Vector3.new(-1, 0, 0), Vector3.new(0, -1, 0)
+		local x = 0.37
+		while x > -0.3 do
+			local column = x + b.random(-0.004, 0.004)
+			local top, bottom = b:top(column), b:bottom(column)
+			local middle, half = (top + bottom) / 2, (top - bottom) / 2
+			local head = column > 0.3
+			local spacing = if head then 0.016 else 0.021
+			local count = math.max(2, math.floor(math.pi * half * 1.15 / spacing))
+			-- Short fuzz on the head, a thick shaggy coat over the body.
+			local length = if head then 0.024 elseif column > 0.24 then 0.038 else 0.052
+			local width = if head then 0.011 else 0.017
+			for index = 0, count - 1 do
+				local angle = math.pi * (0.05 + 0.92 * (index + b.random(0.15, 0.85)) / count)
+				local y = middle + half * math.cos(angle) * 0.97
+				local nearEye = (v2(column, y) - v2(eyeX, eyeY)).Magnitude < 0.024
+				-- The face stays bare: fuzz only over the crown and behind the jaw.
+				local bareFace = head and (column > 0.44 or angle > math.pi * 0.5)
+				if not nearEye and not bareFace then
+					for _, side in { 1, -1 } do
+						local point, normal = b:surface(column, y, side)
+						if point and normal then
+							local direction = (normal * 0.3 + back * 0.9 + down * 0.25 + jitter(0.15)).Unit
+							lock(point, direction, normal, length * b.random(0.8, 1.25), width * b.random(0.8, 1.2))
+						end
+					end
+				end
+			end
+			x -= if head then 0.016 else 0.02
+		end
+		-- A long mane drooping along the spine.
+		for index = 0, 24 do
+			local column = 0.3 - index * 0.024
+			local root = Vector3.new(column, b:top(column) - 0.004, b.random(-0.006, 0.006))
+			local direction = (Vector3.new(-0.7, 0.45, 0) + jitter(0.2)).Unit
+			local length = 0.055 * math.clamp(b:top(column) / 0.06, 0.45, 1.15)
+			local bend = root + direction * length * 0.55
+			local color = shade()
+			b:limb(root, bend, 0.009, color, "Hair")
+			b:limb(bend, bend + (direction + Vector3.new(-0.3, -0.75, 0)).Unit * length * 0.5, 0.007, color, "Hair")
+		end
+		-- Shaggy thighs and shins.
+		for _, sample in legSamples do
+			local along = sample.along
+			local sideways = along:Cross(Vector3.yAxis)
+			sideways = if sideways.Magnitude > 1e-4 then sideways.Unit else Vector3.zAxis
+			local under = sideways:Cross(along).Unit
+			for turn = 0, 2 do
+				local angle = turn * 2.1 + b.random(-0.5, 0.5)
+				local normal = (sideways * math.cos(angle) + under * math.sin(angle)).Unit
+				local root = sample.point + normal * sample.radius * 0.8
+				local direction = (normal * 0.35 + Vector3.new(-0.3, -0.8, 0) + jitter(0.2)).Unit
+				lock(root, direction, normal, b.random(0.026, 0.038), b.random(0.011, 0.015))
+			end
+		end
+	end
+	b.model:SetAttribute("ViewDirection", Vector3.new(0.45, 0.3, 1))
+end
+
 local kit = {
 	rgb = rgb,
 	v2 = v2,
@@ -1164,6 +1472,7 @@ local kit = {
 	mussel = mussel,
 	algaBlade = algaBlade,
 	crab = crab,
+	nescio = nescio,
 }
 for id, fish in FishSpecies do
 	local build = fish.Build

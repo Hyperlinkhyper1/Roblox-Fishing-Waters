@@ -25,11 +25,19 @@ function WeatherService.start()
 		elapsed %= 0.25
 		local now = workspace:GetServerTimeNow()
 		local state = Weather.getState(now)
-		Lighting.ClockTime = DayNight.lightingClock(now)
-		workspace.GlobalWind = state.windDirection * state.windSpeed
+		-- Coarse (every in-game quarter hour): clients step the sun themselves, this
+		-- only keeps loading players close without replicating ClockTime 4x a second.
+		Lighting.ClockTime = math.floor(DayNight.clockTime(now) * 4) / 4
+		-- Rain and wind drift continuously; rounded, most quarter-second ticks write the
+		-- same value, which Roblox does not replicate (GlobalWind also redraws grass/particles).
+		local wind = state.windDirection * state.windSpeed
+		if (workspace.GlobalWind - wind).Magnitude > 0.05 then
+			workspace.GlobalWind = wind
+		end
 		workspace:SetAttribute("WeatherKind", state.kind)
-		workspace:SetAttribute("WeatherRain", state.rain)
-		workspace:SetAttribute("WeatherWindSpeed", state.windSpeed)
+		workspace:SetAttribute("WeatherRain", math.round(state.rain * 100) / 100)
+		workspace:SetAttribute("WeatherFog", math.round(state.fog * 100) / 100)
+		workspace:SetAttribute("WeatherWindSpeed", math.round(state.windSpeed * 20) / 20)
 	end
 	update(0)
 	RunService.Heartbeat:Connect(update)

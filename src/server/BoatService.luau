@@ -125,6 +125,12 @@ local function publish(player: Player, state)
 		player:SetAttribute("BobberSkinCount" .. id, state.profile.BobberSkins[id] or 0)
 	end
 	player:SetAttribute("BobberSkin", state.profile.EquippedBobberSkin or "")
+	player:SetAttribute("BaitCrates", state.profile.BaitCrates or 0)
+	player:SetAttribute("EquippedBait", state.profile.EquippedBait or "")
+	player:SetAttribute(
+		"BaitCount",
+		if state.profile.EquippedBait then (state.profile.Bait or {})[state.profile.EquippedBait] or 0 else 0
+	)
 	local level, levelXP, requiredXP = BoatData.levelProgress(state.profile)
 	player:SetAttribute("Level", level)
 	player:SetAttribute("LevelXP", levelXP)
@@ -427,6 +433,13 @@ local function setFromCommand(player: Player, message: string)
 	end
 	local normalized = string.lower(message)
 	local subject = normalized:match("^/set%s+(%S+)")
+	if subject == "weight" then
+		local input = normalized:match("^/set%s+weight%s+(%S+)%s*$")
+		local cargo = require(script.Parent.CargoService)
+		local _, result = cargo.setHeldWeight(player, input and tonumber(input))
+		notify(player, result)
+		return
+	end
 	if subject == "season" then
 		local Seasons = require(ReplicatedStorage.Shared.Seasons)
 		local argument = (normalized:match("^/set%s+season%s+(%a+)%s*$") or ""):lower()
@@ -798,6 +811,26 @@ local function clearMotion(boat)
 	end
 end
 
+-- Anchor or release a whole hull as one assembly change. The root goes first when
+-- anchoring (the welded hull becomes static at once) and last when releasing (every piece
+-- is already in the root's assembly when it starts to move). In descendant order the root
+-- was released first, so each of the hull's parts then merged into a moving assembly one
+-- at a time, and clients reprocessed simulation ownership for every merge (a 20 ms
+-- ISR::processPotentialSimulationOwnershipChanges spike whenever a boat parked or set off).
+local function setHullAnchored(model: Model, root: BasePart, anchored: boolean)
+	if anchored then
+		root.Anchored = true
+	end
+	for _, piece in model:GetDescendants() do
+		if piece ~= root and piece:IsA("BasePart") then
+			piece.Anchored = anchored
+		end
+	end
+	if not anchored then
+		root.Anchored = false
+	end
+end
+
 local function setParked(boat, parked: boolean)
 	if boat.parked == parked then
 		return
@@ -815,11 +848,7 @@ local function setParked(boat, parked: boolean)
 		clearMotion(boat)
 		-- Anchor every piece, not just the root. A standing player is carried by the
 		-- velocity of the part underfoot, so no deck piece may keep a stray drift.
-		for _, piece in boat.model:GetDescendants() do
-			if piece:IsA("BasePart") then
-				piece.Anchored = true
-			end
-		end
+		setHullAnchored(boat.model, boat.root, true)
 		boat.model:SetAttribute("RowThrottle", 0)
 		boat.model:SetAttribute("RowSteer", 0)
 		-- Clients bob the anchored hull locally from this pose and swell clock.
@@ -842,11 +871,7 @@ local function setParked(boat, parked: boolean)
 				) * boat.model:GetPivot()
 			)
 		end
-		for _, piece in boat.model:GetDescendants() do
-			if piece:IsA("BasePart") then
-				piece.Anchored = false
-			end
-		end
+		setHullAnchored(boat.model, boat.root, false)
 		-- Anchoring resets network ownership. Reapply it after releasing the
 		-- hull, before enabling forces, so boarding cannot change its simulator.
 		boat.root:SetNetworkOwner(nil)
@@ -960,6 +985,8 @@ function BoatService.hoist(player: Player, height: number?): boolean
 	-- Clients bob a parked hull from this pose, and the helm releases from it.
 	boat.model:SetAttribute("ParkedFrame", boat.root.CFrame)
 	boat.model:SetAttribute("ParkedAt", workspace:GetServerTimeNow())
+	-- Clients animate the lift themselves from the model's pivot at height 0.
+	boat.model:SetAttribute("HoistPivot", if height then boat.model:GetPivot() - Vector3.new(0, height, 0) else nil)
 	if not height then
 		boat.hoistBase = nil
 		boat.model:SetAttribute("Hoisted", nil)
@@ -984,8 +1011,16 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 	for _, piece in model:GetDescendants() do
 		if piece:IsA("PointLight") or piece:IsA("SpotLight") or piece:IsA("SurfaceLight") then
 			table.insert(lights, piece)
-		elseif piece:IsA("BasePart") and piece.Material == Enum.Material.Neon then
-			table.insert(lightParts, piece)
+		elseif piece:IsA("BasePart") then
+			if piece.Material == Enum.Material.Neon then
+				table.insert(lightParts, piece)
+			end
+			-- A moving hull re-renders the shadow map every frame; trim smaller than a stud
+			-- (bolts, cleats, lantern frames, handles) adds draw calls but no visible shadow.
+			local size = piece.Size
+			if size and size.X < 1 and size.Y < 1 and size.Z < 1 then
+				piece.CastShadow = false
+			end
 		end
 	end
 	local root = model.PrimaryPart :: BasePart
@@ -996,7 +1031,10 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 		BoatLaunchCollision.protect(model, 10)
 		for _, piece in model:GetDescendants() do
 			if piece:IsA("BasePart") then
-				piece.Anchored = false
+				-- The root is released last (below), so the hull starts moving as one assembly.
+				if piece ~= root then
+					piece.Anchored = false
+				end
 				local collide = piece:GetAttribute("PreviewCanCollide")
 				if collide ~= nil then
 					piece.CanCollide = collide
@@ -1010,6 +1048,7 @@ local function launch(player: Player, frame: CFrame, existing: Model?, boatId: s
 		end
 		seat.Disabled = false
 		seat.CanTouch = true
+		root.Anchored = false
 	end
 	local attachment = Instance.new("Attachment")
 	attachment.Name = "BoatMotion"

@@ -16,6 +16,18 @@ local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 local Clouds = require(script.Parent.VolumetricClouds)
 
+-- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
+local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
+	if not debug.profilebegin then
+		return callback -- test runners without the MicroProfiler API
+	end
+	return function(...: A...)
+		debug.profilebegin(label)
+		callback(...)
+		debug.profileend()
+	end
+end
+
 local Controller = {}
 local started = false
 local FUNNEL_SEGMENTS = 7
@@ -225,7 +237,7 @@ function Controller.start()
 			end
 		end
 	end
-	RunService.RenderStepped:Connect(function(dt: number)
+	RunService.RenderStepped:Connect(profiled("SupercellWeather", function(dt: number)
 		elapsed += dt
 		if elapsed < 1 / 30 then
 			return
@@ -341,7 +353,7 @@ function Controller.start()
 			funnel.debris.Rate = if touching then 24 * strength else 0
 		end
 		clearFunnels(seen)
-	end)
+	end))
 end
 
 return Controller

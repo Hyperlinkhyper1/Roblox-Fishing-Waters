@@ -69,7 +69,7 @@ local function payload(closing: boolean?)
 	end
 	-- Calmest first, so the dashboard's weather buttons read in order; the rare
 	-- supercell after ordinary weather, the admin-only black hole last.
-	local rank = { Supercell = 5, BlackHole = 10 }
+	local rank = { Foggy = 0.1, Supercell = 5, BlackHole = 10 }
 	table.sort(kinds, function(a, b)
 		local pa, pb = Weather.Presets[a], Weather.Presets[b]
 		local sa = pa.rain + pa.storm + (rank[a] or 0)
@@ -111,6 +111,7 @@ local function payload(closing: boolean?)
 			override = if type(override) == "string" then override else nil,
 			rain = state.rain,
 			storm = state.storm,
+			fog = state.fog,
 			cloudCover = state.cloudCover,
 			windSpeed = state.windSpeed,
 			windAngle = math.deg(math.atan2(state.windDirection.Z, state.windDirection.X)),
