@@ -7,7 +7,7 @@ return {
 	MaxKg = 4,
 	BaseValue = 34,
 	Fight = 0.04,
-	Pools = { "MainLake", "GullhavenSound" },
+	Pools = { "MainLake" },
 	Seasons = { "Summer" },
 	Requires = { "Rain" },
 	Shapes = {

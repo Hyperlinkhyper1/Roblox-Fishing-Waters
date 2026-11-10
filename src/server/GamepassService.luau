@@ -9,7 +9,7 @@ local cache = {}
 -- whole set after every heartbeat.
 local dashboardGrants = {}
 local started = false
-local COMMAND_USER_ID = 2541746813 -- hyperlinkhyper
+local Admin = require(game:GetService("ReplicatedStorage").Shared.Admin)
 
 local function attribute(key)
 	return "Owns" .. key
@@ -62,7 +62,7 @@ function Service.ownsBoatCustomization(player: Player): boolean
 end
 
 function Service.grantForSession(player: Player, key: string): (boolean, string)
-	if player.UserId ~= COMMAND_USER_ID or player.Parent ~= Players then
+	if not Admin.isAdmin(player) or player.Parent ~= Players then
 		return false, "This command is unavailable."
 	end
 	if not Passes[key] then

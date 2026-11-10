@@ -46,15 +46,14 @@ for id, fish in FishSpecies do
 	}
 end
 
--- Where a cast lands decides its pool (Catalog.poolAt): MainLake inside the
--- sheltered bay, otherwise the pool for the biome under the bobber. Biome pools
+-- The sheltered bay and surrounding Gullhaven Sound share one pool. Other
+-- casts use the pool for the biome under the bobber. Biome pools
 -- inherit every Open Sea species, so a biome with few or no species of its own
 -- still fishes like the open sea. Species join pools through their Pools list.
 local JUNK = { "WoodenBranch", "LeatherBoot", "Seaweed" }
 Catalog.Pools = {
-	MainLake = { Name = "Main Lake", Area = "lake", Junk = JUNK },
+	MainLake = { Name = "Gullhaven Sound", Area = "lake", Inherits = "OpenSea", Junk = JUNK },
 	OpenSea = { Name = "Open Sea", Area = "open", Junk = JUNK },
-	GullhavenSound = { Name = "Gullhaven Sound", Area = "normal", Inherits = "OpenSea", Junk = JUNK },
 	SoddenMire = { Name = "The Sodden Mire", Area = "swamp", Inherits = "OpenSea", Junk = JUNK },
 	CoralShallows = { Name = "Coral Shallows", Area = "tropical", Inherits = "OpenSea", Junk = JUNK },
 	CinderIsles = { Name = "Cinder Isles", Area = "volcanic", Inherits = "OpenSea", Junk = JUNK },
@@ -99,6 +98,9 @@ end
 
 -- The pool for an area: "lake", or a Shared.Biomes id (CatchConditions.area).
 function Catalog.poolAt(area: string?)
+	if area == "normal" then
+		return Catalog.Pools.MainLake
+	end
 	for _, pool in Catalog.Pools do
 		if pool.Area == area then
 			return pool

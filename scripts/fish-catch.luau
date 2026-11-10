@@ -155,7 +155,7 @@ local sea = Catalog.Pools.OpenSea
 for _, id in { "Clownfish", "Yellowshark", "GreenSturgeon", "Albacore", "Crimsonfish", "Glacierfish" } do
 	check(table.find(sea.Fish, id), "Open sea lists " .. id)
 end
--- Only these species live in both the lake and the open sea.
+-- These species are explicitly assigned to both pools.
 local shared =
 	{ Crimsonfish = true, TigerTrout = true, Glacierfish = true, NescioFih = true, HairyNescioFih = true }
 local function averageValue(fishPool)
@@ -174,7 +174,7 @@ for _, id in sea.Fish do
 	check(fish ~= nil and fish.Shapes ~= nil, "Sea species is fully defined: " .. id)
 	check(fish.MinKg < fish.AverageKg and fish.AverageKg < fish.MaxKg, "Normal weight sits inside the range: " .. id)
 	check(admin(id) or seaSeen[id], "Every sea species can be caught: " .. id)
-	check(shared[id] or table.find(pool.Fish, id) == nil, "Sea species stay out of the lake: " .. id)
+	check(table.find(pool.Fish, id), "Gullhaven Sound inherits sea species: " .. id)
 end
 for id in shared do
 	check(table.find(pool.Fish, id) and table.find(sea.Fish, id), "Shared species are in both pools: " .. id)
@@ -182,7 +182,7 @@ end
 for _, id in sea.Junk do
 	check(seaSeen[id], "Every junk item can be caught at sea: " .. id)
 end
-check(seaAverage > lakeAverage * 1.5, "Sea catches are worth clearly more on average")
+check(lakeAverage > 0 and seaAverage > 0, "Both pools have valuable catches")
 
 -- Seasons: every pool fish lists its seasons in calendar order; junk bites all year.
 local ORDER = { "Spring", "Summer", "Autumn", "Winter" }
@@ -301,9 +301,9 @@ check(
 
 -- Areas: the bay is the lake, biomes get their own pools that keep every
 -- open sea species, and anywhere unknown fishes like the open sea.
-check(Catalog.poolAt("lake") == pool, "The bay fishes the main lake")
+check(Catalog.poolAt("lake") == pool and Catalog.poolAt("normal") == pool, "The bay and Gullhaven Sound share a pool")
 check(Catalog.poolAt("open") == sea and Catalog.poolAt(nil) == sea, "Open water fishes the open sea")
-for _, area in { "normal", "swamp", "tropical", "volcanic", "ice" } do
+for _, area in { "swamp", "tropical", "volcanic", "ice" } do
 	local biome = Catalog.poolAt(area)
 	check(biome ~= sea and biome.Inherits == "OpenSea", area .. " has its own pool")
 	for _, id in sea.Fish do

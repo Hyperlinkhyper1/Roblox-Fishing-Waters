@@ -10,7 +10,7 @@ local FishMutations = require(ReplicatedStorage.Shared.FishMutations)
 
 local Service = {}
 local started = false
-local COMMAND_USER_ID = 2541746813 -- hyperlinkhyper
+local Admin = require(ReplicatedStorage.Shared.Admin)
 local help = table.concat({
 	"Commands:",
 	"/commands - show this list",
@@ -49,7 +49,7 @@ function Service.start(reply)
 		command.AutocompleteVisible = false
 		command.Triggered:Connect(function(source, message)
 			local player = source and Players:GetPlayerByUserId(source.UserId)
-			if player and player.UserId == COMMAND_USER_ID and type(message) == "string" then
+			if Admin.isAdmin(player) and type(message) == "string" then
 				handler(player, string.lower(message))
 			end
 		end)

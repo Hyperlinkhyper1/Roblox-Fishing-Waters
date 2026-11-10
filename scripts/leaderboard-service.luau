@@ -281,6 +281,12 @@ else
 	check(snapshot.WeeklyEarned ~= nil and snapshot.Playtime ~= nil, "Website snapshot carries every board")
 	check(snapshot.WeeklyEarned.week == Data.weekStart(now), "Weekly snapshots name their week")
 	check(
+		snapshot.MonthlyEarned ~= nil and snapshot.MonthlyEarned.month == Data.monthStart(now)
+			and snapshot.MonthlyEarned.week == nil,
+		"Monthly snapshots name their month"
+	)
+	check(snapshot.WeeklyPlaytime ~= nil and snapshot.MonthlyPlaytime ~= nil, "Website snapshot carries the period playtime boards")
+	check(
 		snapshot.Playtime.week == nil and snapshot.Playtime.readAt > 0,
 		"All-time snapshots carry when they were read"
 	)

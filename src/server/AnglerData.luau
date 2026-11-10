@@ -54,6 +54,9 @@ Data.XP_PER_CATCH = 100
 Data.XP_LEVEL_STEP = 1000
 Data.XP_LEVEL_GROWTH = 0.2
 Data.WEEK_SECONDS = 7 * 24 * 60 * 60
+-- What the weekly and monthly boards count, as period key → lifetime stat.
+local PERIOD_STATS = { XP = "TotalXP", Caught = "TotalCaught", Earned = "CoinsEarned", PlaySeconds = "PlaySeconds" }
+local PERIOD_KEYS = { "XP", "Caught", "Earned", "PlaySeconds" }
 -- Catches land in the angler's hand, which holds one fish; with full hands,
 -- gameplay packs the next catch into the backpack when it fits. From the hand,
 -- fish go into a boat's cargo hold or the shop freezer. Cooler holds fish saved before
@@ -84,6 +87,20 @@ Data.MAX_HOLD_CELL = 32
 -- Unix epoch was a Thursday; offset to a Monday at 00:00 UTC.
 function Data.weekStart(now)
 	return math.floor((now + 3 * 86400) / Data.WEEK_SECONDS) * Data.WEEK_SECONDS - 3 * 86400
+end
+
+-- The 1st of `now`'s month at 00:00 UTC. Pure arithmetic (days-from-civil),
+-- so it never depends on the server's time zone or os.date.
+function Data.monthStart(now)
+	local days = math.floor(now / 86400)
+	local z = days + 719468
+	local era = math.floor(z / 146097)
+	local doe = z - era * 146097
+	local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365)
+	local doy = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100))
+	local mp = math.floor((5 * doy + 2) / 153)
+	local dayOfMonth = doy - math.floor((153 * mp + 2) / 5) + 1
+	return (days - (dayOfMonth - 1)) * 86400
 end
 
 -- Level-up costs grow by 20%: 1000, 1200, 1440, ... XP. Round the
@@ -512,6 +529,15 @@ function Data.decode(raw)
 		assert(number(data.Weekly.Start, true), "Invalid week start")
 		for _, key in { "XP", "Caught", "Earned" } do
 			assert(number(data.Weekly[key], true), "Invalid weekly " .. key)
+		end
+		-- Added after weekly boards shipped, so older weeks don't carry it.
+		assert(data.Weekly.PlaySeconds == nil or number(data.Weekly.PlaySeconds, true), "Invalid weekly playtime")
+	end
+	if data.Monthly ~= nil then
+		assert(type(data.Monthly) == "table", "Invalid monthly progress")
+		assert(number(data.Monthly.Start, true), "Invalid month start")
+		for _, key in PERIOD_KEYS do
+			assert(number(data.Monthly[key], true), "Invalid monthly " .. key)
 		end
 	end
 	for key, value in Data.DefaultSettings do
@@ -1736,34 +1762,52 @@ end
 
 -- Run inside the same wallet UpdateAsync as the award. Retried callbacks derive
 -- deltas from the saved record, never from an in-memory leaderboard snapshot.
+local function period(held, start)
+	local bucket = if held and held.Start == start then copy(held) else { Start = start }
+	for _, key in PERIOD_KEYS do
+		bucket[key] = bucket[key] or 0
+	end
+	return bucket
+end
+
 function Data.trackProgress(previous, current, now)
 	local before = Data.decode(previous)
 	local data = Data.decode(current)
-	local start = Data.weekStart(now)
-	local weekly = if before.Weekly and before.Weekly.Start == start
-		then copy(before.Weekly)
-		else { Start = start, XP = 0, Caught = 0, Earned = 0 }
-	for weeklyKey, stat in { XP = "TotalXP", Caught = "TotalCaught", Earned = "CoinsEarned" } do
-		weekly[weeklyKey] += math.max(0, data.Stats[stat] - before.Stats[stat])
+	local weekly = period(before.Weekly, Data.weekStart(now))
+	local monthly = period(before.Monthly, Data.monthStart(now))
+	for key, stat in PERIOD_STATS do
+		local gained = math.max(0, data.Stats[stat] - before.Stats[stat])
+		weekly[key] += gained
+		monthly[key] += gained
 	end
 	data.Weekly = weekly
+	data.Monthly = monthly
 	return Data.decode(data)
 end
 
+-- Every board's score, plus the week and the month the period boards count.
 function Data.scores(raw, now)
 	local data = Data.decode(raw)
-	local start = Data.weekStart(now)
-	local weekly = if data.Weekly and data.Weekly.Start == start then data.Weekly else {}
+	local week = Data.weekStart(now)
+	local month = Data.monthStart(now)
+	local weekly = if data.Weekly and data.Weekly.Start == week then data.Weekly else {}
+	local monthly = if data.Monthly and data.Monthly.Start == month then data.Monthly else {}
 	return {
 		Level = Data.level(data.Stats.TotalXP),
 		Caught = data.Stats.TotalCaught,
 		Earned = data.Stats.CoinsEarned,
+		Playtime = data.Stats.PlaySeconds,
 		WeeklyXP = weekly.XP or 0,
 		WeeklyCaught = weekly.Caught or 0,
 		WeeklyEarned = weekly.Earned or 0,
-		Playtime = data.Stats.PlaySeconds,
+		WeeklyPlaytime = weekly.PlaySeconds or 0,
+		MonthlyXP = monthly.XP or 0,
+		MonthlyCaught = monthly.Caught or 0,
+		MonthlyEarned = monthly.Earned or 0,
+		MonthlyPlaytime = monthly.PlaySeconds or 0,
 	},
-		start
+		week,
+		month
 end
 Data.KITCHEN_STORAGE_CAPACITY = 8
 local KITCHEN_RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical", "Exotic", "Divine", "Limited", "Admin" }

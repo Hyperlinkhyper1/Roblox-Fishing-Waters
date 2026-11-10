@@ -13,10 +13,19 @@ local sessionOnly = RunService:IsStudio() and game.GameId == 0
 local prefix = if RunService:IsStudio() then "AnglerBoards_Studio_v1_" else "AnglerBoards_v1_"
 local pending, written, stores, names, sessions = {}, {}, {}, {}, {}
 local closing, writing = false, false
--- Ranked like the noticeboards but shown on the luma website only.
+-- Ranked like the noticeboards but shown on the luma website only, where a
+-- switch flips every board between all time, this month and this week.
 local WebOnly = {
 	{ Id = "Playtime", Title = "MOST TIME PLAYED", Unit = "SECONDS", Weekly = false },
+	{ Id = "WeeklyPlaytime", Title = "TIME PLAYED THIS WEEK", Unit = "SECONDS", Weekly = true },
+	{ Id = "MonthlyXP", Title = "MOST XP THIS MONTH", Unit = "XP", Monthly = true },
+	{ Id = "MonthlyCaught", Title = "FISH THIS MONTH", Unit = "FISH", Monthly = true },
+	{ Id = "MonthlyEarned", Title = "MONEY THIS MONTH", Unit = "$", Monthly = true },
+	{ Id = "MonthlyPlaytime", Title = "TIME PLAYED THIS MONTH", Unit = "SECONDS", Monthly = true },
 }
+-- Web-only boards are read half as often as the noticeboards, keeping
+-- GetSortedAsync well inside its per-server budget.
+local WEB_REFRESH = 240
 local tracked = table.clone(Boards.Definitions)
 for _, definition in WebOnly do
 	table.insert(tracked, definition)
@@ -26,6 +35,11 @@ local snapshots = {}
 -- Seconds in game are banked into the saved profile this often.
 local PLAYTIME_FLUSH = 60
 local playSince = {}
+
+-- Weekly boards are scoped by the week's Monday, monthly ones by the 1st.
+local function scopeOf(definition, week, month)
+	return if definition.Weekly then week elseif definition.Monthly then month else nil
+end
 
 local function indexKey(id, week)
 	return id .. ":" .. tostring(week or "AllTime")
@@ -47,10 +61,10 @@ local function capture(player)
 		return
 	end
 	names[player.UserId] = player.Name
-	local scores, week = BoatData.leaderboardScores(profile, os.time())
+	local scores, week, month = BoatData.leaderboardScores(profile, os.time())
 	for _, definition in tracked do
-		local value = scores[definition.Id]
-		local scope = if definition.Weekly then week else nil
+		local value = scores[definition.Id] or 0
+		local scope = scopeOf(definition, week, month)
 		local key = indexKey(definition.Id, scope) .. ":" .. player.UserId
 		if value > (written[key] or 0) then
 			local previous = pending[key]
@@ -99,8 +113,8 @@ local function writeOne()
 	end
 end
 
-local function readBoard(definition, week)
-	local scope = if definition.Weekly then week else nil
+local function readBoard(definition, week, month)
+	local scope = scopeOf(definition, week, month)
 	local rows
 	if sessionOnly then
 		rows = {}
@@ -128,7 +142,7 @@ local function readBoard(definition, week)
 	return entries
 end
 
-local function remember(definition, week, entries)
+local function remember(definition, week, month, entries)
 	local rows = {}
 	for _, entry in entries do
 		table.insert(rows, { userId = entry.UserId, name = entry.Name, score = entry.Score })
@@ -136,8 +150,18 @@ local function remember(definition, week, entries)
 	snapshots[definition.Id] = {
 		readAt = os.time(),
 		week = if definition.Weekly then week else nil,
+		month = if definition.Monthly then month else nil,
 		rows = rows,
 	}
+end
+
+-- True once the UTC week or month a board was read for has ended, so a slow
+-- read never puts last period's rows back after the boundary.
+local function stale(definition, week, month)
+	local now = os.time()
+	return (definition.Weekly and Data.weekStart(now) ~= week)
+		or (definition.Monthly and Data.monthStart(now) ~= month)
+		or false
 end
 
 -- Banks the seconds since the last flush. A failed save keeps them for the
@@ -199,17 +223,26 @@ function Service.start(root: Instance)
 	end)
 	task.spawn(function()
 		local currentWeek = Data.weekStart(os.time())
-		local nextRefresh = 0
+		local currentMonth = Data.monthStart(os.time())
+		local nextRefresh, nextWebRefresh = 0, 0
 		local cached = {}
 		while not closing do
 			local week = Data.weekStart(os.time())
-			if week ~= currentWeek then
-				currentWeek, nextRefresh = week, 0
-				for _, definition in Boards.Definitions do
-					if definition.Weekly then
-						cached[definition.Id] = nil
+			local month = Data.monthStart(os.time())
+			if week ~= currentWeek or month ~= currentMonth then
+				local newWeek = week ~= currentWeek
+				currentWeek, currentMonth, nextRefresh, nextWebRefresh = week, month, 0, 0
+				for _, definition in tracked do
+					if (newWeek and definition.Weekly) or definition.Monthly then
 						snapshots[definition.Id] = nil
-						Boards.render(root, definition.Id, {}, "New week · loading rankings…")
+					end
+				end
+				if newWeek then
+					for _, definition in Boards.Definitions do
+						if definition.Weekly then
+							cached[definition.Id] = nil
+							Boards.render(root, definition.Id, {}, "New week · loading rankings…")
+						end
 					end
 				end
 				for _, player in Players:GetPlayers() do
@@ -219,15 +252,15 @@ function Service.start(root: Instance)
 			if os.clock() >= nextRefresh then
 				nextRefresh = os.clock() + 120
 				for _, definition in Boards.Definitions do
-					local ok, result = pcall(readBoard, definition, week)
+					local ok, result = pcall(readBoard, definition, week, month)
 					-- A yielding network request must never put last week's rows
 					-- back on a board after the UTC boundary.
-					if definition.Weekly and Data.weekStart(os.time()) ~= week then
+					if stale(definition, week, month) then
 						continue
 					end
 					if ok then
 						cached[definition.Id] = result
-						remember(definition, week, result)
+						remember(definition, week, month, result)
 					end
 					local status = if not ok
 						then "Rankings unavailable · retrying"
@@ -237,10 +270,13 @@ function Service.start(root: Instance)
 					Boards.render(root, definition.Id, cached[definition.Id] or {}, status)
 					task.wait(1)
 				end
+			end
+			if os.clock() >= nextWebRefresh then
+				nextWebRefresh = os.clock() + WEB_REFRESH
 				for _, definition in WebOnly do
-					local ok, result = pcall(readBoard, definition, week)
-					if ok then
-						remember(definition, week, result)
+					local ok, result = pcall(readBoard, definition, week, month)
+					if ok and not stale(definition, week, month) then
+						remember(definition, week, month, result)
 					end
 				end
 			end

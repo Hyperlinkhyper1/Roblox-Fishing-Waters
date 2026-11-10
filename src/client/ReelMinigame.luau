@@ -275,7 +275,7 @@ function Reel.new(gui: ScreenGui)
 	})
 	round(tag, 3)
 	make("UIPadding", tag, { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) })
-	self.place = text(tag, "MAIN LAKE", {
+	self.place = text(tag, "GULLHAVEN SOUND", {
 		Size = UDim2.new(0, 0, 1, 0),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Font = Enum.Font.GothamBold,
@@ -533,7 +533,7 @@ function Reel:fight(fishId: string, difficulty: number, placeName: string?, reel
 	self.result.Visible, self.fightView.Visible = false, true
 	self.title.Text = if fish then FishCatch.title(fish) else "DISTURBED WATER"
 	self.strength.Text = "Strength: " .. FishCatch.strength(difficulty)
-	self.place.Text = string.upper(placeName or "Main Lake")
+	self.place.Text = string.upper(placeName or "Gullhaven Sound")
 	local model, camera = FishModels.show(self.silhouette, fishId, true)
 	if model and camera then
 		state.camera = camera

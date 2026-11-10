@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local Admin = require(game:GetService("ReplicatedStorage").Shared.Admin)
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -55,7 +56,7 @@ local function update()
 end
 
 function Fly.start()
-	if started or player.UserId ~= 2541746813 then return end
+	if started or not Admin.isAdmin(player) then return end
 	started = true
 	RunService.Heartbeat:Connect(update)
 end

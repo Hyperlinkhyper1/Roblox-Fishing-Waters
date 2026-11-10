@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local AnglerData = require(script.Parent.AnglerData)
 local BoatService = require(script.Parent.BoatService)
+local Admin = require(ReplicatedStorage.Shared.Admin)
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
@@ -171,7 +172,7 @@ end
 
 -- Called only by the private admin command; the saved hand remains authoritative.
 function CargoService.addHeldMutation(player: Player, mutation: string): (boolean, string)
-	if player.UserId ~= 2541746813 or not table.find(FishMutations.Order, mutation) then
+	if not Admin.isAdmin(player) or not table.find(FishMutations.Order, mutation) then
 		return false, "That mutation is unavailable."
 	end
 	local profile = BoatService.getProfile(player)
@@ -216,7 +217,7 @@ end
 
 -- Weight edits use the same saved hand and tool refresh as normal cargo changes.
 function CargoService.setHeldWeight(player: Player, kg: any): (boolean, string)
-	if player.UserId ~= 2541746813 then
+	if not Admin.isAdmin(player) then
 		return false, "That command is unavailable."
 	end
 	if type(kg) ~= "number" or kg ~= kg or kg < 0.01 or kg >= 2 ^ 53 then

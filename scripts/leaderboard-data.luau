@@ -44,6 +44,13 @@ check(Data.weekStart(monday) == monday, "Monday starts the new UTC week")
 check(Data.weekStart(monday - 1) == monday - 604800, "Sunday belongs to the previous week")
 check(Data.weekStart(monday + 604799) == monday, "Last second of week")
 check(Data.weekStart(monday + 604800) == monday + 604800, "Exact weekly reset")
+-- 2026-11-01T00:00Z, 2026-12-01T00:00Z, 2024-02-29T12:00Z (leap day), 2024-03-01T00:00Z.
+check(Data.monthStart(1793491200) == 1793491200, "The 1st at midnight starts its month")
+check(Data.monthStart(1793491199) == 1790812800, "Last second of October belongs to October")
+check(Data.monthStart(1796083199) == 1793491200, "Last second of November")
+check(Data.monthStart(1796083200) == 1796083200, "Exact monthly reset")
+check(Data.monthStart(1709208000) == 1706745600, "Leap day belongs to February")
+check(Data.monthStart(1709251200) == 1709251200, "March follows a leap February")
 check(Data.level(0) == 1 and Data.level(999) == 1 and Data.level(1000) == 2, "Level thresholds")
 local previousCost = 0
 for level = 1, 100 do
@@ -116,6 +123,23 @@ check(
 check(scores.Earned == 1025 and scores.Caught == 20, "Weekly reset preserves lifetime stats")
 local settings = Data.trackProgress(earned, earned, monday + 604800)
 check(settings.Weekly.Caught == 0, "Unrelated update after rollover credits no old activity")
+check(nextWeek.Monthly and nextWeek.Monthly.Start == Data.monthStart(monday + 604800), "Monthly counters name their month")
+local month = Data.monthStart(monday)
+local played = Data.trackProgress(earned, (function()
+	local copy = Data.decode(earned)
+	copy.Stats.PlaySeconds += 90
+	return copy
+end)(), monday)
+scores = Data.scores(played, monday)
+check(
+	scores.Playtime == 90 and scores.WeeklyPlaytime == 90 and scores.MonthlyPlaytime == 90,
+	"Playtime counts towards all time, this week and this month"
+)
+local nextMonth = Data.monthStart(month + 32 * 86400)
+scores = Data.scores(played, nextMonth)
+check(scores.MonthlyPlaytime == 0 and scores.MonthlyXP == 0 and scores.Playtime == 90, "A new month starts the monthly boards empty")
+local legacyWeek = Data.decode({ Weekly = { Start = monday, XP = 5, Caught = 1, Earned = 0 } })
+check(Data.trackProgress(legacyWeek, legacyWeek, monday).Weekly.PlaySeconds == 0, "Weeks saved before playtime tracking still load")
 for _, raw in
 	{
 		{ Stats = { TotalXP = -1 } },
@@ -124,6 +148,8 @@ for _, raw in
 		{
 			Weekly = { Start = monday, XP = -1, Caught = 0, Earned = 0 },
 		},
+		{ Monthly = { Start = monday, XP = 1, Caught = 0, Earned = 0 } },
+		{ Monthly = { Start = monday, XP = 1, Caught = 0, Earned = 0, PlaySeconds = -5 } },
 	}
 do
 	check(not pcall(Data.decode, raw), "Malformed XP/weekly data rejected")

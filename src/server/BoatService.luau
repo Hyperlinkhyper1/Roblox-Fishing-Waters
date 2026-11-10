@@ -51,7 +51,7 @@ local launchPurchased
 local boatLock: ((Player, string) -> string?)? = nil
 local outfitter: ((Player, string, Model) -> any)? = nil
 local started = false
-local COMMAND_USER_ID = 2541746813 -- hyperlinkhyper
+local Admin = require(ReplicatedStorage.Shared.Admin)
 -- Studio tests use their own store; failed loads never overwrite saved data.
 local studioSession = RunService:IsStudio() and game.GameId == 0
 local store
@@ -386,7 +386,7 @@ end
 
 -- This handler is server-only; the sender comes from TextChatCommand's TextSource.
 function BoatService.setCashFromCommand(player: Player, message: string)
-	if player.UserId ~= COMMAND_USER_ID then
+	if not Admin.isAdmin(player) then
 		return
 	end
 	local digits = message:match("^/set%s+cash%s+(%d+)%s*$")
@@ -428,7 +428,7 @@ function BoatService.setCashFromCommand(player: Player, message: string)
 end
 
 local function setFromCommand(player: Player, message: string)
-	if player.UserId ~= COMMAND_USER_ID then
+	if not Admin.isAdmin(player) then
 		return
 	end
 	local normalized = string.lower(message)
