@@ -39,6 +39,18 @@ for _, z in { -0.5, 0.55 } do
 		table.insert(Kitchen.CASE_SPOTS, CFrame.new(x, Kitchen.CASE_SHELF + 0.14, z))
 	end
 end
+-- A plain supermarket gondola shelf: one grid cell wide, three shelves of two dishes.
+Kitchen.SHELF_WIDTH = 4.4
+Kitchen.SHELF_DEPTH = 2.2
+Kitchen.SHELF_HEIGHT = 5.4
+local SHELF_LEVELS = { 0.55, 1.85, 3.15 }
+local SHELF_COLUMNS = { -1.05, 1.05 }
+Kitchen.SHELF_SPOTS = {}
+for _, y in SHELF_LEVELS do
+	for _, x in SHELF_COLUMNS do
+		table.insert(Kitchen.SHELF_SPOTS, CFrame.new(x, y + 0.1, 0.25))
+	end
+end
 -- Eight fish spots in the iced pans of the kitchen storage counter: four across, two deep.
 local STORAGE_COLUMNS = { -3.15, -1.05, 1.05, 3.15 }
 Kitchen.STORAGE_SPOTS = {}
@@ -439,6 +451,46 @@ function Kitchen.buildCase(parent: Instance, frame: CFrame): Model
 	-- A small sign on the top glass names the case.
 	piece("CaseSign", Vector3.new(2.2, 0.45, 0.06), CFrame.new(0, shelf + 1.52, -1.2), rgb(218, 180, 89), M.SmoothPlastic)
 	piece("CaseSignFace", Vector3.new(2, 0.3, 0.02), CFrame.new(0, shelf + 1.52, -1.16), rgb(45, 78, 88), M.SmoothPlastic)
+	return model
+end
+
+-- An ordinary supermarket shelf unit for cooked dishes. Dishes are added separately
+-- at SHELF_SPOTS; the open front (+Z) faces the shoppers.
+function Kitchen.buildShelf(parent: Instance, frame: CFrame): Model
+	local model, piece = builder(parent, "FoodShelf", frame)
+	local w, d, h = Kitchen.SHELF_WIDTH, Kitchen.SHELF_DEPTH, Kitchen.SHELF_HEIGHT
+	local white = rgb(236, 238, 236)
+	local grey = rgb(196, 200, 200)
+	local strip = rgb(214, 74, 58)
+	local back = -d / 2
+
+	-- The base plinth is the solid footprint; the kickplate covers its front.
+	piece("Base", Vector3.new(w - 0.04, 0.4, d - 0.1), CFrame.new(0, 0.2, 0.03), grey, M.SmoothPlastic, true)
+	piece("Kickplate", Vector3.new(w - 0.1, 0.34, 0.04), CFrame.new(0, 0.2, d / 2 - 0.005), DARK_STEEL, M.Metal)
+	-- Two end uprights and a pegboard back panel.
+	for _, x in { -w / 2 + 0.06, w / 2 - 0.06 } do
+		piece("Upright", Vector3.new(0.12, h, 0.2), CFrame.new(x, h / 2, back + 0.14), white, M.Metal, true)
+		piece("EndFoot", Vector3.new(0.12, 0.12, d - 0.2), CFrame.new(x, 0.46, 0.06), grey, M.Metal)
+	end
+	piece("BackPanel", Vector3.new(w - 0.2, h - 0.5, 0.08), CFrame.new(0, (h - 0.5) / 2 + 0.4, back + 0.08), white, M.SmoothPlastic, true)
+	for row = 1, 9 do
+		for column = -3, 3 do
+			piece("PegHole", Vector3.new(0.06, 0.06, 0.02), CFrame.new(column * 0.55, 0.4 + row * 0.5, back + 0.13), grey, M.SmoothPlastic)
+		end
+	end
+	-- Shelves with a red price strip along each front edge.
+	for _, y in SHELF_LEVELS do
+		piece("Shelf", Vector3.new(w - 0.28, 0.08, d - 0.3), CFrame.new(0, y + 0.06, 0.08), white, M.Metal)
+		piece("ShelfBracket", Vector3.new(w - 0.28, 0.16, 0.06), CFrame.new(0, y - 0.04, back + 0.17), grey, M.Metal)
+		piece("PriceStrip", Vector3.new(w - 0.3, 0.2, 0.04), CFrame.new(0, y + 0.02, d / 2 - 0.04), strip, M.SmoothPlastic)
+		for _, x in SHELF_COLUMNS do
+			piece("PriceTag", Vector3.new(0.6, 0.13, 0.02), CFrame.new(x, y + 0.02, d / 2 - 0.01), rgb(252, 250, 236), M.SmoothPlastic)
+		end
+	end
+	piece("TopCap", Vector3.new(w, 0.1, 0.4), CFrame.new(0, h + 0.05, back + 0.2), grey, M.Metal)
+	-- A header board on top reads as an aisle sign.
+	piece("HeaderBoard", Vector3.new(w - 0.6, 0.6, 0.08), CFrame.new(0, h + 0.4, back + 0.2), strip, M.SmoothPlastic)
+	piece("HeaderFace", Vector3.new(w - 0.9, 0.36, 0.02), CFrame.new(0, h + 0.4, back + 0.25), rgb(252, 250, 236), M.SmoothPlastic)
 	return model
 end
 

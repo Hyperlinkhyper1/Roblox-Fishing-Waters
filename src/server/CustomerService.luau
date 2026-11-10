@@ -128,7 +128,8 @@ local function randomAvatar(): HumanoidDescription
 			return Players:GetHumanoidDescriptionFromUserId(random:NextInteger(1, MAX_USER_ID))
 		end)
 		if ok and description then
-			return description
+			-- Layered clothing runs a wrap deformer per customer on every client (Shared.AvatarLite).
+			return require(ReplicatedStorage.Shared.AvatarLite).strip(description)
 		end
 	end
 	return Instance.new("HumanoidDescription")
@@ -452,6 +453,12 @@ local function dishKey(dish): string
 	)
 end
 
+-- Placed fixtures that show cooked dishes, filled in this order.
+local FOOD_FIXTURES = {
+	{ itemId = "FoodCase", spots = Kitchen.CASE_SPOTS, depth = Kitchen.CASE_DEPTH },
+	{ itemId = "FoodShelf", spots = Kitchen.SHELF_SPOTS, depth = Kitchen.SHELF_DEPTH },
+}
+
 -- A carriable dish: every part welded to one anchor whose pivot is the plate's base.
 local function dishModel(dish, frame: CFrame): Model?
 	local recipe = Recipes.Items[dish.RecipeId]
@@ -484,7 +491,15 @@ local function refreshFoodDisplay(shop)
 	local owner = ownerOf(shop.base)
 	local profile = owner and BoatService.getProfile(owner)
 	local dishes = if profile then profile.Angler.Pantry else {}
-	local frames = fixtureFrames(shop, profile, "FoodCase")
+	-- Every dish spot: the glass cases first, then the supermarket shelves.
+	local slots = {}
+	for _, kind in FOOD_FIXTURES do
+		for _, frame in fixtureFrames(shop, profile, kind.itemId) do
+			for _, spot in kind.spots do
+				table.insert(slots, { fixture = frame, spot = frame * spot, depth = kind.depth })
+			end
+		end
+	end
 	local taken = {}
 	local keys = { tostring(owner and owner.UserId) }
 	for _, customer in shop.customers do
@@ -496,10 +511,10 @@ local function refreshFoodDisplay(shop)
 			end
 		end
 	end
-	for _, frame in frames do
-		table.insert(keys, tostring(frame.Position))
+	for _, slot in slots do
+		table.insert(keys, tostring(slot.spot.Position))
 	end
-	local shown = math.min(#dishes, #frames * #Kitchen.CASE_SPOTS)
+	local shown = math.min(#dishes, #slots)
 	for index = 1, shown do
 		table.insert(keys, dishKey(dishes[index]))
 	end
@@ -521,11 +536,11 @@ local function refreshFoodDisplay(shop)
 			taken[key] -= 1
 			continue
 		end
-		local case = frames[(index - 1) // #Kitchen.CASE_SPOTS + 1]
-		local model = dishModel(dish, case * Kitchen.CASE_SPOTS[(index - 1) % #Kitchen.CASE_SPOTS + 1])
+		local slot = slots[index]
+		local model = dishModel(dish, slot.spot)
 		if model then
 			model.Parent = display
-			table.insert(shop.displayFood, { record = dish, model = model, freezer = case, food = true })
+			table.insert(shop.displayFood, { record = dish, model = model, freezer = slot.fixture, depth = slot.depth, food = true })
 		end
 	end
 	display.Parent = shop.freezerPrompt.Parent.Parent
@@ -695,7 +710,7 @@ local function visit(shop, customer)
 		end
 		for index, item in customer.items do
 			local freezerFrame = item.freezer
-			local shelfDepth = if item.food then Kitchen.CASE_DEPTH else FishFreezer.DEPTH
+			local shelfDepth = item.depth or if item.food then Kitchen.CASE_DEPTH else FishFreezer.DEPTH
 			local freezerSpot = (freezerFrame * CFrame.new(0, 0, shelfDepth / 2 + clearance)).Position
 			if not going(freezerSpot) then return false end
 			face(customer, freezerFrame.Position)
@@ -1561,7 +1576,7 @@ local function arrive(shop, guest): boolean
 	local count = if ShopUpgrades.hasBaskets(profile.Angler) then math.min(3, #choices) else 1
 	for _ = 1, count do
 		local choice = table.remove(choices, random:NextInteger(1, #choices))
-		table.insert(items, { record = choice.record, freezer = choice.freezer, food = choice.food })
+		table.insert(items, { record = choice.record, freezer = choice.freezer, depth = choice.depth, food = choice.food })
 	end
 	local customer = {
 		guest = guest,

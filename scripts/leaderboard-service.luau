@@ -63,6 +63,12 @@ local BoatService = {
 	getProfile = function(p)
 		return profiles[p]
 	end,
+	updateProgress = function(p, transform)
+		local profile = { Angler = Data.decode(profiles[p].Angler) }
+		transform(profile)
+		profiles[p].Angler = Data.decode(profile.Angler)
+		return true, "Saved."
+	end,
 }
 local BoatData = {
 	leaderboardScores = function(profile, time)
@@ -156,10 +162,11 @@ local game = {
 local Service = (function()
 	-- SERVICE_SOURCE --
 end)()
+local joinedAt = now
 Service.start({})
-check(#threads == 2 and closeCallback ~= nil, "Starts background sync and refresh without blocking harbour")
+check(#threads == 3 and closeCallback ~= nil, "Starts background sync, refresh and playtime without blocking harbour")
 Service.start({})
-check(#threads == 2, "Startup idempotent")
+check(#threads == 3, "Startup idempotent")
 local function drain()
 	for _ = 1, 30 do
 		if next(Service.pending) == nil then
@@ -237,6 +244,47 @@ if mode ~= "unpublished" then
 end
 check(#Service.readBoard(Boards.Definitions[6], Data.weekStart(now)) == 0, "New week has separate global index")
 check(#Service.readBoard(Boards.Definitions[6], Data.weekStart(now) - 604800) == 1, "Previous week remains isolated")
+-- Playtime: banked into the saved profile, ranked like any board, never painted.
+check(rendered.Playtime == nil, "Playtime has no noticeboard in game")
+local function playtimeTick()
+	local ok, message = coroutine.resume(threads[3])
+	assert(ok, message)
+end
+playtimeTick()
+check(Data.decode(profiles[player].Angler).Stats.PlaySeconds == 0, "Playtime waits for the first flush")
+playtimeTick()
+check(
+	Data.decode(profiles[player].Angler).Stats.PlaySeconds == now - joinedAt,
+	"Seconds since joining are banked into the profile"
+)
+local banked = now - joinedAt
+now += 90
+playtimeTick()
+check(Data.decode(profiles[player].Angler).Stats.PlaySeconds == banked + 90, "Later flushes add only new seconds")
+Service.capture(player)
+drain()
+local playtimeBoard = { Id = "Playtime", Weekly = false }
+local playtimeRows = Service.readBoard(playtimeBoard, Data.weekStart(now))
+check(
+	#playtimeRows == 1 and playtimeRows[1].Score == banked + 90 and playtimeRows[1].UserId == 101,
+	"Playtime is indexed globally with the angler's user id"
+)
+if mode ~= "unpublished" then
+	check(Service.snapshot().WeeklyEarned == nil, "A failed rollover read never sends last week's rows")
+end
+now += 121
+refresh(9)
+local snapshot = Service.snapshot()
+if mode == "unpublished" then
+	check(snapshot == nil, "Studio-only boards are never sent to the website")
+else
+	check(snapshot.WeeklyEarned ~= nil and snapshot.Playtime ~= nil, "Website snapshot carries every board")
+	check(snapshot.WeeklyEarned.week == Data.weekStart(now), "Weekly snapshots name their week")
+	check(
+		snapshot.Playtime.week == nil and snapshot.Playtime.readAt > 0,
+		"All-time snapshots carry when they were read"
+	)
+end
 local beforeRemoval = next(Service.pending)
 Players.PlayerRemoving:Fire(player)
 check(next(Service.pending) == beforeRemoval, "Departure does not invent new scores")

@@ -464,16 +464,26 @@ do
 		for _, part in object:GetChildren() do
 			local low, high = bounds(part, houseFrame)
 			check(
-				low.X >= 17.19 and high.X <= 20.81 and low.Z >= 69.49 and high.Z <= 78.51,
+				low.X >= 17.19 and high.X <= 21.71 and low.Z >= 69.49 and high.Z <= 78.51,
 				"Freezer is outside its left-wall footprint"
 			)
 			check(low.Y >= 0.14 and high.Y < 4.19, "Freezer is not resting on the shop floor")
 		end
 	end
 	check(sourceFaces == 288, "Freezer conversion lost source faces")
-	local freezerFrame = houseFrame * CFrame.new(19, 0.16, 74) * CFrame.Angles(0, -math.pi / 2, 0)
+	-- A 2 x 1 grid-cell cabinet: 9 wide, 4.5 deep (depth stretched on its own),
+	-- its front still at house x = 17.2.
+	local freezerFrame = houseFrame * CFrame.new(19.45, 0.16, 74) * CFrame.Angles(0, -math.pi / 2, 0)
+	local freezerBounds = dependencies.FishFreezerGeometry
+	local depthUnit = 4.5 / (freezerBounds.boundsMax.Y - freezerBounds.boundsMin.Y)
+	local originY = (freezerBounds.boundsMin.Y + freezerBounds.boundsMax.Y) / 2
 	local function sourcePoint(v)
-		return Vector3.new(v.X + 2, v.Z, 15 - v.Y) * (9 / 150)
+		return Vector3.new((v.X + 2) * (9 / 150), v.Z * (9 / 150), (originY - v.Y) * depthUnit)
+	end
+	-- Packaged stock (box objects) rides the stretch rigidly.
+	local function rigidPoint(v, center)
+		local offset = v - center
+		return sourcePoint(center) + Vector3.new(offset.X, offset.Z, -offset.Y) * (9 / 150)
 	end
 	for _, source in dependencies.FishFreezerGeometry.objects do
 		local object = freezer:FindFirstChild(source.name)
@@ -485,11 +495,14 @@ do
 				and math.abs(original.B - source.color.B) < EPS,
 			"Freezer source palette metadata changed"
 		)
+		local function mapped(vertex)
+			return if source.box then rigidPoint(vertex, source.box.center) else sourcePoint(vertex)
+		end
 		local sourceArea, emittedArea = 0, 0
 		for _, face in source.faces do
-			local a = sourcePoint(dependencies.FishFreezerGeometry.vertices[face[1]])
-			local b = sourcePoint(dependencies.FishFreezerGeometry.vertices[face[2]])
-			local c = sourcePoint(dependencies.FishFreezerGeometry.vertices[face[3]])
+			local a = mapped(dependencies.FishFreezerGeometry.vertices[face[1]])
+			local b = mapped(dependencies.FishFreezerGeometry.vertices[face[2]])
+			local c = mapped(dependencies.FishFreezerGeometry.vertices[face[3]])
 			sourceArea += (b - a):Cross(c - a).Magnitude / 2
 		end
 		for _, part in object:GetChildren() do
@@ -519,7 +532,7 @@ do
 			end
 		end
 		for vertexIndex in vertexIndices do
-			local expected = sourcePoint(dependencies.FishFreezerGeometry.vertices[vertexIndex])
+			local expected = mapped(dependencies.FishFreezerGeometry.vertices[vertexIndex])
 			local nearest = math.huge
 			for _, corner in emitted do
 				nearest = math.min(nearest, (corner - expected).Magnitude)
@@ -896,8 +909,8 @@ for _, recoverFrame in { false, true } do
 	BaseHouse.ensure(base)
 	check(freezer.Parent == nil and #shop:GetChildren() == 5, "Old freezer model is not replaced in place")
 	check(
-		shop:FindFirstChild("FishFreezer"):GetAttribute("ModelVersion") == 3,
-		"Saved freezer did not receive the smaller scale and wall clearance"
+		shop:FindFirstChild("FishFreezer"):GetAttribute("ModelVersion") == 4,
+		"Saved freezer did not receive the 2 x 1 grid-cell model"
 	)
 	local desk = shop:FindFirstChild("ShopDesk")
 	desk:Destroy()

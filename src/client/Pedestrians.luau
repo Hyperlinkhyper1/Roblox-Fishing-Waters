@@ -12,11 +12,16 @@
 --   Past that, or out of sight in a shop: not drawn and not updated at all.
 -- If no avatar could be loaded at all, a two-block stand-in is drawn instead.
 -- All moves of a frame go out in one workspace:BulkMoveTo call.
+-- Only near avatars cast shadows (a moving caster redraws part of the sun's shadow map),
+-- avatars come without layered clothing (Shared.AvatarLite), and a rig hidden for a few
+-- seconds goes back to a small per-avatar pool, so memory follows how many are on screen
+-- rather than how many people walk the island.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Pedestrians = require(ReplicatedStorage.Shared.Pedestrians)
+local AvatarLite = require(ReplicatedStorage.Shared.AvatarLite)
 
 -- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
 local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
@@ -35,6 +40,8 @@ local PedestriansClient = {}
 local TIERS = Pedestrians.TIERS
 local HIDDEN = Pedestrians.HIDDEN
 local HIDDEN_CHECK = 0.5 -- how often an undrawn pedestrian is looked at again
+local RELEASE_SECONDS = 6 -- an avatar hidden this long goes back to the pool
+local POOL_PER_SLOT = 3 -- spare rigs kept per avatar; more are destroyed
 local AREA_REACH = 165 * 1.5 + TIERS[#TIERS].exit
 -- Roblox's stock R15 animations (the default Animate script's walk and idle)
 local WALK_ANIMATION = "rbxassetid://913402848"
@@ -80,6 +87,8 @@ type Rig = {
 	mode: string, -- "still", "idle" or "walk"
 	heightScale: number,
 	bag: BasePart?,
+	slot: number?, -- avatar template it was cloned from (pool key)
+	shadows: boolean,
 }
 
 type Person = {
@@ -96,6 +105,7 @@ type Person = {
 	shopConnection: RBXScriptConnection,
 	center: Vector3?,
 	away: boolean,
+	hiddenAt: number?,
 }
 
 local started = false
@@ -107,6 +117,8 @@ local moveFrames: { CFrame } = {}
 
 -- Avatar templates by slot: a Model once built, false if it failed to build.
 local templates: { [number]: Model | false } = {}
+-- Released avatar rigs by template slot, unparented and ready to reuse.
+local pool: { [number]: { Rig } } = {}
 local building: { [number]: boolean } = {}
 local avatarFolder: Instance? = nil
 
@@ -123,6 +135,8 @@ local function prepareTemplate(model: Model): Model?
 			item.Anchored = item == root
 			item.CanCollide, item.CanTouch, item.CanQuery = false, false, false
 			item.Massless = true
+			-- Off by default; near-tier rigs turn it back on (setShadows)
+			item.CastShadow = false
 		elseif item:IsA("Script") or item:IsA("LocalScript") or item:IsA("Sound") then
 			item:Destroy()
 		end
@@ -151,8 +165,11 @@ local function buildTemplate(slot: number)
 	end
 	building[slot] = true
 	task.spawn(function()
+		-- A local copy without layered clothing, even if the server published one with it.
+		local lite = AvatarLite.strip(description:Clone())
 		local ok, model =
-			pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
+			pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, lite, Enum.HumanoidRigType.R15)
+		lite:Destroy()
 		local prepared = if ok and model then prepareTemplate(model) else nil
 		templates[slot] = prepared or false
 		building[slot] = nil
@@ -162,12 +179,12 @@ local function buildTemplate(slot: number)
 	end)
 end
 
--- The person's own avatar, or any built one if theirs failed. Nil while still loading.
-local function templateFor(seed: number): Model?
+-- The person's own avatar (and its slot), or any built one if theirs failed. Nil while still loading.
+local function templateFor(seed: number): (Model?, number?)
 	local slot = Pedestrians.avatarSlot(seed)
 	local own = templates[slot]
 	if own then
-		return own
+		return own, slot
 	end
 	if own == nil then
 		buildTemplate(slot)
@@ -176,12 +193,13 @@ local function templateFor(seed: number): Model?
 		return nil
 	end
 	for offset = 1, Pedestrians.AVATAR_COUNT - 1 do
-		local other = templates[(slot + offset - 1) % Pedestrians.AVATAR_COUNT + 1]
+		local otherSlot = (slot + offset - 1) % Pedestrians.AVATAR_COUNT + 1
+		local other = templates[otherSlot]
 		if other then
-			return other
+			return other, otherSlot
 		end
 	end
-	return nil
+	return nil, nil
 end
 
 local function anyTemplateCould(): boolean
@@ -206,7 +224,7 @@ local function loadTrack(animator: Animator, id: string, priority: Enum.Animatio
 	return track
 end
 
-local function buildAvatar(template: Model): Rig
+local function buildAvatar(template: Model, slot: number?): Rig
 	local model = template:Clone()
 	model.Name = "Townsperson"
 	local root = model.PrimaryPart :: BasePart
@@ -229,6 +247,8 @@ local function buildAvatar(template: Model): Rig
 		mode = "still",
 		heightScale = math.max(humanoid.HipHeight / 2, 0.5),
 		bag = nil,
+		slot = slot,
+		shadows = false,
 	}
 	-- A shopping bag held in the right hand, parented only while carrying one
 	local hand = model:FindFirstChild("RightHand")
@@ -282,6 +302,7 @@ local function buildStandIn(seed: number): Rig
 		alpha = 0,
 		mode = "still",
 		heightScale = scale,
+		shadows = false,
 	}
 end
 
@@ -289,6 +310,18 @@ local function show(rig: Rig?, visible: boolean)
 	if rig and rig.shown ~= visible then
 		rig.shown = visible
 		rig.model.Parent = if visible then container else nil
+	end
+end
+
+local function setShadows(rig: Rig, on: boolean)
+	if rig.shadows == on then
+		return
+	end
+	rig.shadows = on
+	for _, item in rig.fade do
+		if item:IsA("BasePart") then
+			item.CastShadow = on
+		end
 	end
 end
 
@@ -370,9 +403,10 @@ local function rigFor(person: Person): Rig?
 	if person.avatar then
 		return person.avatar
 	end
-	local template = templateFor(person.seed)
+	local template, slot = templateFor(person.seed)
 	if template then
-		person.avatar = buildAvatar(template)
+		local spare = slot and pool[slot]
+		person.avatar = if spare and #spare > 0 then table.remove(spare) else buildAvatar(template, slot)
 		if person.standIn then
 			person.standIn.model:Destroy()
 			person.standIn = nil
@@ -438,6 +472,7 @@ local function update(person: Person, now: number, dt: number, camera: Vector3)
 		return
 	end
 	local yaw = sample.yaw
+	setShadows(rig, tier == 1)
 	if tier == 1 then
 		person.yaw += shortestAngle(person.yaw, sample.yaw) * math.min(dt * 9, 1)
 		yaw = person.yaw
@@ -511,6 +546,7 @@ local function track(config: Instance)
 		shopConnection = nil :: any,
 		center = config:GetAttribute("AreaCenter") :: Vector3?,
 		away = false,
+		hiddenAt = nil,
 	}
 	local function refresh()
 		person.trip = Pedestrians.decode(config:GetAttribute("Trip") :: string)
@@ -529,6 +565,32 @@ local function track(config: Instance)
 	end)
 	refresh()
 	people[config] = person
+end
+
+-- Hands a hidden person's avatar back to the pool (or destroys it if the pool is full).
+local function release(person: Person)
+	local rig = person.avatar
+	if not rig or rig.shown then
+		return
+	end
+	person.avatar = nil
+	person.hiddenAt = nil
+	setMode(rig, "still")
+	setShadows(rig, false)
+	if rig.bag then
+		rig.bag.Parent = nil
+	end
+	local slot = rig.slot
+	local spare = slot and (pool[slot] or {})
+	if slot and spare and #spare < POOL_PER_SLOT then
+		pool[slot] = spare
+		table.insert(spare, rig)
+	else
+		if rig.bag then
+			rig.bag:Destroy()
+		end
+		rig.model:Destroy()
+	end
 end
 
 local function untrack(config: Instance)
@@ -592,6 +654,16 @@ function PedestriansClient.start()
 				person.away = middle == nil or (eye - (middle :: Vector3)).Magnitude > AREA_REACH
 				if person.away then
 					hideAll(person)
+				end
+				local avatar = person.avatar
+				if avatar and not avatar.shown then
+					if not person.hiddenAt then
+						person.hiddenAt = now
+					elseif now - (person.hiddenAt :: number) >= RELEASE_SECONDS then
+						release(person)
+					end
+				else
+					person.hiddenAt = nil
 				end
 			end
 		end

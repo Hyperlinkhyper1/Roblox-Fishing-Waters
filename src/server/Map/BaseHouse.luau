@@ -5,6 +5,7 @@
 -- house-local frame). The same builder is used for fresh plots and upgrades
 -- to a saved map.
 local BaseGrid = require(game:GetService("ReplicatedStorage").Shared.BaseGrid)
+local CollectionService = game:GetService("CollectionService")
 local Props = require(script.Parent.Props)
 local FishFreezer = require(script.Parent.FishFreezer)
 local ShopDesk = require(script.Parent.ShopDesk)
@@ -16,6 +17,8 @@ local VERSION = 13
 local SCALE_X = (BaseGrid.HALF_WIDTH * 2) / 46
 local SCALE_Z = (BaseGrid.HALF_LENGTH * 2) / 30
 local LIGHTING_VERSION = 3
+-- Shadow-casting lights tagged with this are budgeted per client (client/LightShadows).
+local SHADOW_LIGHT_TAG = "ShadowLight"
 local AWNING_VERSION = 1
 local SURFACE_VERSION = 1
 
@@ -83,6 +86,12 @@ local function ensureLights(house: Model, frame: CFrame)
 		end
 		local existing = room:FindFirstChild("CeilingLights")
 		if existing and existing:GetAttribute("LayoutVersion") == LIGHTING_VERSION then
+			-- Saved pendants predate the tag that hands their shadows to client/LightShadows.
+			for _, item in existing:GetDescendants() do
+				if item:IsA("PointLight") and item.Shadows then
+					CollectionService:AddTag(item, SHADOW_LIGHT_TAG)
+				end
+			end
 			continue
 		end
 		if existing then
@@ -112,6 +121,8 @@ local function ensureLights(house: Model, frame: CFrame)
 			glow.Range = 18
 			glow.Shadows = true
 			glow.Enabled = true
+			-- Every base has 11 of these: clients keep shadows only on the few nearest the camera.
+			CollectionService:AddTag(glow, SHADOW_LIGHT_TAG)
 			glow.Parent = bulb
 		end
 	end

@@ -1,10 +1,9 @@
--- Kitchen storage configuration GUI. Opened from the "Configure" prompt on a
--- placed kitchen storage counter. The owner picks how many fish of each rarity
+-- Kitchen storage configuration GUI. Opened from build mode ("Edit storage" on a
+-- selected kitchen storage counter). The owner picks how many fish of each rarity
 -- (max 8 total) should wait on the ice bed for cooking; targets are sent to the
 -- server which moves eligible fish from the freezer and storage racks onto the
 -- prep table. Pure UI: the server re-validates every target.
 local Players = game:GetService("Players")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
@@ -14,6 +13,7 @@ local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme")
 
 local KitchenStorage = {}
 local started = false
+local openStorage: (() -> ())? = nil
 
 local RARITIES = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical", "Exotic", "Divine", "Limited", "Admin" }
 local CAPACITY = Furniture.KITCHEN_STORAGE_CAPACITY
@@ -325,14 +325,19 @@ function KitchenStorage.start()
 	end)
 	player.CharacterRemoving:Connect(hide)
 
-	ProximityPromptService.PromptTriggered:Connect(function(prompt, who)
-		if who ~= player or prompt.Name ~= "KitchenStorageGuiPrompt" then
-			return
-		end
+	openStorage = function()
 		fetch()
 		overlay.Visible = true
 		render()
-	end)
+	end
+end
+
+-- Opened from build mode's "Edit storage" button on a selected kitchen storage.
+function KitchenStorage.open()
+	KitchenStorage.start()
+	if openStorage then
+		openStorage()
+	end
 end
 
 return KitchenStorage

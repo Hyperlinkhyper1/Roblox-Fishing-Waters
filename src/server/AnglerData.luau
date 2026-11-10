@@ -142,6 +142,8 @@ local defaults = {
 	FoodSold = 0,
 	DinersServed = 0,
 	FishermanCatches = 0,
+	-- Whole seconds in game; ranked on the website only (no noticeboard).
+	PlaySeconds = 0,
 }
 local STAFF_ROLES = { Seller = true, Porter = true, Fisherman = true, RestaurantChef = true, CompanyChef = true }
 local CHEF_PATHS = { RestaurantChef = "Restaurant", CompanyChef = "Company" }
@@ -1363,7 +1365,7 @@ function Data.pickUpFurniture(raw, index, site)
 	elseif #data.Storage > Data.storageCapacity(data) then
 		return nil, "Take some fish off your racks first."
 	elseif #data.Pantry > Data.pantryCapacity(data) then
-		return nil, "Sell some dishes first. They wouldn't fit in your other display cases."
+		return nil, "Sell some dishes first. They wouldn't fit in your other display cases and shelves."
 	elseif entry.ItemId == "KitchenStorage" and #data.KitchenStorage.Fish > 0 then
 		return nil, "Take the fish off your kitchen storage table first."
 	elseif data.Kitchen[entry.Key or entry.ItemId] then
@@ -1477,9 +1479,9 @@ function Data.deliverFish(raw, matches)
 	return nil, nil
 end
 
--- The kitchen pass plus every placed food display case.
+-- The kitchen pass plus every placed food display case and supermarket shelf.
 function Data.pantryCapacity(raw)
-	return Data.PANTRY_CAPACITY * (1 + placed(raw, "FoodCase"))
+	return Data.PANTRY_CAPACITY * (1 + placed(raw, "FoodCase") + placed(raw, "FoodShelf"))
 end
 
 -- Takes one particular frozen fish (one no customer is holding) into the empty hand.
@@ -1759,6 +1761,7 @@ function Data.scores(raw, now)
 		WeeklyXP = weekly.XP or 0,
 		WeeklyCaught = weekly.Caught or 0,
 		WeeklyEarned = weekly.Earned or 0,
+		Playtime = data.Stats.PlaySeconds,
 	},
 		start
 end

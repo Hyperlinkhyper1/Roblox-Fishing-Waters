@@ -70,4 +70,52 @@ function TerrainProbe.floorBelow(x: number, z: number, bottom: number): number?
 	return bottom
 end
 
+-- The seabed under (x, z) from one 3x3-column voxel read: (floor height, surface normal from
+-- the neighbouring columns, surface) where surface is "water" (floor found or scanned down to
+-- `bottom`), "land" (solid terrain at the waterline) or "unknown" (air there: not streamed in).
+-- The floor is nil unless the surface is water and solid ground lies above `bottom`.
+function TerrainProbe.seabed(x: number, z: number, bottom: number): (number?, Vector3?, string)
+	local surface = Biomes.WaterLevel - RESOLUTION / 2
+	local x0, z0 = cell(x) - RESOLUTION, cell(z) - RESOLUTION
+	local y0, y1 = cell(bottom), cell(surface) + RESOLUTION
+	local ok, materials, occupancies = pcall(function()
+		return terrain:ReadVoxels(
+			Region3.new(Vector3.new(x0, y0, z0), Vector3.new(x0 + 3 * RESOLUTION, y1, z0 + 3 * RESOLUTION)),
+			RESOLUTION
+		)
+	end)
+	if not ok or not materials or not materials[2] or not materials[2][1] then
+		return nil, nil, "unknown"
+	end
+	local cells = #materials[2]
+	local top = materials[2][cells][2]
+	if top == AIR then
+		return nil, nil, "unknown"
+	elseif top ~= WATER then
+		return nil, nil, "land"
+	end
+	local function floorAt(ix: number, iz: number): number?
+		local column = materials[ix]
+		if not column then
+			return nil
+		end
+		for index = cells - 1, 1, -1 do
+			local material = column[index][iz]
+			if material ~= WATER and material ~= AIR then
+				return y1 - (cells - index + 1) * RESOLUTION + RESOLUTION * occupancies[ix][index][iz]
+			end
+		end
+		return nil
+	end
+	local floor = floorAt(2, 2)
+	if not floor then
+		return nil, nil, "water"
+	end
+	local left, right = floorAt(1, 2) or floor, floorAt(3, 2) or floor
+	local back, front = floorAt(2, 1) or floor, floorAt(2, 3) or floor
+	-- Heights 2 cells apart: normal ∝ (-dh/dx, 1, -dh/dz)
+	local normal = Vector3.new(left - right, 2 * RESOLUTION, back - front).Unit
+	return floor, normal, "water"
+end
+
 return TerrainProbe

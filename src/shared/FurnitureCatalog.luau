@@ -14,6 +14,7 @@ Furniture.Order = {
 	"Register",
 	"StorageRack",
 	"FoodCase",
+	"FoodShelf",
 	"GrillStation",
 	"Smoker",
 	"SushiBar",
@@ -55,7 +56,7 @@ Furniture.Categories = {
 	{ Id = "Decor", Name = "Decorations" },
 }
 local CATEGORY_BY_ITEM = {
-	Freezer = "Shop", Register = "Shop", FoodCase = "Shop",
+	Freezer = "Shop", Register = "Shop", FoodCase = "Shop", FoodShelf = "Shop",
 	GrillStation = "Kitchen", Smoker = "Kitchen", SushiBar = "Kitchen", CompanyPrep = "Kitchen",
 	StorageRack = "Storage", KitchenStorage = "Storage", Bookcase = "Storage", WallShelf = "Storage",
 	DiningTable = "Seating", WoodenBench = "Seating", CompanyDesk = "Seating",
@@ -79,10 +80,12 @@ Furniture.Items = {
 		Room = "Shop",
 		MaxPlaced = 4,
 		Description = "Another chilled display for customers. Smaller fish leave room for more stock.",
-		-- Two cells along the wall; customers stand in the strip in front (+Z).
+		-- Exactly two cells along the wall (9 x 4.5, see FishFreezer.DEPTH);
+		-- customers stand in the strip in front (+Z).
 		Cells = { 2, 1 },
+		Centered = true,
 		Width = 9,
-		Depth = 3.6,
+		Depth = 4.5,
 		Front = 2,
 		Back = 0,
 	},
@@ -123,6 +126,20 @@ Furniture.Items = {
 		Cells = { 2, 1 },
 		Width = 9,
 		Depth = 2.6,
+		Front = 1,
+		Back = 0,
+	},
+	FoodShelf = {
+		Name = "Supermarket shelf",
+		Price = 200,
+		Room = "Shop",
+		MaxPlaced = 6,
+		Requires = "Supermarket",
+		Description = "A plain supermarket shelf. Stocks 6 cooked dishes for shop customers to grab.",
+		-- Shoppers stand in the strip in front of the open shelves (+Z).
+		Cells = { 1, 1 },
+		Width = 4.4,
+		Depth = 2.2,
 		Front = 1,
 		Back = 0,
 	},
@@ -565,7 +582,7 @@ Furniture.FloorHeights = {
 -- Walkways, doorways and the built-in fixtures stay clear.
 Furniture.Blocked = {
 	{ -4, 65.6, 4, 78.4 }, -- shop entrance aisle customers walk along
-	{ 15.6, 69.5, 20.8, 78.5 }, -- shop's built-in freezer and its customer strip
+	{ 15.6, 69.5, 21.7, 78.5 }, -- shop's built-in freezer and its customer strip
 	{ -21, 65.6, -11.5, 74.9 }, -- shop's built-in counter, its customers and the seller
 	{ -4, 11.25, 1.95, 15.4 }, -- front doorway into the kitchen
 	{ -24.4, 6.45, -6.45, 15.4 }, -- enclosed office in the kitchen's front corner

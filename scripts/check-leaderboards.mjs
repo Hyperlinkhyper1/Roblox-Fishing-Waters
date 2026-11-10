@@ -102,7 +102,7 @@ print("Leaderboard geometry/display: " .. checks .. " checks passed (recording m
     .replace(/require\(script.Parent.BoatData\)/g, 'BoatData')
     .replace(/require\(script.Parent.AnglerData\)/g, 'Data')
     .replace(/require\(script.Parent.Map.Leaderboards\)/g, 'Boards')
-    .replace(/return Service\s*$/, 'return {start=Service.start, capture=capture, writeOne=writeOne, readBoard=readBoard, pending=pending}');
+    .replace(/return Service\s*$/, 'return {start=Service.start, capture=capture, writeOne=writeOne, readBoard=readBoard, pending=pending, snapshot=Service.snapshot}');
   const dataSource = await read('src/server/AnglerData.luau');
   const definitions = (await read('src/server/Map/Leaderboards.luau')).split('local cream =')[0];
   for (const mode of ['live', 'studio', 'unpublished']) {

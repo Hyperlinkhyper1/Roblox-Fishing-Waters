@@ -24,9 +24,14 @@ local started = false
 -- (instanced clusters, shadow maps). A full harbour re-pivoted every hull every
 -- frame. Hulls close to the camera still roll every frame; farther ones step on a
 -- stride, distant ones hold their last pose, and the deck you stand on always moves.
-local NEAR_DISTANCE = 160
+-- A village berth row is several hulls of a few hundred parts each, all inside the old
+-- 160-stud every-frame ring from anywhere on the waterfront; the slow swell reads the
+-- same at a third or a sixth of the frame rate once the hull isn't right beside you.
+local NEAR_DISTANCE = 90
+local MID_DISTANCE = 220
 local FAR_DISTANCE = 450
 local MID_STRIDE = 3
+local FAR_STRIDE = 6
 -- Skip a move this small (studs at the root, or at 20 studs out for tilt): calm
 -- water or a sheltered berth would otherwise rewrite the hull for nothing.
 local MIN_MOVE = 0.005
@@ -135,7 +140,7 @@ function ParkedBoats.start()
 							slot = nextSlot
 							slots[model] = slot
 						end
-						due = (frame + slot) % MID_STRIDE == 0
+						due = (frame + slot) % (if distance > MID_DISTANCE then FAR_STRIDE else MID_STRIDE) == 0
 					end
 				end
 				if not due then

@@ -361,6 +361,7 @@ for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoServic
   script[name] = name
   modules[name] = {start=function() record(name) end}
 end
+modules.DashboardService.setLeaderboardSource = function() end
 script.Map.ChartCatalog = "ChartCatalog"
 modules.ChartCatalog = {start=function() record("ChartCatalog") end}
 script.ScaleModels = "ScaleModels"

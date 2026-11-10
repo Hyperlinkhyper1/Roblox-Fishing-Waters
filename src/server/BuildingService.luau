@@ -142,7 +142,7 @@ local function equipmentProblem(profile, site, entry): string?
 	-- system also reserves them, and walls must keep the same routes usable.
 	local passages = if site == "Company" then { { -4.5, -31.5, 4.5, -27 } } else {
 		{ -4, 65.6, 4, 78.4 }, -- customer entrance
-		{ 15.6, 69.5, 20.8, 78.5 }, -- built-in freezer
+		{ 15.6, 69.5, 21.7, 78.5 }, -- built-in freezer
 		{ -21, 65.6, -11.5, 74.9 }, -- register
 		{ -4, 11.25, 1.95, 15.4 }, -- kitchen entrance
 		{ 2.55, 11.25, 8, 15.4 }, -- storage entrance

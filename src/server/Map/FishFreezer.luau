@@ -3,7 +3,7 @@ local Geometry = require(script.Parent.FishFreezerGeometry)
 local ImportedModel = require(script.Parent.ImportedModel)
 
 local FishFreezer = {}
-local VERSION = 3
+local VERSION = 4
 local rgb = Color3.fromRGB
 local M = Enum.Material
 local APPEARANCE = {
@@ -19,37 +19,52 @@ for _, name in { "obj_4", "obj_5", "obj_7", "obj_9" } do
 	APPEARANCE[name] = { color = rgb(236, 224, 196), material = M.Fabric }
 end
 
+-- Exactly one 2 x 1 block of build-grid cells (FurnitureCatalog.GRID = 4.5):
+-- 9 studs along the wall and 4.5 deep. The supplied model is 150 x 60 source
+-- units, so its depth is stretched on its own to fill the cell.
+FishFreezer.WIDTH = 9
+FishFreezer.DEPTH = 4.5
+FishFreezer.HEIGHT = 4
+local SOURCE_DEPTH = Geometry.boundsMax.Y - Geometry.boundsMin.Y
+local ORIGIN_Y = (Geometry.boundsMin.Y + Geometry.boundsMax.Y) / 2
+
 function FishFreezer.build(parent: Instance, frame: CFrame): Model
 	return ImportedModel.build(parent, frame, Geometry, {
 		name = "FishFreezer",
 		sourceName = "Smashing Elzing-Habbi",
 		version = VERSION,
-		width = 9,
-		origin = Vector3.new(-2, 15, 0),
+		width = FishFreezer.WIDTH,
+		depth = FishFreezer.DEPTH,
+		origin = Vector3.new(-2, ORIGIN_Y, 0),
 		appearance = APPEARANCE,
 	})
 end
 
 -- Against the shop's left-hand wall (seen from its door), clear of the
 -- entrance and the central aisle. Local +Z faces the aisle; the cabinet
--- reaches DEPTH / 2 towards it. Positions are house-local: the shop stands
+-- reaches DEPTH / 2 towards it. Its front stays at house x = 17.2 where the
+-- customers have always stood. Positions are house-local: the shop stands
 -- across the road at BaseGrid.SHOP_FRONT..SHOP_BACK.
-FishFreezer.DEPTH = 3.6
-FishFreezer.HEIGHT = 4
 function FishFreezer.frame(houseFrame: CFrame): CFrame
-	return houseFrame * CFrame.new(19, 0.16, 74) * CFrame.Angles(0, -math.pi / 2, 0)
+	return houseFrame * CFrame.new(17.2 + FishFreezer.DEPTH / 2, 0.16, 74) * CFrame.Angles(0, -math.pi / 2, 0)
 end
 
 -- The sloped ice bed under the glass (source obj_1) is 40 units high at the
--- front (source y=-15) and rises to 57 at the back (y=44). Source units scale
--- by width / 150 about the build origin (-2, 15, 0).
-local UNIT = 9 / 150
-local ICE_SLOPE = math.atan2(57 - 40, 44 + 15)
+-- front (source y=-15) and rises to 57 at the back (y=44). Width and height
+-- scale by WIDTH / 150 and depth by DEPTH / SOURCE_DEPTH, about the build
+-- origin (-2, ORIGIN_Y, 0).
+local UNIT = FishFreezer.WIDTH / 150
+local DEPTH_UNIT = FishFreezer.DEPTH / SOURCE_DEPTH
+local ICE_SLOPE = math.atan2((57 - 40) * UNIT, (44 + 15) * DEPTH_UNIT)
 FishFreezer.ICE_X = Vector2.new((-74 + 2) * UNIT, (72 + 2) * UNIT) -- left, right
-FishFreezer.ICE_Z = Vector2.new(-(44 - 15) * UNIT, (15 + 15) * UNIT) -- back, front
+FishFreezer.ICE_Z = Vector2.new(-(44 - ORIGIN_Y) * DEPTH_UNIT, (15 + ORIGIN_Y) * DEPTH_UNIT) -- back, front
+-- FreezerPacking lays fish out on the unstretched bed (z in UNIT studs); spread
+-- them over the stretched one.
+local PACK_STRETCH = DEPTH_UNIT / UNIT
 
 -- The ice surface at freezer-local (x, z); UpVector is the surface normal.
 function FishFreezer.iceSurface(frame: CFrame, x: number, z: number): CFrame
+	z *= PACK_STRETCH
 	local back, front = FishFreezer.ICE_Z.X, FishFreezer.ICE_Z.Y
 	local height = (40 + (57 - 40) * (front - z) / (front - back)) * UNIT
 	return frame * CFrame.new(x, height, z) * CFrame.Angles(ICE_SLOPE, 0, 0)

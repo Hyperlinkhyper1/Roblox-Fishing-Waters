@@ -64,6 +64,7 @@ local modules = {
 	"SeabedCarpet",
 	"SeasonFoliage",
 	"CityNightLights",
+	"LightShadows",
 }
 local required = { Boating = true, Fishing = true, Oxygen = true, RodPhysics = true, PlayerMenu = true }
 local ready = 0

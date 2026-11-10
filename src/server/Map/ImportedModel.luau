@@ -15,8 +15,14 @@ function ImportedModel.build(parent: Instance, frame: CFrame, geometry, options)
 			(Geometry.boundsMin.Y + Geometry.boundsMax.Y) / 2,
 			Geometry.boundsMin.Z
 		)
+	-- options.depth stretches the source's front-to-back axis (source Y) on its
+	-- own, so a model can fill an exact grid footprint.
+	local depthScale = if options.depth
+		then options.depth / (Geometry.boundsMax.Y - Geometry.boundsMin.Y)
+		else scale
 	local function point(v: Vector3): Vector3
-		return direction(v - origin) * scale
+		local d = v - origin
+		return Vector3.new(d.X * scale, d.Z * scale, -d.Y * depthScale)
 	end
 	local freezer = Instance.new("Model")
 	freezer.Name = options.name
@@ -58,6 +64,8 @@ function ImportedModel.build(parent: Instance, frame: CFrame, geometry, options)
 		group:SetAttribute("SourceColor", source.color)
 		group.Parent = freezer
 		if source.box then
+			-- Solid boxes (packaged stock) stay rigid: a depth stretch moves them
+			-- with the surface they rest on but never shears them.
 			local box = source.box
 			local right = direction(box.right).Unit
 			local back = right:Cross(direction(box.up)).Unit

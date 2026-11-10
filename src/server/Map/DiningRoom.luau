@@ -109,6 +109,8 @@ function DiningRoom.build(parent: Instance, frame: CFrame): Model
 		block("DiningLampCord" .. index, Vector3.new(0.08, 0.8, 0.08), position.X, 8.7, position.Z, IRON, M.Metal, true)
 		local glow = Instance.new("PointLight")
 		glow.Color, glow.Brightness, glow.Range, glow.Shadows = rgb(255, 226, 180), 0.55, 18, true
+		-- Shadows are budgeted per client to the lights nearest the camera (client/LightShadows).
+		game:GetService("CollectionService"):AddTag(glow, "ShadowLight")
 		glow.Parent = shade
 	end
 	-- A long kitchen pass shelf under the processing room's rear window.

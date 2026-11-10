@@ -2,6 +2,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Pedestrians = require(ReplicatedStorage.Shared.Pedestrians)
+local AvatarLite = require(ReplicatedStorage.Shared.AvatarLite)
 local Streets = require(script.Parent.StreetPedestrians)
 local PedestrianService = {}
 local MAX_USER_ID = 3_000_000_000
@@ -43,6 +44,8 @@ local function loadAvatars(avatars: Folder)
 			or (if earlier then (earlier :: HumanoidDescription):Clone() else nil)
 			or (if spare then spare:Clone() else nil)
 			or Instance.new("HumanoidDescription")
+		-- Clients build every townsperson (and shop visitor) from these: no layered clothing.
+		AvatarLite.strip(description)
 		description.Name = tostring(slot)
 		description.Parent = avatars
 	end

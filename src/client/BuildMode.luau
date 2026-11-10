@@ -21,6 +21,7 @@ local Building = require(ReplicatedStorage.Shared.BuildingCatalog)
 local FurniturePreview = require(script.Parent.FurniturePreview)
 local StructureEditor = require(script.Parent.StructureEditor)
 local Freecam = require(script.Parent.Freecam)
+local KitchenStorage = require(script.Parent.KitchenStorage)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
 local BuildMode = {}
@@ -38,6 +39,7 @@ local HEIGHTS = {
 	Register = 3,
 	StorageRack = 6.6,
 	FoodCase = 4.3,
+	FoodShelf = 6.1,
 	GrillStation = 7.6,
 	Smoker = 8.1,
 	SushiBar = 6.5,
@@ -421,8 +423,9 @@ function BuildMode.start()
 		setButton(pickUp, "Pick up", selected ~= nil and held == nil and not pending)
 		local rack = selected and placed()[selected]
 		local isRack = rack and rack.ItemId == "StorageRack" and held == nil
-		editRack.Visible = not not isRack
-		setButton(editRack, if editingRack then "Close editor" else "Edit rack", not pending)
+		local isKitchen = rack and rack.ItemId == "KitchenStorage" and held == nil
+		editRack.Visible = not not (isRack or isKitchen)
+		setButton(editRack, if isKitchen then "Edit storage" elseif editingRack then "Close editor" else "Edit rack", not pending)
 		rackEditor.Visible = active and not not isRack and editingRack
 		rackStatus.Text = if isRack and rack.Mode == "Tools"
 			then string.format("Stored: %d cages, %d nets / 12 · Carrying: %d cages, %d nets", rack.Cages or 0, rack.Nets or 0, state.CageStock or 0, state.NetStock or 0)
@@ -441,6 +444,8 @@ function BuildMode.start()
 			local entry = placed()[selected]
 			if entry.ItemId == "StorageRack" then
 				hint.Text = if entry.Mode == "Tools" then string.format("Tools rack: %d cages, %d nets / 12. Carrying: %d cages, %d nets. Level 4 porters place stored tools.", entry.Cages or 0, entry.Nets or 0, state.CageStock or 0, state.NetStock or 0) else "Storage rack selected. Click Edit rack to choose its mode."
+			elseif entry.ItemId == "KitchenStorage" then
+				hint.Text = "Kitchen storage selected. Click Edit storage to choose which fish wait on the ice."
 			else
 				hint.Text = Furniture.Items[entry.ItemId].Name .. " selected. Move it or pick it up."
 			end
@@ -1340,6 +1345,11 @@ function BuildMode.start()
 	end)
 	editRack.Activated:Connect(function()
 		if selected and not pending then
+			local entry = placed()[selected]
+			if entry and entry.ItemId == "KitchenStorage" then
+				KitchenStorage.open()
+				return
+			end
 			editingRack = not editingRack
 			render()
 		end

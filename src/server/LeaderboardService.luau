@@ -13,6 +13,19 @@ local sessionOnly = RunService:IsStudio() and game.GameId == 0
 local prefix = if RunService:IsStudio() then "AnglerBoards_Studio_v1_" else "AnglerBoards_v1_"
 local pending, written, stores, names, sessions = {}, {}, {}, {}, {}
 local closing, writing = false, false
+-- Ranked like the noticeboards but shown on the luma website only.
+local WebOnly = {
+	{ Id = "Playtime", Title = "MOST TIME PLAYED", Unit = "SECONDS", Weekly = false },
+}
+local tracked = table.clone(Boards.Definitions)
+for _, definition in WebOnly do
+	table.insert(tracked, definition)
+end
+-- Latest global top ten per board, which DashboardService sends to the website.
+local snapshots = {}
+-- Seconds in game are banked into the saved profile this often.
+local PLAYTIME_FLUSH = 60
+local playSince = {}
 
 local function indexKey(id, week)
 	return id .. ":" .. tostring(week or "AllTime")
@@ -35,7 +48,7 @@ local function capture(player)
 	end
 	names[player.UserId] = player.Name
 	local scores, week = BoatData.leaderboardScores(profile, os.time())
-	for _, definition in Boards.Definitions do
+	for _, definition in tracked do
 		local value = scores[definition.Id]
 		local scope = if definition.Weekly then week else nil
 		local key = indexKey(definition.Id, scope) .. ":" .. player.UserId
@@ -110,9 +123,47 @@ local function readBoard(definition, week)
 				names[userId] = name
 			end
 		end
-		table.insert(entries, { Name = names[userId] or ("Angler " .. row.key), Score = row.value })
+		table.insert(entries, { UserId = userId, Name = names[userId] or ("Angler " .. row.key), Score = row.value })
 	end
 	return entries
+end
+
+local function remember(definition, week, entries)
+	local rows = {}
+	for _, entry in entries do
+		table.insert(rows, { userId = entry.UserId, name = entry.Name, score = entry.Score })
+	end
+	snapshots[definition.Id] = {
+		readAt = os.time(),
+		week = if definition.Weekly then week else nil,
+		rows = rows,
+	}
+end
+
+-- Banks the seconds since the last flush. A failed save keeps them for the
+-- next try; seconds after the last flush are lost when the player leaves.
+local function creditPlaytime(player)
+	local since = playSince[player]
+	local now = os.time()
+	if not since or now - since < 1 then
+		return
+	end
+	local seconds = now - since
+	playSince[player] = now
+	local ok = BoatService.updateProgress(player, function(profile)
+		profile.Angler.Stats.PlaySeconds += seconds
+	end)
+	if not ok and playSince[player] == now then
+		playSince[player] = since
+	end
+end
+
+-- Every board's latest global top ten as this server read it, for the website.
+function Service.snapshot()
+	if sessionOnly then
+		return nil
+	end
+	return table.clone(snapshots)
 end
 
 function Service.start(root: Instance)
@@ -122,13 +173,17 @@ function Service.start(root: Instance)
 	started = true
 	Boards.ensure(root)
 	local function bind(player)
+		playSince[player] = playSince[player] or os.time()
 		capture(player)
 		player:GetAttributeChangedSignal("AnglerRevision"):Connect(function()
 			capture(player)
 		end)
 	end
 	Players.PlayerAdded:Connect(bind)
-	Players.PlayerRemoving:Connect(capture)
+	Players.PlayerRemoving:Connect(function(player)
+		playSince[player] = nil
+		capture(player)
+	end)
 	for _, player in Players:GetPlayers() do
 		bind(player)
 	end
@@ -153,6 +208,7 @@ function Service.start(root: Instance)
 				for _, definition in Boards.Definitions do
 					if definition.Weekly then
 						cached[definition.Id] = nil
+						snapshots[definition.Id] = nil
 						Boards.render(root, definition.Id, {}, "New week · loading rankings…")
 					end
 				end
@@ -171,6 +227,7 @@ function Service.start(root: Instance)
 					end
 					if ok then
 						cached[definition.Id] = result
+						remember(definition, week, result)
 					end
 					local status = if not ok
 						then "Rankings unavailable · retrying"
@@ -180,12 +237,32 @@ function Service.start(root: Instance)
 					Boards.render(root, definition.Id, cached[definition.Id] or {}, status)
 					task.wait(1)
 				end
+				for _, definition in WebOnly do
+					local ok, result = pcall(readBoard, definition, week)
+					if ok then
+						remember(definition, week, result)
+					end
+				end
 			end
 			task.wait(1)
 		end
 	end)
+	task.spawn(function()
+		while not closing do
+			task.wait(PLAYTIME_FLUSH)
+			for _, player in Players:GetPlayers() do
+				if closing then
+					break
+				end
+				creditPlaytime(player)
+			end
+		end
+	end)
 	game:BindToClose(function()
 		closing = true
+		for _, player in Players:GetPlayers() do
+			creditPlaytime(player)
+		end
 		for _, player in Players:GetPlayers() do
 			capture(player)
 		end

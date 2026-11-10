@@ -26,8 +26,12 @@ local SeabedCarpet = {}
 
 -- The deep floor is out of sight further away than this, even from a diver.
 local RADIUS = 320
--- Cells are only removed past this, so a camera on a cell edge doesn't churn.
-local KEEP = RADIUS + 96
+-- The harbour lake's grid is four times as dense (24-stud cells) and lies around the village,
+-- where the camera spends most of its time; past this the floor is lost under the surface
+-- glare anyway. At 320 it was ~700 patches (~7k parts) drawn under the water at all times.
+local LAKE_RADIUS = 208
+-- Cells are only removed this far past their grid's radius, so a camera on a cell edge doesn't churn.
+local KEEP_MARGIN = 96
 local STEP_SECONDS = 0.2
 -- Raycasts and clones per step; a full ring of new cells builds within a second or two.
 local CELLS_PER_STEP = 24
@@ -53,14 +57,14 @@ function SeabedCarpet.tracker(data, sample, place)
 		taken[grid.id] = Rules.occupied(grid, data.gardens)
 	end
 	local inLake = Rules.lakeTest(data.lake)
-	-- [key] = { model = Model?, x, z, tries, retryAt }
+	-- [key] = { model = Model?, x, z, keep, tries, retryAt }
 	local cells: { [number]: any } = {}
 
 	local function update(position: Vector3, now: number): number
 		local built = 0
 		-- Drop cells that fell well behind.
 		for key, entry in cells do
-			if math.max(math.abs(entry.x - position.X), math.abs(entry.z - position.Z)) > KEEP then
+			if math.max(math.abs(entry.x - position.X), math.abs(entry.z - position.Z)) > entry.keep then
 				if entry.model then
 					entry.model:Destroy()
 				end
@@ -69,7 +73,8 @@ function SeabedCarpet.tracker(data, sample, place)
 		end
 		for _, grid in grids do
 			local half = grid.cell / 2
-			local x0, x1, z0, z1 = Rules.range(grid, position.X, position.Z, RADIUS)
+			local radius = if grid.lake then LAKE_RADIUS else RADIUS
+			local x0, x1, z0, z1 = Rules.range(grid, position.X, position.Z, radius)
 			for cx = x0, x1 do
 				for cz = z0, z1 do
 					if built >= CELLS_PER_STEP then
@@ -84,7 +89,13 @@ function SeabedCarpet.tracker(data, sample, place)
 						continue
 					end
 					if not entry then
-						entry = { x = cx * grid.cell + half, z = cz * grid.cell + half, tries = 0, retryAt = 0 }
+						entry = {
+							x = cx * grid.cell + half,
+							z = cz * grid.cell + half,
+							keep = radius + KEEP_MARGIN,
+							tries = 0,
+							retryAt = 0,
+						}
 						cells[key] = entry
 					end
 					built += 1
@@ -125,17 +136,30 @@ function SeabedCarpet.start()
 	local folder = Instance.new("Folder")
 	folder.Name = "SeabedCarpet"
 	folder.Parent = workspace
+	-- Terrain is read from voxels, never raycast: a ray into a terrain chunk this client hasn't
+	-- queried builds that chunk's collision first (RaycastTerrain > buildKDTree, tens of ms),
+	-- and a moving camera reaches fresh seabed chunks with every new ring of cells.
+	local TerrainProbe = require(script.Parent.TerrainProbe)
+	local TOP, BOTTOM = 600, -120
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { folder }
+	params.FilterDescendantsInstances = { folder, workspace.Terrain }
 	params.IgnoreWater = true
 
 	-- Same acceptance as the server's garden sampling. Anything else in the way
 	-- (an unstreamed island, a swimmer, a crab cage) is retried a few times.
 	local function sample(x: number, z: number): (RaycastResult?, boolean)
-		local hit = workspace:Raycast(Vector3.new(x, 600, z), Vector3.new(0, -720, 0), params)
-		if not hit then
-			return nil, true
+		local partHit = workspace:Raycast(Vector3.new(x, TOP, z), Vector3.new(0, BOTTOM - TOP, 0), params)
+		local floor, normal, surface = TerrainProbe.seabed(x, z, BOTTOM)
+		local hit: any = partHit
+		if not partHit or (floor and floor > partHit.Position.Y) then
+			if floor then
+				hit = { Position = Vector3.new(x, floor, z), Normal = normal, Instance = workspace.Terrain }
+			elseif surface == "land" then
+				return nil, false
+			else
+				return nil, true -- terrain not streamed in yet
+			end
 		end
 		if
 			hit.Position.Y >= Biomes.WaterLevel - 8

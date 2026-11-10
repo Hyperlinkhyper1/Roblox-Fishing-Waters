@@ -75,6 +75,8 @@ local function buildSample(id: string, parent: Instance, frame: CFrame): Model
 		return sample
 	elseif id == "FoodCase" then
 		return Kitchen.buildCase(parent, frame)
+	elseif id == "FoodShelf" then
+		return Kitchen.buildShelf(parent, frame)
 	elseif id == "KitchenStorage" then
 		return Kitchen.buildStorage(parent, frame)
 	elseif id == "DiningTable" then

@@ -618,7 +618,7 @@ local acrossStreetWalls = {
 	{ min = ground(1.975, 2.25), max = ground(2.525, 15.75) },
 	{ min = ground(-24.75, 64.925), max = ground(-3.75, 65.575) },
 	{ min = ground(3.75, 64.925), max = ground(24.75, 65.575) },
-	{ min = ground(17.2, 69.5), max = ground(20.8, 78.5) },
+	{ min = ground(17.2, 69.5), max = ground(21.7, 78.5) },
 }
 local function streetHeight(z)
 	if z <= 15.75 or z >= 65.25 then return 0.16 end

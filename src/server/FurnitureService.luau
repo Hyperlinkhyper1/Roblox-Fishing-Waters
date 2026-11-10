@@ -222,16 +222,13 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 		model.Parent = parent
 	elseif entry.ItemId == "FoodCase" then
 		model = Kitchen.buildCase(parent, frame)
+	elseif entry.ItemId == "FoodShelf" then
+		model = Kitchen.buildShelf(parent, frame)
 	elseif entry.ItemId == "KitchenStorage" then
 		model = Kitchen.buildStorage(parent, frame)
 		local anchor = promptAnchor(model, frame * CFrame.new(0, Kitchen.TOP + 0.8, Kitchen.DEPTH / 2 + 0.3))
-		local config = ownerPrompt(anchor, "KitchenStorageGuiPrompt", "Configure", "Kitchen storage")
-		config.KeyboardKeyCode, config.GamepadKeyCode = Enum.KeyCode.E, Enum.KeyCode.ButtonX
-		config.UIOffset = Vector2.new(0, -55)
-		config:SetAttribute("OwnerUserId", userId)
+		-- Targets are set from build mode ("Edit storage"), like the storage racks.
 		local take = ownerPrompt(anchor, "TakeKitchenFishPrompt", "Take fish", "Kitchen storage")
-		take.KeyboardKeyCode, take.GamepadKeyCode = Enum.KeyCode.F, Enum.KeyCode.ButtonY
-		take.UIOffset = Vector2.new(0, 55)
 		take:SetAttribute("OwnerUserId", userId)
 		take:SetAttribute("Available", false)
 		local billboard = Instance.new("BillboardGui")
@@ -635,12 +632,14 @@ local function takeKitchenStorageFish(player: Player, prompt: ProximityPrompt)
 	end
 	local taken = nil
 	local ok, message = run(player, function(current)
-		local data, fish = AnglerData.takeKitchenStorageFish(current.Angler)
-		if data then
-			current.Angler = data
-			taken = fish
+		-- `run` reads a second return value as the failure reason, so only pass it on failure.
+		local data, result = AnglerData.takeKitchenStorageFish(current.Angler)
+		if not data then
+			return nil, result
 		end
-		return data, fish
+		current.Angler = data
+		taken = result
+		return data
 	end)
 	if ok and taken then
 		local species = Catalog.Fish[taken.FishId]
@@ -692,6 +691,7 @@ local function buildPreviews(parent: Instance)
 		Register = ShopDesk.build,
 		StorageRack = StorageRack.build,
 		FoodCase = Kitchen.buildCase,
+		FoodShelf = Kitchen.buildShelf,
 		KitchenStorage = Kitchen.buildStorage or function(p, f) return Kitchen.buildStation(p, f, "KitchenStorage") end,
 		DiningTable = DiningRoom.buildTable,
 		WeatherRadar = WeatherRadar.build,

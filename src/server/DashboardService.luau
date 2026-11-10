@@ -27,6 +27,13 @@ local interval = 15
 local soon = false
 local appliedWeatherVersion = 0
 local failures = 0
+-- LeaderboardService.snapshot, wired in at startup: the global boards that
+-- the luma website shows (including playtime, which has no noticeboard).
+local leaderboards: (() -> any)? = nil
+
+function Service.setLeaderboardSource(source: () -> any)
+	leaderboards = source
+end
 
 local function payload(closing: boolean?)
 	if closing then
@@ -124,6 +131,7 @@ local function payload(closing: boolean?)
 		kinds = kinds,
 		schedule = schedule,
 		passes = passes,
+		leaderboards = if leaderboards then leaderboards() else nil,
 	}
 end
 
