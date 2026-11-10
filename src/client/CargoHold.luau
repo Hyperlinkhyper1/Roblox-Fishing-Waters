@@ -336,7 +336,8 @@ function CargoHold.start()
 		Size = UDim2.fromOffset(CONTENT, 24), TextSize = 15, RichText = true, TextTruncate = Enum.TextTruncate.AtEnd })
 	local actions = {}
 	for index, spec in { { "Hand", "Take in hand", CYAN }, { "Backpack", "To backpack", CYAN },
-		{ "Boat", "To boat", VIOLET }, { "Favorite", "Favorite", GOLD }, { "Release", "Release", RED } } do
+		{ "Boat", "To boat", VIOLET }, { "Favorite", "Favorite", GOLD }, { "Release", "Release", RED },
+		{ "Use", "Use", GOLD } } do
 		local control = button(panel, spec[2], { Name = "Action" .. spec[1], Position = UDim2.fromOffset(LEFT + (index - 1) * 139, 432),
 			Size = UDim2.fromOffset(131, 32), TextSize = 13, Visible = false }, spec[3])
 		actions[spec[1]] = control
@@ -519,6 +520,8 @@ function CargoHold.start()
 			card.Outline.Color = if selected and entryId(card.Entry) == entryId(selected) then GOLD else EDGE
 		end
 		local fish = selected and selected.Item and selected.Item.Fish
+		local species = fish and Catalog.Fish[fish.FishId]
+		local secret = species ~= nil and species.Secret == true
 		local reserved = state.Pending ~= nil
 		for name, control in actions do
 			control.Visible = fish ~= nil and not reserved
@@ -526,14 +529,22 @@ function CargoHold.start()
 			if name == "Hand" then control.Visible = control.Visible and selected.Source ~= "Hand"
 			elseif name == "Backpack" then control.Visible = control.Visible and selected.Source ~= "Backpack"
 			elseif name == "Boat" then control.Visible = control.Visible and selected.Source ~= "Boat" and aboard
-			elseif name == "Favorite" then control.Text = if selected and selected.Locked then "Unfavorite" else "Favorite"
-			elseif name == "Release" then control.Visible = control.Visible and not selected.Locked end
+			elseif name == "Favorite" then
+				control.Visible = control.Visible and not secret
+				control.Text = if selected and selected.Locked then "Unfavorite" else "Favorite"
+			elseif name == "Release" then control.Visible = control.Visible and not selected.Locked
+			elseif name == "Use" then
+				control.Visible = control.Visible and secret
+					and (selected.Source ~= "Boat" or aboard)
+					and player:GetAttribute("TreasureUnlocked") ~= true
+			end
 		end
 		fitPart.Visible, cancelPart.Visible = reserved, reserved
 		detail.Text = if reserved then "Reserved boat fitting · confirm to use cargo space."
 			elseif fish then string.format("%s · %s · %s · %d space · %s%s", fishTitle(selected),
-				FishCatch.formatKg(fish.Kg), money(fish.Value), Cargo.space(selected.Item, Catalog.Fish),
-				selected.Source, if selected.Locked then " · Favorite" else "")
+				FishCatch.formatKg(fish.Kg), if secret then "Priceless" else money(fish.Value),
+				Cargo.space(selected.Item, Catalog.Fish), selected.Source,
+				if secret then " · Secret" elseif selected.Locked then " · Favorite" else "")
 			elseif selected then selected.Name .. " · Installed boat fitting"
 			else (if tab == "Boat" and not aboard then "Climb aboard your boat to transfer fish." else "Select an item")
 		refreshPreviews()
@@ -574,7 +585,10 @@ function CargoHold.start()
 	for name, control in actions do
 		control.Activated:Connect(function()
 			if not selected or pending then return end
-			if name == "Favorite" then favorite(selected)
+			if name == "Favorite" then
+				favorite(selected)
+			elseif name == "Use" then
+				send("UseTreasure", payload(selected))
 			else
 				local data = payload(selected)
 				data.Destination = name
@@ -617,6 +631,7 @@ function CargoHold.start()
 	end)
 	player:GetAttributeChangedSignal("OwnsAutoStore"):Connect(function() render() end)
 	player:GetAttributeChangedSignal("OwnsBlackHoleBackpack"):Connect(function() render() end)
+	player:GetAttributeChangedSignal("TreasureUnlocked"):Connect(function() render() end)
 	local nextCheck = 0
 	RunService.Heartbeat:Connect(profiled("CargoHold", function()
 		if os.clock() < nextCheck then return end

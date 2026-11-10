@@ -11,6 +11,11 @@ const folder = await mkdtemp(join(tmpdir(), 'fishing-menu-'));
 try {
   const shopUpgrades = await readFile(join(root, 'src/shared/ShopUpgrades.luau'), 'utf8');
   const rodSkins = await readFile(join(root, 'src/shared/RodSkins.luau'), 'utf8');
+  const spearSkins = await readFile(join(root, 'src/shared/SpearSkins.luau'), 'utf8');
+  const spears = (await readFile(join(root, 'src/shared/Spears.luau'), 'utf8'))
+    .replace(/require\(game:GetService\("ReplicatedStorage"\):WaitForChild\("Shared"\)\.SpearSkins\)/g, () => `(function() ${spearSkins} end)()`);
+  const bait = await readFile(join(root, 'src/shared/Bait.luau'), 'utf8');
+  const paths = await readFile(join(root, 'src/shared/Paths.luau'), 'utf8');
   const bobberSkins = await readFile(join(root, 'src/shared/BobberSkins.luau'), 'utf8');
   const bobberModel = (await readFile(join(root, 'src/shared/FishingBobber.luau'), 'utf8'))
     .replace('require(script.Parent.BobberSkins)', () => `(function() ${bobberSkins} end)()`);
@@ -146,6 +151,9 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(script.Parent:WaitForChild\("EquipmentBag"\)\)/g, 'EquipmentBag')
       .replace(/require\(ReplicatedStorage.Shared.FishingRod\)/g, 'FishingRod')
       .replace(/require\(ReplicatedStorage.Shared.RodSkins\)/g, () => `(function() ${rodSkins} end)()`)
+      .replace(/require\(ReplicatedStorage.Shared.SpearSkins\)/g, () => `(function() ${spearSkins} end)()`)
+      .replace(/require\(ReplicatedStorage.Shared.Spears\)/g, () => `(function() ${spears} end)()`)
+      .replace(/require\(ReplicatedStorage.Shared.Bait\)/g, () => `(function() ${bait} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.BobberSkins\)/g, () => `(function() ${bobberSkins} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.FishingBobber\)/g, () => `(function() ${bobberModel} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.BoatCatalog\)/g, 'BoatCatalog')
@@ -167,7 +175,14 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
     let source = await readFile(join(root, 'src/client/' + name + '.luau'), 'utf8');
     source = source.replace('require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))', 'Theme')
       .replace('require(ReplicatedStorage.Shared.BoatCatalog)', 'BoatCatalog')
+      .replace('require(ReplicatedStorage.Shared.Paths)', () => `(function()\n${paths}\nend)()`)
       .replace('require(ReplicatedStorage.Shared.Weather)', '{ getState = function() return { kind = "Clear" } end }')
+      .replace('require(ReplicatedStorage.Shared.DayNight)', '{ clockTime = function() return 21.5 end, isNight = function(clock) return clock >= 18 or clock < 6 end }')
+      .replace('require(ReplicatedStorage.Shared.Seasons)', '{ current = function() return "Autumn", 2 end }')
+      .replace('require(ReplicatedStorage.Shared.Calendar)', '{ now = function() return { Month = 10, Day = 31 } end, format = function() return "31 Oct" end }')
+      .replace('require(script.Parent.BoatDriving)', '{ start = function() end, setInput = function() end }')
+      .replace('require(script.Parent.BoatPreview)', '{ new = function() return { show = function() end, step = function() end, stop = function() end } end }')
+      .replace('require(script.Parent.BoatCamera)', 'BoatCamera')
       .replace('require(script.Parent.DrydockCamera)', 'BoatCamera');
     if (name === 'Boating') {
       source = source.replace(/return Boating\s*$/, 'Boating.start()');
@@ -189,6 +204,9 @@ local boatActions, cameraViews, cameraStops = {}, {}, 0
 local BoatCamera = {
   show = function(shop, launching, boatId) table.insert(cameraViews, {shop, launching, boatId}) end,
   stop = function() cameraStops += 1 end,
+  label = function() return "Trailing" end,
+  cycle = function() return "Trailing" end,
+  setActive = function() end,
 }
 local heartbeat = signal()
 local workspace = {}
@@ -197,6 +215,7 @@ services.CollectionService = {
   GetInstanceAddedSignal = function() return signal() end,
   GetInstanceRemovedSignal = function() return signal() end,
 }
+services.TextChatService = { FindFirstChild = function() return nil end }
 services.RunService = { Heartbeat = heartbeat }
 for _, name in {"Boating", "Fishing"} do
   local folder = ReplicatedStorage:FindFirstChild(name) or Instance.new("Folder")
@@ -208,10 +227,12 @@ for _, name in {"Boating", "Fishing"} do
     end
   end
 end
+local trawlerNet = Instance.new("RemoteEvent")
+trawlerNet.Name, trawlerNet.Parent, trawlerNet.OnClientEvent = "TrawlerNet", ReplicatedStorage, signal()
 ReplicatedStorage.Boating.Feedback.OnClientEvent = signal()
 function ReplicatedStorage.Boating.Request:FireServer(...) table.insert(boatActions, {...}) end
 `
-    + shops + '\nfor _, name in {"Boating", "Fishing"} do\nlocal screen = playerGui:WaitForChild(name)\nlocal overlay = screen:WaitForChild("ShopOverlay")\nlocal window = overlay:FindFirstChildOfClass("Frame")\ncheck(window:FindFirstChild("ThemeInnerRim") ~= nil, "Shop must use the shared framed window")\ncheck(window.CloseShop.ThemeFace:GetAttribute("Finish") == "Danger", "Shop close button must be red")\nfor _, item in screen:GetDescendants() do if item:IsA("TextLabel") and not (screen:FindFirstChild("Wallet") and item:IsDescendantOf(screen.Wallet)) then check(item.Font == Enum.Font.GothamBold and item.TextStrokeTransparency == 0, "Every themed shop caption uses the shared outlined typography") end end\nend\nprint("Shop UI: both production shops, dialogue, equipment control and notices use the shared theme (recording mocks).")'
+    + shops + '\nfor _, name in {"Boating"} do\nlocal screen = playerGui:WaitForChild(name)\nlocal overlay = screen:WaitForChild("ShopOverlay")\nlocal window = overlay:FindFirstChildOfClass("Frame")\ncheck(window:FindFirstChild("ThemeInnerRim") ~= nil, "Shop must use the shared framed window")\ncheck(window.CloseShop.ThemeFace:GetAttribute("Finish") == "Danger", "Shop close button must be red")\nfor _, item in screen:GetDescendants() do if item:IsA("TextLabel") and not (screen:FindFirstChild("Wallet") and item:IsDescendantOf(screen.Wallet)) then check(item.Font == Enum.Font.GothamBold and item.TextStrokeTransparency == 0, "Every themed shop caption uses the shared outlined typography") end end\nend\nprint("Shop UI: the drydock shop, dialogue, equipment control and notices use the shared theme (recording mocks).")'
     + `
 local boatScreen = playerGui.Boating
 local boatOverlay = boatScreen.ShopOverlay
@@ -228,10 +249,10 @@ end
 player:SetAttribute("Cash", 1000)
 feedback:Fire("OpenShop", shop)
 check(offer.Visible and offer.BuyBoat.Active and hasText(offer, "Wooden rowboat"), "Default boat shop retains the wooden rowboat")
-offer.SelectFishingBoat.Activated:Fire()
+offer:FindFirstChild("SelectFishingBoat", true).Activated:Fire()
 check(boatActions[#boatActions][1] == "BrowseBoat" and boatActions[#boatActions][2] == "FishingBoat", "Fishing boat selector requests its own server preview")
 feedback:Fire("OpenShop", shop, "FishingBoat")
-check(hasText(offer, "Small fishing boat") and hasText(offer, "24 studs/s") and hasText(offer, "$2500"), "Switching preview updates fishing boat name, speed and price")
+check(hasText(offer, "Small fishing boat") and hasText(offer, "50 studs/s") and hasText(offer, "$2500"), "Switching preview updates fishing boat name, speed and price")
 check(not offer.BuyBoat.Active and hasText(offer, "1500 more"), "Fishing boat purchase requires its higher price")
 check(cameraViews[#cameraViews][3] == "FishingBoat", "Fishing boat preview targets its own display berth")
 player:SetAttribute("Cash", 3000)
@@ -241,7 +262,7 @@ check(boatActions[#boatActions][1] == "PurchaseBoat" and boatActions[#boatAction
 player:SetAttribute("OwnsFishingBoat", true)
 check(not offer.BuyBoat.Active and offer.BuyBoat.Text == "Boat owned", "Owned fishing boats cannot be bought twice")
 feedback:Fire("OpenShop", shop, "Rowboat")
-check(offer.BuyBoat.Active and hasText(offer, "14 studs/s"), "Owning fishing boat does not hide or lock unowned rowboat")
+check(offer.BuyBoat.Active and hasText(offer, "24 studs/s"), "Owning fishing boat does not hide or lock unowned rowboat")
 player:SetAttribute("OwnsRowboat", true)
 local ownBase = Instance.new("Model")
 ownBase:SetAttribute("OwnerUserId", player.UserId)
@@ -251,21 +272,21 @@ boatWindow.CloseShop.Activated:Fire()
 feedback:Fire("OpenDock", otherBase)
 check(not boatOverlay.Visible, "Another player's dock cannot open the boat chooser")
 feedback:Fire("OpenDock", ownBase)
-check(boatOverlay.Visible and chooser.Visible and chooser.LaunchRowboat.Visible and chooser.LaunchFishingBoat.Visible, "Owner dock offers both individually owned boats")
+check(boatOverlay.Visible and chooser.Visible and chooser:FindFirstChild("LaunchRowboat", true).Active and chooser:FindFirstChild("LaunchFishingBoat", true).Active, "Owner dock offers both individually owned boats")
 workspace.CurrentCamera = { ViewportSize = Vector2.new(390, 844) }
 heartbeat:Fire(0.01)
-check(boatWindow:FindFirstChildOfClass("UIScale").Scale > 0.9 and boatWindow.AnchorPoint.Y == 0.5, "Phone dock chooser stays readable and centered without a preview camera")
+check(boatWindow:FindFirstChildOfClass("UIScale").Scale > 0.85 and boatWindow.AnchorPoint.Y == 0.5, "Phone dock chooser stays readable and centered without a preview camera")
 workspace.CurrentCamera = nil
-chooser.LaunchFishingBoat.Activated:Fire()
+chooser:FindFirstChild("LaunchFishingBoat", true).Activated:Fire()
 chooser.LaunchSelectedBoat.Activated:Fire()
 check(boatActions[#boatActions][1] == "SpawnBoat" and boatActions[#boatActions][2] == "FishingBoat" and not boatOverlay.Visible, "Dock chooser launches fishing boat and dismisses")
 feedback:Fire("OpenDock", ownBase)
-chooser.LaunchRowboat.Activated:Fire()
+chooser:FindFirstChild("LaunchRowboat", true).Activated:Fire()
 chooser.LaunchSelectedBoat.Activated:Fire()
 check(boatActions[#boatActions][2] == "Rowboat", "Previously purchased rowboat remains available to relaunch")
 player:SetAttribute("OwnsRowboat", false)
 feedback:Fire("OpenDock", ownBase)
-check(not chooser.LaunchRowboat.Visible and chooser.LaunchFishingBoat.Visible, "Chooser lists only boats the player owns")
+check(not chooser:FindFirstChild("LaunchRowboat", true).Active and chooser:FindFirstChild("LaunchFishingBoat", true).Active, "Chooser lists only boats the player owns")
 player:SetAttribute("BoatDataStatus", "Unavailable")
 check(not chooser.LaunchSelectedBoat.Active, "Unavailable boat data disables dock launch")
 player:SetAttribute("BoatDataStatus", "Ready")

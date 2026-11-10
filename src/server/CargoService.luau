@@ -448,6 +448,40 @@ local function inventoryAction(player: Player, action: string, payload: any): (b
 	end)
 end
 
+-- Consumes Dreadbeard's treasure from the hand, backpack or active boat and
+-- permanently unlocks every gamepass on the profile.
+local function useTreasure(player: Player, payload: any): (boolean, string)
+	if type(payload) ~= "table" then return false, "Choose the treasure in your inventory." end
+	local source, index = payload.Source, payload.Index
+	if source ~= "Hand" and source ~= "Backpack" and source ~= "Boat" then
+		return false, "Choose the treasure in your inventory."
+	elseif source ~= "Hand" and (type(index) ~= "number" or index % 1 ~= 0 or index < 1) then
+		return false, "Choose the treasure in your inventory."
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then return false, "Your inventory is still loading." end
+	local boatId, layout, near = boatInReach(player)
+	if source == "Boat" and (not near or payload.BoatId ~= boatId) then
+		return false, "Climb aboard your own launched boat to use its inventory."
+	end
+	local function transform(angler)
+		if source == "Boat" then
+			local activeId, _, inReach = boatInReach(player)
+			if not inReach or activeId ~= boatId then return nil, "Climb aboard your boat first." end
+		end
+		return AnglerData.useTreasure(angler, source, index, payload.Expected, boatId, layout, Inventory.matches)
+	end
+	local data, reason = transform(profile.Angler)
+	if not data then return false, reason end
+	local ok, message = BoatService.updateProgress(player, function(current)
+		local updated, failure = transform(current.Angler)
+		assert(updated, failure)
+		current.Angler = updated
+	end)
+	if not ok then return false, message end
+	return true, "Dreadbeard's treasure unlocks every gamepass!"
+end
+
 local function autoStore(player: Player, enabled: any): (boolean, string)
 	if type(enabled) ~= "boolean" then return false, "Choose on or off." end
 	if not GamepassService.ownsAutoStore(player) then return false, "Auto Store requires the gamepass." end
@@ -480,6 +514,7 @@ function CargoService.start()
 			and action ~= "InventoryMove"
 			and action ~= "InventoryLock"
 			and action ~= "AutoStore"
+			and action ~= "UseTreasure"
 		then
 			return { Ok = false, Message = "That cargo action is unavailable.", State = state(player) }
 		end
@@ -490,6 +525,8 @@ function CargoService.start()
 		local ok, message
 		if action == "InventoryMove" or action == "InventoryLock" then
 			ok, message = inventoryAction(player, action, a)
+		elseif action == "UseTreasure" then
+			ok, message = useTreasure(player, a)
 		elseif action == "AutoStore" then
 			ok, message = autoStore(player, a)
 		elseif action == "Lock" then

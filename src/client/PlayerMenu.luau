@@ -766,6 +766,7 @@ function Menu.start()
 	local narrow = false
 	-- Kept outside render so progress refreshes don't snap the book back to page one.
 	local bestiaryPage, bestiaryQuery = 1, ""
+	local bestiarySelected, bestiaryBack = nil, nil
 	local journalCollapsed = {}
 	local turnBestiary
 	local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
@@ -939,6 +940,7 @@ function Menu.start()
 			content:ClearAllChildren()
 		end
 		active = nil
+		bestiarySelected = nil
 		overlay.Visible = false
 		player:SetAttribute("PlayerMenuOpen", false)
 		refreshSelection()
@@ -1003,7 +1005,8 @@ function Menu.start()
 		end)
 	end
 	local function bestiary()
-		-- One species per page: a two-page spread on wide screens, a single page when narrow.
+		-- A dense index: many small plates per page, with full field notes behind
+		-- the picture. Wide screens keep the two-page spread; narrow ones use one.
 		local spread = if narrow then 1 else 2
 		local pages = {}
 		for side = 1, spread do
@@ -1093,18 +1096,81 @@ function Menu.start()
 			})
 		end
 
-		local function entryPage(sheet, id)
+		-- The index is a dense set of small plates: picture, name and catch count.
+		-- Full field notes open only when the angler presses a picture.
+		local gap = 6
+		local contentWidth = math.max(content.AbsoluteSize.X, 320)
+		local contentHeight = math.max(content.AbsoluteSize.Y, 300)
+		local pageWidth = if narrow then contentWidth - 24 else contentWidth * 0.5 - 48
+		local pageHeight = contentHeight - 94
+		local columns = math.clamp(math.floor((pageWidth + gap) / 100), 3, if narrow then 6 else 5)
+		local rows = math.max(3, math.floor((pageHeight + gap) / 90))
+		local perPage = columns * rows
+		local cellWidth = math.max(54, math.floor((pageWidth - (columns - 1) * gap) / columns))
+		local cellHeight = math.max(66, math.floor((pageHeight - (rows - 1) * gap) / rows))
+		local artSize = math.clamp(math.floor(math.min(cellWidth - 16, cellHeight - 40)), 30, 48)
+		local fill
+
+		local function details(id)
 			local species = Catalog.Fish[id]
 			local entry = profile.Angler.Catches[id]
 			local known = entry ~= nil and (entry.Count or 0) > 0
 			local rarity = Catalog.Rarities[species.Rarity]
+			local panelWidth = math.max(contentWidth - 36, 260)
+			local panelHeight = math.max(contentHeight - 10, 320)
+			local tight = panelWidth < 520
+
+			local shadow = decoration(content, "BestiaryDetailShadow", Color3.new(), UDim2.fromScale(0.5, 0.5), UDim2.new(1, -30, 1, -4))
+			shadow.AnchorPoint, shadow.BackgroundTransparency = Vector2.new(0.5, 0.5), 0.72
+			Theme.corner(shadow, 4)
+
+			local panel = make("Frame", content, {
+				Name = "BestiaryDetail",
+				BackgroundTransparency = 1,
+				Active = true,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(panelWidth, panelHeight),
+				ZIndex = 20,
+			})
+			paperFinish(panel, false)
+			Theme.corner(panel, 3)
+			local edge = Instance.new("UIStroke")
+			edge.Color, edge.Transparency, edge.Thickness = Book.Edge, 0.2, 1
+			edge.Parent = panel
+
+			local back = make("TextButton", panel, {
+				Name = "BestiaryBack",
+				BackgroundTransparency = 1,
+				AutoButtonColor = false,
+				Text = "‹  Bestiary",
+				Font = Enum.Font.Garamond,
+				TextSize = 17,
+				TextColor3 = Book.Leather,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Position = UDim2.fromOffset(18, 8),
+				Size = UDim2.fromOffset(150, 30),
+				ZIndex = 21,
+			})
+			back.MouseEnter:Connect(function()
+				back.TextColor3 = Book.Ink
+			end)
+			back.MouseLeave:Connect(function()
+				back.TextColor3 = Book.Leather
+			end)
+			back.Activated:Connect(function()
+				bestiarySelected = nil
+				fill()
+			end)
+
 			local tag = label(
-				sheet,
+				panel,
 				string.format("No. %02d", number[id])
 					.. (if known then "   ·   " .. string.upper(rarity and rarity.Name or species.Rarity) else ""),
 				13,
 				{
-					Size = UDim2.new(1, 0, 0, 20),
+					Position = UDim2.new(0, 0, 0, 10),
+					Size = UDim2.new(1, 0, 0, 22),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				},
 				0.15
@@ -1112,11 +1178,15 @@ function Menu.start()
 			tag.TextColor3 = Book.Leather
 
 			-- A double-ruled plate, like an engraving tipped into a field guide.
-			local plate = make("Frame", sheet, {
+			local plateTop = 42
+			local plateHeight = math.clamp(panelHeight * 0.34, 130, 190)
+			local plateWidth = math.clamp(panelWidth * 0.55, 210, 430)
+			local plate = make("Frame", panel, {
 				Name = "Plate",
 				BackgroundTransparency = 1,
-				Position = UDim2.new(0.07, 0, 0, 28),
-				Size = UDim2.new(0.86, 0, 0.4, 0),
+				AnchorPoint = Vector2.new(0.5, 0),
+				Position = UDim2.new(0.5, 0, 0, plateTop),
+				Size = UDim2.fromOffset(plateWidth, plateHeight),
 			})
 			plate.BackgroundColor3, plate.BackgroundTransparency = Book.Edge, if known then 0.86 else 0.9
 			Theme.corner(plate, 2)
@@ -1141,17 +1211,20 @@ function Menu.start()
 				artEdge.Enabled = false
 			end
 
-			label(sheet, if known then species.Name else "Undiscovered", 30, {
-				Position = UDim2.new(0, 0, 0.4, 38),
+			local nameTop = plateTop + plateHeight + 6
+			label(panel, if known then species.Name else "Undiscovered", if tight then 23 else 30, {
+				Position = UDim2.new(0, 0, 0, nameTop),
 				Size = UDim2.new(1, 0, 0, 36),
 				TextXAlignment = Enum.TextXAlignment.Center,
 			}, if known then 0 else 0.45)
-			rule(sheet, UDim2.new(0.5, -44, 0.4, 84), 70)
-			rule(sheet, UDim2.new(0.5, 44, 0.4, 84), 70)
+			local ornamentY = nameTop + 38
+			rule(panel, UDim2.new(0.5, -44, 0, ornamentY), 70)
+			rule(panel, UDim2.new(0.5, 44, 0, ornamentY), 70)
 			local diamond =
-				decoration(sheet, "Ornament", Book.Leather, UDim2.new(0.5, 0, 0.4, 84), UDim2.fromOffset(6, 6))
+				decoration(panel, "Ornament", Book.Leather, UDim2.new(0.5, 0, 0, ornamentY), UDim2.fromOffset(6, 6))
 			diamond.AnchorPoint, diamond.Rotation = Vector2.new(0.5, 0.5), 45
 
+			local statsTop = ornamentY + 10
 			local stats = {
 				{ "CAUGHT", if known then tostring(entry.Count) else "—" },
 				{ "BIGGEST", if known then string.format("%.2f kg", entry.BiggestKg) else "—" },
@@ -1161,26 +1234,27 @@ function Menu.start()
 			}
 			for column, stat in stats do
 				local x = (column - 1) / #stats
-				label(sheet, stat[1], 12, {
-					Position = UDim2.new(x, 0, 0.4, 98),
+				label(panel, stat[1], if tight then 10 else 12, {
+					Position = UDim2.new(x, 0, 0, statsTop),
 					Size = UDim2.new(1 / #stats, 0, 0, 16),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				}, 0.4)
-				label(sheet, stat[2], 20, {
-					Position = UDim2.new(x, 0, 0.4, 114),
+				label(panel, stat[2], if tight then 15 else 20, {
+					Position = UDim2.new(x, 0, 0, statsTop + 16),
 					Size = UDim2.new(1 / #stats, 0, 0, 26),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				})
 				if column > 1 then
 					local divider =
-						decoration(sheet, "StatDivider", Book.Edge, UDim2.new(x, 0, 0.4, 102), UDim2.fromOffset(1, 34))
+						decoration(panel, "StatDivider", Book.Edge, UDim2.new(x, 0, 0, statsTop + 4), UDim2.fromOffset(1, 34))
 					divider.BackgroundTransparency = 0.6
 				end
 			end
 
+			local notesTop = statsTop + 62
 			if not known then
-				label(sheet, "Land one of these to fill in this page.", 15, {
-					Position = UDim2.new(0.1, 0, 0.4, 158),
+				label(panel, "Land one of these to fill in this page.", 15, {
+					Position = UDim2.new(0.1, 0, 0, notesTop),
 					Size = UDim2.new(0.8, 0, 0, 44),
 					TextXAlignment = Enum.TextXAlignment.Center,
 					TextYAlignment = Enum.TextYAlignment.Top,
@@ -1201,17 +1275,19 @@ function Menu.start()
 				local rich = FishMutations.richLabel(item.Key, nil, true)
 				table.insert(mutationNames, (if rich ~= "" then rich else item.Plain) .. " ×" .. item.Count)
 			end
-			label(sheet, "MUTATIONS", 12, {
-				Position = UDim2.new(0, 0, 0.4, 154),
+			label(panel, "MUTATIONS", if tight then 10 else 12, {
+				Position = UDim2.new(0, 0, 0, notesTop),
 				Size = UDim2.new(1, 0, 0, 16),
 				TextXAlignment = Enum.TextXAlignment.Center,
 			}, 0.4)
-			local notes =
-				scroll(sheet, { Position = UDim2.new(0.08, 0, 0.4, 172), Size = UDim2.new(0.84, 0, 0.6, -172) })
+			local notes = scroll(panel, {
+				Position = UDim2.new(0.08, 0, 0, notesTop + 20),
+				Size = UDim2.new(0.84, 0, 1, -(notesTop + 32)),
+			})
 			label(
 				notes,
 				if #mutationNames > 0 then table.concat(mutationNames, "   ·   ") else "None recorded yet",
-				15,
+				if tight then 13 else 15,
 				{
 					Size = UDim2.new(1, -8, 0, 0),
 					AutomaticSize = Enum.AutomaticSize.Y,
@@ -1221,6 +1297,74 @@ function Menu.start()
 				},
 				0.1
 			)
+		end
+
+		local function entryTile(sheet, id, order)
+			local species = Catalog.Fish[id]
+			local entry = profile.Angler.Catches[id]
+			local known = entry ~= nil and (entry.Count or 0) > 0
+			local tile = make("Frame", sheet, {
+				Name = "Entry_" .. id,
+				BackgroundTransparency = 1,
+				Position = UDim2.fromOffset(
+					(order % columns) * (cellWidth + gap),
+					math.floor(order / columns) * (cellHeight + gap)
+				),
+				Size = UDim2.fromOffset(cellWidth, cellHeight),
+			})
+			local art = picture(tile, id, {
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(0.5, 0),
+				Position = UDim2.new(0.5, 0, 0, 0),
+				Size = UDim2.fromOffset(artSize, artSize),
+			}, not known)
+			local artEdge = art:FindFirstChild("ThemeBorder")
+			if artEdge then
+				artEdge.Enabled = false
+			end
+			local name = label(tile, if known then species.Name else "Undiscovered", 11, {
+				Position = UDim2.fromOffset(0, artSize + 3),
+				Size = UDim2.new(1, 0, 0, 23),
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				TextScaled = true,
+			}, if known then 0 else 0.45)
+			make("UITextSizeConstraint", name, { MinTextSize = 8, MaxTextSize = 11 })
+			label(tile, if known then "×" .. commas(entry.Count) else "—", 11, {
+				Position = UDim2.fromOffset(0, artSize + 26),
+				Size = UDim2.new(1, 0, 0, 14),
+				TextXAlignment = Enum.TextXAlignment.Center,
+			}, 0.25)
+			-- Only the picture is the button, so the index stays quiet and dense.
+			local hit = make("TextButton", tile, {
+				Name = "BestiaryArt_" .. id,
+				BackgroundTransparency = 1,
+				AutoButtonColor = false,
+				Text = "",
+				AnchorPoint = Vector2.new(0.5, 0),
+				Position = UDim2.new(0.5, 0, 0, 0),
+				Size = UDim2.fromOffset(artSize, artSize),
+				ZIndex = 5,
+			})
+			local function highlight(on)
+				name.TextColor3 = if on then Book.Leather else Book.Ink
+			end
+			hit.MouseEnter:Connect(function()
+				highlight(true)
+			end)
+			hit.MouseLeave:Connect(function()
+				highlight(false)
+			end)
+			hit.SelectionGained:Connect(function()
+				highlight(true)
+			end)
+			hit.SelectionLost:Connect(function()
+				highlight(false)
+			end)
+			hit.Activated:Connect(function()
+				bestiarySelected = id
+				fill()
+			end)
 		end
 
 		local function pageButton(parent, value, alignment, onActivated)
@@ -1246,16 +1390,32 @@ function Menu.start()
 			return item
 		end
 
-		local fill
 		local spreads = 1
 		turnBestiary = function(step)
+			if bestiarySelected then
+				return
+			end
 			local target = math.clamp(bestiaryPage + step, 1, spreads)
 			if target ~= bestiaryPage then
 				bestiaryPage = target
 				fill()
 			end
 		end
+		bestiaryBack = function()
+			if bestiarySelected then
+				bestiarySelected = nil
+				fill()
+			end
+		end
 		fill = function()
+			-- Details live over the whole spread, so clear the previous panel
+			-- before rebuilding the index (or another species' notes).
+			for _, name in { "BestiaryDetail", "BestiaryDetailShadow" } do
+				local layer = content:FindFirstChild(name)
+				if layer then
+					layer:Destroy()
+				end
+			end
 			local query = string.lower(bestiaryQuery)
 			local ids = {}
 			for _, id in all do
@@ -1274,8 +1434,12 @@ function Menu.start()
 					end
 				end
 			end
-			spreads = math.max(1, math.ceil(#ids / spread))
+			local pagesTotal = math.max(1, math.ceil(#ids / perPage))
+			spreads = math.max(1, math.ceil(pagesTotal / spread))
 			bestiaryPage = math.clamp(bestiaryPage, 1, spreads)
+			if bestiarySelected and not table.find(ids, bestiarySelected) then
+				bestiarySelected = nil
+			end
 			for side = 1, spread do
 				sheets[side]:ClearAllChildren()
 				footers[side]:ClearAllChildren()
@@ -1291,12 +1455,23 @@ function Menu.start()
 				}, 0.35)
 				return
 			end
-			local first = (bestiaryPage - 1) * spread
+			if bestiarySelected then
+				details(bestiarySelected)
+				return
+			end
+			local first = (bestiaryPage - 1) * perPage * spread
 			for side = 1, spread do
-				local index = first + side
-				if ids[index] then
-					entryPage(sheets[side], ids[index])
-					label(footers[side], tostring(index), 14, {
+				local start = first + (side - 1) * perPage
+				for order = 0, perPage - 1 do
+					local id = ids[start + order + 1]
+					if not id then
+						break
+					end
+					entryTile(sheets[side], id, order)
+				end
+				local pageNumber = (bestiaryPage - 1) * spread + side
+				if pageNumber <= pagesTotal then
+					label(footers[side], string.format("%d / %d", pageNumber, pagesTotal), 14, {
 						Size = UDim2.fromScale(1, 1),
 						TextXAlignment = Enum.TextXAlignment.Center,
 					}, 0.45)
@@ -1315,7 +1490,7 @@ function Menu.start()
 		end
 		search:GetPropertyChangedSignal("Text"):Connect(function()
 			if search.Text ~= bestiaryQuery then
-				bestiaryQuery, bestiaryPage = search.Text, 1
+				bestiaryQuery, bestiaryPage, bestiarySelected = search.Text, 1, nil
 				fill()
 			end
 		end)
@@ -3418,7 +3593,7 @@ function Menu.start()
 			render()
 		end
 	end)
-	for _, attribute in { "OwnsAutoStore", "OwnsDoubleXP", "OwnsBlackHoleBackpack" } do
+	for _, attribute in { "OwnsAutoStore", "OwnsDoubleXP", "OwnsBlackHoleBackpack", "OwnsBoatCustomization" } do
 		player:GetAttributeChangedSignal(attribute):Connect(function()
 			if active == "Shop" then
 				render()
@@ -3435,6 +3610,9 @@ function Menu.start()
 				return
 			end
 			active = name
+			if name == "Bestiary" then
+				bestiarySelected = nil
+			end
 			overlay.Visible = true
 			player:SetAttribute("PlayerMenuOpen", true)
 			render()
@@ -3453,7 +3631,11 @@ function Menu.start()
 	refreshSelection()
 	UserInputService.InputBegan:Connect(function(event)
 		if overlay.Visible and (event.KeyCode == Enum.KeyCode.Escape or event.KeyCode == Enum.KeyCode.ButtonB) then
-			close()
+			if active == "Bestiary" and bestiarySelected and bestiaryBack then
+				bestiaryBack()
+			else
+				close()
+			end
 		elseif
 			overlay.Visible
 			and active == "Bestiary"

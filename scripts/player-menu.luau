@@ -149,6 +149,8 @@ function Instance.new(kind)
 			Activated = signal(),
 			MouseEnter = signal(),
 			MouseLeave = signal(),
+			Focused = signal(),
+			FocusLost = signal(),
 			SelectionGained = signal(),
 			SelectionLost = signal(),
 			CharacterAdded = signal(),
@@ -417,6 +419,7 @@ local services = {
 	SoundService = SoundService,
 	GuiService = GuiService,
 	UserInputService = UserInputService,
+	ProximityPromptService = { PromptTriggered = signal() },
 	-- PlayerSettings tweens the underwater muffle.
 	TweenService = {
 		Create = function()
@@ -701,13 +704,21 @@ for _, name in { "Bestiary", "Equipmentbag", "Journal", "Settings", "Shop" } do
 	)
 end
 open("Bestiary")
-check(contains("A bestiary waiting"), "No fake species in the empty collection")
-Catalog.Fish.Trout = { Name = "Trout", Image = "mock-fish-image", AverageKg = 2, RarityDenominator = 10 }
+check(contains("Undiscovered") and not contains("Trout"), "The bestiary index hides undiscovered names")
+Catalog.Fish.Trout = {
+	Name = "Trout",
+	Image = "mock-fish-image",
+	AverageKg = 2,
+	MinKg = 1,
+	MaxKg = 4,
+	Rarity = "Common",
+	RarityDenominator = 10,
+}
 Catalog.Mutations.Albino = { Name = "Albino", RarityMultiplier = 100 }
 profile.Angler = Data.recordCatch(profile.Angler, "Trout", "Albino", 3.25, 48, 100, Catalog.Fish, Catalog.Mutations)
 open("Bestiary")
 open("Bestiary")
-check(contains("3.25 kg") and contains('<font color="#5B626D">Albino</font> ×1'), "Bestiary renders actual weight and mutations in their own (paper-dark) colour")
+check(contains("Trout") and contains("×1") and not contains("3.25 kg"), "Bestiary index shows only the name and count")
 local fishImage = false
 for _, item in content:GetDescendants() do
 	if item.ClassName == "ImageLabel" and item.Image == "mock-fish-image" then
@@ -715,12 +726,29 @@ for _, item in content:GetDescendants() do
 	end
 end
 check(fishImage, "Fish catalog images are rendered")
+local artButtons, compact = 0, true
+for _, item in content:GetDescendants() do
+	if item.ClassName == "TextButton" and string.sub(item.Name, 1, 12) == "BestiaryArt_" then
+		artButtons += 1
+		compact = compact and item.Size.X.Offset <= 48 and item.Size.Y.Offset <= 48
+	end
+end
+check(artButtons >= 20 and compact, "Bestiary shows a dense grid of compact pictures")
+local artButton = content:FindFirstChild("BestiaryArt_Trout", true)
+check(artButton ~= nil, "Bestiary pictures are clickable")
+artButton.Activated:Fire()
+check(
+	contains("3.25 kg") and contains('<font color="#5B626D">Albino</font> ×1'),
+	"Bestiary details render actual weight and mutations in their own (paper-dark) colour"
+)
+content:FindFirstChild("BestiaryBack", true).Activated:Fire()
+check(contains("×1") and not contains("3.25 kg"), "Back returns to the dense bestiary index")
 for _, item in content:GetChildren() do
 	if item.ClassName == "TextBox" then
 		item.Text = "absent"
-		check(contains("No matching fish"), "Search empty state")
+		check(contains("No discovered fish match that search."), "Search empty state")
 		item.Text = "albino"
-		check(contains("3.25 kg"), "Search includes caught mutations")
+		check(content:FindFirstChild("BestiaryArt_Trout", true) ~= nil, "Search includes caught mutations")
 	end
 end
 -- BAG_CHECKS_START
@@ -888,7 +916,7 @@ check(
 	"Menu content uses the full window width with standard padding"
 )
 open("Journal")
-check(content:FindFirstChild("JournalFindingsPage", true).Position.Y.Offset == 514, "Narrow journal pages stack")
+check(content:FindFirstChild("JournalFindingsPage", true).Position.Y.Offset == 618, "Narrow journal pages stack")
 check(not card.BookChrome.CenterBinding.Visible, "Narrow books hide the center binding when pages stack")
 open("Shop")
 check(contains("Auto Store") and contains("aboard your own ship"), "Shop explains Auto Store")

@@ -42,9 +42,11 @@ local RARITY_ORDER = {
 	Divine = 8,
 	Limited = 9,
 	Admin = 10,
+	Secret = 11,
 }
 
--- Kind "Shop" opens the rod trader, "Buyer" the galley; everyone else gives quests.
+-- Kind "Shop" opens the rod trader, "Buyer" the galley, "Lore" tells a story; everyone else
+-- gives quests.
 PirateCove.Npcs = {
 	Hale = {
 		Name = "Captain Morwenna Hale",
@@ -227,9 +229,32 @@ PirateCove.Npcs = {
 		},
 		Greeting = "I buy fish for the whole cove. Fair prices, paid on the spot.",
 	},
+	Dreadbeard = {
+		Name = "Dreadbeard",
+		Title = "Ghost Pirate",
+		Kind = "Lore",
+		Spot = "Dreadbeard",
+		Outfit = {
+			Catalog = true,
+			Skin = { 138, 176, 168 }, -- sea-green, as though the light goes through him
+			Shirt = 733260904,
+			Pants = 129459077,
+			Hat = 16333714206,
+			Beard = 119779693942379,
+		},
+		Greeting = "Hah! A living soul, out on my pier. Sit a while - a dead man's tale costs nothing.",
+		Lore = {
+			"Years ago I was the terror of these waters. Captain Dreadbeard, they called me, and every ship from here to the ice paid me tribute or fed the fishes.",
+			"One storm took my ship and my crew, but it could not take my greatest prize. I hid it deep in the ocean, where the light gives up and the cold gets into your bones.",
+			"The Ultimate treasure, I called it. A compass rose of solid gold, struck from the sun itself. It points not north, but to whatever your heart desires most.",
+			"Many have hunted it. None have found it. The sea keeps her secrets, and a treasure like that chooses its own keeper.",
+			"But you... you have the look of a lucky one. Cast your line into the deep and maybe, one cast in a million, it will find you.",
+			"And if it does? Use it, sailor. That treasure can open every locked door in the world - every pass, every privilege, every gilded gate.",
+		},
+	},
 }
 
-PirateCove.Order = { "Hale", "Barnaby", "Tamsin", "Pip", "Ines", "Coralie", "Flint", "Bess" }
+PirateCove.Order = { "Hale", "Barnaby", "Tamsin", "Pip", "Ines", "Coralie", "Flint", "Bess", "Dreadbeard" }
 
 -- Each quest giver's chain, in order. Kinds:
 --   Catch         catch Count fish (any, anywhere) after accepting

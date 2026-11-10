@@ -146,4 +146,32 @@ function FishingAudio.fail()
 	play("Fail", 2)
 end
 
+-- Dreadbeard's treasure deserves more than one cue: layer the verified catch,
+-- splash, bite and pull sounds at different pitches for a rising, brassy sting.
+-- Clones are temporary so the shared cue instances (and their throttles) stay put.
+function FishingAudio.secret()
+	ensureStarted()
+	local layers = {
+		{ cue = "Catch", volume = 0.9, speed = 0.62, offset = 0 },
+		{ cue = "Catch", volume = 0.7, speed = 0.78, offset = 0.12 },
+		{ cue = "Catch", volume = 0.6, speed = 1, offset = 0.3 },
+		{ cue = "Splash", volume = 0.8, speed = 0.55, offset = 0 },
+		{ cue = "Bite", volume = 0.45, speed = 0.6, offset = 0.05 },
+		{ cue = "Pull", volume = 0.5, speed = 1.5, offset = 0.2 },
+	}
+	for _, layer in layers do
+		local source = sounds[layer.cue]
+		if source then
+			local sound = source:Clone()
+			sound.Name = "FishingSecret"
+			sound.Volume = layer.volume
+			sound.PlaybackSpeed = layer.speed
+			sound.TimePosition = layer.offset
+			sound.Parent = SoundService
+			sound:Play()
+			Debris:AddItem(sound, 9)
+		end
+	end
+end
+
 return FishingAudio

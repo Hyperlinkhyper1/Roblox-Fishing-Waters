@@ -504,6 +504,9 @@ function Data.decode(raw)
 	assert(number(data.TutorialStep, true) and data.TutorialStep >= 1, "Invalid tutorial step")
 	data.TutorialDone = data.TutorialDone == true
 	data.TutorialRewarded = data.TutorialRewarded == true
+	-- Dreadbeard's treasure permanently unlocks every gamepass on this profile.
+	assert(data.TreasureUnlocked == nil or type(data.TreasureUnlocked) == "boolean", "Invalid treasure unlock")
+	data.TreasureUnlocked = data.TreasureUnlocked == true
 	-- Pirate Cove (Shared.PirateCove): each quest giver's current step, and the galley's sales today.
 	data.CoveQuests = data.CoveQuests or {}
 	assert(type(data.CoveQuests) == "table", "Invalid cove quests")
@@ -694,6 +697,9 @@ local function catchRecord(fishId, mutation, kg, value, caughtAt, species, mutat
 		Size = size,
 		NeonColor = traits and traits.NeonColor,
 		Corruptions = traits and copy(traits.Corruptions),
+		-- Secrets are permanent keepsakes: locked against sale, delivery and release.
+		Secret = if fish.Secret == true then true else nil,
+		Locked = if fish.Secret == true then true else nil,
 	}
 	assert(recordValid(record), "Invalid catch")
 	return record
@@ -741,7 +747,7 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 		data.Stats.PerfectCatches += 1
 	end
 	local destination = "Released"
-	if toFreezer then
+	if toFreezer and species[fishId].Secret ~= true then
 		if Data.canFreeze(data, record) then
 			table.insert(data.Freezer, copy(record))
 			destination = "Freezer"
@@ -755,6 +761,11 @@ function Data.recordCatch(raw, fishId, mutation, kg, value, caughtAt, species, m
 			table.insert(data.Backpack, { Fish = copy(record), X = spot.X, Y = spot.Y, R = spot.R })
 			destination = "Backpack"
 		end
+	end
+	-- A one-in-a-million catch is never released: overflow waits on a storage rack.
+	if destination == "Released" and species[fishId].Secret == true then
+		table.insert(data.Storage, copy(record))
+		destination = "Storage"
 	end
 	return data, destination
 end
@@ -989,6 +1000,9 @@ function Data.setBackpackLock(raw, index, locked, expected)
 	then
 		return nil, "That fish is no longer in that backpack spot."
 	end
+	if not locked and item.Fish and item.Fish.Secret then
+		return nil, "Dreadbeard's treasure cannot be unlocked."
+	end
 	item.Locked = if locked then true else nil
 	return data
 end
@@ -1027,7 +1041,7 @@ function Data.moveInventory(raw, source, index, destination, expected, boatId, l
 		return nil, "That fish changed. Select it again."
 	elseif source == destination then
 		return nil, "That fish is already there."
-	elseif destination == "Release" and (item.Locked or item.Fish.Locked) then
+	elseif destination == "Release" and (item.Locked or item.Fish.Locked or item.Fish.Secret) then
 		return nil, "Unlock this favorite before releasing it."
 	end
 	if destination == "Hand" then
@@ -1056,9 +1070,41 @@ function Data.lockInventory(raw, source, index, locked, expected, boatId, layout
 	if not item or type(locked) ~= "boolean" or not matches(item, expected) then
 		return nil, "That fish changed. Select it again."
 	end
+	local fish = item.Fish or item
+	if not locked and fish.Secret then
+		return nil, "Dreadbeard's treasure cannot be unlocked."
+	end
 	item.Locked = if locked then true else nil
 	if item.Fish then item.Fish.Locked = nil end
 	if source == "Boat" then data.Holds[boatId] = items end
+	return data
+end
+
+-- Consumes Dreadbeard's treasure from the inventory it was used from and
+-- permanently unlocks every gamepass on the profile.
+function Data.useTreasure(raw, source, index, expected, boatId, layout, matches)
+	local data = Data.decode(raw)
+	local items = if source == "Backpack" then data.Backpack
+		elseif source == "Boat" and layout and boatId then Data.hold(data, boatId, layout)
+		else nil
+	local item = if source == "Hand" and data.Hand then { Fish = data.Hand } elseif items then items[index] else nil
+	local record = item and (item.Fish or item)
+	if not record or not matches(item, expected) then
+		return nil, "That treasure changed. Select it again."
+	elseif record.FishId ~= "DreadbeardsTreasure" or record.Secret ~= true then
+		return nil, "Only Dreadbeard's treasure can be used."
+	elseif data.TreasureUnlocked then
+		return nil, "You have already unlocked Dreadbeard's treasure."
+	end
+	if source == "Hand" then
+		data.Hand = nil
+	else
+		table.remove(items, index)
+		if source == "Boat" then
+			data.Holds[boatId] = items
+		end
+	end
+	data.TreasureUnlocked = true
 	return data
 end
 

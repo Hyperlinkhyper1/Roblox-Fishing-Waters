@@ -13,7 +13,7 @@ local Lod = require(script.Parent.Lod)
 local Props = require(script.Parent.Props)
 
 local Cove = {}
-Cove.VERSION = 1
+Cove.VERSION = 2
 
 local TAU = math.pi * 2
 local rgb = Color3.fromRGB
@@ -514,6 +514,9 @@ function Cove.build(root: Instance): Model
 	local pierEnd = Props.dock(town, pierStart, Vector3.new(0, 0, -1), PIER_LENGTH, rng)
 	local stand = Vector3.new(pierStart.X - 2.2, 3.3, pierStart.Z - 12)
 	anchors.Pier = CFrame.lookAt(stand, Vector3.new(stand.X, stand.Y, stand.Z + 10))
+	-- The old ghost keeps watch at the far end of the pier, looking back towards the island.
+	local ghost = Vector3.new(pierEnd.X - 2.2, 3.3, pierEnd.Z)
+	anchors.Dreadbeard = CFrame.lookAt(ghost, Vector3.new(ghost.X, ghost.Y, ghost.Z + 10))
 	Props.signpost(town, Vector3.new(pierStart.X + 4.6, 3.3, pierStart.Z - 3), 0, {
 		{ Data.NAME, -math.pi / 2 },
 		{ "Gullhaven", 1.28 },

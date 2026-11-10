@@ -486,15 +486,9 @@ end
 
 local IDLE_ANIMATION = "rbxassetid://507766388" -- Roblox's stock R15 idle
 
--- A standing, idling NPC in `outfit` with its feet at `frame`, parented to `parent`. It never moves
--- or collides; only its head can be hit, so prompts on it work. Clients turn it towards whoever walks
--- up and back to its HomeFrame. Nil (with a warning) when the engine cannot make a character.
-function Costume.spawn(id: string, outfit, displayName: string, frame: CFrame, parent: Instance): Model?
-	local model, problem = Costume.build(outfit)
-	if not model then
-		warn("[GuideCostume] " .. displayName .. " could not be built: " .. tostring(problem))
-		return nil
-	end
+-- Makes a freshly created character stand still at `frame`, idling, with its feet on the ground.
+-- Shared by hand-built and catalog outfits so both behave exactly the same.
+local function finish(model: Model, id: string, displayName: string, frame: CFrame, parent: Instance): Model
 	model.Name = id
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 	model:SetAttribute("NpcId", id)
@@ -543,6 +537,43 @@ function Costume.spawn(id: string, outfit, displayName: string, frame: CFrame, p
 		end
 	end
 	return model
+end
+
+-- A standing, idling NPC in `outfit` with its feet at `frame`, parented to `parent`. It never moves
+-- or collides; only its head can be hit, so prompts on it work. Clients turn it towards whoever walks
+-- up and back to its HomeFrame. Nil (with a warning) when the engine cannot make a character.
+function Costume.spawn(id: string, outfit, displayName: string, frame: CFrame, parent: Instance): Model?
+	local model, problem = Costume.build(outfit)
+	if not model then
+		warn("[GuideCostume] " .. displayName .. " could not be built: " .. tostring(problem))
+		return nil
+	end
+	return finish(model, id, displayName, frame, parent)
+end
+
+-- The same, but dressed from Roblox catalog assets: Shirt/Pants are clothing IDs and Hat/Beard are
+-- accessory IDs. Used when a character must be made only from real catalog items.
+function Costume.spawnCatalog(id: string, outfit, displayName: string, frame: CFrame, parent: Instance): Model?
+	local description = plainBody(rgb(outfit.Skin))
+	if outfit.Shirt then
+		description.Shirt = outfit.Shirt
+	end
+	if outfit.Pants then
+		description.Pants = outfit.Pants
+	end
+	if outfit.Hat then
+		description.HatAccessory = tostring(outfit.Hat)
+	end
+	if outfit.Beard then
+		description.FaceAccessory = tostring(outfit.Beard)
+	end
+	local ok, model = pcall(Players.CreateHumanoidModelFromDescriptionAsync, Players, description, Enum.HumanoidRigType.R15)
+	description:Destroy()
+	if not ok then
+		warn("[GuideCostume] " .. displayName .. " could not be built: " .. tostring(model))
+		return nil
+	end
+	return finish(model, id, displayName, frame, parent)
 end
 
 Costume.Kinds = KINDS

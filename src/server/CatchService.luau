@@ -36,6 +36,7 @@ local lastRequest = {}
 local random = Random.new()
 local started = false
 local update: RemoteEvent
+local award
 
 local function equippedRod(player: Player): (Tool?, BasePart?)
 	local character = player.Character
@@ -170,6 +171,26 @@ local function cast(player: Player, target: any, heldSeconds: any)
 		if casts[player] ~= state then
 			return
 		end
+		-- One cast in a million, in every area. Rolled before the pool and any
+		-- luck bonus, so no rod, bait or mutation can move the odds.
+		if random:NextNumber() < 1 / 1000000 then
+			local secret = {
+				FishId = "DreadbeardsTreasure",
+				Kg = 1,
+				Size = "Normal",
+				Value = 0,
+				Relative = 1,
+				Difficulty = Catalog.Rarities.Secret.Difficulty,
+				Traits = { Mutation = "Normal" },
+				PerfectCatch = false,
+				Bait = state.bait,
+				Secret = true,
+			}
+			clear(player)
+			send(player, "SecretReveal", { FishId = secret.FishId })
+			award(player, secret)
+			return
+		end
 		local pool = FishCatch.inSeason(
 			Catalog.poolAt(CatchConditions.area(state.target)),
 			Catalog.Fish,
@@ -230,7 +251,7 @@ local function settleBait(player: Player, baitId: string?)
 	end
 end
 
-local function award(player: Player, roll)
+award = function(player: Player, roll)
 	local saved = false
 	local autoStored = false
 	local destination
@@ -257,6 +278,8 @@ local function award(player: Player, roll)
 		AutoStored = autoStored,
 		BackpackStored = saved and destination == "Backpack",
 		Stored = saved and destination == "Hand",
+		StorageStored = saved and destination == "Storage",
+		Secret = roll.Secret == true,
 		Count = count,
 		Bait = if saved then roll.Bait else nil,
 	})

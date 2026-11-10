@@ -52,7 +52,7 @@ for kind in string.gmatch(read("src/server/GuideCostume.luau"), "function KINDS%
 	costumeKinds[kind] = true
 end
 local seen = {}
-local kinds = { Quests = 0, Shop = 0, Buyer = 0 }
+local kinds = { Quests = 0, Shop = 0, Buyer = 0, Lore = 0 }
 for _, id in Cove.Order do
 	local npc = Cove.Npcs[id]
 	check(npc ~= nil, "Unknown crew member in order: " .. id)
@@ -65,19 +65,27 @@ for _, id in Cove.Order do
 	check(kinds[npc.Kind] ~= nil, id .. " has unknown kind " .. tostring(npc.Kind))
 	kinds[npc.Kind] += 1
 	check(type(npc.Spot) == "string" or (type(npc.Spot) == "table" and #npc.Spot == 2), id .. " needs a spot")
-	for _, spec in npc.Outfit.Pieces do
-		check(costumeKinds[spec.Kind], id .. " wears an unknown piece " .. tostring(spec.Kind))
+	if npc.Outfit.Catalog then
+		check(type(npc.Outfit.Shirt) == "number" and type(npc.Outfit.Pants) == "number", id .. " needs catalog clothes")
+		check(npc.Outfit.Hat == nil or type(npc.Outfit.Hat) == "number", id .. " has a bad catalog hat")
+		check(npc.Outfit.Beard == nil or type(npc.Outfit.Beard) == "number", id .. " has a bad catalog beard")
+	else
+		for _, spec in npc.Outfit.Pieces or {} do
+			check(costumeKinds[spec.Kind], id .. " wears an unknown piece " .. tostring(spec.Kind))
+		end
 	end
 	if npc.Kind == "Quests" then
 		check(Cove.Quests[id] and #Cove.Quests[id] > 0, id .. " gives quests but has none")
+	elseif npc.Kind == "Lore" then
+		check(type(npc.Lore) == "table" and #npc.Lore > 0, id .. " has no lore to tell")
 	end
 end
 for id in Cove.Npcs do
 	check(seen[id], "Crew member missing from order: " .. id)
 end
 check(
-	kinds.Shop == 1 and kinds.Buyer == 1 and kinds.Quests >= 5,
-	"The cove has one rod trader, one fish buyer and plenty of quest givers"
+	kinds.Shop == 1 and kinds.Buyer == 1 and kinds.Lore >= 1 and kinds.Quests >= 5,
+	"The cove has one rod trader, one fish buyer, a storyteller and plenty of quest givers"
 )
 -- Named spots are anchors the island builder sets.
 local builder = read("src/server/Map/PirateCove.luau")

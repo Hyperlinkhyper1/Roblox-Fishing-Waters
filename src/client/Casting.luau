@@ -543,6 +543,15 @@ function Casting.start()
 			local target = rod:GetAttribute("CastTarget")
 			FishingAudio.bite(if typeof(target) == "Vector3" then target else nil)
 			task.spawn(fight, payload)
+		elseif kind == "SecretReveal" then
+			-- The server skipped the fight entirely; drop the line and play the sting.
+			if rod then
+				CastAnimation.setReeling(rod, false)
+				CastAnimation.cancel(rod)
+			end
+			reel:abort()
+			phase = "Idle"
+			FishingAudio.secret()
 		elseif kind == "Cancelled" then
 			if rod then
 				CastAnimation.cancel(rod)
@@ -566,7 +575,9 @@ function Casting.start()
 			FishingAudio.fail()
 			reel:showMessage("IT GOT AWAY", "The fish slipped the hook. Cast again!")
 		elseif kind == "Caught" and type(payload) == "table" then
-			FishingAudio.catch()
+			if not payload.Secret then
+				FishingAudio.catch()
+			end
 			reel:dismiss()
 			popup:showCatch(payload)
 		elseif kind == "Fling" then

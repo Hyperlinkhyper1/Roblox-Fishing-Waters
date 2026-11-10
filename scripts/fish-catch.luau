@@ -26,7 +26,7 @@ local function rng()
 end
 
 -- New tiers sit above Legendary in this order; Limited bites only when switched on.
-for index, tier in { "Legendary", "Mythical", "Exotic", "Divine", "Limited", "Admin" } do
+for index, tier in { "Legendary", "Mythical", "Exotic", "Divine", "Limited", "Admin", "Secret" } do
 	check(Catalog.Rarities[tier] and Catalog.Rarities[tier].Order == 4 + index, tier .. " is tier " .. 4 + index)
 end
 do
@@ -111,7 +111,8 @@ end
 do
 	local rarest, admins = 0, 0
 	for _, fish in Catalog.Fish do
-		if fish.Rarity ~= "Admin" and fish.Rarity ~= "Junk" then
+		-- The Secret treasure is its own one-in-a-million roll, not part of the ordinary pool.
+		if fish.Rarity ~= "Admin" and fish.Rarity ~= "Junk" and fish.Rarity ~= "Secret" then
 			rarest = math.max(rarest, fish.RarityDenominator)
 		end
 	end

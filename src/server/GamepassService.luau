@@ -20,7 +20,17 @@ local function entries(player)
 	return cache[player]
 end
 
+-- Dreadbeard's treasure grants every pass for the lifetime of the profile.
+-- Test harnesses do not always mock player attributes, so read defensively.
+local function treasureUnlocked(player): boolean
+	return player.GetAttribute ~= nil and player:GetAttribute("TreasureUnlocked") == true
+end
+
 local function owns(player, key)
+	if treasureUnlocked(player) then
+		player:SetAttribute(attribute(key), true)
+		return true
+	end
 	if dashboardGrants[key] and dashboardGrants[key][player.UserId] then
 		player:SetAttribute(attribute(key), true)
 		return true
@@ -84,6 +94,7 @@ function Service.setDashboardGrants(grants: { [string]: { number } })
 		end
 	end
 	for _, player in Players:GetPlayers() do
+		local treasure = treasureUnlocked(player)
 		for key in Passes do
 			local was = previous[key] and previous[key][player.UserId]
 			local now = dashboardGrants[key] and dashboardGrants[key][player.UserId]
@@ -91,8 +102,8 @@ function Service.setDashboardGrants(grants: { [string]: { number } })
 				player:SetAttribute(attribute(key), true)
 			elseif was then
 				local entry = cache[player] and cache[player][key]
-				player:SetAttribute(attribute(key), entry ~= nil and entry.owned == true)
-				if not entry then task.spawn(owns, player, key) end
+				player:SetAttribute(attribute(key), treasure or (entry ~= nil and entry.owned == true))
+				if not entry and not treasure then task.spawn(owns, player, key) end
 			end
 		end
 	end
@@ -113,6 +124,17 @@ function Service.start()
 	end)
 	Players.PlayerRemoving:Connect(function(player) cache[player] = nil end)
 	local function bind(player)
+		if player.GetAttributeChangedSignal then
+			player:GetAttributeChangedSignal("TreasureUnlocked"):Connect(function()
+				if treasureUnlocked(player) then
+					for key in Passes do
+						player:SetAttribute(attribute(key), true)
+					end
+				else
+					for key in Passes do task.spawn(owns, player, key) end
+				end
+			end)
+		end
 		for key in Passes do task.spawn(owns, player, key) end
 	end
 	Players.PlayerAdded:Connect(bind)

@@ -58,7 +58,9 @@ function Service.recordCatch(
 		)
 		count = profile.Angler.Catches[fishId].Count
 		autoStored = false
-		if ownsAutoStore and profile.Angler.Settings.AutoStore ~= false and emptyHand then
+		-- The secret stays in hand so the angler sees it and can choose to Use it.
+		local secret = Catalog.Fish[fishId] ~= nil and Catalog.Fish[fishId].Secret == true
+		if not secret and ownsAutoStore and profile.Angler.Settings.AutoStore ~= false and emptyHand then
 			local boatId, model = BoatService.activeBoat(player)
 			local layout = boatId and BoatCatalog[boatId]
 			if layout and Aboard(player.Character, model) then

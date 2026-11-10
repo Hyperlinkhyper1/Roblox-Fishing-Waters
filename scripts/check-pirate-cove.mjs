@@ -177,7 +177,7 @@ for id, npc in Data.Npcs do
     end
   end
 end
-check(anchors == 3, "Three crew members use named anchors")
+check(anchors == 4, "Four crew members use named anchors")
 local plaza = cove:GetAttribute("Plaza")
 check(typeof(plaza) == "Vector3" and plaza.Y > 8, "The plaza sits on the island top")
 for _, name in { "BuyerStall", "RodStall" } do

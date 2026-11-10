@@ -151,6 +151,8 @@ local function publish(player: Player, state)
 		bestiaryPercent = if total > 0 then math.floor(discovered * 100 / total + 0.5) else 0
 	end
 	player:SetAttribute("BestiaryPercent", bestiaryPercent)
+	-- Dreadbeard's treasure unlocks every gamepass; GamepassService listens for this.
+	player:SetAttribute("TreasureUnlocked", state.status == "Ready" and state.profile.Angler.TreasureUnlocked == true)
 
 	-- The built-in player list sorts by its first stat. Keep Level primary and
 	-- mirror committed profile values here alongside the gameplay attributes.

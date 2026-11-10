@@ -308,6 +308,22 @@ function Popup:showCatch(payload)
 	local fish = Catalog.Fish[payload.FishId]
 	local rarity = fish and Catalog.Rarities[fish.Rarity]
 	local color = if rarity then rarity.Color else WHITE
+	if fish and fish.Secret then
+		local detail = if not payload.Saved then "Your catch couldn't be saved. Please try again."
+			elseif payload.StorageStored then "Kept safe on your storage rack"
+			elseif payload.AutoStored then "Stored in your boat's hold"
+			elseif payload.BackpackStored then "Packed into your backpack"
+			elseif payload.Stored then "Added to your hotbar"
+			else "Kept safe in storage"
+		local hint = if payload.Saved then " · Use it in your inventory to unlock every gamepass" else ""
+		local lines = {
+			paint("1 IN 1,000,000", GOLD, true) .. paint("  ·  SECRET CATCH", MUTED, true),
+			paint(fish.Name, color, true),
+			paint("Priceless", GOLD, true) .. paint("  ·  " .. detail .. hint, MUTED),
+		}
+		self:show(payload.FishId, payload, lines, color, rarity and rarity.Order or 1)
+		return
+	end
 	local mutation = FishMutations.label(payload.Mutation, payload.NeonColor)
 	local name = (if mutation ~= "" then mutation .. " " else "") .. (if fish then fish.Name else payload.FishId)
 	-- Mutation words keep their own colours; the species name keeps the rarity colour.

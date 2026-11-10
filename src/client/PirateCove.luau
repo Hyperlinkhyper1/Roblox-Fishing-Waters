@@ -141,6 +141,7 @@ function Client.start()
 
 	local talking: string? = nil
 	local pending = false
+	local lorePage = 1
 
 	local function close()
 		talking = nil
@@ -186,7 +187,31 @@ function Client.start()
 		end
 		local bye = { text = "Bye", run = close }
 		status.Text = ""
-		if npc.Kind == "Buyer" then
+		if npc.Kind == "Lore" then
+			local pages = npc.Lore or { npc.Greeting }
+			lorePage = math.clamp(lorePage, 1, #pages)
+			line.Text = message or pages[lorePage]
+			if view.Unlocked then
+				status.Text = "His treasure is spent: every gamepass is yours for good."
+			elseif view.Found then
+				status.Text = "You carry his lost compass rose. Use it from your cargo hold to unlock every gamepass."
+			else
+				status.Text = "The Ultimate treasure waits in the deep: one cast in a million."
+			end
+			local list = {}
+			if lorePage < #pages then
+				table.insert(list, {
+					text = "Tell me more",
+					style = "Selected",
+					run = function()
+						lorePage += 1
+						render(id, view, nil)
+					end,
+				})
+			end
+			table.insert(list, bye)
+			setOptions(list)
+		elseif npc.Kind == "Buyer" then
 			local left = view.SalesLeft or 0
 			line.Text = message
 				or (
@@ -296,6 +321,7 @@ function Client.start()
 			return
 		end
 		talking = id
+		lorePage = 1
 		speaker.Text = npc.Name .. '  <font color="#D7D7D7" size="14">' .. npc.Title .. "</font>"
 		line.Text = npc.Greeting
 		status.Text = ""

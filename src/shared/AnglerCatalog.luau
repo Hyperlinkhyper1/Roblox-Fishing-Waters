@@ -21,6 +21,8 @@ Catalog.Rarities = {
 	Limited = { Name = "Limited", Order = 9, Color = Color3.fromRGB(255, 84, 214), Difficulty = 0.66, XP = 2500 },
 	-- The rarest tier by far: a handful of things that should not exist.
 	Admin = { Name = "Admin", Order = 10, Color = Color3.fromRGB(255, 28, 28), Difficulty = 0.66, XP = 25600 },
+	-- Beyond the dashboard's reach: one rod-only catch, one in a million.
+	Secret = { Name = "Secret", Order = 11, Color = Color3.fromRGB(255, 210, 92), Difficulty = 0.66, XP = 1000000 },
 }
 
 -- Junk uses the same carrying, cargo and selling path as other catches.
@@ -43,6 +45,7 @@ for id, fish in FishSpecies do
 		Seasons = fish.Seasons,
 		Requires = if type(requires) == "string" then { requires } else requires,
 		DropOnly = fish.DropOnly,
+		Secret = fish.Secret == true,
 	}
 end
 

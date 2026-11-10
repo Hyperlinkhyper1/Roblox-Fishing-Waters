@@ -295,6 +295,7 @@ local titles = {
 	Divine = "RADIANT WATER",
 	Limited = "UNHEARD-OF WATER",
 	Admin = "WRONG WATER",
+	Secret = "LOST WATER",
 }
 function FishCatch.title(fish): string
 	return titles[fish.Rarity] or "DISTURBED WATER"

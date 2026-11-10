@@ -1,5 +1,6 @@
--- Pirate Cove's crew (Shared.PirateCove): quest givers, Gunner Flint who sells rods outright, and
--- Quartermaster Bess who buys fish from your hand and backpack, up to DAILY_SALES an in-game day.
+-- Pirate Cove's crew (Shared.PirateCove): quest givers, Gunner Flint who sells rods outright,
+-- Quartermaster Bess who buys fish from your hand and backpack up to DAILY_SALES an in-game day,
+-- and old Dreadbeard, who only has a story to tell.
 -- The island is built by Map/PirateCove, possibly after this starts (distant generation runs once
 -- the harbour is open), so the crew are placed once it exists. Talking happens on the client; every
 -- action is checked here against the saved profile and the player standing beside that crew member.
@@ -109,7 +110,10 @@ local function placeCrew()
 		positions[id] = frame.Position
 		state:SetAttribute("Npc_" .. id, frame.Position)
 		task.spawn(function()
-			local model = GuideCostume.spawn(id, npc.Outfit, npc.Name .. " · " .. npc.Title, frame, crew)
+			local displayName = npc.Name .. " · " .. npc.Title
+			local model = if npc.Outfit.Catalog
+				then GuideCostume.spawnCatalog(id, npc.Outfit, displayName, frame, crew)
+				else GuideCostume.spawn(id, npc.Outfit, displayName, frame, crew)
 			if not model then
 				return
 			end
@@ -157,7 +161,12 @@ local function view(player: Player, id: string)
 		return nil
 	end
 	local angler = profile.Angler
-	if npc.Kind == "Buyer" then
+	if npc.Kind == "Lore" then
+		return {
+			Found = angler.Catches.DreadbeardsTreasure ~= nil,
+			Unlocked = angler.TreasureUnlocked == true,
+		}
+	elseif npc.Kind == "Buyer" then
 		local backpack = 0
 		for _, item in angler.Backpack do
 			if item.Fish and not item.Locked then
