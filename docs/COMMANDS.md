@@ -58,6 +58,7 @@ Arguments are not case-sensitive.
 | Command | What it does |
 |---|---|
 | `/set cash <amount>` | Set your cash. Whole number, 0 or higher. |
+| `/set level <amount>` | Set your level to a whole number from 1 to 155. Resets progress within that level. |
 | `/gamepass list` | List gamepasses. |
 | `/gamepass get <name>` | Enable a gamepass for you for this server session only. |
 
@@ -69,6 +70,7 @@ Gamepasses: `2x XP`, `Auto Store`, `Black Hole Backpack`, `Boat Customization` (
 |---|---|
 | `/mutation list` | List fish mutations. |
 | `/mutation <mutation>` | Add a mutation to your equipped fish. |
+| `/dbtreasure` | Make your next catch Dreadbeard's treasure. Restricted to `hyperlinkhyper` specifically; the pending catch resets when you leave. |
 | `/set weight <kg>` | Change your equipped fish's weight (and size). |
 
 Mutations: Corrupted, Void Touched, Windy, Ascended, Floral, Snowy, Tryhard, Jack O' Fish, Jack's Pet, Zeus Struck, Nightmare, Obsidian, Gusty, Astral, Rainbow, Neon, Albino. Spaces and punctuation are ignored, so `/mutation zeusstruck` works.

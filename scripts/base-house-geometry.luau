@@ -355,7 +355,7 @@ do
 		check(#children == 2 and children[1].Name == floorName, "Unexpected furniture in " .. roomName)
 	end
 	local shop = house:FindFirstChild("Shop")
-	check(#shop:GetChildren() == 5, "Shop must start with its shell, floor, freezer, furnished desk and ceiling lights")
+	check(#shop:GetChildren() == 3, "Shop must start with its shell, floor and ceiling lights")
 	-- The shop is its own building across the road, on the same grid and floor level.
 	local shopShell = shop:FindFirstChild("ShopShell")
 	check(shopShell and shopShell:IsA("Model") and shop.ShopFloor:IsA("BasePart"), "Shop building lacks its shell or floor")
@@ -375,8 +375,10 @@ do
 		end
 	end
 	checkLights(house, houseFrame)
-	local freezer = shop:FindFirstChild("FishFreezer")
-	local desk = shop:FindFirstChild("ShopDesk")
+	-- The freezer and till are the owner's furniture (FurnitureService); audit them
+	-- where every shop starts with them (AnglerData.FIXTURES).
+	local freezer = dependencies.FishFreezer.build(shop, dependencies.FishFreezer.frame(houseFrame))
+	local desk = dependencies.ShopDesk.build(shop, dependencies.ShopDesk.frame(houseFrame))
 	check(desk and desk:IsA("Model"), "Shop is missing its default desk")
 	local register = desk:FindFirstChild("CashRegister")
 	check(register and register:IsA("Model"), "Desk is missing its cash register")
@@ -870,14 +872,15 @@ for _, recoverFrame in { false, true } do
 		local lighting = house:FindFirstChild(roomName):FindFirstChild("CeilingLights")
 		lighting:Destroy()
 	end
-	local savedDesk, savedFreezer = shop.ShopDesk, shop.FishFreezer
-	savedDesk:SetAttribute("ModelVersion", 2)
+	-- Saved maps still hold the old built-in fixtures; they are furniture now.
+	local savedDesk = dependencies.ShopDesk.build(shop, dependencies.ShopDesk.frame(actualHouseFrame))
+	local savedFreezer = dependencies.FishFreezer.build(shop, dependencies.FishFreezer.frame(actualHouseFrame))
+	local savedOfficeDesk = dependencies.OfficeDesk.build(house.Office, dependencies.OfficeDesk.frame(actualHouseFrame))
 	BaseHouse.ensure(base)
 	check(
-		base.BaseHouse == house and shop.FishFreezer == savedFreezer,
-		"Lighting upgrade replaces existing shell/freezer"
+		base.BaseHouse == house and savedDesk.Parent == nil and savedFreezer.Parent == nil and savedOfficeDesk.Parent == nil,
+		"Saved built-in fixtures were not removed"
 	)
-	check(savedDesk.Parent == nil, "Previous desk layout was not upgraded")
 	checkLights(house, actualHouseFrame)
 	local litCount = #house:GetDescendants()
 	local currentLights = shop.CeilingLights
@@ -886,64 +889,14 @@ for _, recoverFrame in { false, true } do
 		shop.CeilingLights == currentLights and #house:GetDescendants() == litCount,
 		"Saved lighting upgrade duplicates lamps"
 	)
-	local currentDesk = shop.ShopDesk
 	currentLights:SetAttribute("LayoutVersion", 1)
 	BaseHouse.ensure(base)
 	check(
 		currentLights.Parent == nil and shop.CeilingLights:GetAttribute("LayoutVersion") == 3,
 		"Overbright saved lighting was not replaced"
 	)
-	check(shop.ShopDesk == currentDesk and base.BaseHouse == house, "Dimming lamps replaced the counter or house")
+	check(base.BaseHouse == house and #shop:GetChildren() == 3, "Dimming lamps replaced the house")
 	checkLights(house, actualHouseFrame)
-	shop:FindFirstChild("FishFreezer"):Destroy()
-	BaseHouse.ensure(base)
-	check(base:FindFirstChild("BaseHouse") == house, "Freezer upgrade rebuilt a current house")
-	local freezer = shop:FindFirstChild("FishFreezer")
-	check(freezer and #shop:GetChildren() == 5, "Current saved shop did not receive exactly one freezer")
-	BaseHouse.ensure(base)
-	check(
-		shop:FindFirstChild("FishFreezer") == freezer and #shop:GetChildren() == 5,
-		"Repeated furnishing duplicates the freezer"
-	)
-	freezer:SetAttribute("ModelVersion", 2)
-	BaseHouse.ensure(base)
-	check(freezer.Parent == nil and #shop:GetChildren() == 5, "Old freezer model is not replaced in place")
-	check(
-		shop:FindFirstChild("FishFreezer"):GetAttribute("ModelVersion") == 4,
-		"Saved freezer did not receive the 2 x 1 grid-cell model"
-	)
-	local desk = shop:FindFirstChild("ShopDesk")
-	desk:Destroy()
-	local currentFreezer = shop:FindFirstChild("FishFreezer")
-	BaseHouse.ensure(base)
-	check(
-		base:FindFirstChild("BaseHouse") == house and shop:FindFirstChild("FishFreezer") == currentFreezer,
-		"Desk upgrade replaced the house or freezer"
-	)
-	desk = shop:FindFirstChild("ShopDesk")
-	check(
-		desk and desk:FindFirstChild("CashRegister") and #shop:GetChildren() == 5,
-		"Saved shop did not receive one furnished desk"
-	)
-	BaseHouse.ensure(base)
-	check(shop:FindFirstChild("ShopDesk") == desk and #shop:GetChildren() == 5, "Repeated upgrade duplicates the desk")
-	desk:SetAttribute("ModelVersion", 3)
-	BaseHouse.ensure(base)
-	check(
-		desk.Parent == nil and base:FindFirstChild("BaseHouse") == house,
-		"Desk finish upgrade did not replace only the old fixture"
-	)
-	desk = shop:FindFirstChild("ShopDesk")
-	check(
-		desk:GetAttribute("ModelVersion") == 4 and desk:FindFirstChild("CashRegister"):GetAttribute("ModelVersion") == 5,
-		"Saved desk/register did not receive the smaller window-wall layout"
-	)
-	desk:FindFirstChild("CashRegister"):Destroy()
-	BaseHouse.ensure(base)
-	check(
-		shop:FindFirstChild("ShopDesk"):FindFirstChild("CashRegister") ~= nil and #shop:GetChildren() == 5,
-		"Missing saved register is not repaired"
-	)
 	migrations += 1
 end
 local incompleteBase = Instance.new("Model")

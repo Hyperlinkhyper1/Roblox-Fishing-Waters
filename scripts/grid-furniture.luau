@@ -69,13 +69,15 @@ for _, id in Furniture.Order do
 end
 
 -- The new placement rule must never discard pre-grid purchases or positions.
-local legacy = Data.decode({ ShopBuildingVersion = 1, Furniture = { { ItemId = 'PottedPlant', X = -10, Z = 4.5, R = 0 } } })
-assert(legacy.Furniture[1].X == -10 and legacy.Furniture[1].Z == 4.5, 'Legacy coordinates changed')
-assert(Furniture.check({}, 'PottedPlant', -10, 4.5, 0) ~= nil, 'Off-grid new placement was accepted')
+-- (Every profile also holds the house fixtures, added after its saved furniture.)
+local legacy = Data.decode({ ShopBuildingVersion = 1, Furniture = { { ItemId = 'PottedPlant', X = -10, Z = -4.5, R = 0 } } })
+assert(legacy.Furniture[1].X == -10 and legacy.Furniture[1].Z == -4.5, 'Legacy coordinates changed')
+assert(Furniture.check({}, 'PottedPlant', -10, -4.5, 0) ~= nil, 'Off-grid new placement was accepted')
 local picked = assert(Data.pickUpFurniture(legacy, 1))
-assert(#picked.Furniture == 0 and picked.FurnitureStock.PottedPlant == 1, 'Legacy item could not be picked up')
-local placed = assert(Data.placeFurniture(picked, 'PottedPlant', -9, 4.5, 0))
-assert(placed.Furniture[1].X == -9 and placed.Furniture[1].Z == 4.5, 'Grid placement failed')
+assert(#picked.Furniture == #Data.FIXTURES and picked.FurnitureStock.PottedPlant == 1, 'Legacy item could not be picked up')
+local placed = assert(Data.placeFurniture(picked, 'PottedPlant', -9, -4.5, 0))
+local plant = placed.Furniture[#placed.Furniture]
+assert(plant.X == -9 and plant.Z == -4.5, 'Grid placement failed')
 -- The shop moved out of the house's front room into its own building across the
 -- street. Saved front-room layouts (legal under the old room rules) turn half a
 -- circle with it and still fit; the kitchen and storage room keep their
@@ -83,15 +85,15 @@ assert(placed.Furniture[1].X == -9 and placed.Furniture[1].Z == 4.5, 'Grid place
 local oldShop = {
  { ItemId = 'Freezer', X = -13.5, Z = 9, R = 1 },
  { ItemId = 'FoodCase', X = 9, Z = 9, R = 3 },
- { ItemId = 'PottedPlant', X = -22.5, Z = 4.5, R = 0 },
- { ItemId = 'Rug', X = 18, Z = 4.5, R = 0 },
+ { ItemId = 'PottedPlant', X = -13.5, Z = 13.5, R = 0 },
+ { ItemId = 'Rug', X = 13.5, Z = 13.5, R = 0 },
  { ItemId = 'GrillStation', X = -13.5, Z = -9, R = 0 },
  { ItemId = 'StorageRack', X = 13.5, Z = -9, R = 0 },
 }
 local moved = Data.decode({ Furniture = oldShop })
-assert(moved.ShopBuildingVersion == 1 and #moved.Furniture == #oldShop, 'Shop migration lost furniture')
-for index, entry in moved.Furniture do
- local before = oldShop[index]
+assert(moved.ShopBuildingVersion == 1 and #moved.Furniture == #oldShop + #Data.FIXTURES, 'Shop migration lost furniture')
+for index, before in oldShop do
+ local entry = moved.Furniture[index]
  if before.Z > 2.25 then
   assert(entry.R == (before.R + 2) % 4, before.ItemId .. ' did not turn into the shop')
   assert(Furniture.check(moved.Furniture, entry.ItemId, entry.X, entry.Z, entry.R, index) == nil, before.ItemId .. ' no longer fits in the shop')

@@ -2934,6 +2934,11 @@ function Menu.start()
 		iconTitle(body, settingTab, settingTab, 24, cream, { Size = UDim2.new(1, -8, 0, 42), LayoutOrder = 0 })
 		local function settingRow(key, name, description, iconName)
 			local value = if key == "Freecam" then player:GetAttribute("FreecamEnabled") == true else profile.Angler.Settings[key]
+			-- FrameRateGuard can lower the preset after the profile loaded; show what is in use.
+			local live = if key == "Freecam" then nil else Settings.current(key)
+			if live ~= nil then
+				value = live
+			end
 			local row = make("Frame", body, {
 				Name = key .. "Row",
 				BackgroundColor3 = Theme.Colors.Panel,

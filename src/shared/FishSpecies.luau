@@ -8,6 +8,7 @@
 --   (cash for an average-weight fish; open sea species are worth roughly
 --   double their lake tier plus 20%, species in both somewhere between),
 --   Fight (nudges the reel difficulty),
+--   LengthScale?  base model length multiplier for species that look too small for their weight
 --   Shapes (cargo footprint per size class, see Shared.Cargo),
 --   Pools?     AnglerCatalog.Pools keys it bites in; none for net, cage and drop items
 --   Seasons?   Shared.Seasons names in calendar order; nil bites all year

@@ -38,4 +38,27 @@ function AvatarLite.strip(description: HumanoidDescription): HumanoidDescription
 	return description
 end
 
+-- Removes any layered clothing left on a rig built for a crowd, and the body cages that only
+-- layered clothing needs. strip() can fail quietly (its call is guarded), and the client log
+-- still showed "Wrap-deformer fetching meshes resulted in error" every few seconds, each one
+-- a mesh fetch and deformer setup on the frame. Call on a built model before parenting it.
+function AvatarLite.stripModel(model: Instance)
+	for _, item in model:GetDescendants() do
+		if item:IsA("WrapLayer") then
+			local accessory = item:FindFirstAncestorWhichIsA("Accessory")
+			if accessory and accessory:IsDescendantOf(model) then
+				accessory:Destroy()
+			else
+				item:Destroy()
+			end
+		end
+	end
+	for _, item in model:GetDescendants() do
+		if item:IsA("WrapTarget") then
+			item:Destroy()
+		end
+	end
+	return model
+end
+
 return AvatarLite

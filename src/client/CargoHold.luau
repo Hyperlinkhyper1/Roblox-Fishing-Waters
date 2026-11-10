@@ -12,6 +12,7 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Cargo = require(ReplicatedStorage.Shared.Cargo)
 local Inventory = require(ReplicatedStorage.Shared.Inventory)
+local Bait = require(ReplicatedStorage.Shared.Bait)
 local Passes = require(ReplicatedStorage.Shared.Gamepasses)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
@@ -36,6 +37,7 @@ local WHITE, MUTED = rgb(240, 240, 236), rgb(150, 152, 158)
 local GOLD, CREAM, CYAN = rgb(255, 226, 128), rgb(226, 218, 196), rgb(110, 228, 240)
 local VIOLET, MINT, AMBER, RED = rgb(178, 142, 255), rgb(150, 230, 140), rgb(255, 176, 96), rgb(255, 82, 82)
 local WIDTH, HEIGHT, LEFT, CONTENT = 1180, 500, 176, 832
+local MIN_HEIGHT = 400 -- shortest panel the fixed side columns still fit in
 local CARD, CARD_HEIGHT, GAP = 98, 98, 6
 local HOTBAR_CLEARANCE = 90
 local started = false
@@ -242,13 +244,26 @@ function CargoHold.start()
 	round(panel, 3)
 	stroke(panel, EDGE, 1)
 	local scale = make("UIScale", panel, { Scale = 1 })
+	-- Height-dependent children are positioned by applyHeight (assigned once they exist).
+	local applyHeight: (number) -> () = function() end
+	local panelHeight = HEIGHT
 	local function updateLayout()
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		local size = camera.ViewportSize
-		-- Keep the world visible above a compact inventory and the tool hotbar below it.
-		scale.Scale = math.max(0.01, math.min(1, (size.X - 24) / WIDTH,
-			size.Y * 0.4 / HEIGHT, (size.Y - HOTBAR_CLEARANCE - 24) / HEIGHT))
+		-- Shrink the hotbar gap and side margins on small screens so the panel keeps more room.
+		local clearance = math.min(HOTBAR_CLEARANCE, size.Y * 0.17)
+		local availableHeight = math.max(1, size.Y - clearance - 12)
+		-- Scale down only as far as needed to fit the narrowest layout; the item list absorbs any
+		-- remaining height difference instead of shrinking every label.
+		local fit = math.min(1, (size.X - 16) / WIDTH, availableHeight / MIN_HEIGHT)
+		scale.Scale = math.max(0.01, fit)
+		panel.Position = UDim2.new(0.5, 0, 1, -clearance)
+		local height = math.clamp(math.floor(availableHeight / scale.Scale), MIN_HEIGHT, HEIGHT)
+		if height ~= panelHeight then
+			panelHeight = height
+			applyHeight(height)
+		end
 	end
 	updateLayout()
 	text(panel, "Inventory", { Position = UDim2.fromOffset(20, 12), Size = UDim2.fromOffset(150, 36),
@@ -342,6 +357,11 @@ function CargoHold.start()
 			Size = UDim2.fromOffset(131, 32), TextSize = 13, Visible = false }, spec[3])
 		actions[spec[1]] = control
 	end
+	-- Bait crates live on the profile (not in the hold); they're shown here as a
+	-- card too, and opened through the same server action as the equipment bag.
+	local openCrate = button(panel, "Open crate", { Name = "ActionOpenCrate", Position = UDim2.fromOffset(LEFT, 432),
+		Size = UDim2.fromOffset(131, 32), TextSize = 13, Visible = false }, GOLD)
+	local crateSelected = false
 	local bulk = button(panel, "Boat → backpack", { Name = "MoveAll", Position = UDim2.fromOffset(1026, 346),
 		Size = UDim2.fromOffset(136, 36), TextSize = 13, Visible = false }, MINT)
 	local fitPart = button(panel, "Fit reserved part", { Name = "FitPart", Position = UDim2.fromOffset(LEFT, 432),
@@ -353,6 +373,22 @@ function CargoHold.start()
 		TextColor3 = GOLD, TextXAlignment = Enum.TextXAlignment.Right })
 	local notice = text(panel, "", { Name = "InventoryNotice", Position = UDim2.fromOffset(LEFT, HEIGHT - 30),
 		Size = UDim2.fromOffset(620, 24), TextSize = 12, TextColor3 = MUTED, TextTruncate = Enum.TextTruncate.AtEnd })
+	-- Offsets below match the original 500px layout; everything below the item list follows the bottom edge.
+	applyHeight = function(height: number)
+		local extra = height - HEIGHT
+		panel.Size = UDim2.fromOffset(WIDTH, height)
+		list.Size = UDim2.fromOffset(CONTENT, 306 + extra)
+		empty.Position = UDim2.fromOffset(LEFT + 30, 180 + extra / 2)
+		detail.Position = UDim2.fromOffset(LEFT, 404 + extra)
+		for index, control in { actions.Hand, actions.Backpack, actions.Boat, actions.Favorite, actions.Release } do
+			control.Position = UDim2.fromOffset(LEFT + (index - 1) * 139, 432 + extra)
+		end
+		openCrate.Position = UDim2.fromOffset(LEFT, 432 + extra)
+		fitPart.Position = UDim2.fromOffset(LEFT, 432 + extra)
+		cancelPart.Position = UDim2.fromOffset(LEFT + 208, 432 + extra)
+		notice.Position = UDim2.fromOffset(LEFT, height - 30)
+	end
+	applyHeight(panelHeight)
 	local function money(amount)
 		local value = tostring(math.floor(amount))
 		local formatted = value:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
@@ -445,7 +481,14 @@ function CargoHold.start()
 		local entries = Inventory.entries(state, Catalog, Cargo)
 		local filtered, totalWorth = Inventory.visible(entries, tab, view, searchBox.Text, sortBy, ascending)
 		worth.Text = "Total worth: " .. money(totalWorth)
-		summary.Text = string.format("%d shown · %d total items", #filtered, #entries)
+		local crates = player:GetAttribute("BaitCrates")
+		crates = if type(crates) == "number" then crates else 0
+		local query = string.lower(searchBox.Text:match("^%s*(.-)%s*$"))
+		local showCrate = crates > 0 and tab ~= "Boat" and view.Items and not view.Favorites
+			and string.find(string.lower(Bait.Crate.Name), query, 1, true) ~= nil
+		local slots = if showCrate then 1 else 0
+		if not showCrate then crateSelected = false end
+		summary.Text = string.format("%d shown · %d total items", #filtered + slots, #entries + (if crates > 0 then 1 else 0))
 		-- Black Hole Backpack owners carry an infinite hold over any saved pack.
 		local backpack = Backpacks.layoutFor(player, state.BackpackId)
 		local boat = state.BoatId and BoatCatalog[state.BoatId]
@@ -453,11 +496,11 @@ function CargoHold.start()
 		local packSpace = string.format("Backpack %d / %s space", Cargo.used(state.Backpack or {}, Catalog.Fish), if packTotal == math.huge then "∞" else tostring(packTotal))
 		local boatSpace = if boat then string.format("Boat %d / %d space", Cargo.used(state.Items or {}, Catalog.Fish), Cargo.capacity(boat.Hold)) else "No boat launched"
 		capacity.Text = if tab == "Backpack" then packSpace elseif tab == "Boat" then boatSpace else packSpace .. "    ·    " .. boatSpace
-		empty.Visible = #filtered == 0
+		empty.Visible = #filtered + slots == 0
 		empty.Text = if tab == "Boat" and not boat then "Launch a boat to see its inventory."
 			elseif view.Favorites then "No favorites match these filters.\nSelect a fish and choose Favorite."
 			else "No items match these filters."
-		local parts = {}
+		local parts = { "crate|" .. tostring(if showCrate then crates else 0) }
 		for _, entry in filtered do
 			local fish = entry.Item and entry.Item.Fish
 			table.insert(parts, tostring(entryId(entry)) .. "|" .. entry.Name .. "|" .. tostring(entry.Locked) .. "|"
@@ -469,7 +512,36 @@ function CargoHold.start()
 			signature = nextSignature
 			for _, card in cards do card.Button:Destroy() end
 			cards = {}
-			for index, entry in filtered do
+			if showCrate then
+				local tile = make("TextButton", list, { Name = "BaitCrateCard", Text = "", AutoButtonColor = false,
+					Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(CARD, CARD_HEIGHT),
+					BackgroundColor3 = INK, BorderSizePixel = 0 })
+				local outline = stroke(tile, EDGE, 1)
+				make("UIGradient", tile, { Rotation = 90, Color = ColorSequence.new(INK, GOLD:Lerp(HULL, 0.6)) })
+				make("Frame", tile, { Position = UDim2.new(0, 0, 1, -2), Size = UDim2.new(1, 0, 0, 2),
+					BackgroundColor3 = GOLD, BorderSizePixel = 0, ZIndex = 3 })
+				-- A small drawn crate: wooden box with a lid band and cross slats.
+				local box = make("Frame", tile, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12),
+					Size = UDim2.fromOffset(40, 30), BackgroundColor3 = rgb(150, 104, 58), BorderSizePixel = 0, ZIndex = 2 })
+				round(box, 3)
+				stroke(box, rgb(92, 60, 30), 2)
+				make("Frame", box, { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 7),
+					BackgroundColor3 = rgb(116, 78, 42), BorderSizePixel = 0, ZIndex = 2 })
+				for _, rotation in { 34, -34 } do
+					make("Frame", box, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 3),
+						Size = UDim2.fromOffset(40, 3), Rotation = rotation, BackgroundColor3 = rgb(116, 78, 42),
+						BorderSizePixel = 0, ZIndex = 2 })
+				end
+				text(tile, Bait.Crate.Name, { Name = "FishName", Position = UDim2.fromOffset(4, 44),
+					Size = UDim2.fromOffset(CARD - 8, 32), TextSize = 13, TextWrapped = true,
+					TextXAlignment = Enum.TextXAlignment.Center, TextStrokeTransparency = 0.3, ZIndex = 3 })
+				text(tile, "×" .. crates, { Position = UDim2.fromOffset(4, CARD_HEIGHT - 19), Size = UDim2.fromOffset(CARD - 8, 16),
+					TextSize = 11, TextColor3 = CREAM, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 3 })
+				table.insert(cards, { Button = tile, Outline = outline, Entry = { Source = "BaitCrate", Index = 0, Crate = true }, Y = 0 })
+				tile.Activated:Connect(function() selected, crateSelected = nil, true render() end)
+			end
+			for position, entry in filtered do
+				local index = position + slots
 				local x, y = ((index - 1) % 8) * (CARD + GAP), math.floor((index - 1) / 8) * (CARD_HEIGHT + GAP)
 				local fish = entry.Item and entry.Item.Fish
 				local species = fish and Catalog.Fish[fish.FishId]
@@ -504,10 +576,10 @@ function CargoHold.start()
 						Size = UDim2.fromOffset(CARD, 46), TextSize = 32, TextColor3 = tint, TextXAlignment = Enum.TextXAlignment.Center })
 				end
 				table.insert(cards, { Button = tile, Outline = outline, Entry = entry, Y = y })
-				tile.Activated:Connect(function() selected = entry render() end)
-				tile.MouseButton2Click:Connect(function() selected = entry favorite(entry) end)
+				tile.Activated:Connect(function() selected, crateSelected = entry, false render() end)
+				tile.MouseButton2Click:Connect(function() selected, crateSelected = entry, false favorite(entry) end)
 			end
-			list.CanvasSize = UDim2.fromOffset(0, math.ceil(#filtered / 8) * (CARD_HEIGHT + GAP))
+			list.CanvasSize = UDim2.fromOffset(0, math.ceil((#filtered + slots) / 8) * (CARD_HEIGHT + GAP))
 		end
 		local nextSelected = nil
 		for _, entry in filtered do
@@ -517,7 +589,8 @@ function CargoHold.start()
 		end
 		selected = nextSelected
 		for _, card in cards do
-			card.Outline.Color = if selected and entryId(card.Entry) == entryId(selected) then GOLD else EDGE
+			card.Outline.Color = if (if card.Entry.Crate then crateSelected else selected and entryId(card.Entry) == entryId(selected))
+				then GOLD else EDGE
 		end
 		local fish = selected and selected.Item and selected.Item.Fish
 		local species = fish and Catalog.Fish[fish.FishId]
@@ -526,7 +599,9 @@ function CargoHold.start()
 		for name, control in actions do
 			control.Visible = fish ~= nil and not reserved
 			control.Active = not pending
-			if name == "Hand" then control.Visible = control.Visible and selected.Source ~= "Hand"
+			if name == "Hand" then
+				control.Visible = control.Visible and selected.Source ~= "Hand"
+				control.Text = if state.Hand then "Replace in hand" else "Take in hand"
 			elseif name == "Backpack" then control.Visible = control.Visible and selected.Source ~= "Backpack"
 			elseif name == "Boat" then control.Visible = control.Visible and selected.Source ~= "Boat" and aboard
 			elseif name == "Favorite" then
@@ -540,7 +615,11 @@ function CargoHold.start()
 			end
 		end
 		fitPart.Visible, cancelPart.Visible = reserved, reserved
+		openCrate.Visible = crateSelected and not reserved
+		openCrate.Active = not pending
 		detail.Text = if reserved then "Reserved boat fitting · confirm to use cargo space."
+			elseif crateSelected then string.format("%s ×%d · %d–%d bait of one kind · bait goes to your equipment bag",
+				Bait.Crate.Name, crates, Bait.Crate.MinBait, Bait.Crate.MaxBait)
 			elseif fish then string.format("%s · %s · %s · %d space · %s%s", fishTitle(selected),
 				FishCatch.formatKg(fish.Kg), if secret then "Priceless" else money(fish.Value),
 				Cargo.space(selected.Item, Catalog.Fish), selected.Source,
@@ -602,6 +681,22 @@ function CargoHold.start()
 			if not ok then notice.Text = "Couldn't open the purchase screen. Try again." end
 		else send("AutoStore", state.AutoStore == false) end
 	end)
+	openCrate.Activated:Connect(function()
+		local fishing = ReplicatedStorage:FindFirstChild("Fishing")
+		local fishingRequest = fishing and fishing:FindFirstChild("Request")
+		if pending or not crateSelected or not fishingRequest or player:GetAttribute("BoatDataStatus") ~= "Ready" then return end
+		notice.Text, notice.TextColor3 = "Opening bait crate…", MUTED
+		fishingRequest:FireServer("OpenBaitCrate")
+	end)
+	task.spawn(function()
+		local fishingFeedback = ReplicatedStorage:WaitForChild("Fishing"):WaitForChild("Feedback") :: RemoteEvent
+		fishingFeedback.OnClientEvent:Connect(function(kind, success, message)
+			if kind == "BaitOpenResult" and type(message) == "string" then
+				notice.Text, notice.TextColor3 = message, if success == true then MINT else RED
+			end
+		end)
+	end)
+	player:GetAttributeChangedSignal("BaitCrates"):Connect(function() render() end)
 	bulk.Activated:Connect(function() send("MoveAll") end)
 	fitPart.Activated:Connect(function() send("Place", 1, 1, 0) end)
 	cancelPart.Activated:Connect(function() send("CancelPlace") end)

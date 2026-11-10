@@ -20,18 +20,19 @@ Recipes.RarityOrder = {
 -- Diners in the restaurant pay this much more than shop customers.
 Recipes.RESTAURANT_MARKUP = 1.5
 
--- Built-in stations are part of the processing room once the Supermarket is open.
--- The others are furniture (FurnitureCatalog item of the same id).
+-- Prep benches come with the house once the Supermarket is open (FurnitureCatalog
+-- PrepBench, saved under a bench key below). The others are furniture
+-- (FurnitureCatalog item of the same id).
 Recipes.Stations = {
 	Prep = { Name = "Prep bench", BuiltIn = true },
 	GrillStation = { Name = "Grill station" },
 	Smoker = { Name = "Smokehouse" },
 	SushiBar = { Name = "Sushi bar" },
 }
--- Built-in benches, by station key, in house-local studs (see FurnitureCatalog).
+-- Bench keys of the house's prep benches; each placed PrepBench saves one as its Key.
 Recipes.BuiltIn = {
-	Prep1 = { Station = "Prep", X = -21.35, Z = -4.5, R = 1 },
-	Prep2 = { Station = "Prep", X = -21.35, Z = -11, R = 1 },
+	Prep1 = { Station = "Prep" },
+	Prep2 = { Station = "Prep" },
 }
 -- Separate saved keys let island benches and harbour benches cook independently.
 Recipes.CompanyBuiltIn = {

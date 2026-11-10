@@ -1347,6 +1347,23 @@ end
 check(store.updates == before, "Weather commands must work independently of wallet saves")
 workspace:SetAttribute("WeatherOverride", nil)
 before = store.updates
+command(fresh, "/set level 10")
+check(store.updates == before, "Only HYPERLINKHYPER may set a level")
+for _, invalid in { "/set level", "/set level 0", "/set level -1", "/set level 1.5", "/set level 156", "/set level 10 extra" } do
+	command(admin, invalid)
+end
+check(store.updates == before, "Invalid levels must not save")
+command(admin, "/set level 10")
+check(admin:GetAttribute("Level") == 10 and admin:GetAttribute("LevelXP") == 0, "Set level publishes the requested level at zero progress")
+check(store.data.Player_2541746813.Angler.Stats.TotalXP == 20799, "Set level persists the XP threshold")
+command(admin, "/set level 1")
+check(admin:GetAttribute("Level") == 1 and store.data.Player_2541746813.Angler.Stats.TotalXP == 0, "Set level can lower a level")
+command(admin, "/set level 155")
+check(admin:GetAttribute("Level") == 155, "The highest supported level is published correctly")
+store.updateFailures = 1
+command(admin, "/set level 2")
+check(admin:GetAttribute("Level") == 155, "Failed level saves do not publish")
+before = store.updates
 command(fresh, "/set cash 9999")
 check(store.updates == before and fresh:GetAttribute("Cash") == 0, "Only the allowed user ID may set cash")
 for _, invalid in

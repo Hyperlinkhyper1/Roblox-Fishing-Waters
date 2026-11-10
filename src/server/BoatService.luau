@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local TextChatService = game:GetService("TextChatService")
 
 local BoatData = require(script.Parent.BoatData)
+local AnglerData = require(script.Parent.AnglerData)
 local RodSerials = require(script.Parent.RodSerials)
 local AdminCommands = require(script.Parent.AdminCommands)
 local Rowboat = require(script.Parent.Rowboat)
@@ -435,6 +436,43 @@ local function setFromCommand(player: Player, message: string)
 	end
 	local normalized = string.lower(message)
 	local subject = normalized:match("^/set%s+(%S+)")
+	if subject == "level" then
+		if player.UserId ~= 2541746813 then return end
+		local digits = normalized:match("^/set%s+level%s+(%d+)%s*$")
+		local level = digits and tonumber(digits)
+		-- Keep XP within the range where whole numbers are represented exactly.
+		if not level or level < 1 or level > 155 or level % 1 ~= 0 then
+			notify(player, "Usage: /set level <amount> (a whole number from 1 to 155).")
+			return
+		end
+		local xp = AnglerData.xpForLevel(level)
+		local state = readyState(player)
+		if not state or not acquireSave(player, state) then return end
+		local success, saved = pcall(function()
+			local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
+				local profile = BoatData.decode(raw)
+				profile.Angler.Stats.TotalXP = xp
+				return profile
+			end)
+			return committedProfile(result)
+		end)
+		if not success then
+			releaseSave(state)
+			warn("[Angler] Set level failed for " .. player.UserId .. ": " .. tostring(saved))
+			notify(player, "Level could not be saved. Please try again.")
+			return
+		end
+		local valid, profile = pcall(BoatData.decode, saved)
+		if not valid or profiles[player] ~= state or player.Parent ~= Players then
+			releaseSave(state)
+			return
+		end
+		state.profile = profile
+		publish(player, state)
+		releaseSave(state)
+		notify(player, "Level set to " .. tostring(level) .. ".")
+		return
+	end
 	if subject == "weight" then
 		local input = normalized:match("^/set%s+weight%s+(%S+)%s*$")
 		local cargo = require(script.Parent.CargoService)
@@ -1333,6 +1371,10 @@ function BoatService.start()
 	AdminCommands.start(function(player, message)
 		if player.Parent == Players then
 			feedback:FireClient(player, "CommandNotice", message)
+		end
+	end, function(player)
+		if player.Parent == Players then
+			feedback:FireClient(player, "TestMesh")
 		end
 	end)
 

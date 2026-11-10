@@ -13,6 +13,7 @@ local SoundService = game:GetService("SoundService")
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local TerrainProbe = require(script.Parent.TerrainProbe)
 
 -- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
 local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
@@ -126,10 +127,6 @@ function CoastalAmbience.start()
 			})
 		end
 	end
-	local terrainParams = RaycastParams.new()
-	terrainParams.FilterType = Enum.RaycastFilterType.Include
-	terrainParams.FilterDescendantsInstances = { workspace.Terrain }
-	terrainParams.IgnoreWater = false
 	local roofParams = RaycastParams.new()
 	roofParams.FilterType = Enum.RaycastFilterType.Exclude
 	roofParams.IgnoreWater = true
@@ -144,33 +141,33 @@ function CoastalAmbience.start()
 	local nextGull = os.clock() + between(GULL_INTERVAL)
 
 	local function sample(position: Vector3)
-		local exclusions = { workspace.CurrentCamera }
+		local exclusions = { workspace.CurrentCamera, workspace.Terrain }
 		for _, other in Players:GetPlayers() do
 			if other.Character then
 				table.insert(exclusions, other.Character)
 			end
 		end
 		roofParams.FilterDescendantsInstances = exclusions
-		sheltered = workspace:Raycast(position, Vector3.new(0, 160, 0), roofParams) ~= nil
+		sheltered = TerrainProbe.surfaceAt(position.X, position.Z, position.Y + 0.5, position.Y + 160, true) ~= nil
+			or workspace:Raycast(position, Vector3.new(0, 160, 0), roofParams) ~= nil
 		local landWeight, waterWeight = 0, 0
 		for _, probe in probes do
-			local origin = Vector3.new(position.X, Biomes.WaterLevel + 60, position.Z) + probe.offset
-			local hit = workspace:Raycast(origin, Vector3.new(0, -120, 0), terrainParams)
-			if hit then
-				if hit.Material == Enum.Material.Water then
+			local material, height = TerrainProbe.surfaceAt(
+				position.X + probe.offset.X, position.Z + probe.offset.Z, Biomes.WaterLevel - 60, Biomes.WaterLevel + 60
+			)
+			if material and height then
+				if material == Enum.Material.Water then
 					waterWeight = math.max(waterWeight, probe.weight)
-				elseif hit.Position.Y > Biomes.WaterLevel - 1 then
+				elseif height > Biomes.WaterLevel - 1 then
 					landWeight = math.max(landWeight, probe.weight)
 				end
 			end
 		end
 		land, water = landWeight, waterWeight
-		local below = workspace:Raycast(
-			Vector3.new(position.X, Biomes.WaterLevel + 60, position.Z),
-			Vector3.new(0, -120, 0),
-			terrainParams
+		local below = TerrainProbe.surfaceAt(
+			position.X, position.Z, Biomes.WaterLevel - 60, Biomes.WaterLevel + 60
 		)
-		overWater = below ~= nil and below.Material == Enum.Material.Water
+		overWater = below == Enum.Material.Water
 		local now = workspace:GetServerTimeNow()
 		state = Weather.getState(now, position)
 		darkness = DayNight.darkness(DayNight.clockTime(now))

@@ -30,13 +30,7 @@ end
 -- A saved station is usable only after its world model is present too.
 local function stations(house, frame)
 	local result = {}
-	local processing = house:FindFirstChild("Processing")
-	local benches = processing and processing:FindFirstChild("KitchenBenches")
-	for key, bench in Recipes.BuiltIn do
-		if benches and benches:FindFirstChild(key) then
-			result[key] = Furniture.frame(frame, bench)
-		end
-	end
+	-- Prep benches are furniture too (PrepBench), saved under their bench key.
 	local placed = house:FindFirstChild("Furniture")
 	for _, model in if placed then placed:GetChildren() else {} do
 		local key = model:GetAttribute("StationKey")

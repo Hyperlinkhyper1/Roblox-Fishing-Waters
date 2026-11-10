@@ -39,13 +39,14 @@ local PAINTED = { "Color", "Material", "Reflectance", "Transparency" }
 local started = false
 -- [fishId] = { [band name] = { part, mesh, size, offset } }, false when unavailable.
 local skins: { [string]: any } = {}
+local skinErrors: { [string]: string } = {}
 -- Part creation and fixed-size copying yield. Only one species may hold a
 -- temporary dynamic mesh at a time, even when many tagged fish arrive together.
 local building = false
 local hydrated: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
 -- One band of the skin as a mesh part, its vertices centred on its bounds.
-local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?)
+local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?, string?)
 	local scale = FishModels.SCALE
 	local steps = math.max(2, math.ceil((band.to - band.from) * ANGLE_STEPS))
 	local points, normals = {}, {}
@@ -80,7 +81,7 @@ local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?)
 
 	local mesh = EditableMeshBudget.create()
 	if not mesh then
-		return nil, nil, nil
+		return nil, nil, nil, EditableMeshBudget.failureReason() or "EditableMesh allocation failed"
 	end
 	local ok, part = pcall(function()
 		local vertexIds, normalIds = {}, {}
@@ -132,7 +133,7 @@ local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?)
 		if not ok then
 			warn("[FishMeshes] Could not create a fish skin: " .. tostring(part))
 		end
-		return nil, nil, nil
+		return nil, nil, nil, if not ok then tostring(part) else (EditableMeshBudget.failureReason() or "Mesh part creation returned nil")
 	end
 	part.Size = high - low
 	return part, center, mesh
@@ -149,18 +150,20 @@ local function skin(fishId: string)
 	local spec = FishModels.loft(fishId)
 	if not spec then
 		skins[fishId] = false
+		skinErrors[fishId] = "No smooth-body geometry exists for " .. fishId
 		return false
 	end
 	building = true
 	local bands = {}
 	for _, band in bandsFor(spec) do
-		local ok, part, center, mesh = pcall(buildBand, spec.rings, band)
+		local ok, part, center, mesh, reason = pcall(buildBand, spec.rings, band)
 		if not ok or not part or not center or not mesh then
 			for _, built in bands do
 				built.part:Destroy()
 				built.mesh:Destroy()
 			end
 			skins[fishId] = false
+			skinErrors[fishId] = band.name .. " band: " .. (if not ok then tostring(part) else tostring(reason or "unknown mesh creation failure"))
 			building = false
 			return false
 		end
@@ -169,6 +172,48 @@ local function skin(fishId: string)
 	skins[fishId] = bands
 	building = false
 	return bands
+end
+
+-- Exercise the same seven bands used by a rainbow trout, then report whether
+-- tagged fish currently in this client actually received their skins.
+function FishMeshes.diagnose(): string
+	if not MeshFeatures.EditableMeshesEnabled then
+		return "Mesh test FAILED: EditableMeshesEnabled is off."
+	end
+	if not started then
+		return "Mesh test FAILED: FishMeshes client has not started."
+	end
+	local ok, result = pcall(skin, "RainbowTrout")
+	if not ok then
+		return "Mesh test FAILED: " .. tostring(result)
+	end
+	if not result then
+		return "Mesh test FAILED: " .. (skinErrors.RainbowTrout or "unknown failure")
+	end
+	local total, skinned, pending = 0, 0, 0
+	local firstFailure: string? = nil
+	for _, model in CollectionService:GetTagged(FishModels.LOFT_TAG) do
+		if model:IsA("Model") and model.Parent then
+			total += 1
+			if model:FindFirstChild("LoftSkin", true) then
+				skinned += 1
+			else
+				pending += 1
+				local fishId = model:GetAttribute("LoftFish")
+				if type(fishId) == "string" and skinErrors[fishId] then
+					firstFailure = firstFailure or (fishId .. ": " .. skinErrors[fishId])
+				end
+			end
+		end
+	end
+	local summary = string.format("Rainbow Trout skin available. Client fish: %d; with skins: %d; without skins: %d.", total, skinned, pending)
+	if firstFailure then
+		return "Mesh test PARTIAL: " .. summary .. " Failure: " .. firstFailure
+	end
+	if pending > 0 then
+		return "Mesh test PARTIAL: " .. summary .. " Some fish may still be loading."
+	end
+	return "Mesh test PASS: " .. summary .. " Spots and fins remain separate parts."
 end
 
 function FishMeshes.hydrate(model: Instance)

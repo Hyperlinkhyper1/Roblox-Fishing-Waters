@@ -30,6 +30,7 @@ try {
     .replace(/local Bait = if script[\s\S]*?"\.\.\/shared\/Bait"\)/, () => `local Bait = (function()\n${baitSource}\nend)()`)
     .replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
   let service = await readFile(join(root, 'src/server/BoatService.luau'), 'utf8');
+  service = service.replace('require(script.Parent.AnglerData)', `(function()\n${anglerData}\nend)()`);
   const rodSerialSource = (await readFile(join(root, 'src/server/RodSerials.luau'), 'utf8'))
     .replace('if script then require(script.Parent.BoatData) else require("./BoatData")', 'dependencies.BoatData');
   let harness = await readFile(join(root, 'scripts/boat-service.luau'), 'utf8');

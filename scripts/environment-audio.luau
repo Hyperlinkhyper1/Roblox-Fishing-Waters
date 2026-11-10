@@ -45,13 +45,13 @@ local water, roof, lake = true, false, false
 local rays = 0
 function workspace:Raycast(origin, direction, params)
 	rays += 1
+	assert(params.FilterType == Enum.RaycastFilterType.Exclude and table.find(params.FilterDescendantsInstances, self.Terrain),
+		"Audio rays must exclude Terrain to avoid building collision while travelling")
 	if direction.Y > 0 then
 		assert(params.IgnoreWater and params.RespectCanCollide, "Only solid roofs should shelter audio")
 		return if roof then {} else nil
 	end
-	assert(params.FilterType == Enum.RaycastFilterType.Include, "Water probes must ignore docks, hulls and characters")
-	assert(params.FilterDescendantsInstances[1] == self.Terrain and not params.IgnoreWater, "Probe real Terrain water")
-	return if water then { Material = Enum.Material.Water, Position = Vector3.new(origin.X, 0, origin.Z) } else nil
+	error("Water must be sampled from voxels")
 end
 local players = { PlayerAdded = signal(), PlayerRemoving = signal() }
 local roster = {}
@@ -119,6 +119,10 @@ dependencies.Weather = {
 		return lake
 	end,
 }
+local function materialAt(x, y, z)
+	return if water and y < 0 then Enum.Material.Water else Enum.Material.Air, if water and y < 0 then 1 else 0
+end
+-- AUDIO_TERRAIN --
 local Client = (function()
 	-- CLIENT --
 end)()
@@ -201,8 +205,25 @@ assert(
 	"Surfacing must restore outdoor ambience"
 )
 local raysBefore = rays
+local voxelsBefore = voxelReads
 step(1)
-assert(rays - raysBefore <= 42, "Shoreline sampling must stay bounded instead of raycasting every frame")
+assert(rays - raysBefore <= 3 and voxelReads - voxelsBefore <= 42,
+	"Shoreline sampling only casts bounded part-only roof rays and bounded voxel probes")
+local exposed = waves.Volume
+terrainRoof = true
+step(3)
+assert(waves.Volume < exposed * 0.3, "Voxel roofs preserve terrain cave shelter")
+terrainRoof = false
+terrainMissing = true
+step(3)
+assert(waves.Volume == 0, "Unstreamed air must not be mistaken for water")
+terrainMissing = false
+voxelFailure = true
+step(3)
+assert(waves.Volume == 0, "A failed voxel read must safely silence water")
+voxelFailure = false
+step(3)
+assert(waves.Volume > 0.2, "Water audio recovers when terrain streams back in")
 
 local splash = root:FindFirstChild("WaterSplash")
 local swim = root:FindFirstChild("WaterSwimming")

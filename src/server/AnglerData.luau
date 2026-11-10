@@ -79,6 +79,23 @@ Data.RACK_CAPACITY = 12
 Data.COMPANY_KIT = { StorageRack = 4, KitchenStorage = 1, CompanyPrep = 2, CompanyDesk = 1 }
 -- Bench keys handed to placed CompanyPrep benches, in order (Recipes.CompanyBuiltIn).
 Data.COMPANY_BENCHES = { "CompanyPrep1", "CompanyPrep2" }
+-- The shop's freezer and till and the office desk used to be part of the
+-- building. They are furniture now, on the grid spots nearest where they stood
+-- (FishFreezer.frame, ShopDesk.frame, OfficeDesk.frame) and facing the same way,
+-- inside the keep-clear zones that used to surround them.
+Data.FIXTURES = {
+	{ ItemId = "Freezer", X = 22.5, Z = 72, R = 3 }, -- against the shop's right wall
+	{ ItemId = "Register", X = -18, Z = 72, R = 3 }, -- clear of the front window's sill
+	{ ItemId = "OfficeDesk", X = -18, Z = 4.5, R = 0 }, -- against the office's back wall
+}
+-- Bench keys handed to placed PrepBench benches in the house, in order
+-- (Recipes.BuiltIn), and where the Supermarket puts each one: against the
+-- kitchen's left wall, where the built-in benches stood.
+Data.HOME_BENCHES = { "Prep1", "Prep2" }
+Data.BENCH_SPOTS = {
+	Prep1 = { X = -22.5, Z = 0, R = 1 },
+	Prep2 = { X = -22.5, Z = -9, R = 1 },
+}
 -- Cooked dishes (Supermarket path) wait on the kitchen pass, which holds this many;
 -- every placed food display case shows as many again to shop customers.
 Data.PANTRY_CAPACITY = 6
@@ -363,6 +380,34 @@ local function migrateFurnitureCells(data)
 	data.FurnitureCellVersion = FURNITURE_CELL_VERSION
 end
 
+-- The fixtures join every house once, after the shop building turned (they are
+-- already in its coordinates) and before any relocation, so nothing moves onto them.
+local FIXTURE_VERSION = 1
+local function migrateFixtures(data)
+	if data.FixtureVersion == FIXTURE_VERSION then return end
+	for _, fixture in Data.FIXTURES do
+		table.insert(data.Furniture, table.clone(fixture))
+	end
+	data.FixtureVersion = FIXTURE_VERSION
+end
+
+-- The prep benches arrive with the Supermarket, on their old spot when it is free
+-- and otherwise in stock.
+local function migrateBenches(data)
+	if data.HomeBenches == nil and data.Paths.Unlocked.Supermarket then
+		local catalog = furniture()
+		for _, key in Data.HOME_BENCHES do
+			local spot = Data.BENCH_SPOTS[key]
+			if catalog.check(data.Furniture, "PrepBench", spot.X, spot.Z, spot.R) == nil then
+				table.insert(data.Furniture, { ItemId = "PrepBench", X = spot.X, Z = spot.Z, R = spot.R, Key = key })
+			else
+				data.FurnitureStock.PrepBench = (data.FurnitureStock.PrepBench or 0) + 1
+			end
+		end
+		data.HomeBenches = 1
+	end
+end
+
 function Data.decode(raw)
 	assert(raw == nil or type(raw) == "table", "Invalid angler progress")
 	local data = copy(raw or {})
@@ -574,6 +619,7 @@ function Data.decode(raw)
 	end
 	-- Like holds, placement rules are checked when furniture moves, not here.
 	for _, list in { data.Furniture, data.CompanyFurniture } do
+		local benches = if list == data.CompanyFurniture then Data.COMPANY_BENCHES else Data.HOME_BENCHES
 		for index, entry in list do
 			assert(
 				type(index) == "number"
@@ -590,10 +636,12 @@ function Data.decode(raw)
 				assert((entry.Cages == nil or number(entry.Cages, true)) and (entry.Nets == nil or number(entry.Nets, true)), "Invalid rack tools")
 				assert((entry.Cages or 0) + (entry.Nets or 0) <= Data.RACK_CAPACITY, "Rack tools exceed capacity")
 			end
-			assert(entry.Key == nil or table.find(Data.COMPANY_BENCHES, entry.Key), "Invalid bench key")
+			assert(entry.Key == nil or table.find(benches, entry.Key), "Invalid bench key")
 		end
 	end
 	assert(data.CompanyKit == nil or data.CompanyKit == 1, "Invalid company kit")
+	assert(data.FixtureVersion == nil or number(data.FixtureVersion, true), "Invalid fixture version")
+	assert(data.HomeBenches == nil or data.HomeBenches == 1, "Invalid home benches")
 	-- Owners from before the kit had built-in houses; they get the same fixtures
 	-- once, to place themselves. A purchase is granted it the same way.
 	if data.CompanyIsland and not data.CompanyKit then
@@ -603,8 +651,10 @@ function Data.decode(raw)
 		data.CompanyKit = 1
 	end
 	migrateShopBuilding(data)
+	migrateFixtures(data)
 	migrateFurnitureWalls(data)
 	migrateFurnitureCells(data)
+	migrateBenches(data)
 	-- Crab cages wait in Stock until dropped by the dock; Placed spots are dock-local
 	-- studs (Shared.CrabCages holds the rules, which are checked when cages move).
 	if data.CrabCages == nil then
@@ -1045,7 +1095,19 @@ function Data.moveInventory(raw, source, index, destination, expected, boatId, l
 		return nil, "Unlock this favorite before releasing it."
 	end
 	if destination == "Hand" then
-		if data.Hand then return nil, "Your hands are already full." end
+		if data.Hand then
+			local spec = if source == "Backpack" then backpackLayout else layout
+			if not items or not spec then return nil, "That inventory is unavailable." end
+			table.remove(items, index)
+			local held = data.Hand
+			local placement = cargo().bestSpot(spec.Hold, items, { Fish = held }, species)
+			if not placement then return nil, "There isn't enough space for the fish in your hand." end
+			table.insert(items, { Fish = held, Locked = held.Locked, X = placement.X, Y = placement.Y, R = placement.R })
+			held.Locked = nil
+			data.Hand = item.Fish
+			data.Hand.Locked = item.Locked or item.Fish.Locked or nil
+			return data
+		end
 		data.Hand = item.Fish
 		data.Hand.Locked = item.Locked or item.Fish.Locked or nil
 	elseif destination ~= "Release" then
@@ -1120,9 +1182,9 @@ local function placed(raw, itemId)
 	return count
 end
 
--- The built-in cooler and every placed cooler share one packing rule.
+-- Every placed freezer (the shop's first one included) shares one packing rule.
 function Data.freezerCount(raw)
-	return 1 + placed(raw, "Freezer")
+	return placed(raw, "Freezer")
 end
 
 local freezerLayouts = setmetatable({}, { __mode = "k" })
@@ -1170,6 +1232,16 @@ end
 local function companyBench(data, key)
 	for _, entry in data.CompanyFurniture or {} do
 		if entry.ItemId == "CompanyPrep" and entry.Key == key then
+			return entry
+		end
+	end
+	return nil
+end
+
+-- The placed house bench holding saved bench key `key`, if any.
+local function homeBench(data, key)
+	for _, entry in data.Furniture or {} do
+		if entry.ItemId == "PrepBench" and entry.Key == key then
 			return entry
 		end
 	end
@@ -1382,7 +1454,9 @@ function Data.placeFurniture(raw, from, x, z, r, site)
 	elseif type(from) == "string" and catalog.Items[from] then
 		itemId = from
 		if (data.FurnitureStock[itemId] or 0) < 1 then
-			return nil, if catalog.Items[itemId].Kit then "That comes with a company island." else "Buy one at the furniture shop first."
+			return nil, if catalog.Items[itemId].Kit then "That comes with a company island."
+				elseif catalog.Items[itemId].Fixture then "That comes with your house."
+				else "Buy one at the furniture shop first."
 		elseif catalog.count(list, itemId) >= catalog.Items[itemId].MaxPlaced then
 			return nil, string.format("You can place up to %d of those.", catalog.Items[itemId].MaxPlaced)
 		end
@@ -1409,6 +1483,13 @@ function Data.placeFurniture(raw, from, x, z, r, site)
 					break
 				end
 			end
+		elseif itemId == "PrepBench" then
+			for _, key in Data.HOME_BENCHES do
+				if not homeBench(data, key) then
+					placed.Key = key
+					break
+				end
+			end
 		end
 		data.FurnitureStock[itemId] -= 1
 		if data.FurnitureStock[itemId] == 0 then
@@ -1430,6 +1511,10 @@ function Data.pickUpFurniture(raw, index, site)
 	end
 	if entry.ItemId == "StorageRack" and ((entry.Cages or 0) + (entry.Nets or 0) > 0) then
 		return nil, "Take the tools off this rack first."
+	end
+	local item = furniture().Items[entry.ItemId]
+	if item and item.Keep and furniture().count(list, entry.ItemId) <= 1 then
+		return nil, item.Keep .. " Move it instead."
 	end
 	table.remove(list, index)
 	if entry.ItemId == "Freezer" and not Data.canFreeze(data) then
@@ -1590,6 +1675,8 @@ function Data.startCooking(raw, key, recipeId, species, now)
 		return nil, "Cooking unlocks with the Supermarket path."
 	elseif not station then
 		return nil, "That isn't a kitchen station."
+	elseif book.BuiltIn[key] and not homeBench(data, key) then
+		return nil, "Place a prep bench in your kitchen first."
 	elseif book.CompanyBuiltIn[key] and not (data.CompanyIsland and companyBench(data, key)) then
 		return nil, if data.CompanyIsland then "Place a prep bench on your company plot first." else "Buy a company island to use this kitchen."
 	elseif not book.BuiltIn[key] and not book.CompanyBuiltIn[key] and placed(data, key) == 0 then

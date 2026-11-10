@@ -36,6 +36,30 @@ local function column(x: number, z: number, low: number, high: number)
 	return materials[1], occupancies[1], y1
 end
 
+-- Approximate the top terrain surface in a vertical range, to four-stud voxel
+-- precision. Audio only needs water/land and roof presence; casting rays for
+-- those estimates builds collision for fresh chunks as the listener travels.
+-- Missing streamed terrain (air) and failed reads both return nil.
+function TerrainProbe.surfaceAt(
+	x: number, z: number, low: number, high: number, ignoreWater: boolean?
+): (Enum.Material?, number?)
+	local materials, occupancies, top = column(x, z, low, high)
+	if not materials then
+		return nil, nil
+	end
+	for index = #materials, 1, -1 do
+		local material = materials[index][1]
+		if material ~= AIR and not (ignoreWater and material == WATER) then
+			local base = top - (#materials - index + 1) * RESOLUTION
+			local height = base + RESOLUTION * occupancies[index][1]
+			if height >= low then
+				return material, math.min(height, high)
+			end
+		end
+	end
+	return nil, nil
+end
+
 -- True when the voxel just under the calm surface at (x, z) is water.
 function TerrainProbe.isWater(x: number, z: number): boolean
 	local y = Biomes.WaterLevel - RESOLUTION / 2

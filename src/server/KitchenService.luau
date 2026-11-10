@@ -16,7 +16,6 @@ local Kitchen = require(script.Parent.Map.Kitchen)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
-local Paths = require(ReplicatedStorage.Shared.Paths)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 
@@ -117,13 +116,7 @@ end
 -- Every station in the owner's house, keyed like the saved kitchen jobs.
 local function stations(house: Model, houseFrame: CFrame): { [string]: { model: Model, frame: CFrame } }
 	local result = {}
-	local benches = house:FindFirstChild("Processing") and house.Processing:FindFirstChild("KitchenBenches")
-	for key, bench in Recipes.BuiltIn do
-		local model = benches and benches:FindFirstChild(key)
-		if model then
-			result[key] = { model = model, frame = Furniture.frame(houseFrame, bench) }
-		end
-	end
+	-- Prep benches are furniture too (PrepBench), saved under their bench key.
 	local placed = house:FindFirstChild("Furniture")
 	for _, model in if placed then placed:GetChildren() else {} do
 		local key = model:GetAttribute("StationKey")
@@ -140,35 +133,6 @@ local function stations(house: Model, houseFrame: CFrame): { [string]: { model: 
 		end
 	end
 	return result
-end
-
--- The built-in prep benches appear once the owner has opened the Supermarket.
-local function syncBenches(base: Model)
-	local house, houseFrame = houseOf(base)
-	local processing = house and house:FindFirstChild("Processing")
-	if not processing or not houseFrame then
-		return
-	end
-	local owner = ownerOf(base)
-	local profile = owner and BoatService.getProfile(owner)
-	local wanted = profile ~= nil and Paths.unlocked(profile, "Supermarket")
-	local benches = processing:FindFirstChild("KitchenBenches")
-	if benches and (not wanted or benches:GetAttribute("OwnerUserId") ~= owner.UserId) then
-		benches:Destroy()
-		benches = nil
-	end
-	if wanted and not benches and owner then
-		benches = Instance.new("Model")
-		benches.Name = "KitchenBenches"
-		benches:SetAttribute("OwnerUserId", owner.UserId)
-		for key, bench in Recipes.BuiltIn do
-			local frame = Furniture.frame(houseFrame, bench)
-			local model = Kitchen.buildStation(benches, frame, bench.Station, Kitchen.BUILT_IN_WIDTH)
-			model.Name = key
-			KitchenService.addPrompts(model, frame, key, owner.UserId)
-		end
-		benches.Parent = processing
-	end
 end
 
 -- A small model of the raw fish lying on the worktop while it cooks.
@@ -447,7 +411,6 @@ function KitchenService.start()
 		player:GetAttributeChangedSignal("AnglerRevision"):Connect(function()
 			local base = baseOf(player)
 			if base then
-				syncBenches(base)
 				refreshBase(base)
 			end
 			refreshCompany(player)
@@ -460,18 +423,6 @@ function KitchenService.start()
 	Players.PlayerRemoving:Connect(function(player)
 		requests[player], busy[player] = nil, nil
 	end)
-	local function watchBase(base: Instance)
-		if base:IsA("Model") then
-			base:GetAttributeChangedSignal("OwnerUserId"):Connect(function()
-				syncBenches(base)
-			end)
-			syncBenches(base)
-		end
-	end
-	CollectionService:GetInstanceAddedSignal(BASE_TAG):Connect(watchBase)
-	for _, base in CollectionService:GetTagged(BASE_TAG) do
-		watchBase(base)
-	end
 	-- Countdowns tick once a second.
 	task.spawn(function()
 		while true do

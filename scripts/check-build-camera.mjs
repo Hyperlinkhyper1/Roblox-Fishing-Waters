@@ -122,6 +122,7 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
         local function render() end
         local function notice(message) error(message) end
         local function drop() held = nil end
+        local function release() held = nil end
         local function choose() end
         local function clickFurniture() error("Expected held rack") end
         local function send(action, itemId, x, z, r)
@@ -262,6 +263,7 @@ local clicks, drops = 0, 0
 local clickPosition = nil
 local function clickWorld(position) clicks += 1; clickPosition = position end
 local function drop() drops += 1 end
+local function release() drop() end
 local function choose() end
 local function enter() active = true end
 local function exit() active = false end
@@ -415,6 +417,9 @@ local StructureEditor = {new = function(options)
 end}
 ${section('\tlocal function freezeCharacter(', '\n\tlocal function controls(')}
 ${section('\tlocal function controls(', '\n\tlocal function updateCamera(')}
+local helpPanel, actions = {Visible = false}, {Visible = false}
+local hoverHighlight, hoverModel = nil, nil
+structures = StructureEditor.new({})
 ${section('\tlocal exit\n', '\n\tfor id, item in itemButtons')}
 active = false
 local originalFrame, originalFocus = CFrame.new(1, 2, 3), CFrame.new(4, 5, 6)

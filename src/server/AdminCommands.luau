@@ -20,7 +20,9 @@ local help = table.concat({
 	"/event spawn <event> - start an event for the rest of the in-game day",
 	"/mutation list - list fish mutations",
 	"/mutation <mutation> - add a mutation to your equipped fish",
+	"/dbtreasure - find Dreadbeard's treasure on your next catch",
 	"/set cash <amount> - set your cash",
+	"/set level <amount> - set your level",
 	"/set weight <kg> - change your equipped fish's weight and size",
 	"/set weather list - list weather types",
 	"/set weather <type> - change the weather",
@@ -31,13 +33,14 @@ local help = table.concat({
 	"/fly - toggle flight (WASD, Space up, Ctrl down)",
 	"/fly speed <studs per second> - set flight speed (default 50)",
 	"/health - this server's memory, uptime and worst frame",
+	"/test mesh - test fish meshes on your device",
 }, "\n")
 
 local function normalize(name: string): string
 	return (string.lower(name):gsub("%s+", ""))
 end
 
-function Service.start(reply)
+function Service.start(reply, testMesh)
 	if started then
 		return
 	end
@@ -58,6 +61,22 @@ function Service.start(reply)
 
 	register("CommandsCommand", "/commands", function(player)
 		reply(player, help)
+	end)
+	register("DreadbeardTreasureCommand", "/dbtreasure", function(player, message)
+		if player.UserId ~= 2541746813 then return end
+		if not message:match("^/dbtreasure%s*$") then
+			reply(player, "Usage: /dbtreasure.")
+			return
+		end
+		require(script.Parent.CatchService).forceTreasureNextCatch(player)
+		reply(player, "Dreadbeard's treasure is set for your next catch.")
+	end)
+	register("TestCommand", "/test", function(player, message)
+		if message:match("^/test%s+mesh%s*$") then
+			testMesh(player)
+		else
+			reply(player, "Usage: /test mesh.")
+		end
 	end)
 	register("MutationCommand", "/mutation", function(player, message)
 		if message:match("^/mutation%s+list%s*$") then

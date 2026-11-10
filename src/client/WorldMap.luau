@@ -254,7 +254,33 @@ function WorldMap.start()
 				center += project(point[1], point[2])
 			end
 			center /= #coast
-			if record.Name == "Modern City" or record.Name == "Pirate Cove" or record:GetAttribute("ChartLabel") then
+			if record.Name == "Pirate Cove" then
+				-- Small island under the Coral Shallows biome label: mark it and label it beside the
+				-- island (to the east, where the chart is empty) so the two names never overlap.
+				local dot = make("Frame", holder, {
+					Name = "Marker",
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(center.X, center.Y),
+					Size = UDim2.fromOffset(7, 7),
+					BackgroundColor3 = ink,
+					BorderSizePixel = 0,
+					ZIndex = 6,
+				})
+				make("UICorner", dot, { CornerRadius = UDim.new(1, 0) })
+				make("UIStroke", dot, { Color = paper, Thickness = 1.5 })
+				local name = label(
+					holder,
+					record.Name,
+					UDim2.fromScale(center.X + 0.014, center.Y - 0.02),
+					UDim2.fromScale(0.16, 0.04),
+					14
+				)
+				name.TextXAlignment = Enum.TextXAlignment.Left
+				name.TextWrapped = false
+				name.ZIndex = 7
+				name.TextStrokeColor3 = paper
+				name.TextStrokeTransparency = 0.4
+			elseif record.Name == "Modern City" or record:GetAttribute("ChartLabel") then
 				label(holder, record:GetAttribute("ChartLabel") or record.Name, UDim2.fromScale(center.X - 0.09, center.Y - 0.06), UDim2.fromScale(0.18, 0.04), 14)
 			end
 			for i, point in coast do

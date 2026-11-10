@@ -135,6 +135,30 @@ check(result.Ok and #result.State.Pieces==2,"Undo restores a wall and its openin
 local saveCount=saves
 result=invoke("Place",{Entries={wall(9,-1,18,-1)}})
 check(not result.Ok and saves==saveCount,"A wall cannot duplicate a surviving original wall")
+-- Original full-height walls convert into custom pieces when moved.
+local moveCash=profile.Cash
+result=invoke("Place",{Entries={{Kind="Window",HostId="b:testwall",Offset=4.5,Material="Wood",Color={246,246,242}}}})
+check(result.Ok,"Windows can be added to an original wall")
+local windowCash=profile.Cash
+builtins["b:testwall"].BaseY=6
+result=invoke("Move",{Id="b:testwall",Entry=wall(9,-3,18,-3)})
+check(not result.Ok and profile.Cash==windowCash,"Partial original wall sections cannot be moved")
+builtins["b:testwall"].BaseY=0.16
+result=invoke("Move",{Id="b:testwall",Entry=wall(9,-3,18,-3)})
+local movedHome=profile.Angler.Building.Home
+local converted=movedHome.Pieces[#movedHome.Pieces]
+check(result.Ok and movedHome.Overrides["b:testwall"] and movedHome.Overrides["b:testwall"].Removed
+ and converted.Kind=="Wall" and converted.Z1==-3 and converted.Id:match("^p%d+$")~=nil,
+ "Moving an original wall hides it and saves an equivalent custom wall")
+check(profile.Cash==windowCash,"Moving an original wall to the same length is free")
+local rehosted=false
+for _,piece in movedHome.Pieces do if piece.Kind=="Window" and piece.HostId==converted.Id then rehosted=true end end
+check(rehosted,"Openings added to an original wall move with it")
+result=invoke("Undo",{})
+local restored=profile.Angler.Building.Home.Overrides["b:testwall"]
+check(result.Ok and not (restored and restored.Removed),"One undo restores the original wall")
+result=invoke("Undo",{})
+check(result.Ok and profile.Cash==moveCash,"Undo removes the added window and refunds it")
 result=invoke("Paint",{Id="b:testwall",Material="Marble",Color={200,201,202}})
 check(result.Ok and profile.Angler.Building.Home.Overrides["b:testwall"].Material=="Marble","Original surfaces persist as overrides")
 result=invoke("Remove",{Id="b:testwall"})

@@ -29,6 +29,21 @@ local started = false
 -- Fish in the world past this range (stocked freezers and shop displays across
 -- the harbour) hold their colours; viewports and held fish always animate.
 local ANIMATE_DISTANCE = 160
+-- A fish in a character's hand or an NPC's arms is part of that Humanoid model, and a
+-- colour change there makes the renderer rebuild the whole character's mesh batch
+-- (FastCluster in the MicroProfiler). Those fish step every HELD_EVERY ticks instead.
+local HELD_EVERY = 4
+
+local function held(model: Model): boolean
+	local holder = model:FindFirstAncestorWhichIsA("Model")
+	while holder do
+		if holder:FindFirstChildOfClass("Humanoid") then
+			return true
+		end
+		holder = holder:FindFirstAncestorWhichIsA("Model")
+	end
+	return false
+end
 
 local function outOfView(list: { BasePart }, eye: Vector3?): boolean
 	local first = list[1]
@@ -120,19 +135,22 @@ function MutationEffects.start()
 		voids[model] = nil
 	end)
 	local elapsed = 0
+	local steps = 0
 	RunService.RenderStepped:Connect(profiled("MutationEffects", function(dt)
 		elapsed += dt
 		if elapsed < STEP_SECONDS then
 			return
 		end
 		elapsed = 0
+		steps += 1
+		local heldStep = steps % HELD_EVERY == 0
 		local shift = os.clock() / CYCLE_SECONDS
 		local camera = workspace.CurrentCamera
 		local eye = camera and camera.CFrame.Position
 		for _, model in CollectionService:GetTagged(FishModels.RAINBOW_TAG) do
 			if model:IsA("Model") and not model:HasTag(FishModels.VOID_TAG) then
 				local list = painted(model)
-				if outOfView(list, eye) then
+				if #list == 0 or outOfView(list, eye) or (not heldStep and held(model)) then
 					continue
 				end
 				for _, item in list do
@@ -146,7 +164,7 @@ function MutationEffects.start()
 		end
   for _, model in CollectionService:GetTagged(FishModels.GLITCH_TAG) do
    local list = if model:IsA("Model") then paintedGlitch(model) else nil
-   if list and not outOfView(list, eye) then
+   if list and #list > 0 and not outOfView(list, eye) and (heldStep or not held(model)) then
     local tick = math.floor(os.clock() * 13)
     for index, item in list do
      local phase = (tick + index * 7) % 11

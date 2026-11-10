@@ -236,12 +236,19 @@ local function clientSample(x, z)
 	return Details.sample(params, x, z), false
 end
 local update, cells = CarpetClient.tracker({ seed = seed, lake = lakeOutline, gardens = gardenPoints }, clientSample, place)
+local function boundedUpdate(position, time)
+	local beforeBuilt, beforeDestroyed, beforeRays = built, destroyed, rays
+	local attempts = update(position, time)
+	check(attempts <= 2 and built - beforeBuilt <= 2, 'A frame must not batch more than two patch probes/clones')
+	check(rays - beforeRays <= 6, 'A frame must not burst through more than two three-position cell probes')
+	check(destroyed - beforeDestroyed <= 2, 'A frame must not remove more than two old patches')
+end
 local camera = Vector3.new(2600, 20, 2600)
 misses['54,54'] = 5
 local now = 0
 for _ = 1, 200 do
 	now += 0.2
-	update(camera, now)
+	boundedUpdate(camera, now)
 end
 local live = 0
 for _, entry in cells do
@@ -254,12 +261,14 @@ check(live > 150 and live < 260, 'The camera gets a full neighbourhood of patche
 local retried = cells[Carpet.key(Carpet.grids()[2], 54, 54)]
 check(retried ~= nil and retried.model ~= nil, 'A cell whose ground streamed in late is built on retry')
 local before = built
-update(camera, now + 1)
+boundedUpdate(camera, now + 1)
 check(built == before, 'A settled neighbourhood builds nothing more')
 camera = Vector3.new(-2600, 20, -2600)
+boundedUpdate(camera, now)
+check(destroyed <= 2, 'Teleport cleanup is spread across frames instead of destroying the whole old neighbourhood')
 for _ = 1, 200 do
 	now += 0.2
-	update(camera, now)
+	boundedUpdate(camera, now)
 end
 check(destroyed >= live, 'Cells left behind are removed')
 local liveAfter = 0
@@ -267,6 +276,55 @@ for _, entry in cells do
 	if entry.model then liveAfter += 1 end
 end
 check(liveAfter < 300, 'The client keeps only the current neighbourhood: ' .. liveAfter)
+
+-- Sustained boating at different frame rates must fill new rows while keeping
+-- departures bounded. These clocks isolate operation limits from runner speed.
+local trackerData = { seed = seed, lake = lakeOutline, gardens = gardenPoints }
+for _, fps in { 30, 60, 144 } do
+	local placed, removed = 0, 0
+	local drive, neighborhood = CarpetClient.tracker(trackerData, clientSample, function()
+		placed += 1
+		return { Destroy = function() removed += 1 end }
+	end, function() return 0 end)
+	local position = Vector3.new(2600, 20, 2600)
+	for frame = 1, fps * 15 do
+		-- Five seconds to fill, then travel at 100 studs/sec for ten seconds.
+		position = Vector3.new(2600 + math.max(0, frame / fps - 5) * 100, 20, 2600)
+		local beforePlaced, beforeRemoved = placed, removed
+		check(drive(position, frame / fps) <= 2, 'Boating probes stay bounded at ' .. fps .. ' FPS')
+		check(placed - beforePlaced <= 2 and removed - beforeRemoved <= 2,
+			'Boating clone/removal work stays bounded at ' .. fps .. ' FPS')
+	end
+	local nearby, stale = 0, 0
+	for _, entry in neighborhood do
+		if entry.model then
+			nearby += 1
+			if math.abs(entry.x - position.X) > entry.keep then stale += 1 end
+		end
+	end
+	check(nearby > 150 and nearby < 350, 'Moving boats keep a full, bounded carpet at ' .. fps .. ' FPS: ' .. nearby)
+	check(stale <= 4, 'Incremental cleanup keeps up with sustained travel at ' .. fps .. ' FPS: ' .. stale)
+	check(removed > 100, 'Sustained travel releases old patches at ' .. fps .. ' FPS')
+end
+
+-- A slow clone or removal can use the entire time allowance by itself. No second
+-- operation follows it in that frame, even though the hard count cap allows two.
+local workClock, slowCopies, slowRemovals = 0, 0, 0
+local slow = CarpetClient.tracker(trackerData, clientSample, function()
+	slowCopies += 1
+	workClock += 0.002
+	return { Destroy = function() slowRemovals += 1; workClock += 0.002 end }
+end, function() return workClock end)
+for frame = 1, 250 do
+	local beforeCopies = slowCopies
+	slow(Vector3.new(2600, 20, 2600), frame / 60)
+	check(slowCopies - beforeCopies <= 1, 'An expensive clone ends this frame\'s carpet work')
+end
+check(slowCopies > 150, 'A constrained device still fills its neighbourhood over time')
+local beforeSlowCopies, beforeSlowRemovals = slowCopies, slowRemovals
+slow(Vector3.new(-2600, 20, -2600), 5)
+check(slowRemovals - beforeSlowRemovals == 1 and slowCopies == beforeSlowCopies,
+	'An expensive teleport removal ends the frame before any clone work')
 
 local beforeRays, beforeCopies, beforeTiles = rays, #copies, #sandTiles
 Details.ensure(root)

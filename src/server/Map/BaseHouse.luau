@@ -7,9 +7,6 @@
 local BaseGrid = require(game:GetService("ReplicatedStorage").Shared.BaseGrid)
 local CollectionService = game:GetService("CollectionService")
 local Props = require(script.Parent.Props)
-local FishFreezer = require(script.Parent.FishFreezer)
-local ShopDesk = require(script.Parent.ShopDesk)
-local OfficeDesk = require(script.Parent.OfficeDesk)
 
 local BaseHouse = {}
 local VERSION = 13
@@ -806,7 +803,8 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 		true
 	)
 	signText(officeSign, Enum.NormalId.Back, "OFFICE")
-	OfficeDesk.ensure(house, frame)
+	-- The desk, the shop's freezer and its till are the owner's furniture
+	-- (FurnitureService, AnglerData.FIXTURES), so build mode can move them.
 
 	-- Recessed windows, divided lights, deep stone sills, and opened shutters.
 	-- Avoid refractive Glass so the sea remains visible through the glazing.
@@ -969,9 +967,7 @@ function BaseHouse.build(parent: Instance, frame: CFrame, accent: Color3, index:
 	-- The structural floor is the queryable reference for the plot, not an invisible blocker.
 	house.PrimaryPart = kitchenFloor
 	repairOverlappingSurfaces(house)
-	local shop = buildShop(house, frame, accent, index)
-	FishFreezer.ensure(shop, frame)
-	ShopDesk.ensure(shop, frame)
+	buildShop(house, frame, accent, index)
 	ensureLights(house, frame)
 	ensureExterior(house, frame, accent)
 	Props.simplifyHouseCollision(house)
@@ -1035,9 +1031,13 @@ function BaseHouse.ensure(base: Model)
 		local shop = existing:FindFirstChild("Shop")
 		local houseFrame = existing:GetAttribute("HouseFrame")
 		if shop and shop:IsA("Model") and typeof(houseFrame) == "CFrame" then
-			FishFreezer.ensure(shop, houseFrame)
-			ShopDesk.ensure(shop, houseFrame)
-			OfficeDesk.ensure(existing, houseFrame)
+			-- Saved maps still hold the old built-in fixtures; they are furniture now.
+			local office = existing:FindFirstChild("Office")
+			for _, fixture in { shop:FindFirstChild("FishFreezer"), shop:FindFirstChild("ShopDesk"), office and office:FindFirstChild("OfficeDesk") } do
+				if fixture then
+					fixture:Destroy()
+				end
+			end
 			ensureLights(existing, houseFrame)
 		end
 		if typeof(houseFrame) == "CFrame" then

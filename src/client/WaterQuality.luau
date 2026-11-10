@@ -3,6 +3,11 @@
 local WaterQuality = {}
 local MIN_LAYERED_QUALITY = 7
 local layered = false
+-- FrameRateGuard can lower PlayerSettings' preset mid-session (GraphicsTier below 3);
+-- the extra layers go with it. Guarded so test fixtures without Players still load.
+local gotPlayer, localPlayer = pcall(function()
+	return game:GetService("Players").LocalPlayer
+end)
 
 local ok, settings = pcall(function()
 	return UserSettings():GetService("UserGameSettings")
@@ -23,6 +28,12 @@ if ok and settings then
 end
 
 function WaterQuality.layeredEnabled(): boolean
+	if layered and gotPlayer and localPlayer then
+		local tier = localPlayer:GetAttribute("GraphicsTier")
+		if type(tier) == "number" and tier < 3 then
+			return false
+		end
+	end
 	return layered
 end
 

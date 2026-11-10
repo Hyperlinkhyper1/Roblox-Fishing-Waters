@@ -30,6 +30,7 @@ local MAX_LINE_LENGTH = 110
 local MAX_FIGHT_SECONDS = 150
 local BITE_SECONDS = Vector2.new(3, 8)
 local casts = {}
+local forcedTreasure = {}
 local charges = {}
 local lastCharge = {}
 local lastRequest = {}
@@ -37,6 +38,22 @@ local random = Random.new()
 local started = false
 local update: RemoteEvent
 local award
+
+function CatchService.forceTreasureNextCatch(player: Player): boolean
+	if not player or player.UserId ~= 2541746813 or player.Parent ~= Players then
+		return false
+	end
+	forcedTreasure[player] = true
+	return true
+end
+
+local function treasureRoll(bait)
+	return {
+		FishId = "DreadbeardsTreasure", Kg = 1, Size = "Normal", Value = 0, Relative = 1,
+		Difficulty = Catalog.Rarities.Secret.Difficulty, Traits = { Mutation = "Normal" },
+		PerfectCatch = false, Bait = bait, Secret = true,
+	}
+end
 
 local function equippedRod(player: Player): (Tool?, BasePart?)
 	local character = player.Character
@@ -173,19 +190,8 @@ local function cast(player: Player, target: any, heldSeconds: any)
 		end
 		-- One cast in a million, in every area. Rolled before the pool and any
 		-- luck bonus, so no rod, bait or mutation can move the odds.
-		if random:NextNumber() < 1 / 1000000 then
-			local secret = {
-				FishId = "DreadbeardsTreasure",
-				Kg = 1,
-				Size = "Normal",
-				Value = 0,
-				Relative = 1,
-				Difficulty = Catalog.Rarities.Secret.Difficulty,
-				Traits = { Mutation = "Normal" },
-				PerfectCatch = false,
-				Bait = state.bait,
-				Secret = true,
-			}
+		if forcedTreasure[player] or random:NextNumber() < 1 / 1000000 then
+			local secret = treasureRoll(state.bait)
 			clear(player)
 			send(player, "SecretReveal", { FishId = secret.FishId })
 			award(player, secret)
@@ -252,6 +258,14 @@ local function settleBait(player: Player, baitId: string?)
 end
 
 award = function(player: Player, roll)
+	local forced = forcedTreasure[player] == true
+	if forced then
+		forcedTreasure[player] = nil
+		if not roll.Secret then
+			roll = treasureRoll(roll.Bait)
+			send(player, "SecretReveal", { FishId = roll.FishId })
+		end
+	end
 	local saved = false
 	local autoStored = false
 	local destination
@@ -285,6 +299,8 @@ award = function(player: Player, roll)
 	})
 	if saved then
 		task.spawn(settleBait, player, roll.Bait)
+	elseif forced and player.Parent == Players then
+		forcedTreasure[player] = true
 	end
 end
 
@@ -362,6 +378,7 @@ function CatchService.start()
 	end)
 	Players.PlayerRemoving:Connect(function(player)
 		clear(player)
+		forcedTreasure[player] = nil
 		lastRequest[player] = nil
 		charges[player] = nil
 		lastCharge[player] = nil

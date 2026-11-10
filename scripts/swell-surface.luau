@@ -191,10 +191,15 @@ for id, local_ in mesh.positions do
 	local inner = math.max(math.abs(offset.X), math.abs(offset.Z)) < 264 - 72
 	if inner then
 		local expected = Weather.heightAt(world, now, state)
-		assert(
-			math.abs(local_.Y - expected) < 0.05 + math.abs(expected) * 0.03,
-			"Open-water sheet must show the boats' exact swell height"
-		)
+		if alpha > 0 then
+			assert(
+				math.abs(local_.Y - expected) < 0.05 + math.abs(expected) * 0.03,
+				"Open-water sheet must show the boats' exact swell height"
+			)
+		else
+			-- Hidden vertices sink well under Terrain water (and its ripples) so they never z-fight it.
+			assert(local_.Y <= math.min(expected, 0) - 1.9, "Hidden sheet must sit well below Terrain water")
+		end
 		matched += 1
 	end
 	if local_.Y > 1 then

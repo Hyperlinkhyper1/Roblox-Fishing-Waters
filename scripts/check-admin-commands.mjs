@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 const read = path => readFile(new URL('../' + path, import.meta.url), 'utf8');
 const passes = await read('src/shared/Gamepasses.luau');
 const mutations = await read('src/shared/FishMutations.luau');
+const adminSource = await read('src/shared/Admin.luau');
 const cargoSource = await read('src/server/CargoService.luau');
 const cargoIdentity = cargoSource.slice(cargoSource.indexOf('local function fishKey('), cargoSource.indexOf('local function buildFishTool('));
 const cargoMutation = cargoSource.slice(cargoSource.indexOf('function CargoService.addHeldMutation('), cargoSource.indexOf('\nfunction CargoService.push('));
@@ -14,14 +15,17 @@ if (!cargoIdentity.includes('function CargoService.isCarrying') || !cargoMutatio
   throw new Error('Could not locate the production cargo mutation functions');
 }
 const ownership = (await read('src/server/GamepassService.luau'))
-  .replace('require(game:GetService("ReplicatedStorage").Shared.Gamepasses)', 'Passes');
+  .replace('require(game:GetService("ReplicatedStorage").Shared.Gamepasses)', 'Passes')
+  .replace('require(game:GetService("ReplicatedStorage").Shared.Admin)', 'Admin');
 const commands = (await read('src/server/AdminCommands.luau'))
   .replace('require(ReplicatedStorage.Shared.Gamepasses)', 'Passes')
   .replace('require(ReplicatedStorage.Shared.Calendar)', 'Calendar')
   .replace('require(ReplicatedStorage.Shared.DayNight)', 'DayNight')
   .replace('require(ReplicatedStorage.Shared.FishMutations)', 'FishMutations')
+  .replace('require(ReplicatedStorage.Shared.Admin)', 'Admin')
   .replace('require(script.Parent.GamepassService)', 'Ownership')
   .replace('require(script.Parent.CargoService)', 'Cargo')
+  .replace('require(script.Parent.CatchService)', 'CatchService')
   .replace('require(script.Parent.ScaleModels)', 'ScaleModels');
 const program = `
 local checks = 0
@@ -87,8 +91,11 @@ local Instance = { new = function(kind)
 end }
 local Passes = (function() ${passes} end)()
 local FishMutations = (function() ${mutations} end)()
+local Admin = (function() ${adminSource} end)()
 local Calendar, DayNight = {}, {}
 local mutationsApplied = {}
+local treasureRequests = {}
+local CatchService = { forceTreasureNextCatch = function(who) table.insert(treasureRequests, who) return true end }
 local Cargo = { addHeldMutation = function(who, key)
  table.insert(mutationsApplied, {who, key})
  return true, "Mutation applied."
@@ -96,11 +103,12 @@ end }
 local Ownership = (function() ${ownership} end)()
 Ownership.start()
 local notices = {}
+local meshTests = {}
 local Commands = (function() ${commands} end)()
-Commands.start(function(who, message) table.insert(notices, {who, message}) end)
+Commands.start(function(who, message) table.insert(notices, {who, message}) end, function(who) table.insert(meshTests, who) end)
 Commands.start(function() error("Duplicate registration") end)
-check(#chat.commands == 6, "Repeated startup registers each command only once")
-local help, gamepass, teleport, fly, mutation
+check(#chat.commands == 9, "Repeated startup registers each command only once")
+local help, gamepass, teleport, fly, mutation, testMesh, treasure
 for _, command in chat.commands do
  check(command.Parent == chat and command.AutocompleteVisible == false, "Commands are registered and hidden from public autocomplete")
  if command.PrimaryAlias == "/commands" then help = command end
@@ -108,9 +116,24 @@ for _, command in chat.commands do
  if command.PrimaryAlias == "/tp" then teleport = command end
  if command.PrimaryAlias == "/fly" then fly = command end
  if command.PrimaryAlias == "/mutation" then mutation = command end
+ if command.PrimaryAlias == "/test" then testMesh = command end
+ if command.PrimaryAlias == "/dbtreasure" then treasure = command end
 end
-check(help and gamepass and teleport and fly and mutation, "All requested aliases exist")
+check(help and gamepass and teleport and fly and mutation and testMesh and treasure, "All requested aliases exist")
 local function send(command, who, message) command.Triggered:Fire({UserId = who.UserId}, message) end
+send(treasure, other, "/dbtreasure")
+send(treasure, admin, "/dbtreasure extra")
+check(#treasureRequests == 0, "Only valid authorized treasure commands are accepted")
+send(treasure, admin, "/DBTREASURE ")
+check(#treasureRequests == 1 and treasureRequests[1] == admin, "The treasure command targets the authorized player")
+notices = {}
+send(testMesh, other, "/test mesh")
+check(#meshTests == 0, "Only the admin can trigger a mesh test")
+send(testMesh, admin, "/test wrong")
+check(#meshTests == 0 and notices[#notices][2]:find("Usage"), "Invalid test requests show usage")
+send(testMesh, admin, "/test mesh")
+check(#meshTests == 1 and meshTests[1] == admin, "Mesh test is sent only to the authorized admin")
+notices = {}
 send(mutation, other, "/mutation Neon")
 send(mutation, other, "/mutation list")
 check(#mutationsApplied == 0 and #notices == 0, "Only the authorized user can use mutation commands")

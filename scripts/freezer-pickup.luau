@@ -94,7 +94,7 @@ local function check(ok, message)
 	checks += 1
 	assert(ok, message)
 end
-local shop = { freezerPrompt = { Parent = { Parent = {} } } }
+local shop = { model = {} }
 local customer = { record = record, model = {
 	FindFirstChild = function()
 		return true

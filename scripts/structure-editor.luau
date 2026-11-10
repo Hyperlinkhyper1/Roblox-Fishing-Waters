@@ -252,48 +252,48 @@ local function textButton(text)
 	error("No button reading " .. text)
 end
 editor:enter(house, identity, nil)
-check(not editor:isActive(), "Entry must start on the furniture tab")
+check(editor:section() == "Furniture" and editor:tool() == "Select" and editor:isActive(),
+	"Entry must start on the furniture tab with the shared Select tool")
 check(calls[#calls].Action == "Get", "Entering must fetch current authoritative state")
-byName("BuildTab").Activated:Fire()
-check(editor:isActive() and modeChanges[#modeChanges] == true, "Structure tab must enable its controller")
 local function blue(item)
 	return item.BackgroundColor3.B > item.BackgroundColor3.R and item.TextColor3.R > 0.95
 end
-check(blue(byName("BuildTab")), "The selected Build category must have a blue tab and white caption")
-local toolbox = byName("StructureTools")
+check(blue(byName("FurnitureTab")) and blue(byName("ToolSelect")), "Entry must highlight the Furniture tab and Select tool")
+editor:suspend()
+check(not editor:isActive() and editor:tool() == nil and modeChanges[#modeChanges] == false,
+	"Holding furniture must pause the structure tools")
+editor:resume()
+check(editor:isActive() and editor:tool() == "Select", "Dropping furniture must restore Select")
+byName("TabWall").Activated:Fire()
+check(editor:isActive() and modeChanges[#modeChanges] == true, "Structure tab must enable its controller")
+check(blue(byName("TabWall")), "The selected Walls category must have a blue tab and white caption")
+local toolbox = byName("BuildDock")
 check(toolbox.AnchorPoint.Y == 1 and toolbox.Position[3] == 1,
-	"The category toolbox must remain anchored to the bottom of the screen")
+	"The dock must remain anchored to the bottom of the screen")
 check(toolbox.BackgroundColor3.R < 0.2 and toolbox.BackgroundColor3.G < 0.2 and toolbox.BackgroundColor3.B < 0.2,
-	"The build toolbox must use the restored near-black theme")
+	"The build dock must use the near-black theme")
 byName("DecorateTab").Activated:Fire()
-check(editor:isActive() and blue(byName("DecorateTab")) and not blue(byName("BuildTab")),
-	"Decorate must own its tab selection while retaining structural input")
-check(blue(byName("ToolPaint")), "Decorate must activate the paint utility")
+check(editor:isActive() and blue(byName("DecorateTab")) and not blue(byName("TabWall")),
+	"Paint must own its tab selection while retaining structural input")
+check(blue(byName("ToolPaint")), "The Paint tab must activate the paint tool")
 check(visible(byName("PaintAllWalls")) and byName("PaintAllWalls").Active,
-	"Decorate must offer painting all walls without selecting one first")
+	"Paint must offer painting all walls without selecting one first")
 check(byName("ToolSelect").Parent == byName("EditingTools") and visible(byName("ToolSelect"))
 	and visible(byName("ToolPaint")) and visible(byName("ToolRemove")),
-	"Decorate must keep its three primary editing tools together and visible")
-for _, text in { "Move", "Reshape", "Apply finish" } do
-	check(not visible(textButton(text)), "Unselected painting must hide unrelated object actions: " .. text)
-end
-check(not visible(textButton("Grid: 4.5 [G]")), "Painting must hide construction grid controls")
-check(visible(textButton("Undo")) and visible(textButton("Redo"))
-	and textButton("Undo").Parent == toolbox and textButton("Redo").Parent == toolbox,
-	"History controls must remain in the compact header instead of the crowded action strip")
-check(not byName("BuildStatus").Text:find("Click", 1, true),
-	"Decorate must keep its status header concise without repeated paint instructions")
-for _, item in instances do
-	if item:IsA("TextLabel") and type(item.Text) == "string" and item.Text:find("SURFACE FINISHES", 1, true) then
-		check(not visible(item), "The duplicated surface-finishes help row must be removed or hidden")
-	end
-end
-byName("BuildTab").Activated:Fire()
-check(blue(byName("ToolWall")), "Build must restore its latest construction category")
-check(not visible(byName("PaintAllWalls")), "Paint all walls belongs with the Decorate finishes")
+	"The three primary editing tools must stay together and visible in the dock")
+check(not visible(byName("ConstructionActions")), "Painting without a selection must not show floating object actions")
+check(not visible(byName("GridSize")), "Painting must hide construction grid controls")
+check(visible(byName("UndoBuilding")) and visible(byName("RedoBuilding"))
+	and byName("UndoBuilding").Parent == byName("EditingTools"),
+	"History controls must sit with the editing tools")
+byName("TabWall").Activated:Fire()
+check(blue(byName("TabWall")), "Walls must restore its construction category")
+check(not visible(byName("PaintAllWalls")), "Paint all walls belongs with the Paint finishes")
 check(not visible(byName('SurfaceMaterials')) and not visible(byName('SurfaceColors')),
 	'Construction catalogues must replace the paint palettes rather than crowd the same rows')
-byName('ToolWindow').Activated:Fire()
+check(visible(byName("ConstructionActions")) and visible(byName("RotateStructure")),
+	"Placing must show a compact rotate pill above the dock")
+byName('TabWindow').Activated:Fire()
 for _,variant in Catalog.Variants.Window do
 	local card=byName('VariantWindow'..variant.Id)
 	local thumbnail=card:FindFirstChild('CatalogueThumbnail')
@@ -304,16 +304,13 @@ check(not visible(byName('VariantRoofFlat')),'A window catalogue must not includ
 byName('VariantWindowTall').Activated:Fire()
 check(blue(byName('VariantWindowTall')),'A catalogue card must select its own shape')
 byName('VariantWindowClassic').Activated:Fire()
-byName('ToolWall').Activated:Fire()
-for _, name in { "ToolWall", "ToolRoom", "ToolDoor", "ToolWindow", "ToolFloor", "ToolRoof" } do
-	check(byName(name).Parent == byName("ConstructionTools"), "Construction categories must stay together in their tab row")
+byName('TabWall').Activated:Fire()
+for _, name in { "TabWall", "TabRoom", "TabDoor", "TabWindow", "TabFloor", "TabRoof", "FurnitureTab", "DecorateTab" } do
+	check(byName(name).Parent == byName("BuildSections"), "Categories must stay together in one tab row")
 end
 local hasStairs=false
-for _,item in instances do if item.Name=='ToolStairs' then hasStairs=true end end
+for _,item in instances do if item.Name=='ToolStairs' or item.Name=='TabStairs' then hasStairs=true end end
 check(not hasStairs,'Stairs must no longer appear as a construction tool')
-for _, name in { "ToolSelect", "ToolPaint", "ToolRemove" } do
-	check(byName(name).Parent == byName("ConstructionActions"), "Editing utilities must stay separate from building categories")
-end
 check(editor:gridSize() == Catalog.GRID, "Structural grid must expose its initial spacing to BuildMode")
 local previousModeChanges = #modeChanges
 editor:key({ KeyCode = Enum.KeyCode.G })
@@ -332,37 +329,52 @@ check(calls[#calls].Action == "Place" and #calls[#calls].Payload.Entries == 1, "
 check(calls[#calls].Payload.Entries[1].X1 == 2.25 and calls[#calls].Payload.Entries[1].X2 == 11.25, "Wall endpoints must follow the displayed half-cell grid")
 local beforeUI = #calls
 editor:click(Vector2.new(50, 850))
-check(#calls == beforeUI, "Clicking the toolbox must never submit world construction")
+check(#calls == beforeUI, "Clicking the dock must never submit world construction")
 byName("ToolSelect").Activated:Fire()
 rayHit = { Instance = pieceInstances.p1, Position = Vector3.new(6.75, 4, 2.25) }
 editor:click(Vector2.new(6.75, 2.25))
-check(visible(textButton("Move")) and visible(textButton("Reshape")) and visible(textButton("Apply finish")),
-	"Selecting a custom structure must expose its relevant object actions")
+check(visible(textButton("Move")) and visible(textButton("Reshape")) and visible(textButton("Apply finish"))
+	and visible(textButton("Delete")),
+	"Selecting a custom structure must float its object actions")
 pressText("Move")
 editor:click(Vector2.new(6.75, 11.25))
 check(calls[#calls].Action == "Move" and calls[#calls].Payload.Id == "p1", "Selecting and moving must preserve the custom ID")
 check(calls[#calls].Payload.Entry.Z1 == 11.25 and calls[#calls].Payload.Entry.Z2 == 11.25, "Move must translate both endpoints to the new grid line")
+check(editor:tool() == "Select", "Finishing a move must return to Select")
+rayHit = { Instance = pieceInstances.p1, Position = Vector3.new(6.75, 4, 11.25) }
+editor:click(Vector2.new(6.75, 11.25))
 pressText("Reshape")
 editor:click(Vector2.new(2.25, 11.25))
 editor:click(Vector2.new(15.75, 11.25))
 check(calls[#calls].Action == "Move" and calls[#calls].Payload.Entry.X2 == 15.75, "Reshape must replace geometry through the authoritative Move action")
+-- Original full-height walls can be moved like your own; the server converts them.
+byName("ToolSelect").Activated:Fire()
+rayHit = { Instance = wall, Position = Vector3.new(2.25, 4, -20.25) }
+editor:click(Vector2.new(2.25, -20.25))
+check(visible(textButton("Move")) and visible(textButton("Reshape")), "Original full-height walls must offer Move and Reshape")
+check(byName("SelectionName").Text:find("Original", 1, true), "The action bar must say the selection is an original piece")
+pressText("Move")
 rayHit = nil
-byName("ToolRoom").Activated:Fire()
+editor:click(Vector2.new(2.25, -15.75))
+check(calls[#calls].Action == "Move" and calls[#calls].Payload.Id == "b:fixture"
+	and calls[#calls].Payload.Entry.Z1 == -15.75 and calls[#calls].Payload.Entry.Z2 == -15.75,
+	"Moving an original wall must submit its stable ID and the new line")
+byName("TabRoom").Activated:Fire()
 editor:click(Vector2.new(-15.75, -6.75))
 editor:click(Vector2.new(-6.75, 2.25))
 check(calls[#calls].Action == "Place" and #calls[#calls].Payload.Entries == 5, "Room tool must submit four walls and a floor atomically")
-byName("ToolRoof").Activated:Fire()
+byName("TabRoof").Activated:Fire()
 check(editor:roofVisible(), "Roof tool must show roof surfaces")
 byName("VariantRoofFlat").Activated:Fire()
 editor:key({ KeyCode = Enum.KeyCode.R })
 editor:key({ KeyCode = Enum.KeyCode.PageUp })
 check(editor:elevation() == 12, "PageUp must raise the working level and camera focus")
-byName("ToolWindow").Activated:Fire()
+byName("TabWindow").Activated:Fire()
 rayHit = { Instance = wall, Position = Vector3.new(2.25, 4, -20.25) }
 local beforeLowerWall = #calls
 editor:click(Vector2.new(2.25, -20.25))
 check(#calls == beforeLowerWall, "An upper-floor opening must never attach to a lower-floor wall")
-byName("ToolRoof").Activated:Fire()
+byName("TabRoof").Activated:Fire()
 rayHit = nil
 editor:click(Vector2.new(2.25, -15.75))
 editor:click(Vector2.new(11.25, -6.75))
@@ -371,7 +383,7 @@ check(calls[#calls].Payload.Entries[1].Kind == "Roof" and calls[#calls].Payload.
 	"R must rotate independently of the catalogue roof style, and both must reach the server")
 editor:key({ KeyCode = Enum.KeyCode.PageDown })
 byName("ToolPaint").Activated:Fire()
-check(not visible(textButton("Move")) and not visible(textButton("Reshape")) and not visible(textButton("Apply finish")),
+check(not visible(byName("ConstructionActions")),
 	"Painting must hide object actions even when a previous selection still exists")
 byName("CustomHexColor").Text = "#123ABC"
 pressText("Set color")
@@ -380,7 +392,7 @@ editor:click(Vector2.new(2.25, -20))
 check(calls[#calls].Action == "PaintBatch" and calls[#calls].Payload.Entries[1].Id == "b:fixture", "Paint must target the stable structural ID through the batched writer")
 local sentFinish=calls[#calls].Payload.Entries[1]
 check(sentFinish.Color[1] == 18 and sentFinish.Color[2] == 58 and sentFinish.Color[3] == 188, "Custom hex color must submit exact RGB bytes")
-byName("ToolWindow").Activated:Fire()
+byName("TabWindow").Activated:Fire()
 editor:step(Vector2.new(2.25,-20))
 check(wall.LocalTransparencyModifier==1,'An opening preview must temporarily hide its uncut host so the proposed window is visible')
 editor:key({KeyCode=Enum.KeyCode.X})
@@ -388,33 +400,35 @@ check((wall.LocalTransparencyModifier or 0)==0,'Cancelling an opening preview mu
 editor:click(Vector2.new(2.25, -20))
 check(calls[#calls].Action == "Place" and calls[#calls].Payload.Entries[1].HostId == "b:fixture", "Window must attach to the pointed wall")
 check(calls[#calls].Payload.Entries[1].Offset > 0, "Opening offset must be a stud distance along its host")
+editor:block(true)
+local beforeBlocked = #calls
+editor:click(Vector2.new(2.25, -20))
+check(#calls == beforeBlocked, "Structures must ignore clicks while BuildMode reports furniture under the pointer")
+editor:block(false)
 byName("ToolRemove").Activated:Fire()
 editor:click(Vector2.new(2.25, -20))
 check(calls[#calls].Action == "Remove", "Remove tool must submit the selected structural ID")
-byName("ToolWall").Activated:Fire()
+byName("TabWall").Activated:Fire()
 rayHit = nil
 editor:step(Vector2.new(-6.75, -20.25))
 check(previewCalls[#previewCalls].Valid and previewCalls[#previewCalls].Builtins["b:fixture"] == nil,
 	"Removed built-in walls must stop blocking their replacement preview")
-pressText("Undo")
+byName("UndoBuilding").Activated:Fire()
 check(calls[#calls].Action == "Undo", "Undo must be authoritative")
 serverState.CanRedo = true
 update.OnClientEvent:Fire("State", deep(serverState), "Home")
-pressText("Redo")
+byName("RedoBuilding").Activated:Fire()
 check(calls[#calls].Action == "Redo", "Redo must be authoritative")
-pressText("Furniture")
-check(not editor:isActive() and modeChanges[#modeChanges] == false, "Furniture tab must release structural input")
-byName("BuildTab").Activated:Fire()
-pressText("Done [B]")
-check(exits == 1, "Done must invoke BuildMode's exit callback")
+byName("FurnitureTab").Activated:Fire()
+check(editor:section() == "Furniture" and editor:tool() == "Select", "Furniture tab must return to the shared Select tool")
+byName("TabWall").Activated:Fire()
 editor:exit()
 check(not editor:isActive() and not editor:roofVisible(), "Exit must clear structural mode and roof ownership")
 local afterExit = #calls
 editor:click(Vector2.new(2.25, 2.25))
 check(#calls == afterExit, "Inactive structural tools must never submit changes")
 editor:enter(house, identity, "Company")
-byName("BuildTab").Activated:Fire()
-byName("ToolWall").Activated:Fire()
+byName("TabWall").Activated:Fire()
 rayHit = nil
 editor:click(Vector2.new(0, 0))
 editor:click(Vector2.new(9, 0))
@@ -486,7 +500,7 @@ check(rapidParts[2].Color==Color3.fromRGB(34,68,102) and #notices>0,
 local beforeUndo=#calls
 local drainWait=#waitingPaint+1
 rapidClick(1,'#556677')
-pressText('Undo')
+byName('UndoBuilding').Activated:Fire()
 check(calls[#calls].Action=='PaintBatch','Undo must wait behind an unsaved paint stroke')
 acknowledgePaint(drainWait)
 check(calls[#calls].Action=='Undo' and #calls==beforeUndo+2,
@@ -547,8 +561,7 @@ for _, where in { "Home", "Company" } do
 	for index, spacing in { Catalog.GRID, Catalog.GRID / 2, Catalog.GRID / 4 } do
 		serverState.Pieces, serverState.Builtins, serverState.Overrides = {}, {}, {}
 		editor:enter(house, rotated, perspectiveSite)
-		byName("BuildTab").Activated:Fire()
-		byName("ToolWall").Activated:Fire()
+		byName("TabWall").Activated:Fire()
 		while math.abs(editor:gridSize() - spacing) > 0.001 do editor:key({ KeyCode = Enum.KeyCode.G }) end
 		local offset = Catalog.gridOffset(perspectiveSite)
 		local first, last, z = offset + spacing * 2, offset + spacing * 5, offset - spacing * 2

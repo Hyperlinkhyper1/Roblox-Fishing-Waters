@@ -347,13 +347,35 @@ local function change(profile, site, action, payload, builtins, record)
 	elseif action == "Move" then
 		if not validId(payload.Id) then return nil, "Select a building piece first." end
 		local custom, index = find(data.Pieces, payload.Id)
-		if not custom then return nil, "Existing house surfaces can be painted or removed. Move pieces you built yourself." end
 		local entry, problem = Building.normalize(payload.Entry)
 		if not entry then return nil, problem or "Invalid building position." end
-		if entry.Kind ~= custom.Kind then return nil, "Choose the same building category when moving a piece." end
-		entry.Id = custom.Id
-		data.Pieces[index] = entry
-		cost = math.max(0, Building.price(entry) - Building.price(custom))
+		if custom then
+			if entry.Kind ~= custom.Kind then return nil, "Choose the same building category when moving a piece." end
+			entry.Id = custom.Id
+			data.Pieces[index] = entry
+			cost = math.max(0, Building.price(entry) - Building.price(custom))
+		else
+			-- Original full-height walls become your own piece: the original is hidden
+			-- and an equivalent custom wall takes its new position, as one undoable edit.
+			local original = availableBuiltins(builtins, data)[payload.Id]
+			if not original then return nil, "That building piece is no longer there." end
+			if not Building.movableOriginal(original) then
+				return nil, "This original part can be painted or removed. Full-height walls can also be moved."
+			end
+			if entry.Kind ~= original.Kind then return nil, "Choose the same building category when moving a piece." end
+			if data.NextId + 1 >= 1000000000 then return nil, "This plot has reached its lifetime building limit." end
+			entry.Id = "p" .. tostring(data.NextId)
+			data.NextId += 1
+			local override = data.Overrides[payload.Id] or {}
+			override.Removed = true
+			data.Overrides[payload.Id] = override
+			-- Doors and windows you added to the original wall move with it.
+			for _, piece in data.Pieces do
+				if piece.HostId == payload.Id then piece.HostId = entry.Id end
+			end
+			table.insert(data.Pieces, entry)
+			cost = math.max(0, Building.price(entry) - Building.price(original))
+		end
 	else
 		return nil, "That building tool is unavailable."
 	end

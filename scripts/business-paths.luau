@@ -82,7 +82,7 @@ check(Furniture.locked("Freezer", nil) == nil, "Base furniture is never locked")
 check(Furniture.check({}, "GrillStation", -13.5, -9, 0) == nil, "A station fits in the processing room")
 check(Furniture.check({}, "DiningTable", -13.5, -22.5, 0) == nil, "A table fits in the dining room")
 check(Furniture.check({}, "DiningTable", 9, 9, 0) ~= nil, "Tables stay in the dining room")
-check(Furniture.check({}, "GrillStation", -18, -9, 1) ~= nil, "Built-in benches stay clear")
+check(Furniture.check(Data.decode(market).Furniture, "GrillStation", -22.5, -9, 1) ~= nil, "The Supermarket's prep benches are placed furniture")
 
 -- Cooking: the carried fish becomes a saved kitchen job, then a dish on the pass.
 local cook = Data.decode(placedCase)

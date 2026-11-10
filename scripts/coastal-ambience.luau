@@ -63,16 +63,13 @@ local roof = false
 local rays = 0
 function workspace:Raycast(origin, direction, params)
 	rays += 1
+	assert(params.FilterType == Enum.RaycastFilterType.Exclude and table.find(params.FilterDescendantsInstances, self.Terrain),
+		"Ambience rays must exclude Terrain to avoid building collision while travelling")
 	if direction.Y > 0 then
 		assert(params.IgnoreWater and params.RespectCanCollide, "Only solid roofs should shelter ambience")
 		return if roof then {} else nil
 	end
-	assert(params.FilterType == Enum.RaycastFilterType.Include, "Coast probes must ignore docks, hulls and characters")
-	assert(params.FilterDescendantsInstances[1] == self.Terrain and not params.IgnoreWater, "Probe real Terrain water")
-	if origin.X > shoreX then
-		return { Material = Enum.Material.Sand, Position = Vector3.new(origin.X, 3, origin.Z) }
-	end
-	return { Material = Enum.Material.Water, Position = Vector3.new(origin.X, 0, origin.Z) }
+	error("Coast must be sampled from voxels")
 end
 local players = { PlayerAdded = signal(), PlayerRemoving = signal() }
 function players:GetPlayers()
@@ -126,6 +123,19 @@ dependencies.Weather = {
 		return lake
 	end,
 }
+local function materialAt(x, y, z)
+	if x > shoreX and y < 4 then
+		return Enum.Material.Sand, if y == 0 then 0.75 else 1
+	end
+	return if y < 0 then Enum.Material.Water else Enum.Material.Air, if y < 0 then 1 else 0
+end
+-- AUDIO_TERRAIN --
+local material, height = dependencies.TerrainProbe.surfaceAt(0, 0, -60, 60)
+assert(material == Enum.Material.Water and height == 0, "Water voxels reach the calm waterline")
+shoreX = -20
+material, height = dependencies.TerrainProbe.surfaceAt(0, 0, -60, 60)
+assert(material == Enum.Material.Sand and height == 3, "Partial solid voxels preserve beach height")
+shoreX = math.huge
 local Client = (function()
 	-- CLIENT --
 end)()
@@ -224,8 +234,26 @@ assert(sea.Volume < 0.01 and hull.Volume < 0.01 and surf.Volume < 0.01, "Diving 
 -- Sampling stays bounded.
 move(0, 8, 0)
 local before = rays
+local voxelsBefore = voxelReads
 step(1)
-assert(rays - before <= 2 * 18, "Coast sampling must stay bounded instead of raycasting every frame")
+assert(rays - before <= 2 and voxelReads - voxelsBefore <= 2 * 18,
+	"Coast sampling only casts part-only roof rays and bounded voxel probes")
+step(8)
+local exposedSurf = surf.Volume
+terrainRoof = true
+step(8)
+assert(surf.Volume < exposedSurf * 0.45, "Terrain cave roofs still muffle the coast")
+terrainRoof = false
+terrainMissing = true
+step(8)
+assert(sea.Volume < 0.01 and surf.Volume < 0.01, "Unstreamed air must not produce shore sounds")
+terrainMissing = false
+voxelFailure = true
+step(8)
+assert(sea.Volume < 0.01 and surf.Volume < 0.01, "Failed terrain reads must not invent a shoreline")
+voxelFailure = false
+step(8)
+assert(surf.Volume > 0.2, "Shore sounds recover after terrain becomes available")
 
 -- A missing camera fades everything out.
 workspace.CurrentCamera = nil

@@ -32,9 +32,12 @@ local RADIUS = 320
 local LAKE_RADIUS = 208
 -- Cells are only removed this far past their grid's radius, so a camera on a cell edge doesn't churn.
 local KEEP_MARGIN = 96
-local STEP_SECONDS = 0.2
--- Raycasts and clones per step; a full ring of new cells builds within a second or two.
-local CELLS_PER_STEP = 24
+-- Spread the old 24-patch / 0.2 s batch across frames. Cloning, scaling and parenting
+-- a patch can touch dozens of parts; both arrivals and departures need a hard cap.
+local CELLS_PER_FRAME = 2
+local REMOVALS_PER_FRAME = 2
+local SCANS_PER_FRAME = 64
+local FRAME_BUDGET = 0.001
 -- Ground that hasn't streamed in yet: try again a few times.
 local RETRY_SECONDS = 2
 local MAX_TRIES = 8
@@ -50,7 +53,9 @@ end
 -- Pure stepping logic, separate from the Roblox loop so the checks can drive it.
 -- `sample(x, z)` follows Rules.plan; `place(styleId, template, frame, scale)` returns
 -- the built model. Returns `update(position, now)` and the live cell table.
-function SeabedCarpet.tracker(data, sample, place)
+-- The optional clock lets the checks simulate expensive probes/clones.
+function SeabedCarpet.tracker(data, sample, place, clock)
+	clock = clock or os.clock
 	local grids = Rules.grids()
 	local taken = {}
 	for _, grid in grids do
@@ -59,55 +64,84 @@ function SeabedCarpet.tracker(data, sample, place)
 	local inLake = Rules.lakeTest(data.lake)
 	-- [key] = { model = Model?, x, z, keep, tries, retryAt }
 	local cells: { [number]: any } = {}
+	local entries = {}
+	local cleanupCursor, candidateCursor = 1, 0
+	local ranges = {}
 
 	local function update(position: Vector3, now: number): number
+		local deadline = clock() + FRAME_BUDGET
 		local built = 0
-		-- Drop cells that fell well behind.
-		for key, entry in cells do
+		-- A teleport used to destroy the entire old neighbourhood in one frame.
+		-- A dense list lets cleanup resume without rescanning its settled prefix.
+		local scanned, removed = 0, 0
+		local cleanupCount = math.min(SCANS_PER_FRAME, #entries)
+		while scanned < cleanupCount and removed < REMOVALS_PER_FRAME and clock() < deadline do
+			if cleanupCursor > #entries then
+				cleanupCursor = 1
+			end
+			local entry = entries[cleanupCursor]
+			scanned += 1
 			if math.max(math.abs(entry.x - position.X), math.abs(entry.z - position.Z)) > entry.keep then
 				if entry.model then
 					entry.model:Destroy()
 				end
-				cells[key] = nil
+				cells[entry.key] = nil
+				entries[cleanupCursor] = entries[#entries]
+				entries[#entries] = nil
+				removed += 1
+			else
+				cleanupCursor += 1
 			end
 		end
-		for _, grid in grids do
-			local half = grid.cell / 2
+		local total = 0
+		for index, grid in grids do
 			local radius = if grid.lake then LAKE_RADIUS else RADIUS
 			local x0, x1, z0, z1 = Rules.range(grid, position.X, position.Z, radius)
-			for cx = x0, x1 do
-				for cz = z0, z1 do
-					if built >= CELLS_PER_STEP then
-						return built
-					end
-					local key = Rules.key(grid, cx, cz)
-					local entry = cells[key]
-					if
-						taken[grid.id][key]
-						or (entry and (entry.model or entry.tries >= MAX_TRIES or now < entry.retryAt))
-					then
-						continue
-					end
-					if not entry then
-						entry = {
-							x = cx * grid.cell + half,
-							z = cz * grid.cell + half,
-							keep = radius + KEEP_MARGIN,
-							tries = 0,
-							retryAt = 0,
-						}
-						cells[key] = entry
-					end
-					built += 1
-					local hit, rng, retry = Rules.plan(grid, cx, cz, data.seed, inLake, sample)
-					if hit and rng then
-						local frame, template, scale = Rules.frame(hit, rng)
-						entry.model = place(Rules.style(hit.Position), template, frame, scale)
-					else
-						entry.tries = if retry then entry.tries + 1 else MAX_TRIES
-						entry.retryAt = now + RETRY_SECONDS
-					end
-				end
+			local columns = math.max(0, z1 - z0 + 1)
+			local count = math.max(0, x1 - x0 + 1) * columns
+			ranges[index] = { x = x0, z = z0, columns = columns, count = count, radius = radius }
+			total += count
+		end
+		-- The cursor survives frames and camera movement. Limiting scans as well as
+		-- probes prevents a mostly settled lake grid from consuming a frame on foot.
+		for _ = 1, math.min(SCANS_PER_FRAME, total) do
+			if built >= CELLS_PER_FRAME or clock() >= deadline then
+				break
+			end
+			candidateCursor = candidateCursor % total + 1
+			local offset = candidateCursor - 1
+			local gridIndex = 1
+			while offset >= ranges[gridIndex].count do
+				offset -= ranges[gridIndex].count
+				gridIndex += 1
+			end
+			local grid, range = grids[gridIndex], ranges[gridIndex]
+			local cx, cz = range.x + offset // range.columns, range.z + offset % range.columns
+			local key = Rules.key(grid, cx, cz)
+			local entry = cells[key]
+			if taken[grid.id][key] or (entry and (entry.model or entry.tries >= MAX_TRIES or now < entry.retryAt)) then
+				continue
+			end
+			if not entry then
+				entry = {
+					key = key,
+					x = cx * grid.cell + grid.cell / 2,
+					z = cz * grid.cell + grid.cell / 2,
+					keep = range.radius + KEEP_MARGIN,
+					tries = 0,
+					retryAt = 0,
+				}
+				cells[key] = entry
+				table.insert(entries, entry)
+			end
+			built += 1
+			local hit, rng, retry = Rules.plan(grid, cx, cz, data.seed, inLake, sample)
+			if hit and rng then
+				local frame, template, scale = Rules.frame(hit, rng)
+				entry.model = place(Rules.style(hit.Position), template, frame, scale)
+			else
+				entry.tries = if retry then entry.tries + 1 else MAX_TRIES
+				entry.retryAt = now + RETRY_SECONDS
 			end
 		end
 		return built
@@ -187,13 +221,7 @@ function SeabedCarpet.start()
 		lake = Rules.decode(lake.Value),
 		gardens = Rules.decode(gardens.Value),
 	}, sample, place)
-	local elapsed = STEP_SECONDS
-	RunService.Heartbeat:Connect(profiled("SeabedCarpet", function(dt)
-		elapsed += dt
-		if elapsed < STEP_SECONDS then
-			return
-		end
-		elapsed = 0
+	RunService.Heartbeat:Connect(profiled("SeabedCarpet", function()
 		local camera = workspace.CurrentCamera
 		if camera then
 			update(camera.CFrame.Position, os.clock())

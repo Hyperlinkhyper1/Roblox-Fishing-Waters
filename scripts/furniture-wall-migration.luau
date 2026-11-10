@@ -23,7 +23,8 @@ assert(Furniture.intersectsGridWall(old.Furniture[2]), 'Expected dining wall con
 assert(Furniture.intersectsGridWall(old.Furniture[3]), 'Expected dining entrance conflict')
 assert(Furniture.intersectsGridWall(old.Furniture[7]), 'Expected enclosed office conflict')
 local data = Data.decode(old)
-assert(#data.Furniture == #old.Furniture and data.FurnitureStock.Freezer == 1, 'Purchases changed')
+-- The house fixtures (freezer, till, office desk) join after the saved furniture.
+assert(#data.Furniture == #old.Furniture + #Data.FIXTURES and data.FurnitureStock.Freezer == 1, 'Purchases changed')
 -- The plant stood in the old front shop room, so it moved with the shop into its
 -- own building across the street (turned to face the house), clear of every wall.
 local plant = data.Furniture[1]
@@ -72,7 +73,7 @@ local blockedRaw = {
 	Freezer = { fish }, Storage = { fish }, Kitchen = { GrillStation = { Dish = dish, ReadyAt = 1000 } },
 }
 local blocked = Data.decode(blockedRaw)
-assert(blocked.FurnitureWallMigrationPending and #blocked.Furniture == 3, 'Unplaceable furniture must remain owned and placed')
+assert(blocked.FurnitureWallMigrationPending and #blocked.Furniture == 3 + #Data.FIXTURES, 'Unplaceable furniture must remain owned and placed')
 assert(blocked.Furniture[1].X == 6 and blocked.Furniture[1].Z == 1.5, 'Failed relocation must retain the original position')
 assert(#blocked.Freezer == 1 and #blocked.Storage == 1 and blocked.Kitchen.GrillStation.ReadyAt == 1000, 'Blocked migration lost contents')
 local unblocked = assert(Data.pickUpFurniture(blocked, 2))

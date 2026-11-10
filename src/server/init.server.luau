@@ -74,6 +74,8 @@ local ok, failure = xpcall(function()
 	require(script.ServerUpdates).start()
 	-- Records memory/uptime so a server that dies (everyone kicked, no script error) gets reported.
 	require(script.ServerHealth).start()
+	-- NPCs never collide with players or each other; registered before any other collision group.
+	require(script.NpcCollision).start()
 	local BaseService = require(script.BaseService)
 	local Map = require(script.Map)
 	local Harbour = require(script.Map.Harbour)

@@ -16,6 +16,10 @@
 -- avatars come without layered clothing (Shared.AvatarLite), and a rig hidden for a few
 -- seconds goes back to a small per-avatar pool, so memory follows how many are on screen
 -- rather than how many people walk the island.
+-- A rig's look is batched by the renderer per Humanoid model (FastCluster in the
+-- MicroProfiler). Re-parenting one, or changing a part's transparency or shadow, rebuilds
+-- that batch, so a briefly hidden rig is parked out of sight instead of unparented and
+-- fades step coarsely. Lower graphics presets (PlayerSettings) animate fewer avatars.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -42,6 +46,12 @@ local HIDDEN = Pedestrians.HIDDEN
 local HIDDEN_CHECK = 0.5 -- how often an undrawn pedestrian is looked at again
 local RELEASE_SECONDS = 6 -- an avatar hidden this long goes back to the pool
 local POOL_PER_SLOT = 3 -- spare rigs kept per avatar; more are destroyed
+-- Hidden rigs wait here, high above the map and far outside any camera's draw range.
+local PARKED = CFrame.new(0, 25000, 0)
+-- Smallest transparency step written during a fade (each step rebuilds the rig's batch)
+local FADE_STEP = 0.12
+-- Animated (near tier) avatars allowed per graphics tier (PlayerSettings GraphicsTier)
+local NEAR_CAP_BY_TIER = { 6, 10, Pedestrians.NEAR_CAP }
 local AREA_REACH = 165 * 1.5 + TIERS[#TIERS].exit
 -- Roblox's stock R15 animations (the default Animate script's walk and idle)
 local WALK_ANIMATION = "rbxassetid://913402848"
@@ -112,6 +122,7 @@ local started = false
 local container: Folder
 local people: { [Configuration]: Person } = {}
 local nearCount = 0
+local nearCap = Pedestrians.NEAR_CAP
 local moveParts: { BasePart } = {}
 local moveFrames: { CFrame } = {}
 
@@ -129,6 +140,7 @@ local function prepareTemplate(model: Model): Model?
 		model:Destroy()
 		return nil
 	end
+	AvatarLite.stripModel(model)
 	for _, item in model:GetDescendants() do
 		if item:IsA("BasePart") then
 			-- Only the root is anchored, so Motor6Ds and accessory welds still pose the rest
@@ -309,7 +321,15 @@ end
 local function show(rig: Rig?, visible: boolean)
 	if rig and rig.shown ~= visible then
 		rig.shown = visible
-		rig.model.Parent = if visible then container else nil
+		if visible then
+			-- Pooled rigs come back unparented; parked ones are already in place and are
+			-- moved into view by this frame's BulkMoveTo.
+			if rig.model.Parent ~= container then
+				rig.model.Parent = container
+			end
+		else
+			rig.root.CFrame = PARKED
+		end
 	end
 end
 
@@ -326,7 +346,7 @@ local function setShadows(rig: Rig, on: boolean)
 end
 
 local function setAlpha(rig: Rig, alpha: number)
-	if math.abs(rig.alpha - alpha) < 0.04 and not (alpha == 0 and rig.alpha ~= 0) then
+	if alpha == rig.alpha or (math.abs(rig.alpha - alpha) < FADE_STEP and alpha > 0 and alpha < 1) then
 		return
 	end
 	rig.alpha = alpha
@@ -436,7 +456,7 @@ local function update(person: Person, now: number, dt: number, camera: Vector3)
 		tier = HIDDEN
 	end
 	-- Only so many animated avatars at once: later arrivals stand still like the mid tier
-	if tier == 1 and person.tier ~= 1 and nearCount >= Pedestrians.NEAR_CAP then
+	if tier == 1 and person.tier ~= 1 and nearCount >= nearCap then
 		tier = 2
 	end
 	local rig = if tier == HIDDEN then nil else rigFor(person)
@@ -497,7 +517,10 @@ local function update(person: Person, now: number, dt: number, camera: Vector3)
 		if bag then
 			local carrying = trip.bag > 0 and tier == 1
 			if carrying then
-				bag.Color = BAGS[math.clamp(trip.bag, 1, #BAGS)]
+				local color = BAGS[math.clamp(trip.bag, 1, #BAGS)]
+				if bag.Color ~= color then
+					bag.Color = color
+				end
 				if bag.Parent ~= rig.model then
 					bag.Parent = rig.model
 				end
@@ -580,6 +603,8 @@ local function release(person: Person)
 	if rig.bag then
 		rig.bag.Parent = nil
 	end
+	-- Pooled rigs leave the world entirely; they may wait a long time for reuse.
+	rig.model.Parent = nil
 	local slot = rig.slot
 	local spare = slot and (pool[slot] or {})
 	if slot and spare and #spare < POOL_PER_SLOT then
@@ -647,6 +672,10 @@ function PedestriansClient.start()
 		-- Cull whole neighbourhoods twice a second, including shops outside the plaza.
 		if now >= awayUntil then
 			awayUntil = now + 0.5
+			local graphics = Players.LocalPlayer:GetAttribute("GraphicsTier")
+			nearCap = if type(graphics) == "number"
+				then NEAR_CAP_BY_TIER[math.clamp(graphics, 1, #NEAR_CAP_BY_TIER)]
+				else Pedestrians.NEAR_CAP
 			local saved = folder:GetAttribute("Center")
 			townCenter = if typeof(saved) == "Vector3" then saved else townCenter
 			for _, person in people do

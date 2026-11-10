@@ -15,6 +15,7 @@ local CompanyIslandAccess = require(script.Parent.CompanyIslandAccess)
 local CargoService = require(script.Parent.CargoService)
 local FishFreezer = require(script.Parent.Map.FishFreezer)
 local ShopDesk = require(script.Parent.Map.ShopDesk)
+local OfficeDesk = require(script.Parent.Map.OfficeDesk)
 local StorageRack = require(script.Parent.Map.StorageRack)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
@@ -194,13 +195,16 @@ end
 local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: number, site: string?): Model?
 	local frame = Furniture.frame(houseFrame, entry, site)
 	local model
-	if entry.ItemId == "CompanyPrep" then
-		model = Kitchen.buildStation(parent, frame, "Prep")
+	if entry.ItemId == "CompanyPrep" or entry.ItemId == "PrepBench" then
+		model = Kitchen.buildStation(parent, frame, "Prep", if entry.ItemId == "PrepBench" then Kitchen.BUILT_IN_WIDTH else nil)
 		if entry.Key then
 			-- CompanyIslandAccess.stations finds the bench by these; jobs save under its Key.
 			model:SetAttribute("StationFrame", frame)
 			KitchenService.addPrompts(model, frame, entry.Key, userId)
 		end
+	elseif entry.ItemId == "OfficeDesk" then
+		-- Client OfficeComputer and OfficeComputerService find it by name in the base.
+		model = OfficeDesk.build(parent, frame)
 	elseif entry.ItemId == "CompanyDesk" then
 		model = CompanyIslandMap.buildDesk(parent, frame)
 		local anchor = promptAnchor(model, frame * CFrame.new(0, 3.6, 2.4))
@@ -398,7 +402,7 @@ end
 
 local function buy(player: Player, itemId: any): (boolean, string)
 	local item = if type(itemId) == "string" then Furniture.Items[itemId] else nil
-	if not item or item.Kit then
+	if not item or item.Kit or item.Fixture then
 		return false, "That isn't for sale."
 	elseif not atShop(player, itemId) then
 		return false, "Step inside Harbour Home and approach a display or the counter to buy furniture."
@@ -697,9 +701,12 @@ local function buildPreviews(parent: Instance)
 		WeatherRadar = WeatherRadar.build,
 		CompanyPrep = function(p, f) return Kitchen.buildStation(p, f, "Prep") end,
 		CompanyDesk = CompanyIslandMap.buildDesk,
+		PrepBench = function(p, f) return Kitchen.buildStation(p, f, "Prep", Kitchen.BUILT_IN_WIDTH) end,
+		OfficeDesk = OfficeDesk.build,
 	}
 	local ids = table.clone(Furniture.Order)
 	table.move(Furniture.KitOrder, 1, #Furniture.KitOrder, #ids + 1, ids)
+	table.move(Furniture.FixtureOrder, 1, #Furniture.FixtureOrder, #ids + 1, ids)
 	for _, id in ids do
 		local build = builders[id] or function(parent, frame)
 			if Decorations.has(id) then

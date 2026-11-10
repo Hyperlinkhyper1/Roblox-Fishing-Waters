@@ -181,26 +181,43 @@ bases = { base }
 root.CFrame = homeFrame * CFrame.new(16, 3, -12)
 check(atHome(player), "A living owner inside the house must pass the server home gate")
 profile = { Cash = 0, Angler = AnglerData.decode(nil) }
+-- Every profile starts with the house fixtures (freezer, till, office desk).
+local FIXTURES = #profile.Angler.Furniture
 for _, id in { "StorageRack", "Freezer", "Register" } do
 	profile.Angler = AnglerData.buyFurniture(profile.Angler, id)
 end
 check(place(player, "StorageRack", 13.5, -13.5, 0), "Server must place an owned rack inside storage")
 check(
-	#profile.Angler.Furniture == 1 and profile.Angler.FurnitureStock.StorageRack == nil,
+	#profile.Angler.Furniture == FIXTURES + 1 and profile.Angler.FurnitureStock.StorageRack == nil,
 	"Successful server placement must save furniture and consume stock"
 )
-check(place(player, 1, 18, -9, 0), "Server must move an existing rack")
+check(place(player, FIXTURES + 1, 18, -9, 0), "Server must move an existing rack")
 check(
-	#profile.Angler.Furniture == 1 and profile.Angler.Furniture[1].Z == -9,
+	#profile.Angler.Furniture == FIXTURES + 1 and profile.Angler.Furniture[FIXTURES + 1].Z == -9,
 	"Server move must save the new position without duplicating furniture"
 )
-check(pickUp(player, 1), "Server must allow picking up furniture at home")
+check(pickUp(player, FIXTURES + 1), "Server must allow picking up furniture at home")
 check(
-	#profile.Angler.Furniture == 0 and profile.Angler.FurnitureStock.StorageRack == 1,
+	#profile.Angler.Furniture == FIXTURES and profile.Angler.FurnitureStock.StorageRack == 1,
 	"Server pickup must return the item to stock"
 )
-check(place(player, "Freezer", -9, 72, 1), "Server must also place a freezer in the shop across the street")
-check(place(player, "Register", 13.5, 72, 2), "Server must also place a register in the shop across the street")
+-- The shop already holds its first freezer and till; find free spots beside them.
+local function shopSpot(id)
+	for r = 0, 3 do
+		for x = -22.5, 22.5, Furniture.GRID do
+			for z = 67.5, 81, Furniture.GRID do
+				if Furniture.check(profile.Angler.Furniture, id, x, z, r) == nil then
+					return x, z, r
+				end
+			end
+		end
+	end
+	error("No free shop spot for " .. id)
+end
+local freezerX, freezerZ, freezerR = shopSpot("Freezer")
+check(place(player, "Freezer", freezerX, freezerZ, freezerR), "Server must also place a freezer in the shop across the street")
+local registerX, registerZ, registerR = shopSpot("Register")
+check(place(player, "Register", registerX, registerZ, registerR), "Server must also place a register in the shop across the street")
 local savedBefore = saves
 check(
 	not place(player, "StorageRack", -9, 72, 0) and saves == savedBefore,

@@ -5,6 +5,7 @@ return {
 	MinKg = 4,
 	AverageKg = 15,
 	MaxKg = 45,
+	LengthScale = 1.2,
 	BaseValue = 380,
 	Fight = 0.07,
 	Pools = { "OpenSea" },

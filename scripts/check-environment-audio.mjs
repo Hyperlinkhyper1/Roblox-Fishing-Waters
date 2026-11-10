@@ -12,9 +12,13 @@ const primitives = read('scripts/harbour-geometry.luau').split('local CFrame = {
 const mocks = read('scripts/drydock-geometry.luau').split('local function loadBoatCatalog()')[0]
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
 const client = read('src/client/EnvironmentAudio.luau')
-  .replace(/require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'dependencies.$1');
+  .replace(/require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'dependencies.$1')
+  .replace(/require\(script.Parent.TerrainProbe\)/, 'dependencies.TerrainProbe');
+const terrain = read('scripts/audio-terrain.luau').replace('-- TERRAIN_PROBE --', () =>
+  read('src/client/TerrainProbe.luau').replace(/require\(ReplicatedStorage.Shared.Biomes\)/, 'dependencies.Biomes'));
 const program = read('scripts/environment-audio.luau')
   .replace('-- MOCKS --', () => mocks)
+  .replace('-- AUDIO_TERRAIN --', () => terrain)
   .replace('-- CLIENT --', () => client);
 const temporary = mkdtempSync(join(tmpdir(), 'environment-audio-'));
 try {

@@ -1273,7 +1273,6 @@ local function build(root: Instance, id: number)
 	island.Name = "Company Island " .. id
 	island:SetAttribute("CompanyIslandVersion", Islands.VERSION)
 	island:SetAttribute("IslandId", id)
-	island:SetAttribute("ChartLabel", Layout.Names[id])
 	island:SetAttribute("OwnerUserId", 0)
 	island:SetAttribute("LodRoot", true)
 	island:SetAttribute("LodRadial", true)

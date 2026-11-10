@@ -11,6 +11,18 @@ local underwaterFilter: EqualizerSoundEffect
 local underwaterTween: Tween? = nil
 local underwater = false
 local performance, device, preset
+-- 1 = Performance, 2 = Balanced, 3 = Quality. Published as the GraphicsTier attribute so
+-- ambient systems (townsfolk) can scale their own detail.
+local tier = 3
+-- Performance keys the player changed by hand this session; an automatic step down
+-- (Settings.lowerPreset) leaves those alone.
+local manual: { [string]: boolean } = {}
+local lowered = false
+
+local PRESETS = { "Performance", "Balanced", "Quality" }
+local function presetValues(level: number)
+	return { Shadows = level == 3, WeatherEffects = level >= 2 }
+end
 
 local function applyPerformance()
 	Lighting.GlobalShadows = performance.Shadows
@@ -20,12 +32,13 @@ local function applyPerformance()
 	-- Computers get the full supercell tower and denser billows. The rain deck
 	-- under the supercell remains present on every device, including Performance mode.
 	Players.LocalPlayer:SetAttribute("VolumetricCloudsEnabled", device == "Computer" and performance.WeatherEffects)
+	Players.LocalPlayer:SetAttribute("GraphicsTier", tier)
 end
 
 local function detectPerformance()
 	-- Input capabilities are a device heuristic, not a hardware benchmark. A
 	-- controller connected to a computer must not lower its preset on its own.
-	local tier = 3
+	tier = 3
 	device = "Computer"
 	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
 		device, tier = "Mobile / tablet", 1
@@ -43,15 +56,47 @@ local function detectPerformance()
 	if ok and type(quality) == "number" and quality > 0 then
 		tier = math.min(tier, if quality <= 3 then 1 elseif quality <= 6 then 2 else 3)
 	end
-	preset = if tier == 1 then "Performance" elseif tier == 2 then "Balanced" else "Quality"
+	preset = PRESETS[tier]
 	-- The black hole pack animation is off by default on phones and tablets
 	-- regardless of their graphics level; it can still be turned on in Settings.
-	performance = { Shadows = tier == 3, WeatherEffects = tier >= 2, BackpackAnimation = device ~= "Mobile / tablet" }
+	performance = presetValues(tier)
+	performance.BackpackAnimation = device ~= "Mobile / tablet"
+	table.clear(manual)
+	lowered = false
 end
 
 function Settings.description()
 	Settings.start()
+	if lowered then
+		return device .. " · lowered to the " .. preset .. " preset to keep the frame rate up. Changes apply until you rejoin."
+	end
 	return device .. " · " .. preset .. " preset on join. Changes apply until you rejoin."
+end
+
+-- The value this session actually uses for a performance option, or nil for other keys.
+function Settings.current(key: string): any
+	Settings.start()
+	return performance[key]
+end
+
+-- Steps the preset down one tier for the rest of the session (FrameRateGuard calls this
+-- when the frame rate stays low). Options the player set by hand are kept. Returns
+-- whether anything was lowered.
+function Settings.lowerPreset(): boolean
+	Settings.start()
+	if tier <= 1 then
+		return false
+	end
+	tier -= 1
+	preset = PRESETS[tier]
+	lowered = true
+	for key, value in presetValues(tier) do
+		if not manual[key] then
+			performance[key] = value
+		end
+	end
+	applyPerformance()
+	return true
 end
 
 function Settings.start()
@@ -165,6 +210,7 @@ function Settings.apply(values, changedKey)
 	-- this join's preset or a manual change made during the current session.
 	if performance[changedKey] ~= nil and type(values[changedKey]) == "boolean" then
 		performance[changedKey] = values[changedKey]
+		manual[changedKey] = true
 	end
 	local effective = table.clone(values)
 	for key, value in performance do

@@ -106,6 +106,16 @@ function Building.normalize(raw)
 	end
 	return clean,nil
 end
+-- Original full-height wall sections can be moved or reshaped like your own walls:
+-- the server swaps the original for an equivalent custom piece in one edit.
+-- Lintels, sills and other partial sections stay paint/remove only.
+function Building.movableOriginal(entry)
+	if type(entry)~="table" or entry.Kind~="Wall" then return false end
+	for _,key in {"X1","Z1","X2","Z2"} do if type(entry[key])~="number" then return false end end
+	if math.abs(entry.X1-entry.X2)>0.01 and math.abs(entry.Z1-entry.Z2)>0.01 then return false end
+	local level=entry.Level or 0
+	return (entry.BaseY or 0)<=0.6+level*Building.LEVEL_HEIGHT and (entry.Height or Building.WALL_HEIGHT)>=6
+end
 function Building.host(pieces,builtins,id)
 	if builtins and builtins[id] then return builtins[id] end
 	for _,entry in pieces or {} do if entry.Id==id then return entry end end
@@ -197,7 +207,7 @@ function Building.check(pieces,entry,site,builtins,skipId)
 	end
 	if entry.Kind=="Wall" then
 		for _,other in builtins or {} do
-			if other.Kind~="Wall" or other.Level~=entry.Level then continue end
+			if other.Id==skipId or other.Kind~="Wall" or other.Level~=entry.Level then continue end
 			local xLine=math.abs(dx)<0.01 and math.abs(other.X2-other.X1)<0.01 and math.abs(entry.X1-other.X1)<0.05
 			local zLine=math.abs(dz)<0.01 and math.abs(other.Z2-other.Z1)<0.01 and math.abs(entry.Z1-other.Z1)<0.05
 			if (xLine and math.min(entry.Z2,other.Z2)>math.max(entry.Z1,other.Z1)+0.05)

@@ -1985,26 +1985,36 @@ local crabSpecies = { ShoreCrab = true, BlueCrab = true, KingCrab = true }
 -- crabs visibly outgrow lighter ones.
 local CRAB_HELD_BASE, CRAB_HELD_EXPONENT = 2.4, 0.9
 
+-- A species' optional LengthScale: long-bodied fish (sturgeons, billfish...)
+-- read far too small from weight alone, so they draw this much longer.
+local function lengthScale(fishId: string?): number
+	local species = fishId and FishSpecies[fishId]
+	local scale = species and species.LengthScale
+	return if type(scale) == "number" and scale > 0 then scale else 1
+end
+FishModels.lengthScale = lengthScale
+
 -- Compact display size for the freezer and customer hands.
 function FishModels.catchLength(kg: number, fishId: string?): number
 	-- Crab weights cluster tightly, so a stronger curve makes their differences
 	-- visible while still keeping even a record crab within the freezer.
 	local exponent = if fishId and crabSpecies[fishId] then 0.65 else 1 / 3
-	local size = math.max(kg, 0.01) ^ exponent
+	-- LengthScale goes in before the compression so it can't break the freezer cap.
+	local size = math.max(kg, 0.01) ^ exponent * lengthScale(fishId)
 	-- Smoothly compress record weights while retaining differences between
 	-- catches. The longest side stays below the freezer's 3.54-stud ice depth.
 	return 0.6 + 2.6 * size / (size + 0.75)
 end
 
--- Held catches keep their weight differences without the freezer's size limit.
--- Huge gets a 6x trophy boost; weight keeps small species smaller than large ones.
+-- Held catches are sized by weight, regardless of their size label. Big and
+-- Huge catches already weigh more, so an extra visual multiplier would make
+-- the displayed weight inconsistent with the model.
 function FishModels.heldLength(kg: number, size: string?, fishId: string?): number
-	local boost = if size == "Huge" then 6 elseif size == "Big" then 1.5 else 1
 	local weight = math.max(kg, 0.01)
 	if fishId and crabSpecies[fishId] then
-		return CRAB_HELD_BASE * weight ^ CRAB_HELD_EXPONENT * boost
+		return CRAB_HELD_BASE * weight ^ CRAB_HELD_EXPONENT
 	end
-	return 1.6 * weight ^ (1 / 3) * boost
+	return 1.6 * weight ^ (1 / 3) * lengthScale(fishId)
 end
 
 local function scaleToLength(model: Model, length: number): Vector3

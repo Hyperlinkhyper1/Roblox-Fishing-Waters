@@ -316,6 +316,14 @@ onChild(crater)
 check(piece(palm) and piece(vent) and not piece(crater), "Late island children must be split like the rest")
 
 -- The server pins a piece for a player once their client reports it
+-- Park the distance sweep at its first wait; its resume behavior is checked in check-lod.
+task.spawn = function(callback)
+  local previousWait = task.wait
+  task.wait = coroutine.yield
+  local ok, err = coroutine.resume(coroutine.create(callback))
+  task.wait = previousWait
+  assert(ok, err)
+end
 Lod.serve()
 local remote = ReplicatedStorage:FindFirstChild("LodPin")
 check(remote ~= nil and remote.handler ~= nil, "The pin remote must be served")

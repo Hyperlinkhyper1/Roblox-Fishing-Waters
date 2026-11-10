@@ -1,6 +1,6 @@
 -- Animates worn Black Hole Backpacks (BackpackModels "BlackHole") on this
 -- client only: the accretion disk spins in two bands, five small fish spiral
--- into the horizon and fade, stardust falls inward and the glow breathes.
+-- into the horizon and vanish, stardust falls inward and the glow breathes.
 -- Everything here is local and cosmetic. The server builds the pack frozen and
 -- never moves its joints, so turning the Backpack animation setting off (the
 -- default on phones, see PlayerSettings) simply puts every joint back.
@@ -35,6 +35,15 @@ local INFALL_TURNS = 1.6
 -- BackpackModels: frame * F(0.74, 0, 0.05)) and the horizon radius they vanish at.
 local INFALL_RADIUS, HORIZON_RADIUS = 0.74, 0.2
 local FISH_COUNT = 5
+-- Worn packs are part of the wearer's character, and any transparency change in a
+-- character makes the renderer rebuild that character's whole mesh batch (FastCluster
+-- in the MicroProfiler). A smooth per-frame fade did that every frame for every pack in
+-- view, so a fish now just blinks out at the horizon and back in at the rim: two
+-- changes per fish per orbit. It is hidden while progress is outside this window.
+local VISIBLE_FROM, VISIBLE_UNTIL = 0.04, 0.88
+-- Packs this close to the camera pose every frame; farther ones at FAR_RATE a second.
+local NEAR_DISTANCE = 45
+local FAR_RATE = 20
 
 type Rig = {
 	model: Model,
@@ -43,6 +52,8 @@ type Rig = {
 	motors: { [string]: Motor6D },
 	base: { [Motor6D]: CFrame },
 	fish: { { BasePart } },
+	hidden: { boolean }, -- per fish, the visibility last written
+	nextPose: number,
 	dust: ParticleEmitter?,
 	glow: PointLight?,
 	glowBase: number,
@@ -71,6 +82,8 @@ local function track(model: Instance)
 		motors = {},
 		base = {},
 		fish = {},
+		hidden = {},
+		nextPose = 0,
 		dust = nil,
 		glow = nil,
 		glowBase = 0.9,
@@ -94,6 +107,7 @@ local function track(model: Instance)
 			end
 		end
 		rig.fish[i] = parts
+		rig.hidden[i] = false
 	end
 	local shell = model:FindFirstChild("InfallShell")
 	rig.dust = shell and shell:FindFirstChildOfClass("ParticleEmitter")
@@ -107,9 +121,12 @@ local function rest(rig: Rig)
 	for motor, c0 in rig.base do
 		motor.C0 = c0
 	end
-	for _, parts in rig.fish do
-		for _, piece in parts do
-			piece.LocalTransparencyModifier = 0
+	for i, parts in rig.fish do
+		if rig.hidden[i] then
+			rig.hidden[i] = false
+			for _, piece in parts do
+				piece.LocalTransparencyModifier = 0
+			end
 		end
 	end
 	if rig.dust then
@@ -141,12 +158,12 @@ local function pose(rig: Rig, now: number)
 			motor.C0 = rig.base[motor]
 				* CFrame.Angles(0, 0, angle)
 				* CFrame.new(-(INFALL_RADIUS - radius) * rig.scale, 0, 0)
-			local fade = if progress < 0.08
-				then 1 - progress / 0.08
-				elseif progress > 0.8 then (progress - 0.8) / 0.2
-				else 0
-			for _, piece in rig.fish[i] do
-				piece.LocalTransparencyModifier = fade
+			local hidden = progress < VISIBLE_FROM or progress > VISIBLE_UNTIL
+			if hidden ~= rig.hidden[i] then
+				rig.hidden[i] = hidden
+				for _, piece in rig.fish[i] do
+					piece.LocalTransparencyModifier = if hidden then 1 else 0
+				end
 			end
 		end
 	end
@@ -198,9 +215,12 @@ function BlackHoleBackpack.start()
 				end
 			else
 				local handle = model.PrimaryPart
-				local near = handle ~= nil and eye ~= nil and (handle.Position - eye).Magnitude <= MAX_DISTANCE
-				if near then
-					pose(rig, now)
+				local distance = if handle and eye then (handle.Position - eye).Magnitude else math.huge
+				if distance <= MAX_DISTANCE then
+					if distance <= NEAR_DISTANCE or now >= rig.nextPose then
+						rig.nextPose = now + 1 / FAR_RATE
+						pose(rig, now)
+					end
 				elseif rig.dust and rig.dust.Enabled then
 					rig.dust.Enabled = false
 				end

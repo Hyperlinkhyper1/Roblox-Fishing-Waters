@@ -103,14 +103,17 @@ check(not player:GetAttribute("OwnsStarterRod") and not player:GetAttribute("Own
   const client = await readFile(join(root, 'src/client/init.client.luau'), 'utf8');
   const program = `
 local attributes, started, threads = {}, {}, {}
-local player = {SetAttribute = function(_, key, value) attributes[key] = value end}
+local player = {
+  SetAttribute = function(_, key, value) attributes[key] = value end,
+  GetAttribute = function(_, key) return attributes[key] end,
+}
 local game = {GetService = function() return {LocalPlayer = player} end}
 local script = setmetatable({}, {__index = function(_, name) return name end})
 local task = {spawn = function(callback)
   local thread = coroutine.create(callback)
   table.insert(threads, thread)
   assert(coroutine.resume(thread))
-end}
+end, wait = function() coroutine.yield() end}
 local require = function(name)
   return {start = function()
     if name == "Lod" then coroutine.yield() end
@@ -118,14 +121,25 @@ local require = function(name)
   end}
 end
 local warn = function(message) error(message) end
+local function resumeAll()
+  for _, thread in threads do
+    if coroutine.status(thread) == "suspended" then assert(coroutine.resume(thread)) end
+  end
+end
 ` + client + `
 assert(started.Fishing and started.Boating and started.RodPhysics, "LOD wait must not block shop/equipment startup")
 assert(attributes.FishingWatersClientReady, "Optional LOD must not trap the loading screen")
-for _, thread in threads do
-  if coroutine.status(thread) == "suspended" then assert(coroutine.resume(thread)) end
-end
+-- Gameplay startup is paced across frames; let it finish
+for _ = 1, 100 do resumeAll() end
+assert(started.Weather and started.BuildMode and started.LightShadows, "Paced gameplay startup must finish while loading")
+assert(not started.WaterWaves and not started.VolumetricClouds and not started.AmbientFish and not started.BackgroundMusic,
+  "World animation must wait for the loading screen to lift")
 assert(attributes.FishingWatersClientReady, "Delayed visual service must preserve client readiness")
-print("Client startup: shop/equipment run while LOD is streaming; loading screen can finish")
+attributes.FishingWatersLoadingSeconds = 4
+for _ = 1, 100 do resumeAll() end
+assert(started.WaterWaves and started.SwellSurface and started.VolumetricClouds and started.SupercellWeather
+  and started.AmbientFish and started.Pedestrians and started.BackgroundMusic, "World animation must start once loading lifts")
+print("Client startup: gear first, gameplay paced, world animation after the loading screen")
 `;
   const path = join(temporary, 'client.luau');
   await writeFile(path, program);
@@ -134,11 +148,14 @@ print("Client startup: shop/equipment run while LOD is streaming; loading screen
   for (const failedModule of ['Boating', 'Fishing', 'Oxygen', 'RodPhysics', 'PlayerMenu', 'Weather', 'BoatAudio']) {
     const critical = !['Weather', 'BoatAudio'].includes(failedModule);
     const failureProgram = `
-local attributes, warnings = {}, {}
-local player = {SetAttribute = function(_, key, value) attributes[key] = value end}
+local attributes, warnings = {FishingWatersLoadingSeconds = 1}, {}
+local player = {
+  SetAttribute = function(_, key, value) attributes[key] = value end,
+  GetAttribute = function(_, key) return attributes[key] end,
+}
 local game = {GetService = function() return {LocalPlayer = player} end}
 local script = setmetatable({}, {__index = function(_, name) return name end})
-local task = {spawn = function(callback) callback() end}
+local task = {spawn = function(callback) callback() end, wait = function() end}
 local require = function(name)
   if name == "${failedModule}" then error("fixture module unavailable") end
   return {start = function() end}

@@ -48,7 +48,7 @@ program += `\ndo
 local houseFrame=CFrame.new(100,5,-200)*CFrame.Angles(0,math.pi/2,0)
 local floorY,site,grid=0.16,nil,nil
 local spacing,height=4.5,24
-local structures={isActive=function() return true end,gridSize=function() return spacing end,elevation=function() return height end}
+local structures={isActive=function() return true end,section=function() return "Build" end,gridSize=function() return spacing end,elevation=function() return height end}
 local BaseGrid={CELL_SIZE=4.5}
 local rgb=Color3.fromRGB
 local function make(class,parent,properties)

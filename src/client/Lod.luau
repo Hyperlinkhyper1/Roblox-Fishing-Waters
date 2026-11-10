@@ -9,13 +9,14 @@
 -- shell gives way only once most of its island's ground has arrived. The home island is too big
 -- to wait for whole, so its shell comes in tiles and each tile follows the ground under it.
 --
--- Once a shell has given way it never comes back while its island is still in the world.
+-- Once a shell has given way it stays away while its island is near (within FAR_SHELL).
 -- Bringing it back over missing parts flipped shells on and off over a fully drawn town, and a
 -- shell the server swaps in later picks up where the one it replaces left off.
 --
 -- Islands come in pieces the server pins for this player as each one arrives (see
--- reportPieces), so a drawn island's ground never streams back out, not even when the device
--- runs low on memory, and its shell has no reason to come back.
+-- reportPieces), so a nearby island's ground never streams back out, not even when the device
+-- runs low on memory. The server releases pins on far islands so low-memory devices can let
+-- them go; once such an island is short of ground again, its shell comes back.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -52,6 +53,9 @@ local TILE_NEAR = 96 -- streaming always holds the ground this close to the play
 local TILE_INTERVAL = 0.5 -- how often tiles near the player are looked at again as they move
 local PIECE_TAG = "LodPiece"
 local PIN_BATCH = 500 -- most pieces the server pins per request
+-- Past this distance a drawn island or tile that has lost ground shows its shell again. The
+-- server only releases pins beyond 1100 studs (server/Map/Lod), so nearer islands never thin out.
+local FAR_SHELL = 900
 
 type Island = {
 	model: Model,
@@ -71,6 +75,8 @@ type Shell = Visual & {
 	grid: Grid?, -- set when the shell is tiled
 	tiles: { [string]: Tile },
 	dirty: boolean, -- tile ground counts need redoing from scratch
+	centerX: number?, -- rough middle of an untiled shell, for its distance from the player
+	centerZ: number?,
 }
 
 local function disconnectAll(connections: { RBXScriptConnection })
@@ -111,6 +117,7 @@ end
 local function reportPieces()
 	local queued: { number } = {}
 	local reported: { [number]: boolean } = {}
+	local present: { [number]: Instance } = {}
 	local remote: RemoteEvent? = nil
 	local scheduled = false
 
@@ -119,15 +126,30 @@ local function reportPieces()
 		if not remote then
 			return
 		end
-		for first = 1, #queued, PIN_BATCH do
-			remote:FireServer(table.move(queued, first, math.min(first + PIN_BATCH - 1, #queued), 1, {}))
+		local ids: { number } = {}
+		for _, id in queued do
+			local piece = present[id]
+			if piece and piece:IsDescendantOf(workspace) then
+				table.insert(ids, id)
+				if #ids >= PIN_BATCH then
+					remote:FireServer(ids)
+					ids = {}
+				end
+			end
+		end
+		if #ids > 0 then
+			remote:FireServer(ids)
 		end
 		table.clear(queued)
 	end
 
 	local function arrived(piece: Instance)
 		local id = piece:GetAttribute("PieceId")
-		if typeof(id) == "number" and not reported[id] then
+		if typeof(id) ~= "number" then
+			return
+		end
+		present[id] = piece
+		if not reported[id] then
 			reported[id] = true
 			table.insert(queued, id)
 			if not scheduled then
@@ -140,7 +162,8 @@ local function reportPieces()
 	-- A piece that streams out before its pin lands is reported again when it comes back
 	CollectionService:GetInstanceRemovedSignal(PIECE_TAG):Connect(function(piece)
 		local id = piece:GetAttribute("PieceId")
-		if typeof(id) == "number" then
+		if typeof(id) == "number" and present[id] == piece then
+			present[id] = nil
 			reported[id] = nil
 		end
 	end)
@@ -150,6 +173,17 @@ local function reportPieces()
 
 	task.spawn(function()
 		remote = ReplicatedStorage:WaitForChild("LodPin", math.huge) :: RemoteEvent
+		remote.OnClientEvent:Connect(function(ids: { number })
+			-- A released piece may still be here when we return. Confirm only models
+			-- actually loaded in workspace; never ask the server to force missing scenery in.
+			for _, id in ids do
+				local piece = present[id]
+				if piece and piece:IsDescendantOf(workspace) then
+					reported[id] = nil
+					arrived(piece)
+				end
+			end
+		end)
 		send()
 	end)
 end
@@ -210,6 +244,28 @@ function Lod.start()
 		end
 	end
 
+	-- Whether an untiled shell's island is far enough away that its shell may come back.
+	local function farShell(shell: Shell, focus: Vector3?): boolean
+		if not focus then
+			return false
+		end
+		if not shell.centerX then
+			local count = #shell.parts
+			if count == 0 then
+				return false
+			end
+			-- A spread of the shell's own parts is close enough to its middle
+			local sx, sz, n = 0, 0, 0
+			for index = 1, count, math.max(1, count // 16) do
+				local p = shell.parts[index].Position
+				sx, sz, n = sx + p.X, sz + p.Z, n + 1
+			end
+			shell.centerX, shell.centerZ = sx / n, sz / n
+		end
+		local dx, dz = focus.X - (shell.centerX :: number), focus.Z - (shell.centerZ :: number)
+		return dx * dx + dz * dz > FAR_SHELL * FAR_SHELL
+	end
+
 	local function show(visual: Visual, hidden: boolean)
 		if visual.hidden == hidden then
 			return
@@ -252,20 +308,22 @@ function Lod.start()
 				end
 				local focus = playerPosition()
 				for _, tile in shell.tiles do
-					local near = false
+					local near, far = false, false
 					if focus then
 						local dx = math.max(tile.minX - focus.X, 0, focus.X - tile.minX - grid.size)
 						local dz = math.max(tile.minZ - focus.Z, 0, focus.Z - tile.minZ - grid.size)
 						near = dx * dx + dz * dz < TILE_NEAR * TILE_NEAR
+						far = dx * dx + dz * dz > FAR_SHELL * FAR_SHELL
 					end
 					-- Shells sit on top of the ground, so a half-streamed tile stays covered until it's
 					-- nearly whole. Right around the player it's always real, never draped in shell.
 					local share = if shell.inherited then HANDOVER else TILE_LOADED
 					local whole = near or tile.loaded >= tile.expected * share
-					show(tile, ground > 0 and (whole or tile.hidden == true))
+					show(tile, ground > 0 and (whole or (tile.hidden == true and not far)))
 				end
 			else
-				show(shell, ground > 0 and (ground >= shell.needed or shell.hidden == true))
+				local keep = shell.hidden == true and not farShell(shell, playerPosition())
+				show(shell, ground > 0 and (ground >= shell.needed or keep))
 			end
 		end)
 	end
@@ -508,8 +566,14 @@ function Lod.start()
 						island.parts[d] = nil
 						island.ground -= 1
 						count(id, d, -1)
-						-- A shell that gave way only comes back once the island's ground is all gone
-						if island.ground == 0 or isTiled(id) then
+						-- A shell that gave way comes back once the island's ground is all gone, or
+						-- (far away) once it is short of ground; refreshes coalesce per island
+						local shell = byId[id]
+						if
+							island.ground == 0
+							or isTiled(id)
+							or (shell and island.ground < shell.needed and farShell(shell, playerPosition()))
+						then
 							refresh(id)
 						end
 					end

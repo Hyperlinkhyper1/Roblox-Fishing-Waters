@@ -66,6 +66,8 @@ local BoatService = {
 local SERVE_DISTANCE, PORTER_DOCK_DISTANCE, CARRY_LENGTH = 14, 32, 1.8
 local ShopDesk = { frame = function() return CFrame.new() end }
 local FishFreezer = { DEPTH = 4.5, frame = function() return CFrame.new() end }
+local function mainFreezer() return FishFreezer.frame() end
+local function mainRegister() return ShopDesk.frame() end
 local StorageRack = { DEPTH = 2 }
 local Kitchen = { DEPTH = 2.4 }
 local BaseGrid = { SHOP_FRONT = 65.25 }

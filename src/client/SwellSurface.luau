@@ -31,8 +31,14 @@ local AMPLITUDE_REFRESH = 0.5
 local AMPLITUDE_REFRESHES_PER_FRAME = 200
 -- Neighbour cells sampled for the shoreline taper (a 5x5 block).
 local SHORE_REACH = 2
--- Crests fade in above Terrain's ripples instead of fighting its surface.
-local FADE_FROM, FADE_HEIGHT = 0.05, 0.35
+-- Crests fade in only above Terrain's largest ripple (WaterWaves' MAX_RIPPLE_SIZE, 0.18), so
+-- no visible part of the sheet lies within the band Terrain's surface moves through.
+local FADE_FROM, FADE_HEIGHT = 0.25, 0.35
+-- Every hidden vertex (calm water, troughs, swell below FADE_FROM) drops this far under the
+-- water level. The sheet then crosses Terrain's surface steeply (2 studs over a 12-stud cell)
+-- in thin lines. Lying on or just under it, the gently sloped sheet z-fought Terrain water in
+-- wide blotches at a distance; vertex alpha alone doesn't stop the depth fight.
+local CALM_DEPTH = 2
 -- Clearance kept beneath a hull's sole so open decks never flood.
 local HULL_CLEARANCE = 0.3
 local HULL_MARGIN = 1.5
@@ -394,7 +400,7 @@ function SwellSurface.start()
 					if amplitude < FLAT_AMPLITUDE then
 						if not flat[index] then
 							flat[index] = true
-							local y = if cell.shown < 0.01 then SUNKEN else 0
+							local y = if cell.shown < 0.01 then SUNKEN else -CALM_DEPTH
 							mesh:SetPosition(vertices[index], Vector3.new(localX[index], y, localZ[index]))
 							mesh:SetNormal(normals[index], Vector3.yAxis)
 							if alphas[index] ~= 0 then
@@ -412,8 +418,13 @@ function SwellSurface.start()
 						height = cap
 					end
 					local alpha = smoothstep((height - FADE_FROM) / FADE_HEIGHT)
-					-- Land cells drop out of sight beneath the shore.
-					local y = if cell.shown < 0.01 then SUNKEN else height
+					-- Land cells drop out of sight beneath the shore. Hidden vertices (troughs and
+					-- swell too low to fade in) sink so no stretch of the sheet lies on Terrain's
+					-- surface; visible crests keep the exact height the hulls ride.
+					local y = if cell.shown < 0.01
+						then SUNKEN
+						elseif alpha == 0 then math.min(height, 0) - CALM_DEPTH
+						else height
 					mesh:SetPosition(vertices[index], Vector3.new(localX[index], y, localZ[index]))
 					mesh:SetNormal(normals[index], Vector3.new(-amplitude * sx, 1, -amplitude * sz).Unit)
 					if math.abs(alpha - alphas[index]) > 0.02 or (alpha == 0) ~= (alphas[index] == 0) then

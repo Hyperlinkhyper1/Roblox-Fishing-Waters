@@ -27,7 +27,7 @@
       "$properties": {
         "FilteringEnabled": true,
         "StreamingEnabled": true,
-        "StreamingTargetRadius": 1024,
+        "StreamingTargetRadius": 512,
         "StreamingMinRadius": 128,
         "StreamOutBehavior": "LowMemory"
       }

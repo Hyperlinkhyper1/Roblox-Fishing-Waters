@@ -5,6 +5,7 @@ return {
 	MinKg = 6,
 	AverageKg = 25,
 	MaxKg = 180,
+	LengthScale = 1.25,
 	BaseValue = 500,
 	Fight = 0.06,
 	Pools = { "MainLake" },

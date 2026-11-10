@@ -42,6 +42,9 @@ Furniture.Order = {
 }
 -- Supplied with a company island (AnglerData.COMPANY_KIT) instead of sold.
 Furniture.KitOrder = { "CompanyPrep", "CompanyDesk" }
+-- Part of every base house instead of sold: the office desk from the start, the
+-- prep benches with the Supermarket (AnglerData places them).
+Furniture.FixtureOrder = { "PrepBench", "OfficeDesk" }
 -- Catalogue groups describe the existing inventory; they do not change purchase
 -- rules, placement rooms, or ownership.
 Furniture.Categories = {
@@ -57,9 +60,9 @@ Furniture.Categories = {
 }
 local CATEGORY_BY_ITEM = {
 	Freezer = "Shop", Register = "Shop", FoodCase = "Shop", FoodShelf = "Shop",
-	GrillStation = "Kitchen", Smoker = "Kitchen", SushiBar = "Kitchen", CompanyPrep = "Kitchen",
+	GrillStation = "Kitchen", Smoker = "Kitchen", SushiBar = "Kitchen", CompanyPrep = "Kitchen", PrepBench = "Kitchen",
 	StorageRack = "Storage", KitchenStorage = "Storage", Bookcase = "Storage", WallShelf = "Storage",
-	DiningTable = "Seating", WoodenBench = "Seating", CompanyDesk = "Seating",
+	DiningTable = "Seating", WoodenBench = "Seating", CompanyDesk = "Seating", OfficeDesk = "Seating",
 	FloorLamp = "Lighting", PottedPlant = "Plants", FlowerPlanter = "Plants",
 	BarrelDisplay = "Nautical", CrateStack = "Nautical", RopeBasket = "Nautical", LifeRingStand = "Nautical",
 	AnchorDisplay = "Nautical", FishingNetDisplay = "Nautical", NauticalSign = "Nautical", ShipWheelDisplay = "Nautical",
@@ -78,7 +81,9 @@ Furniture.Items = {
 		Name = "Fish freezer",
 		Price = 375,
 		Room = "Shop",
-		MaxPlaced = 4,
+		-- Every shop starts with one (AnglerData.FIXTURES) and keeps at least one.
+		MaxPlaced = 5,
+		Keep = "Your shop needs at least one freezer.",
 		Description = "Another chilled display for customers. Smaller fish leave room for more stock.",
 		-- Exactly two cells along the wall (9 x 4.5, see FishFreezer.DEPTH);
 		-- customers stand in the strip in front (+Z).
@@ -93,7 +98,9 @@ Furniture.Items = {
 		Name = "Cash register counter",
 		Price = 250,
 		Room = "Shop",
-		MaxPlaced = 3,
+		-- Every shop starts with one (AnglerData.FIXTURES) and keeps at least one.
+		MaxPlaced = 4,
+		Keep = "Your shop needs at least one cash register.",
 		Description = "A second till. Each counter serves one more customer at a time.",
 		-- Customers queue in the -Z strip; the seller stands in the +Z one.
 		Cells = { 2, 1 },
@@ -488,6 +495,39 @@ Furniture.Items = {
 		Front = 0,
 		Back = 0,
 	},
+	-- Fixtures come with the house and can be moved or picked up, never bought.
+	-- Each placed prep bench takes the first free bench key (Recipes.BuiltIn) as its
+	-- saved Key, so cooking jobs stay with it.
+	PrepBench = {
+		Name = "Prep bench",
+		Price = 0,
+		Fixture = true,
+		Room = "Processing",
+		MaxPlaced = 2,
+		Requires = "Supermarket",
+		Description = "Your kitchen's prep bench. Cooks fillets and fish & chips; your chef works here too.",
+		-- Kitchen.BUILT_IN_WIDTH, its back against a wall; the cook stands in front.
+		Cells = { 2, 1 },
+		Width = 6,
+		Depth = 2.4,
+		Front = 0,
+		Back = 0,
+	},
+	OfficeDesk = {
+		Name = "Office desk",
+		Price = 0,
+		Fixture = true,
+		Room = "Office",
+		MaxPlaced = 1,
+		Keep = "Your office needs its desk.",
+		Description = "The office desk and computer.",
+		-- Map/OfficeDesk: its back meets a wall and the chair rolls out at +Z.
+		Cells = { 2, 1 },
+		Width = 6.6,
+		Depth = 3.1,
+		Front = 2,
+		Back = 0,
+	},
 	-- Kit items go only on a company island's plot. Each placed prep bench takes
 	-- the first free company bench key (Recipes.CompanyBuiltIn) as its saved Key.
 	CompanyPrep = {
@@ -553,6 +593,8 @@ Furniture.Rooms = {
 	Storage = { 2.55, -15.4, 24.35, 15.4 },
 	Processing = { -24.35, -15.4, 1.95, 15.4 },
 	Kitchen = { -24.35, -15.4, 1.95, 15.4 },
+	-- The owner's office in the kitchen's front-left corner.
+	Office = { -24.4, 2.525, -7.05, 15.4 },
 	-- The Restaurant's dining room extension behind the processing room.
 	Dining = { -24.4, -33.4, -7.1, -16.1 },
 	-- The open quay deck between the back of the house and the piers, right of
@@ -564,6 +606,7 @@ Furniture.RoomNames = {
 	Storage = "storage room",
 	Processing = "kitchen",
 	Kitchen = "kitchen",
+	Office = "office",
 	Dining = "dining room",
 	Yard = "yard behind your house",
 	Plot = "company island plot",
@@ -578,19 +621,19 @@ Furniture.PlotBlocked = {
 -- Floor height of a room where it isn't the house floor.
 Furniture.FloorHeights = {
 	Yard = 0,
+	Office = 0.18, -- the office's floor boards
 }
--- Walkways, doorways and the built-in fixtures stay clear.
+-- Walkways and doorways stay clear. A zone with a Room only keeps out furniture
+-- that belongs somewhere else (see Furniture.blocked).
 Furniture.Blocked = {
 	{ -4, 65.6, 4, 78.4 }, -- shop entrance aisle customers walk along
-	{ 15.6, 69.5, 21.7, 78.5 }, -- shop's built-in freezer and its customer strip
-	{ -21, 65.6, -11.5, 74.9 }, -- shop's built-in counter, its customers and the seller
 	{ -4, 11.25, 1.95, 15.4 }, -- front doorway into the kitchen
-	{ -24.4, 6.45, -6.45, 15.4 }, -- enclosed office in the kitchen's front corner
+	{ -24.4, 1.95, -6.45, 15.4, Room = "Office" }, -- enclosed office in the kitchen's front corner
+	{ -10, 9, -7.05, 13.5 }, -- inside the office doorway
 	{ 2.55, 11.25, 8, 15.4 }, -- front doorway into the storage room
 	{ 2.55, -11.25, 6.5, -2.25 }, -- passage from the processing room
 	{ -1, -11.25, 1.95, -2.25 }, -- processing room side of the storage passage
 	{ -5.8, -15.4, 1.95, -11 }, -- rear door
-	{ -22.6, -14.6, -18, -1 }, -- built-in prep benches and their cooks
 	{ -24.4, -30.5, -19.5, -23.5 }, -- dining room entrance and approach
 	{ -6, -33, 6.5, -15.8 }, -- rear steps, spawn point and the walk down to the water
 	{ -4.8, -30.5, -2.5, -27.5 }, -- crab pot on the deck
@@ -599,6 +642,18 @@ Furniture.Blocked = {
 	{ 16, -31, 26.5, -20 }, -- crates, barrels and crab pot by the quay edge
 	{ 24.5, -33, 26.5, -30.5 }, -- lamp post
 }
+
+-- The keep-clear zones `itemId` must stay out of in the house.
+function Furniture.blocked(itemId: string): { { number } }
+	local rooms = Furniture.allowedRooms(itemId)
+	local zones = {}
+	for _, zone in Furniture.Blocked do
+		if not (zone.Room and table.find(rooms, zone.Room)) then
+			table.insert(zones, zone)
+		end
+	end
+	return zones
+end
 
 -- "Home" is the base house (Furniture), "Company" the island plot (CompanyFurniture).
 function Furniture.allowedOn(itemId: string, site: string?): boolean
@@ -617,7 +672,7 @@ end
 
 function Furniture.roomNames(itemId: string): string
 	local names = {}
-	local shortNames = { Shop = "shop", Storage = "storage", Processing = "kitchen" }
+	local shortNames = { Shop = "shop", Storage = "storage", Processing = "kitchen", Office = "office" }
 	local item = Furniture.Items[itemId]
 	for _, room in Furniture.allowedRooms(itemId) do
 		table.insert(
@@ -719,7 +774,8 @@ local GRID_WALLS = {
 
 function Furniture.intersectsGridWall(entry): boolean
 	local item = Furniture.Items[entry.ItemId]
-	if not item then return false end
+	-- The office desk came after these walls; the office floor is its room.
+	if not item or item.Room == "Office" then return false end
 	-- A model may meet a wall face, or tuck its end into a wall it runs into.
 	local body = shrink(Furniture.body(entry.ItemId, entry.X, entry.Z, entry.R) :: { number }, WALL_REACH)
 	for _, wall in GRID_WALLS do
@@ -791,7 +847,7 @@ local function check(placed, itemId: string, x: number, z: number, r: number, sk
 		end
 		if not fitsRoom then
 			return item.Name .. "s can only go in the " .. Furniture.roomNames(itemId) .. "."
-		elseif not clearOf(Furniture.Blocked) then
+		elseif not clearOf(Furniture.blocked(itemId)) then
 			return "Keep doorways, the aisle and the built-in fixtures clear."
 		end
 	end
@@ -858,8 +914,8 @@ end
 
 -- World frame on the floor of the house (or the yard deck, or the company plot
 -- when `houseFrame` is a plot frame) for a placed entry: the centre of the
--- model's base, which sits inside its cells. Built-in benches have no ItemId
--- and stand exactly on their saved spot.
+-- model's base, which sits inside its cells. An entry without a known ItemId
+-- stands exactly on its saved spot.
 function Furniture.frame(houseFrame, entry, site: string?)
 	local _, bodyX, bodyZ = Furniture.layout(entry.ItemId)
 	return houseFrame

@@ -98,8 +98,12 @@ function assetService:CreateMeshPartAsync(content)
 	table.insert(templates, part)
 	return part
 end
+local collection = {
+	GetInstanceAddedSignal = function() return { Connect = function() end } end,
+	GetTagged = function() return {} end,
+}
 game.GetService = function(_, name)
-	return if name == "AssetService" then assetService else {}
+	return if name == "AssetService" then assetService elseif name == "CollectionService" then collection else {}
 end
 local rings = {
 	{ x = 1, top = 0.2, bottom = -0.2, width = 0.2 },
@@ -246,4 +250,18 @@ for index = #completedMeshes + 1, #created do
 	assert(created[index].destroyed, "Only the incomplete species should be discarded")
 end
 print("PASS exhausted budgets preserve completed skins and allow cached species to hydrate")
+
+client = reset()
+client.start()
+local report
+task.spawn(function() report = client.diagnose() end)
+flush()
+assert(report:find("Mesh test PASS", 1, true), "Diagnostic must report a successful skin")
+client = reset()
+failure = "access"
+client.start()
+task.spawn(function() report = client.diagnose() end)
+flush()
+assert(report:find("Mesh test FAILED", 1, true) and report:find("API unavailable", 1, true), "Diagnostic must preserve the API failure")
+print("PASS mesh diagnostic reports success and the underlying allocation error")
 print("Recording mocks only; actual device memory and Studio appearance require play testing.")

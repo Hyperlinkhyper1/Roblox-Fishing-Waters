@@ -8,6 +8,10 @@ import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = await readFile(join(root, 'src/client/Lod.luau'), 'utf8');
+const serverSource = await readFile(join(root, 'src/server/Map/Lod.luau'), 'utf8');
+const pinStart = serverSource.indexOf('local UNPIN_DISTANCE =');
+const pinEnd = serverSource.indexOf('\nfunction Lod.prepareStreaming', pinStart);
+if (pinStart < 0 || pinEnd < 0) throw new Error('LOD pin lifecycle hook changed');
 const program = `
 local checks, writes, scheduled = 0, 0, 0
 local function check(value, message) checks += 1; assert(value, message) end
@@ -40,7 +44,7 @@ local clock = 0
 local os = {clock=function() return clock end}
 local RunService = {Heartbeat=signal()}
 local pinRequests = {}
-local pinRemote = {FireServer=function(_, ids) table.insert(pinRequests, ids) end}
+local pinRemote = {OnClientEvent=signal(), FireServer=function(_, ids) table.insert(pinRequests, ids) end}
 local ReplicatedStorage = {WaitForChild=function(_, name) assert(name == "LodPin"); return pinRemote end}
 local CollectionService = {added=signal(), removed=signal()}
 function CollectionService:GetInstanceAddedSignal(tag) assert(tag == "LodPiece"); return self.added end
@@ -321,9 +325,9 @@ homeGround.DescendantRemoving:Fire(homeGround.children[1])
 flush()
 check(writes == beforeWrites, "A replaced shell must stop following the island")
 -- Island pieces are reported as they stream in, so the server pins them for this player
-local chunk = object("Model", "GroundChunk")
+local chunk = object("Model", "GroundChunk", workspace)
 chunk.attributes.PieceId = 7
-local pine = object("Model", "Pine")
+local pine = object("Model", "Pine", workspace)
 pine.attributes.PieceId = 8
 CollectionService.added:Fire(chunk)
 CollectionService.added:Fire(pine)
@@ -341,14 +345,104 @@ flush()
 check(#pinRequests == 2 and #pinRequests[2] == 1 and pinRequests[2][1] == 7,
   "A piece that streamed out before its pin landed must be reported again")
 for i = 1, 1200 do
-  local piece = object("Model", "Piece")
+  local piece = object("Model", "Piece", workspace)
   piece.attributes.PieceId = 100 + i
   CollectionService.added:Fire(piece)
 end
 flush()
 check(#pinRequests == 5 and #pinRequests[3] == 500 and #pinRequests[4] == 500 and #pinRequests[5] == 200,
   "A big burst of pieces must be split into batches the server accepts")
+pinRemote.OnClientEvent:Fire({7, 8, 999999})
+flush()
+check(#pinRequests == 6 and #pinRequests[6] == 2,
+  "Released pieces retained on this client must confirm their existing arrival")
+CollectionService.removed:Fire(chunk)
+chunk.Parent = nil
+pinRemote.OnClientEvent:Fire({7})
+flush()
+check(#pinRequests == 6, "A revisit must not ask the server to force an unloaded piece in")
+chunk.Parent = workspace
+CollectionService.added:Fire(chunk)
+flush()
+check(#pinRequests == 7 and pinRequests[7][1] == 7,
+  "A missing released piece must report itself after normal streaming brings it back")
+local transient = object("Model", "Transient", workspace)
+transient.attributes.PieceId = 9000
+CollectionService.added:Fire(transient)
+CollectionService.removed:Fire(transient)
+transient.Parent = nil
+flush()
+check(#pinRequests == 7, "A piece removed before its deferred report must never be forced back in")
 print("LOD: " .. checks .. " checks passed; 3000 arrivals without refresh/render churn")
+
+-- Run the production server pin lifecycle independently of the geometry builder.
+do
+  local checks = 0
+  local function check(value, message) checks += 1; assert(value, message) end
+  local sweep
+  local task = {wait=coroutine.yield, spawn=function(callback)
+    sweep = coroutine.create(callback)
+    local ok, err = coroutine.resume(sweep)
+    assert(ok, err)
+  end}
+  local player = {Parent=true}
+  local position = {X=0, Y=0, Z=0}
+  local root = {Position=position, IsA=function(_, class) return class == "BasePart" end}
+  player.Character = {FindFirstChild=function() return root end}
+  local Players = {PlayerRemoving=signal(), GetPlayers=function() return {player} end}
+  local remote
+  local ReplicatedStorage = {FindFirstChild=function() return remote and remote.Parent and remote end}
+  local requests = {}
+  local Instance = {new=function(class)
+    assert(class == "RemoteEvent")
+    remote = {OnServerEvent=signal(), FireClient=function(_, target, ids)
+      check(target == player, "Revisit requests must target their player")
+      check(#ids <= 500, "Revisit confirmations must respect the batch limit")
+      table.insert(requests, ids)
+    end}
+    return remote
+  end}
+  local Enum = {ModelStreamingMode={PersistentPerPlayer="PersistentPerPlayer"}}
+  local game = {GetService=function(_, name)
+    return if name == "Players" then Players else ReplicatedStorage
+  end}
+  local Lod, pieces, pieceIds = {}, {}, {}
+  local PIN_BATCH = 500
+  local function piece(id)
+    local item = {Parent=true, ModelStreamingMode="PersistentPerPlayer", pins=0, releases=0}
+    function item:GetBoundingBox() return {Position={X=0, Y=0, Z=0}} end
+    function item:AddPersistentPlayer(target) assert(target == player); self.pins += 1 end
+    function item:RemovePersistentPlayer(target) assert(target == player); self.releases += 1 end
+    pieces[id], pieceIds[item] = item, id
+    return item
+  end
+  local first, retained = piece(1), piece(2)
+  ${serverSource.slice(pinStart, pinEnd)}
+  Lod.serve()
+  remote.OnServerEvent:Fire(player, {1, 2, 1})
+  check(first.pins == 1 and retained.pins == 1, "Initial arrivals must pin once")
+  root.Position = {X=1500, Y=0, Z=0}
+  local ok, err = coroutine.resume(sweep); assert(ok, err)
+  check(first.releases == 1 and retained.releases == 1, "Far scenery must release its memory pins")
+  root.Position = position
+  ok, err = coroutine.resume(sweep); assert(ok, err)
+  check(first.pins == 1 and retained.pins == 1,
+    "Returning to an island must never eagerly repin unloaded atomic models")
+  check(#requests == 1 and #requests[1] == 2, "Revisits must ask which pieces remain loaded")
+  remote.OnServerEvent:Fire(player, {2})
+  check(retained.pins == 2 and first.pins == 1,
+    "Only the piece confirmed present by its client may repin")
+  requests = {}
+  ok, err = coroutine.resume(sweep); assert(ok, err)
+  check(#requests == 1 and #requests[1] == 1 and requests[1][1] == 1,
+    "Missing scenery must remain unpinned until it streams in")
+  remote.OnServerEvent:Fire(player, {1})
+  check(first.pins == 2, "A normally streamed returning piece must pin again")
+  requests = {}
+  ok, err = coroutine.resume(sweep); assert(ok, err)
+  check(#requests == 0, "Confirmed pieces must leave the revisit request set")
+  print("LOD pin lifecycle: " .. checks .. " checks passed; revisit waits for streamed arrivals")
+end
 `;
 
 const temporary = await mkdtemp(join(tmpdir(), 'fishing-lod-'));

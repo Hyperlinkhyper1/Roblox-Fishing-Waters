@@ -1169,6 +1169,16 @@ function Boating.start()
 			toggleNet()
 		end
 	end)
+	local function commandNotice(message: string)
+		local channels = TextChatService:FindFirstChild("TextChannels")
+		local channel = channels and (channels:FindFirstChild("RBXSystem") or channels:FindFirstChild("RBXGeneral"))
+		if channel then
+			local escaped = message:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+			channel:DisplaySystemMessage(escaped)
+		else
+			notice(message)
+		end
+	end
 	feedback.OnClientEvent:Connect(function(kind, message, boatId)
 		if
 			(kind == "OpenDialogue" or kind == "OpenShop" or kind == "OpenDock")
@@ -1226,14 +1236,15 @@ function Boating.start()
 			previewShop = nil
 			DrydockCamera.stop()
 		elseif kind == "CommandNotice" and type(message) == "string" then
-			local channels = TextChatService:FindFirstChild("TextChannels")
-			local channel = channels and (channels:FindFirstChild("RBXSystem") or channels:FindFirstChild("RBXGeneral"))
-			if channel then
-				local escaped = message:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
-				channel:DisplaySystemMessage(escaped)
-			else
-				notice(message)
-			end
+			commandNotice(message)
+		elseif kind == "TestMesh" then
+			commandNotice("Testing fish meshes on this device...")
+			task.spawn(function()
+				local ok, result = pcall(function()
+					return require(script.Parent.FishMeshes).diagnose()
+				end)
+				commandNotice(if ok then result else "Mesh test FAILED: " .. tostring(result))
+			end)
 		elseif kind == "Notice" and type(message) == "string" then
 			notice(message)
 		end

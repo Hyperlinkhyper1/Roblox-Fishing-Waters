@@ -650,7 +650,18 @@ function Lod.release(model: Instance)
 end
 
 -- Clients report each piece as it streams in (see client/Lod) and the server pins it for
--- them. Pins last for the session: a player who sails the whole map ends up holding all of it.
+-- them. Pins used to last the whole session, so a player who sailed the map ended up holding
+-- all of it. On an 8 GB laptop that filled memory within the hour; Roblox then evicted and
+-- re-streamed everything that wasn't pinned (NPCs, boats, props) over and over, which showed
+-- as constant Replicator GC Job / Part/Model Removals hitches and mi_collect calls in the
+-- client log. Pins now follow the player: a piece farther than UNPIN_DISTANCE is released
+-- (the client draws the island's shell again once it streams out) and pinned again when the
+-- player comes back within REPIN_DISTANCE, after the client confirms the piece is still loaded.
+local UNPIN_DISTANCE = 1100
+local REPIN_DISTANCE = 450
+local SWEEP_SECONDS = 4
+local SWEEP_BUDGET = 0.004 -- seconds of server time one sweep step may take before yielding
+
 function Lod.serve()
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
 	if ReplicatedStorage:FindFirstChild("LodPin") then
@@ -658,12 +669,116 @@ function Lod.serve()
 	end
 	local Players = game:GetService("Players")
 	local pinned: { [Player]: { [number]: boolean } } = {}
+	-- Pieces released for being far away; ask the client about them when the player returns.
+	-- Pinning an unloaded piece here would force its whole atomic model to arrive at once,
+	-- bypassing the engine's normal streaming budget on every return to an island.
+	local released: { [Player]: { [number]: boolean } } = {}
+	-- Piece centres, measured once (island scenery doesn't move)
+	local centers: { [number]: Vector3 } = {}
 	Players.PlayerRemoving:Connect(function(player)
 		pinned[player] = nil
+		released[player] = nil
 	end)
 
+	local function centerOf(id: number, piece: Model): Vector3
+		local center = centers[id]
+		if not center then
+			center = piece:GetBoundingBox().Position
+			centers[id] = center
+		end
+		return center
+	end
+	local function flatDistance(a: Vector3, b: Vector3): number
+		local dx, dz = a.X - b.X, a.Z - b.Z
+		return math.sqrt(dx * dx + dz * dz)
+	end
+
+	-- The sweep yields between players and pieces, while pin requests keep arriving, so it
+	-- walks a snapshot of the ids rather than the live tables.
+	local snapshot: { number } = {}
+	local function idsOf(set: { [number]: boolean }): { number }
+		table.clear(snapshot)
+		for id in set do
+			table.insert(snapshot, id)
+		end
+		return snapshot
+	end
 	local remote = Instance.new("RemoteEvent")
 	remote.Name = "LodPin"
+
+	task.spawn(function()
+		while true do
+			task.wait(SWEEP_SECONDS)
+			local resumed = os.clock()
+			for _, player in Players:GetPlayers() do
+				local character = player.Character
+				local root = character and character:FindFirstChild("HumanoidRootPart")
+				if not root or not root:IsA("BasePart") then
+					continue
+				end
+				local position = root.Position
+				local held, away = pinned[player], released[player]
+				if held then
+					for _, id in idsOf(held) do
+						if not held[id] then
+							continue
+						end
+						local piece = pieces[id]
+						if not piece or not piece.Parent then
+							held[id] = nil
+							centers[id] = nil
+						elseif flatDistance(centerOf(id, piece), position) > UNPIN_DISTANCE then
+							held[id] = nil
+							piece:RemovePersistentPlayer(player)
+							if not away then
+								away = {}
+								released[player] = away
+							end
+							away[id] = true
+						end
+						if os.clock() - resumed > SWEEP_BUDGET then
+							task.wait()
+							resumed = os.clock()
+							if not player.Parent then
+								break
+							end
+						end
+					end
+				end
+				if away and player.Parent then
+					local confirm: { number } = {}
+					for _, id in idsOf(away) do
+						if not away[id] then
+							continue
+						end
+						local piece = pieces[id]
+						if not piece or not piece.Parent then
+							away[id] = nil
+						elseif flatDistance(centerOf(id, piece), position) < REPIN_DISTANCE then
+							-- Only already-streamed models may be repinned. Missing models arrive
+							-- at the engine's pace and report themselves through the usual path.
+							table.insert(confirm, id)
+							if #confirm >= PIN_BATCH then
+								remote:FireClient(player, confirm)
+								confirm = {}
+							end
+						end
+						if os.clock() - resumed > SWEEP_BUDGET then
+							task.wait()
+							resumed = os.clock()
+							if not player.Parent then
+								break
+							end
+						end
+					end
+					if #confirm > 0 and player.Parent then
+						remote:FireClient(player, confirm)
+					end
+				end
+			end
+		end
+	end)
+
 	remote.OnServerEvent:Connect(function(player, ids)
 		if typeof(ids) ~= "table" then
 			return
@@ -683,6 +798,10 @@ function Lod.serve()
 					pieces[id], pieceIds[piece] = nil, nil
 				elseif piece.ModelStreamingMode == Enum.ModelStreamingMode.PersistentPerPlayer then
 					held[id] = true
+					local away = released[player]
+					if away then
+						away[id] = nil
+					end
 					piece:AddPersistentPlayer(player)
 				end
 			end

@@ -48,6 +48,15 @@ check(transferred.Holds.TestBoat[2].Locked and data.Backpack[1].Locked, "Transfe
 check(not move(transferred, "Boat", 2, "Release"), "Favorite cannot be released")
 local inHand = assert(move(transferred, "Boat", 2, "Hand"))
 check(inHand.Hand.Locked and #inHand.Holds.TestBoat == 1, "Taking in hand preserves favorite")
+local swapped = assert(move(inHand, "Backpack", 1, "Hand"))
+check(swapped.Hand.FishId == "Boot" and #swapped.Backpack == 2, "Replacing the held fish swaps it into the selected storage")
+check(swapped.Backpack[2].Fish.FishId == "Cod" and swapped.Backpack[2].Locked and not swapped.Backpack[2].Fish.Locked, "Swap preserves the held favorite")
+check(inHand.Hand.Locked and inHand.Backpack[1].Fish.FishId == "Boot", "Swap leaves the original snapshot unchanged")
+local crowded = Data.decode(nil)
+crowded.Hand = fish("Shark")
+crowded.Backpack = { item("Cod"), item("Shark"), item("Cod") }
+check(not move(crowded, "Backpack", 1, "Hand"), "Swap fails when the held fish does not fit")
+check(crowded.Hand.FishId == "Shark" and #crowded.Backpack == 3, "Failed swap preserves both fish")
 check(not move(inHand, "Hand", "Hand", "Release"), "Held favorite cannot be released")
 local sold, soldCount = Data.sellToCove(inHand, 1, 10, true)
 check(soldCount == 0 and sold.Hand, "Held favorite cannot be sold")
@@ -215,6 +224,11 @@ humanoid.EquipTool = function(_, tool) tool.Parent = character end
 humanoid.UnequipTools = function() rod.Parent = robloxBackpack end
 Players.LocalPlayer = player
 local ReplicatedStorage = Instance.new("ReplicatedStorage")
+local fishing = Instance.new("Folder") fishing.Name = "Fishing" fishing.Parent = ReplicatedStorage
+local fishingRequest = Instance.new("RemoteEvent") fishingRequest.Name = "Request" fishingRequest.Parent = fishing
+local fishingFeedback = Instance.new("RemoteEvent") fishingFeedback.Name = "Feedback" fishingFeedback.Parent = fishing
+local crateOpens = 0
+fishingRequest.FireServer = function(_, action) if action == "OpenBaitCrate" then crateOpens += 1 end end
 local aboard, owns, saveFails = false, false, false
 local BoatCatalog = { TestBoat = boat }
 local profile = { Angler = Data.decode(nil) }
@@ -289,6 +303,16 @@ check(panel.TotalWorth.Text == "Total worth: $30", "Backpack worth is shown bott
 check(panel.Capacity.Text == "Backpack 2 / 4 space", "Capacity counts space independently from cards")
 check(#panel.InventoryItems:GetChildren() == 1 and not panel:FindFirstChild("EquipTool"),
 	"Inventory hides carried and equipped gear and has no tool equip action")
+player:SetAttribute("BoatDataStatus", "Ready")
+player:SetAttribute("BaitCrates", 2)
+local crate = panel.InventoryItems:FindFirstChild("BaitCrateCard")
+check(crate ~= nil and not panel.EmptyInventory.Visible, "Owned bait crates appear in inventory")
+crate.Activated:Fire()
+check(panel.ActionOpenCrate.Visible and not panel.ActionFavorite.Visible, "Crate selection exposes its open action")
+panel.ActionOpenCrate.Activated:Fire()
+check(crateOpens == 1, "Opening a crate uses the fishing request")
+player:SetAttribute("BaitCrates", 0)
+check(not panel.InventoryItems:FindFirstChild("BaitCrateCard") and not panel.ActionOpenCrate.Visible, "Last opened crate removes its card")
 panel.ViewFish.Activated:Fire()
 check(panel.EmptyInventory.Visible, "Items view stays empty when only gear is carried")
 panel.ViewFish.Activated:Fire()

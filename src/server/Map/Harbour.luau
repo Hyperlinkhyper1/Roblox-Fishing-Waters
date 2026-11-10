@@ -1325,10 +1325,12 @@ local SHOP_PLOT_VERSION = 1
 local SHOP_PLOT = { -26.5, 60, 26.5, 84.8 } -- house-local x1, z1, x2, z2: forecourt to back eaves
 
 -- Separating-axis test between a (possibly turned) box and the plot, in the house's floor plane.
-local function overlapsShopPlot(frame: CFrame, box: CFrame, size: Vector3): boolean
+-- `rect` overrides the plot with another house-local x1, z1, x2, z2 area.
+local function overlapsShopPlot(frame: CFrame, box: CFrame, size: Vector3, rect: { number }?): boolean
+	local plot = rect or SHOP_PLOT
 	local center = frame:PointToObjectSpace(box.Position)
-	local offset = Vector2.new(center.X - (SHOP_PLOT[1] + SHOP_PLOT[3]) / 2, center.Z - (SHOP_PLOT[2] + SHOP_PLOT[4]) / 2)
-	local plotHalf = Vector2.new((SHOP_PLOT[3] - SHOP_PLOT[1]) / 2, (SHOP_PLOT[4] - SHOP_PLOT[2]) / 2)
+	local offset = Vector2.new(center.X - (plot[1] + plot[3]) / 2, center.Z - (plot[2] + plot[4]) / 2)
+	local plotHalf = Vector2.new((plot[3] - plot[1]) / 2, (plot[4] - plot[2]) / 2)
 	local reaches = {}
 	for _, vector in { box.RightVector * size.X / 2, box.UpVector * size.Y / 2, box.LookVector * size.Z / 2 } do
 		local flat = frame:VectorToObjectSpace(vector)
@@ -1385,6 +1387,183 @@ local function clearShopPlots(island: Instance)
 		end
 	end
 	island:SetAttribute("ShopPlotVersion", SHOP_PLOT_VERSION)
+end
+
+-- The shop plot assumes the ring road runs straight along house-local z = 52 (ROAD_OFFSET inland
+-- of the dock). Where the bay shore bends the generated road drifts off that line and can run
+-- through the shop (base 9). Such stretches are cut out and re-laid along z = 52, over the zebra
+-- crossing, with links back to the surviving road on each side.
+local SHOP_ROAD_VERSION = 1
+local SHOP_ROAD_TRIGGER = { -26.5, 61.5, 26.5, 84.8 } -- road reaching the forecourt or the shop
+local SHOP_ROAD_CLEAR = { -28, 43, 28, 86 } -- the road band in front of the shop plus the plot
+local SHOP_ROAD_Z = 52
+local SHOP_ROAD_TOP = 0.64 -- between the ring road's two strip heights, below the zebra stripes
+
+local function textOf(item: Instance): string?
+	local label = item:FindFirstChildWhichIsA("TextLabel", true)
+	return label and label.Text
+end
+
+local function detourShopRoad(village: Instance, road: Instance, base: Model, frame: CFrame)
+	local function toLocal(p: Vector3): Vector2
+		local l = frame:PointToObjectSpace(p)
+		return Vector2.new(l.X, l.Z)
+	end
+	local function toWorld(p: Vector2): Vector2
+		local w = frame * Vector3.new(p.X, 0, p.Y)
+		return Vector2.new(w.X, w.Z)
+	end
+
+	-- Cut every road piece over the shop and the band in front of it, remembering strip ends.
+	local cut, kept = {}, {}
+	for _, piece in road:GetChildren() do
+		if not piece:IsA("Part") then
+			continue
+		end
+		local ends = {}
+		if piece.Shape == Enum.PartType.Block and math.abs(piece.Size.X - ROAD_WIDTH) < 0.01 then
+			ends = { piece.CFrame * Vector3.new(0, 0, piece.Size.Z / 2), piece.CFrame * Vector3.new(0, 0, -piece.Size.Z / 2) }
+		elseif piece.Shape == Enum.PartType.Cylinder and math.abs(piece.Size.Y - ROAD_WIDTH) < 0.01 then
+			ends = { piece.Position }
+		end
+		local removed = overlapsShopPlot(frame, piece.CFrame, piece.Size, SHOP_ROAD_CLEAR)
+		for _, e in ends do
+			table.insert(if removed then cut else kept, toLocal(e))
+		end
+		if removed then
+			piece:Destroy()
+		end
+	end
+	-- Gates: where a surviving strip ended on a piece that was cut.
+	local gates: { Vector2 } = {}
+	for _, p in cut do
+		for _, q in kept do
+			if (p - q).Magnitude < 0.5 then
+				local seen = false
+				for _, g in gates do
+					seen = seen or (g - q).Magnitude < 1
+				end
+				if not seen then
+					table.insert(gates, q)
+				end
+				break
+			end
+		end
+	end
+
+	-- A link is clear when the whole strip stays half a road width off the shop plot.
+	local function clear(a: Vector2, b: Vector2): boolean
+		local steps = math.max(1, math.ceil((b - a).Magnitude))
+		for k = 0, steps do
+			local p = a:Lerp(b, k / steps)
+			local dx = math.max(SHOP_PLOT[1] - p.X, 0, p.X - SHOP_PLOT[3])
+			local dz = math.max(SHOP_PLOT[2] - p.Y, 0, p.Y - SHOP_PLOT[4])
+			if dx * dx + dz * dz < (ROAD_WIDTH / 2) ^ 2 then
+				return false
+			end
+		end
+		return true
+	end
+	-- One gate per side: the frontier nearest the new stretch (a strip can survive just past a cut joint).
+	local reach = { [-1] = SHOP_ROAD_CLEAR[3], [1] = SHOP_ROAD_CLEAR[3] }
+	local nearest: { [number]: Vector2 } = {}
+	for _, gate in gates do
+		local side = if gate.X < 0 then -1 else 1
+		local target = Vector2.new(side * reach[side], SHOP_ROAD_Z)
+		if not nearest[side] or (gate - target).Magnitude < (nearest[side] - target).Magnitude then
+			nearest[side] = gate
+		end
+	end
+	local links = {}
+	for side, gate in nearest do
+		local x = reach[side]
+		while x < 90 and not clear(gate, Vector2.new(side * x, SHOP_ROAD_Z)) do
+			x += 2
+		end
+		reach[side] = x
+		table.insert(links, { gate = gate, side = side })
+	end
+
+	local segments = {}
+	local function lay(a: Vector2, b: Vector2)
+		pathSegment(road, toWorld(a), toWorld(b), ROAD_WIDTH, ROAD, M.Cobblestone, SHOP_ROAD_TOP)
+		table.insert(segments, { a, b })
+	end
+	local west, east = Vector2.new(-reach[-1], SHOP_ROAD_Z), Vector2.new(reach[1], SHOP_ROAD_Z)
+	lay(west, east)
+	lay(east, east)
+	for _, link in links do
+		lay(link.gate, Vector2.new(link.side * reach[link.side], SHOP_ROAD_Z))
+	end
+
+	-- Clear village houses and small props off the new stretch.
+	local function onNewRoad(box: CFrame, size: Vector3): boolean
+		for _, s in segments do
+			local a, b = s[1], s[2]
+			local length = (b - a).Magnitude
+			local along = if length > 0.5 then (b - a).Unit else Vector2.new(1, 0)
+			local mid = (a + b) / 2
+			-- Express the strip as its own frame inside the house frame.
+			local strip = frame * CFrame.lookAt(Vector3.new(mid.X, 0, mid.Y), Vector3.new(mid.X + along.X, 0, mid.Y + along.Y))
+			local half = ROAD_WIDTH / 2
+			if overlapsShopPlot(strip, box, size, { -half, -length / 2 - half, half, length / 2 + half }) then
+				return true
+			end
+		end
+		return false
+	end
+	local baseSign = "Base " .. tostring(base:GetAttribute("BaseId"))
+	local candidates = {}
+	local houses = village:FindFirstChild("Houses")
+	for _, item in if houses then houses:GetChildren() else {} do
+		table.insert(candidates, item)
+	end
+	for _, item in village:GetChildren() do
+		if item:IsA("Model") and item.Name == "Signpost" and textOf(item) == baseSign then
+			item:Destroy() -- re-placed beside the new junction below
+		elseif item:IsA("Model") and #item:GetChildren() < 40 and string.sub(item.Name, 1, 9) ~= "BaseTrack"
+			and item ~= road and item ~= houses and item.Name ~= "Lane" and item.Name ~= "CrossStreets" and item.Name ~= "Plaza" then
+			table.insert(candidates, item)
+		end
+	end
+	for _, item in candidates do
+		local box, size
+		if item:IsA("Model") then
+			box, size = item:GetBoundingBox()
+		elseif item:IsA("BasePart") then
+			box, size = item.CFrame, item.Size
+		else
+			continue
+		end
+		if onNewRoad(box, size) then
+			item:Destroy()
+		end
+	end
+	local signAt = toWorld(Vector2.new(7, SHOP_ROAD_Z - ROAD_WIDTH / 2 - 2))
+	Props.signpost(village, ground(signAt), facingToward(signAt, toWorld(Vector2.new(0, 19))) - math.pi / 2, { { baseSign, 0 } })
+end
+
+local function rerouteShopRoads(island: Instance)
+	local bases = island:FindFirstChild("Bases")
+	local village = island:FindFirstChild("Village")
+	local road = village and village:FindFirstChild("Road")
+	if island:GetAttribute("ShopRoadVersion") == SHOP_ROAD_VERSION or not bases or not road then
+		return
+	end
+	for _, base in bases:GetChildren() do
+		local house = base:IsA("Model") and base:FindFirstChild("BaseHouse")
+		local frame = house and house:GetAttribute("HouseFrame")
+		if typeof(frame) ~= "CFrame" then
+			continue
+		end
+		for _, piece in road:GetChildren() do
+			if piece:IsA("BasePart") and overlapsShopPlot(frame, piece.CFrame, piece.Size, SHOP_ROAD_TRIGGER) then
+				detourShopRoad(village, road, base :: Model, frame)
+				break
+			end
+		end
+	end
+	island:SetAttribute("ShopRoadVersion", SHOP_ROAD_VERSION)
 end
 ----------------------------------------------------------------------------------------------------
 -- Village
@@ -1983,6 +2162,7 @@ function Harbour.build(parent: Instance, rng: Random, center: Vector2): CFrame
 	-- The piazza's own terraces go in last, clearing any generated house or tree off their plots
 	PlazaHouses.build(village:FindFirstChild("Plaza") :: Model, CFrame.new(ground(plaza, 0.8)))
 	clearShopPlots(island)
+	rerouteShopRoads(island)
 	buildBoats(shape, island, rng, baseShores)
 	Harbour.ensureLaunchClearance(island)
 	Harbour.ensureBaseBoatClearance(island)
@@ -2318,6 +2498,7 @@ function Harbour.ensureBases(root: Instance)
 	for _, island in islands do
 		breathe()
 		clearShopPlots(island)
+		rerouteShopRoads(island)
 		local village, bases = island:FindFirstChild("Village"), island:FindFirstChild("Bases")
 		if village and bases then
 			for _, base in bases:GetChildren() do

@@ -103,6 +103,8 @@ ${section(build, 'local ITEMS', '\nlocal CAMERA_PITCH')}
 ${section(build, '\tlocal function placed()', '\n\tlocal function furnitureFolder(')}
   for _, id in ITEMS do itemButtons[id], stockLabels[id], itemViews[id] = {}, {}, {} end
   local inventoryTitle, emptyInventory, hint = {}, {}, {}
+  local category, categoryButtons, selectionName = "All", {}, {}
+  for _, entry in Furniture.Categories do categoryButtons[entry.Id] = {} end
   local rotate, cancel, move, pickUp = {}, {}, {}, {}
   local active, editingRack = true, false
   local editRack, rackEditor, rackStatus, rackMode = {}, {}, {}, {}
@@ -173,7 +175,9 @@ do
     end}
   end
   local FishFreezer, ShopDesk, StorageRack = builder("Freezer"), builder("Register"), builder("StorageRack")
+  local OfficeDesk = builder("OfficeDesk")
   local Kitchen = {
+    BUILT_IN_WIDTH = 6,
     buildCase = builder("FoodCase").build,
     buildStation = function(parent, frame, id) return builder(id).build(parent, frame) end,
   }
@@ -187,8 +191,10 @@ do
 ${section(service, 'local function buildPreviews(', '\nfunction FurnitureService.start()')}
   local parent = {}
   buildPreviews(parent)
-  for _, id in Furniture.Order do
-    local sample = built[id]
+  local ids = table.clone(Furniture.Order)
+  table.move(Furniture.FixtureOrder, 1, #Furniture.FixtureOrder, #ids + 1, ids)
+  for _, id in ids do
+    local sample = built[if id == "PrepBench" then "Prep" else id]
     check(sample and sample.Name == id and sample.Parent.Name == "Previews" and sample.Parent.Parent == parent,
       "Every catalogue item must have a replicated template")
     check(sample.Part.Anchored and not sample.Part.CanCollide and not sample.Part.CanTouch and not sample.Part.CanQuery,

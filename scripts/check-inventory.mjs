@@ -24,6 +24,7 @@ const dependencies = {
   'ReplicatedStorage.Shared.FishModels': '{show=function() previews += 1 return nil end}',
   'ReplicatedStorage.Shared.FishMutations': '(function()\n' + await read('src/shared/FishMutations.luau') + '\nend)()',
   'ReplicatedStorage.Shared.Gamepasses': '{AutoStore={Id=3722004182}}',
+  'ReplicatedStorage.Shared.Bait': '(function()\n' + await read('src/shared/Bait.luau') + '\nend)()',
   'script.Parent.AnglerData': 'Data', 'script.Parent.BoatService': 'Boats',
   'script.Parent.GamepassService': '{ownsAutoStore=function() return owns end}',
 };

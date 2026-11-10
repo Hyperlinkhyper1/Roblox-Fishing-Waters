@@ -13,7 +13,9 @@ local function profile(cash, company)
 	data.Paths.Unlocked.Supermarket = true
 	data.Paths.Unlocked.Company = company or nil
 	data.Storage = { fish() }
-	data.Furniture = { { ItemId = "StorageRack", X = 13.5, Z = 0, R = 0 } }
+	-- A rack and one harbour prep bench; the Supermarket's bench grant is already settled.
+	data.Furniture = { { ItemId = "StorageRack", X = 13.5, Z = 0, R = 0 }, { ItemId = "PrepBench", X = -22.5, Z = 0, R = 1, Key = "Prep1" } }
+	data.HomeBenches = 1
 	return { Cash = cash, Angler = data, OwnedBoats = { Rowboat = true } }
 end
 
@@ -29,10 +31,10 @@ local bought = assert(Islands.purchase(original, 3))
 check(bought.Cash == 0 and bought.Angler.CompanyIsland == 3, "Buy charges exactly once and saves the preferred plot")
 check(original.Cash == 50000 and original.Angler.CompanyIsland == nil, "Purchase does not mutate its input")
 check(bought.Angler.Stats.CoinsSpent == 50000 and original.Angler.Stats.CoinsSpent == 0, "Property spending updates statistics without mutating the original")
-check(bought.OwnedBoats.Rowboat and #bought.Angler.Storage == 1 and #bought.Angler.Furniture == 1, "Boat, fish and furniture survive buying")
+check(bought.OwnedBoats.Rowboat and #bought.Angler.Storage == 1 and #bought.Angler.Furniture == 2, "Boat, fish and furniture survive buying")
 check(Islands.purchase(bought, 4) == nil and bought.Cash == 0, "Duplicate purchases cannot charge again")
 local loaded = Data.decode(bought.Angler)
-check(loaded.CompanyIsland == 3 and #loaded.Storage == 1 and #loaded.Furniture == 1, "Ownership and inventories survive a save round trip")
+check(loaded.CompanyIsland == 3 and #loaded.Storage == 1 and #loaded.Furniture == 2, "Ownership and inventories survive a save round trip")
 check(Data.storageCapacity(loaded) == 12, "The island's racks add nothing until they are placed")
 for itemId, count in Data.COMPANY_KIT do
 	check(loaded.FurnitureStock[itemId] == count, "Buying grants the island kit to place: " .. itemId)
@@ -42,6 +44,18 @@ check(Data.decode({ CompanyIsland = 2 }).FurnitureStock.CompanyDesk == 1, "Owner
 check(Data.decode(nil).FurnitureStock.CompanyDesk == nil, "Players without an island get no kit")
 check(not pcall(Data.decode, { CompanyKit = 2 }), "Corrupt kit markers are rejected")
 check(not pcall(Data.decode, { CompanyFurniture = { { ItemId = "CompanyPrep", X = 0, Z = 0, R = 0, Key = "Prep1" } } }), "Corrupt bench keys are rejected")
+check(not pcall(Data.decode, { Furniture = { { ItemId = "PrepBench", X = 0, Z = 0, R = 0, Key = "CompanyPrep1" } } }), "Company bench keys stay on the plot")
+
+-- The harbour kitchen's prep benches are furniture the Supermarket places once.
+local opened = Data.decode(nil)
+opened.Paths.Unlocked.Supermarket = true
+opened = Data.decode(opened)
+local benchKeys = {}
+for _, entry in opened.Furniture do
+	if entry.ItemId == "PrepBench" then benchKeys[entry.Key] = entry end
+end
+check(benchKeys.Prep1 and benchKeys.Prep2 and opened.HomeBenches == 1, "The Supermarket places both prep benches in the kitchen")
+check(#Data.decode(opened).Furniture == #opened.Furniture, "The prep benches arrive once")
 
 -- Placing the kit on the plot.
 check(Data.placeFurniture(loaded, "StorageRack", 0, 0, 0, "Company") ~= nil, "Racks go on the company plot")
@@ -57,7 +71,7 @@ for index, x in { -40.5, -36, -31.5, -27 } do
 	furnished = assert(Data.placeFurniture(furnished, "StorageRack", x, 18, 0, "Company"))
 	check(Data.storageCapacity(furnished) == 12 + 12 * index, "Each placed island rack adds twelve slots")
 end
-check(furnished.FurnitureStock.StorageRack == nil and #furnished.Furniture == 1, "Placing uses the kit and leaves the house alone")
+check(furnished.FurnitureStock.StorageRack == nil and #furnished.Furniture == 2, "Placing uses the kit and leaves the house alone")
 check(Data.placeFurniture(furnished, "StorageRack", 0, 0, 0, "Company") == nil, "Only owned racks can be placed")
 check(Data.placeFurniture(furnished, "CompanyDesk", -40.5, 18, 0, "Company") == nil, "Plot furniture cannot overlap")
 furnished = assert(Data.placeFurniture(furnished, "CompanyDesk", 0, 13.5, 2, "Company"))
@@ -73,7 +87,7 @@ for id = 1, Islands.COUNT do
 	check(purchased.Cash == 123 and purchased.Angler.CompanyIsland == id, "Every property ID can be purchased at the same price")
 	check(source.Cash == Islands.PRICE + 123 and source.Angler.CompanyIsland == nil, "Purchasing any property preserves the original profile")
 	local restored = Data.decode(Data.decode(purchased.Angler))
-	check(restored.CompanyIsland == id and #restored.Storage == 1 and #restored.Furniture == 1,
+	check(restored.CompanyIsland == id and #restored.Storage == 1 and #restored.Furniture == 2,
 		"Every property ID and its inventory survive repeated save decoding")
 	check(restored.Stats.CoinsSpent == Islands.PRICE, "Each property purchase records its spending after a save round trip")
 end

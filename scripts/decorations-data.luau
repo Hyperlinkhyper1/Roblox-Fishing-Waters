@@ -6,6 +6,16 @@ local function check(value, message)
 	assert(value, message)
 end
 
+-- Every profile starts with the house fixtures (freezer, till, office desk).
+local fixtures = Data.decode(nil).Furniture
+local FIXTURES = #fixtures
+for index, fixture in fixtures do
+	check(Furniture.Items[fixture.ItemId].Keep and Data.pickUpFurniture(Data.decode(nil), index) == nil,
+		"The only " .. fixture.ItemId .. " can be moved but never picked up")
+end
+check(Data.placeFurniture(Data.decode(nil), 3, -22.5, 9, 0) ~= nil, "The office desk moves within the office")
+check(Data.placeFurniture(Data.decode(nil), 3, -9, -9, 0) == nil, "The office desk stays in the office")
+
 -- Decorations can be bought, placed in every indoor room, saved and picked up.
 -- Find a legal grid position in each room using the actual shared placement rules.
 local decorationCount = 0
@@ -21,7 +31,7 @@ for _, id in Furniture.Order do
 				local footprint = Furniture.footprint(id, x, z, 0)
 				if footprint[1] >= room[1] and footprint[2] >= room[2]
 					and footprint[3] <= room[3] and footprint[4] <= room[4]
-					and Furniture.check({}, id, x, z, 0) == nil then
+					and Furniture.check(fixtures, id, x, z, 0) == nil then
 					xFound, zFound = x, z
 					break
 				end
@@ -32,14 +42,15 @@ for _, id in Furniture.Order do
 		local profile = assert(Data.buyFurniture(Data.decode(nil), id))
 		profile = assert(Data.placeFurniture(profile, id, xFound, zFound, 0))
 		local reloaded = Data.decode(profile)
-		check(#reloaded.Furniture == 1 and reloaded.Furniture[1].ItemId == id
-			and reloaded.Furniture[1].X == xFound and reloaded.Furniture[1].Z == zFound,
+		local saved = reloaded.Furniture[FIXTURES + 1]
+		check(#reloaded.Furniture == FIXTURES + 1 and saved.ItemId == id
+			and saved.X == xFound and saved.Z == zFound,
 			id .. " must survive a saved profile round trip in " .. roomId)
 		local withSecond = assert(Data.buyFurniture(reloaded, id))
 		check(Data.placeFurniture(withSecond, id, xFound, zFound, 0) == nil,
 			id .. " must not overlap placed furniture")
-		local pickedUp = assert(Data.pickUpFurniture(reloaded, 1))
-		check(#pickedUp.Furniture == 0 and pickedUp.FurnitureStock[id] == 1,
+		local pickedUp = assert(Data.pickUpFurniture(reloaded, FIXTURES + 1))
+		check(#pickedUp.Furniture == FIXTURES and pickedUp.FurnitureStock[id] == 1,
 			id .. " must return to stock after pickup")
 	end
 end
@@ -72,7 +83,7 @@ for _, id in Furniture.Order do
 	mixed = placed
 end
 mixed = Data.decode(mixed)
-check(#mixed.Furniture == decorationCount + 1 and mixed.FurnitureStock.StorageRack == 2
+check(#mixed.Furniture == decorationCount + 1 + FIXTURES and mixed.FurnitureStock.StorageRack == 2
 	and mixed.Furniture[1].ItemId == "Freezer", "All decoration types and old furniture must survive together")
 
 print("Decorations: " .. checks .. " purchase, placement and persistence checks passed (pure data; no Roblox runtime).")

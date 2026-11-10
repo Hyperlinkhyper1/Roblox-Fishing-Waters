@@ -4,6 +4,11 @@ local AssetService = game:GetService("AssetService")
 
 local EditableMeshBudget = {}
 local unavailable = false
+local failureReason: string? = nil
+
+function EditableMeshBudget.failureReason(): string?
+	return failureReason
+end
 
 function EditableMeshBudget.create(): EditableMesh?
 	if unavailable then
@@ -14,6 +19,7 @@ function EditableMeshBudget.create(): EditableMesh?
 	end)
 	if not ok or not mesh then
 		unavailable = true
+		failureReason = "CreateEditableMesh: " .. (if ok then "returned nil (mesh budget or API access unavailable)" else tostring(mesh))
 		return nil
 	end
 	return mesh
@@ -32,6 +38,7 @@ function EditableMeshBudget.fixed(mesh: EditableMesh): EditableMesh?
 	mesh:Destroy()
 	if not ok or not fixed then
 		unavailable = true
+		failureReason = "CreateEditableMeshAsync (fixed-size copy): " .. (if ok then "returned nil (mesh budget or API access unavailable)" else tostring(fixed))
 		return nil
 	end
 	return fixed

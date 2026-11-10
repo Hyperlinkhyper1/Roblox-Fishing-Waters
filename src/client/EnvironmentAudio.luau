@@ -8,6 +8,7 @@ local SoundService = game:GetService("SoundService")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local Weather = require(ReplicatedStorage.Shared.Weather)
+local TerrainProbe = require(script.Parent.TerrainProbe)
 
 -- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
 local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
@@ -107,10 +108,6 @@ function EnvironmentAudio.start()
 		end)
 	end)
 
-	local terrainParams = RaycastParams.new()
-	terrainParams.FilterType = Enum.RaycastFilterType.Include
-	terrainParams.FilterDescendantsInstances = { workspace.Terrain }
-	terrainParams.IgnoreWater = false
 	local roofParams = RaycastParams.new()
 	roofParams.FilterType = Enum.RaycastFilterType.Exclude
 	roofParams.IgnoreWater = true
@@ -122,7 +119,7 @@ function EnvironmentAudio.start()
 	local lastCamera: Camera? = nil
 	local lastPosition: Vector3? = nil
 
-	-- Terrain-only shoreline probes still find water beneath docks and boats.
+	-- Voxel shoreline probes still find water beneath docks and boats.
 	-- Keep this bounded and independent of the number of streamed shore parts.
 	RunService.Heartbeat:Connect(profiled("EnvironmentAudio", function(dt: number)
 		local camera = workspace.CurrentCamera
@@ -144,21 +141,22 @@ function EnvironmentAudio.start()
 		if elapsed >= SAMPLE_INTERVAL then
 			elapsed = 0
 			lastCamera, lastPosition = camera, position
-			local exclusions = { camera }
+			local exclusions = { camera, workspace.Terrain }
 			for _, other in Players:GetPlayers() do
 				if other.Character then
 					table.insert(exclusions, other.Character)
 				end
 			end
 			roofParams.FilterDescendantsInstances = exclusions
-			sheltered = workspace:Raycast(position, Vector3.new(0, 160, 0), roofParams) ~= nil
+			sheltered = TerrainProbe.surfaceAt(position.X, position.Z, position.Y + 0.5, position.Y + 160, true) ~= nil
+				or workspace:Raycast(position, Vector3.new(0, 160, 0), roofParams) ~= nil
 			waterNear = 0
 			if ocean then
 				for _, offset in WATER_PROBES do
-					local origin = Vector3.new(position.X, Biomes.WaterLevel + 8, position.Z) + offset
-					local hit = workspace:Raycast(origin, Vector3.new(0, -16, 0), terrainParams)
-					if hit and hit.Material == Enum.Material.Water then
-						local distance = (position - hit.Position).Magnitude
+					local x, z = position.X + offset.X, position.Z + offset.Z
+					local material, height = TerrainProbe.surfaceAt(x, z, Biomes.WaterLevel - 8, Biomes.WaterLevel + 8)
+					if material == Enum.Material.Water and height then
+						local distance = (position - Vector3.new(x, height, z)).Magnitude
 						waterNear = math.max(waterNear, math.clamp(1 - distance / 130, 0, 1))
 					end
 				end
