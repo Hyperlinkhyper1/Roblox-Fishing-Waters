@@ -1,8 +1,10 @@
 // Builds the real SharkModel against recording mocks and checks its geometry: no Ball parts (Roblox
 // forces those to spheres), smooth mesh ellipsoids, sane frames, the swim segments SharkSwim bends,
 // the overall size the spear hit volume assumes, and the dorsal fin breaking the surface.
-// Pass --preview <file.png> to also raytrace side, top, three-quarter, front and mid-stroke views.
-// This checks geometry only, not Roblox rendering or streaming.
+// It also builds SharkShape's mesh skin (what clients render with EditableMesh) and checks its
+// swim segments, jaw, normals, winding and size. Pass --preview <file.png> to rasterize side,
+// top, three-quarter, open-jaw and mid-stroke views of the skin with the surface details, or add
+// --fallback to see the ellipsoid stand-in instead. Geometry only, not Roblox rendering.
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
@@ -13,14 +15,12 @@ import { deflateSync } from 'node:zlib';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewIndex = process.argv.indexOf('--preview');
 const previewPath = previewIndex > 0 ? resolve(process.argv[previewIndex + 1]) : null;
-const source = await readFile(join(root, 'src/server/SharkModel.luau'), 'utf8');
-const swim = await readFile(join(root, 'src/client/SharkSwim.luau'), 'utf8');
-const pivot = name => {
-  const match = swim.match(new RegExp(`local ${name} = CFrame\\.new\\(([^)]*)\\)`));
-  if (!match) throw new Error(`SharkSwim ${name} not found`);
-  return match[1].split(',').map(Number);
-};
-const flexPivot = pivot('FLEX_PIVOT'), tailPivot = pivot('TAIL_PIVOT');
+const fallbackView = process.argv.includes('--fallback');
+const shape = await readFile(join(root, 'src/shared/SharkShape.luau'), 'utf8');
+const requireShape = /local ReplicatedStorage = game:GetService\("ReplicatedStorage"\)\r?\nlocal SharkShape = require\(ReplicatedStorage:WaitForChild\("Shared"\)\.SharkShape\)/;
+const modelSource = await readFile(join(root, 'src/server/SharkModel.luau'), 'utf8');
+if (!requireShape.test(modelSource)) throw new Error('SharkModel no longer requires SharkShape the expected way');
+const source = modelSource.replace(requireShape, () => 'local SharkShape = SHARK_SHAPE');
 
 const program = String.raw`
 local checks = 0
@@ -49,6 +49,9 @@ local Vector3 = { new = v3 }
 
 local CF = {}
 local function cf(p, x, y, z) return setmetatable({ Position = p, x = x, y = y, z = z }, CF) end
+CF.__index = function(c, key)
+  if key == "Rotation" then return cf(v3(), c.x, c.y, c.z) end
+end
 local function rotate(c, v) return c.x * v.X + c.y * v.Y + c.z * v.Z end
 CF.__mul = function(a, b)
   if getmetatable(b) == V3 then return a.Position + rotate(a, b) end
@@ -92,6 +95,9 @@ function Instance.new(kind)
   end })
 end
 
+local SHARK_SHAPE = (function()
+${shape}
+end)()
 local SharkModel = (function()
 ${source}
 end)()
@@ -105,7 +111,9 @@ local root = shark.PrimaryPart
 check(root and root.Name == "Root" and root.Transparency == 1 and root.Parent == shark, "An invisible root is the primary part")
 check(near(root.CFrame, spawn), "The root is pivoted to the spawn frame")
 
-local parts, segments = {}, { front = 0, SwimFlex = 0, SwimTail = 0 }
+local parts, segments = {}, {}
+local SCALE = SHARK_SHAPE.SCALE
+local JOINT_COUNT = #SHARK_SHAPE.JOINTS
 local lo, hi = v3(math.huge, math.huge, math.huge), v3(-math.huge, -math.huge, -math.huge)
 for _, p in shark.children do
   check(p.ClassName == "Part" or p.ClassName == "WedgePart", p.Name .. " is a part")
@@ -119,10 +127,10 @@ for _, p in shark.children do
   end
   local offset = p:GetAttribute("SwimOffset")
   check(offset and near(p.CFrame, spawn * offset), p.Name .. " stores its offset from the root")
-  local flex, tail = p:GetAttribute("SwimFlex") == true, p:GetAttribute("SwimTail") == true
-  check(not (flex and tail), p.Name .. " belongs to one swim segment")
-  local segment = if tail then "SwimTail" elseif flex then "SwimFlex" else "front"
-  segments[segment] += 1
+  local segment = p:GetAttribute("SwimSegment")
+  check(type(segment) == "number" and segment >= 0 and segment <= JOINT_COUNT, p.Name .. " has a swim segment")
+  check(segment == SHARK_SHAPE.segmentAt(offset.Position.Z / SCALE), p.Name .. " rides the segment it sits in")
+  segments[segment] = (segments[segment] or 0) + 1
   local size = p.Size
   check(size.X > 0 and size.Y > 0 and size.Z > 0, p.Name .. " has a positive size")
   for _, pair in { { offset.x, offset.y }, { offset.y, offset.z }, { offset.z, offset.x } } do
@@ -138,140 +146,295 @@ for _, p in shark.children do
     hi = v3(math.max(hi.X, corner.X), math.max(hi.Y, corner.Y), math.max(hi.Z, corner.Z))
     zlo, zhi = math.min(zlo, corner.Z), math.max(zhi, corner.Z)
   end end end
-  -- Sections may overlap a joint (hidden inside the neighbour), but each piece sits on its own side.
-  local z = offset.Position.Z
-  if segment == "front" then check(z < FLEX_Z and zhi < TAIL_Z, p.Name .. " stays ahead of the flex joint") end
-  if segment == "SwimFlex" then check(z > FLEX_Z - 0.5 and zhi < TAIL_Z + 1.5, p.Name .. " sits behind the flex joint") end
-  if segment == "SwimTail" then check(z > TAIL_Z and zlo > FLEX_Z, p.Name .. " sits behind the tail joint") end
   if PREVIEW then
     local c = offset
-    print(string.format("PART %s|%s|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%d,%d,%d",
-      p.ClassName, segment, size.X, size.Y, size.Z, c.Position.X, c.Position.Y, c.Position.Z,
+    print(string.format("PART %s|%s|%s|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%d,%d,%d",
+      p.ClassName, segment, if p:GetAttribute("SharkFallback") then "fallback" else "detail", size.X, size.Y, size.Z, c.Position.X, c.Position.Y, c.Position.Z,
       c.x.X, c.x.Y, c.x.Z, c.y.X, c.y.Y, c.y.Z, c.z.X, c.z.Y, c.z.Z, p.Color.R, p.Color.G, p.Color.B))
   end
 end
-print(string.format("Shark: %.2f long (snout %.2f, tail %.2f), %.2f wide, %.2f to %.2f high, %d parts (%d front, %d flex, %d tail)",
-  hi.Z - lo.Z, lo.Z, hi.Z, hi.X - lo.X, lo.Y, hi.Y, #parts, segments.front, segments.SwimFlex, segments.SwimTail))
+print(string.format("Stand-in: %.2f long (snout %.2f, tail %.2f), %.2f wide, %.2f to %.2f high, %d parts",
+  hi.Z - lo.Z, lo.Z, hi.Z, hi.X - lo.X, lo.Y, hi.Y, #parts))
 check(#parts <= 90, "Keep the replicated part count modest: " .. #parts)
-check(segments.SwimFlex > 0 and segments.SwimTail > 0, "Both bending segments have pieces")
-check(lo.Z < -5 and hi.Z > 5.5 and hi.Z - lo.Z < 13, "The shark is about twelve studs long, snout towards -Z")
-check(hi.X - lo.X > 6 and hi.X - lo.X < 8, "Pectoral fins span six to eight studs")
-check(hi.Y > 1.2, "The dorsal fin and tail lobe break the surface")
-check(lo.Y < -2.8, "The lower tail lobe reaches well below the body")
+check(segments[0] and segments[JOINT_COUNT], "The head and the tail segment both carry pieces")
+check(lo.Z < -5 * SCALE and hi.Z > 5.5 * SCALE and hi.Z - lo.Z < 13 * SCALE, "The shark is about twelve design units long, snout towards -Z")
+check(hi.X - lo.X > 6 * SCALE and hi.X - lo.X < 8 * SCALE, "Pectoral fins span six to eight design units")
+check(hi.Y > 1.2 * SCALE, "The dorsal fin and tail lobe break the surface")
+check(lo.Y < -2.8 * SCALE, "The lower tail lobe reaches well below the body")
+local fallbackCount = 0
+for _, p in parts do if p:GetAttribute("SharkFallback") then fallbackCount += 1 end end
+check(fallbackCount > 20 and fallbackCount < #parts, "Body and fins are tagged as the fallback; details are not")
+
+-- The mesh skin clients build.
+local meshes = SHARK_SHAPE.build()
+check(#meshes == (JOINT_COUNT + 1) * 3 + 3, "Three colour bands per swim segment, the mouth roof and two jaw meshes")
+local ranges = {}
+for _, segment in SHARK_SHAPE.SEGMENTS do ranges[segment.index] = segment end
+local jawMeshes, roofMeshes = 0, 0
+local totalTriangles = 0
+local mlo, mhi = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
+for _, mesh in meshes do
+  local label = mesh.segment .. "/" .. mesh.band .. (if mesh.jaw then "/jaw" else "")
+  if mesh.jaw then jawMeshes += 1 end
+  if mesh.band == "Mouth" and not mesh.jaw then roofMeshes += 1 end
+  local range = ranges[mesh.segment]
+  check(range ~= nil, label .. " belongs to a swim segment")
+  check(SHARK_SHAPE.COLORS[mesh.band] ~= nil, label .. " has a palette colour")
+  check(#mesh.triangles > 50, label .. " has triangles")
+  check(#mesh.positions == #mesh.normals, label .. " has one normal per vertex")
+  totalTriangles += #mesh.triangles
+  for index, p in mesh.positions do
+    local n = mesh.normals[index]
+    for axis = 1, 3 do
+      check(p[axis] == p[axis] and math.abs(p[axis]) < 20, label .. " positions are finite")
+      mlo[axis], mhi[axis] = math.min(mlo[axis], p[axis]), math.max(mhi[axis], p[axis])
+    end
+    check(math.abs(n[1] * n[1] + n[2] * n[2] + n[3] * n[3] - 1) < 1e-6, label .. " normals are unit length")
+    -- Fins hang off their segment a little; nothing reaches far past a neighbour.
+    local z = p[3] / SCALE
+    check(z > range.low - 1.6 and z < range.high + 1.6, label .. " stays around its segment")
+    if mesh.jaw then check(z < -2.5 and z > -4.3 and p[2] / SCALE < -1.6, label .. " sits under the head") end
+  end
+  for _, tri in mesh.triangles do
+    local a, b, c = mesh.positions[tri[1]], mesh.positions[tri[2]], mesh.positions[tri[3]]
+    local e1 = { b[1] - a[1], b[2] - a[2], b[3] - a[3] }
+    local e2 = { c[1] - a[1], c[2] - a[2], c[3] - a[3] }
+    local face = { e1[2] * e2[3] - e1[3] * e2[2], e1[3] * e2[1] - e1[1] * e2[3], e1[1] * e2[2] - e1[2] * e2[1] }
+    local sum = { 0, 0, 0 }
+    for _, v in tri do for axis = 1, 3 do sum[axis] += mesh.normals[v][axis] end end
+    check(face[1] * sum[1] + face[2] * sum[2] + face[3] * sum[3] > 0, label .. " triangles are wound outward")
+  end
+  if PREVIEW then
+    print("MESH " .. mesh.segment .. " " .. mesh.band .. " " .. (if mesh.jaw then "jaw" else "body"))
+    for index, p in mesh.positions do
+      local n = mesh.normals[index]
+      print(string.format("V %.4f,%.4f,%.4f,%.4f,%.4f,%.4f", p[1], p[2], p[3], n[1], n[2], n[3]))
+    end
+    for _, tri in mesh.triangles do print(string.format("T %d,%d,%d", tri[1], tri[2], tri[3])) end
+  end
+end
+-- Hull normals point away from the body axis (bands without fins or teeth;
+-- the recessed roof of the mouth faces down into the mouth instead).
+local inward = 0
+for _, hull in meshes do
+  if hull.band ~= "Back" and hull.band ~= "Mouth" and not hull.jaw and not (hull.band == "Belly" and hull.segment == 0) then
+    for index, world in hull.positions do
+      local p = { world[1] / SCALE, world[2] / SCALE, world[3] / SCALE }
+      if math.abs(p[1]) > 0.05 and p[3] > -5.4 then
+        local _, _, _, axis = SHARK_SHAPE.section(p[3])
+        local n = hull.normals[index]
+        if n[1] * p[1] + n[2] * (p[2] - axis) < 0 then inward += 1 end
+      end
+    end
+  end
+end
+check(inward == 0, "Hull normals face outward: " .. inward .. " point inward")
+check(jawMeshes == 2 and roofMeshes == 1, "One mouth roof and a two-part jaw")
+check(totalTriangles < 20000, "Keep the skin's triangle count modest: " .. totalTriangles)
+check(mlo[3] < -5.4 * SCALE and mhi[3] > 6 * SCALE and mhi[3] - mlo[3] < 13 * SCALE, "The skin is about twelve design units long")
+check(mhi[1] - mlo[1] > 6.5 * SCALE and mhi[1] - mlo[1] < 8 * SCALE, "Skin pectoral fins span six and a half to eight design units")
+check(mhi[2] > 1.2 * SCALE and mlo[2] < -2.8 * SCALE, "The skin's dorsal fin breaks the surface and the lower lobe hangs deep")
+-- The joints sit on the body axis from front to back; the jaw hinge is above the mouth's back edge.
+local joints = SHARK_SHAPE.joints()
+for index, joint in joints do
+  check(joint.amplitude > 0 and joint.amplitude < 0.5, "Joint " .. index .. " bends a sane amount")
+  if index > 1 then check(joint.pivot[3] > joints[index - 1].pivot[3] and joint.amplitude >= joints[index - 1].amplitude, "Joints run head to tail, stronger towards the tail") end
+  if PREVIEW then print(string.format("JOINT %.4f,%.4f,%.4f,%.4f,%.4f", joint.pivot[1], joint.pivot[2], joint.pivot[3], joint.amplitude, joint.lag)) end
+end
+local hinge = SHARK_SHAPE.jawPivot()
+check(hinge[3] / SCALE > -3.2 and hinge[3] / SCALE < -2.5, "The jaw hinges just behind the mouth")
+if PREVIEW then print(string.format("JAW %.4f,%.4f,%.4f,%.4f", hinge[1], hinge[2], hinge[3], SHARK_SHAPE.JAW_OPEN)) end
+print(string.format("Skin: %d triangles in %d meshes, %.2f studs long, %.2f wide, %.2f to %.2f high",
+  totalTriangles, #meshes, mhi[3] - mlo[3], mhi[1] - mlo[1], mlo[2], mhi[2]))
 print("Shark model: " .. checks .. " geometry checks passed (recording mocks).")
 `;
 
 const folder = await mkdtemp(join(tmpdir(), 'fishing-shark-model-'));
 try {
   const target = join(folder, 'checks.luau');
-  await writeFile(target, `local PREVIEW = ${previewPath ? 'true' : 'false'}\nlocal FLEX_Z, TAIL_Z = ${flexPivot[2]}, ${tailPivot[2]}\n` + program);
+  await writeFile(target, `local PREVIEW = ${previewPath ? 'true' : 'false'}\n` + program);
   const result = spawnSync(process.env.LUTE || 'lute', ['run', target], { encoding: 'utf8', maxBuffer: 1 << 26 });
   const lines = ((result.stdout || '') + (result.stderr || '')).split(/\r?\n/);
-  console.log(lines.filter(line => !line.startsWith('PART ')).join('\n').trim());
+  const isData = line => /^(PART|MESH|V|T|JOINT|JAW) /.test(line);
+  console.log(lines.filter(line => !isData(line)).join('\n').trim());
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status || 1);
-  if (previewPath) await writePreview(lines.filter(line => line.startsWith('PART ')));
+  if (previewPath) await writePreview(lines.filter(isData));
 } finally {
   await rm(folder, { recursive: true, force: true });
 }
 
-// Orthographic raytrace of ellipsoids and wedges, with the water surface tinting what lies below y = 0.
-async function writePreview(partLines) {
-  const parsed = partLines.map(line => {
-    const [kind, segment, ...fields] = line.slice(5).split('|');
-    const [size, position, x, y, z, color] = fields.map(field => field.split(',').map(Number));
-    return { kind, segment, half: size.map(v => v / 2), position, axes: [x, y, z], color };
-  });
+// Z-buffered rasterizer for the skin triangles and the surface-detail parts (ellipsoids and
+// wedges tessellated), with smooth shading, a highlight and water tinting below y = 0.
+async function writePreview(dataLines) {
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
   const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
-  const norm = a => scale(a, 1 / Math.hypot(...a));
+  const norm = a => scale(a, 1 / (Math.hypot(...a) || 1));
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-  // Bend flex and tail pieces about their pivots, as SharkSwim does mid-stroke.
-  const bend = (part, flexYaw, tailYaw) => {
-    const turn = (p, pivotPoint, yaw) => {
-      const c = Math.cos(yaw), s = Math.sin(yaw);
-      const r = v => [c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2]];
-      return { ...p, position: add(pivotPoint, r(sub(p.position, pivotPoint))), axes: p.axes.map(r) };
-    };
-    let result = part;
-    if (part.segment === 'SwimTail') result = turn(result, tailPivot, tailYaw);
-    if (part.segment !== 'front') result = turn(result, flexPivot, flexYaw);
-    return result;
-  };
-  const intersect = (part, origin, direction) => {
-    const local = sub(origin, part.position);
-    const o = part.axes.map(a => dot(a, local)), d = part.axes.map(a => dot(a, direction));
-    if (part.kind === 'Part') {
-      const os = o.map((v, i) => v / part.half[i]), ds = d.map((v, i) => v / part.half[i]);
-      const a = dot(ds, ds), b = 2 * dot(os, ds), c = dot(os, os) - 1;
-      const disc = b * b - 4 * a * c;
-      if (disc < 0) return null;
-      const t = (-b - Math.sqrt(disc)) / (2 * a);
-      if (t < 0) return null;
-      const p = add(os, scale(ds, t)).map((v, i) => v / part.half[i]);
-      return { t, normal: norm(add(add(scale(part.axes[0], p[0]), scale(part.axes[1], p[1])), scale(part.axes[2], p[2]))) };
+  const palette = { Back: [66, 78, 88], Line: [142, 149, 151], Belly: [228, 229, 223], Mouth: [92, 32, 40] };
+  for (const name of Object.keys(palette)) {
+    const match = shape.match(new RegExp(name + ' = \\{ (\\d+), (\\d+), (\\d+) \\}'));
+    if (match) palette[name] = match.slice(1).map(Number);
+  }
+  // Triangles: { p: [a, b, c], n: [na, nb, nc], color, segment }.
+  const triangles = [];
+  const joints = [];
+  let jawHinge = null;
+  let mesh = null;
+  const flushMesh = () => {
+    if (!mesh) return;
+    for (const [a, b, c] of mesh.tris) {
+      triangles.push({ p: [mesh.v[a - 1].p, mesh.v[b - 1].p, mesh.v[c - 1].p], n: [mesh.v[a - 1].n, mesh.v[b - 1].n, mesh.v[c - 1].n], color: palette[mesh.band], segment: mesh.segment, jaw: mesh.jaw });
     }
-    // Wedge: |x| <= hx, y >= -hy, z <= hz and the slope y/hy - z/hz <= 0.
-    const [hx, hy, hz] = part.half;
-    const planes = [[[1, 0, 0], hx], [[-1, 0, 0], hx], [[0, -1, 0], hy], [[0, 0, 1], hz], [norm([0, 1 / hy, -1 / hz]), 0]];
-    let near = -Infinity, far = Infinity, normal = null;
-    for (const [n, offset] of planes) {
-      const denominator = dot(n, d), distance = offset - dot(n, o);
-      if (Math.abs(denominator) < 1e-12) { if (distance < 0) return null; continue; }
-      const t = distance / denominator;
-      if (denominator < 0) { if (t > near) { near = t; normal = n; } } else far = Math.min(far, t);
-      if (near > far) return null;
-    }
-    if (!normal || near < 0) return null;
-    return { t: near, normal: norm(add(add(scale(part.axes[0], normal[0]), scale(part.axes[1], normal[1])), scale(part.axes[2], normal[2]))) };
   };
-  const panel = 480, pixelsPerStud = 34;
+  for (const line of dataLines) {
+    if (line.startsWith('MESH ')) {
+      flushMesh();
+      const [, segment, band, kind] = line.split(' ');
+      mesh = fallbackView ? null : { segment: Number(segment), band, jaw: kind === 'jaw', v: [], tris: [] };
+    } else if (line.startsWith('JOINT ')) {
+      const f = line.slice(6).split(',').map(Number);
+      joints.push({ pivot: f.slice(0, 3), amplitude: f[3], lag: f[4] });
+    } else if (line.startsWith('JAW ')) {
+      const f = line.slice(4).split(',').map(Number);
+      jawHinge = { pivot: f.slice(0, 3), open: f[3] };
+    } else if (line.startsWith('V ') && mesh) {
+      const f = line.slice(2).split(',').map(Number);
+      mesh.v.push({ p: f.slice(0, 3), n: f.slice(3, 6) });
+    } else if (line.startsWith('T ') && mesh) {
+      mesh.tris.push(line.slice(2).split(',').map(Number));
+    } else if (line.startsWith('PART ')) {
+      const [kind, segmentText, role, ...fields] = line.slice(5).split('|');
+      const segment = Number(segmentText);
+      if (role === 'fallback' && !fallbackView) continue;
+      const [size, position, x, y, z, color] = fields.map(field => field.split(',').map(Number));
+      const half = size.map(v => v / 2), axes = [x, y, z];
+      const world = l => add(position, add(add(scale(x, l[0]), scale(y, l[1])), scale(z, l[2])));
+      const worldN = l => norm(add(add(scale(x, l[0]), scale(y, l[1])), scale(z, l[2])));
+      if (kind === 'Part') {
+        const rows = 14, cols = 22, grid = [];
+        for (let i = 0; i <= rows; i++) {
+          const row = [];
+          for (let j = 0; j <= cols; j++) {
+            const th = Math.PI * i / rows, ph = 2 * Math.PI * j / cols;
+            const u = [Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)];
+            row.push({ p: world(u.map((c, k) => c * half[k])), n: worldN(u.map((c, k) => c / half[k])) });
+          }
+          grid.push(row);
+        }
+        for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
+          const a = grid[i][j], b = grid[i + 1][j], c = grid[i + 1][j + 1], d = grid[i][j + 1];
+          triangles.push({ p: [a.p, b.p, c.p], n: [a.n, b.n, c.n], color, segment });
+          triangles.push({ p: [a.p, c.p, d.p], n: [a.n, c.n, d.n], color, segment });
+        }
+      } else {
+        const [hx, hy, hz] = half;
+        const A = [-hx, -hy, -hz], B = [hx, -hy, -hz], C = [-hx, -hy, hz], D = [hx, -hy, hz], E = [-hx, hy, hz], F = [hx, hy, hz];
+        const quad = (q, n) => {
+          const pts = q.map(world), nn = worldN(n);
+          triangles.push({ p: [pts[0], pts[1], pts[2]], n: [nn, nn, nn], color, segment });
+          if (pts[3]) triangles.push({ p: [pts[0], pts[2], pts[3]], n: [nn, nn, nn], color, segment });
+        };
+        quad([A, B, D, C], [0, -1, 0]); quad([C, D, F, E], [0, 0, 1]);
+        quad([A, B, F, E], [0, 1 / hy, -1 / hz]); quad([A, C, E], [-1, 0, 0]); quad([B, D, F], [1, 0, 0]);
+      }
+    }
+  }
+  flushMesh();
+  // Bend each joint about its pivot (tail-most first) and open the jaw, as SharkSwim does.
+  const yawAbout = (v, pivotPoint, yaw) => {
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    const r = q => [c * q[0] + s * q[2], q[1], -s * q[0] + c * q[2]];
+    return { p: add(pivotPoint, r(sub(v.p, pivotPoint))), n: r(v.n) };
+  };
+  const pitchAbout = (v, pivotPoint, angle) => {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    const r = q => [q[0], c * q[1] - s * q[2], s * q[1] + c * q[2]];
+    return { p: add(pivotPoint, r(sub(v.p, pivotPoint))), n: r(v.n) };
+  };
+  const posed = (tri, wave, jawOpen) => {
+    const out = { ...tri, p: [], n: [] };
+    for (let k = 0; k < 3; k++) {
+      let v = { p: tri.p[k], n: tri.n[k] };
+      if (tri.jaw && jawHinge) v = pitchAbout(v, jawHinge.pivot, -jawOpen);
+      for (let j = wave === null ? 0 : Math.min(tri.segment || 0, joints.length); j >= 1; j--) {
+        const joint = joints[j - 1];
+        v = yawAbout(v, joint.pivot, Math.sin(wave - joint.lag) * joint.amplitude * 1.4);
+      }
+      out.p.push(v.p); out.n.push(v.n);
+    }
+    return out;
+  };
+  const S = Number((shape.match(/SharkShape\.SCALE = ([\d.]+)/) || [0, 1])[1]);
   const views = [
-    { title: 'side', forward: [1, 0, 0], up: [0, 1, 0], center: [0, -0.9, 0.4] },
-    { title: 'top', forward: [0, -1, 0], up: [0, 0, -1], center: [0, 0, 0.4] },
-    { title: 'front three-quarter', forward: [0.75, -0.5, 1], up: [0, 1, 0], center: [0, -1.1, 0.2] },
-    { title: 'rear three-quarter low', forward: [-0.9, 0.25, -1], up: [0, 1, 0], center: [0, -1.1, 0.2] },
-    { title: 'front', forward: [0, -0.15, 1], up: [0, 1, 0], center: [0, -1, 0] },
-    { title: 'top mid-stroke', forward: [0, -1, 0], up: [0, 0, -1], center: [0, 0, 0.4], flex: 0.15, tail: 0.3 },
+    { title: 'side', forward: [1, 0, 0], up: [0, 1, 0], center: [0, -0.9 * S, 0.4 * S], zoom: 34 / S },
+    { title: 'top', forward: [0, -1, 0], up: [0, 0, -1], center: [0, 0, 0.4 * S], zoom: 34 / S },
+    { title: 'front three-quarter, hunting', forward: [0.75, -0.45, 1], up: [0, 1, 0], center: [0, -1.1 * S, 0.2 * S], zoom: 34 / S, jaw: 0.3 },
+    { title: 'head, jaw closed', forward: [0.8, 0.2, 0.75], up: [0, 1, 0], center: [0, -1.7 * S, -3.6 * S], zoom: 80 / S },
+    { title: 'head, biting (jaw wide)', forward: [0.8, 0.2, 0.75], up: [0, 1, 0], center: [0, -2 * S, -3.6 * S], zoom: 80 / S, jaw: 1 },
+    { title: 'top mid-stroke', forward: [0, -1, 0], up: [0, 0, -1], center: [0, 0, 0.4 * S], zoom: 34 / S, wave: 2.4 },
   ];
-  const width = panel * 2, height = Math.round(panel * 0.68) * 3, panelHeight = height / 3;
+  const ss = 2, panel = 480, panelHeight = Math.round(panel * 0.68);
+  const width = panel * 2, height = panelHeight * 3;
   const image = Buffer.alloc(width * height * 3);
   const light = norm([-0.4, 1, -0.5]);
   views.forEach((view, index) => {
-    const parts = view.flex ? parsed.map(p => bend(p, view.flex, view.tail)) : parsed;
-    const forward = norm(view.forward);
-    const right = norm(cross(forward, view.up));
-    const up = cross(right, forward);
+    const jawOpen = view.jaw === 1 && jawHinge ? jawHinge.open : (view.jaw || 0);
+    const tris = view.wave || jawOpen ? triangles.map(t => posed(t, view.wave ?? null, jawOpen)) : triangles;
+    const forward = norm(view.forward), right = norm(cross(forward, view.up)), up = cross(right, forward);
+    const W = panel * ss, H = panelHeight * ss, k = view.zoom * ss;
+    const depth = new Float64Array(W * H).fill(Infinity);
+    const color = new Float64Array(W * H * 3);
+    for (let i = 0; i < W * H; i++) color.set([196, 214, 226], i * 3);
+    const project = p => { const d = sub(p, view.center); return [W / 2 + dot(d, right) * k, H / 2 - dot(d, up) * k, dot(d, forward)]; };
+    const halfway = norm(sub(light, forward));
+    for (const tri of tris) {
+      const s = tri.p.map(project);
+      const minX = Math.max(0, Math.floor(Math.min(s[0][0], s[1][0], s[2][0]))), maxX = Math.min(W - 1, Math.ceil(Math.max(s[0][0], s[1][0], s[2][0])));
+      const minY = Math.max(0, Math.floor(Math.min(s[0][1], s[1][1], s[2][1]))), maxY = Math.min(H - 1, Math.ceil(Math.max(s[0][1], s[1][1], s[2][1])));
+      const area = (s[1][0] - s[0][0]) * (s[2][1] - s[0][1]) - (s[2][0] - s[0][0]) * (s[1][1] - s[0][1]);
+      if (Math.abs(area) < 1e-9) continue;
+      for (let py = minY; py <= maxY; py++) for (let px = minX; px <= maxX; px++) {
+        const x = px + 0.5, y = py + 0.5;
+        const w0 = ((s[1][0] - x) * (s[2][1] - y) - (s[2][0] - x) * (s[1][1] - y)) / area;
+        const w1 = ((s[2][0] - x) * (s[0][1] - y) - (s[0][0] - x) * (s[2][1] - y)) / area;
+        const w2 = 1 - w0 - w1;
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        const z = w0 * s[0][2] + w1 * s[1][2] + w2 * s[2][2];
+        const at = py * W + px;
+        if (z >= depth[at]) continue;
+        depth[at] = z;
+        let n = norm(add(add(scale(tri.n[0], w0), scale(tri.n[1], w1)), scale(tri.n[2], w2)));
+        if (dot(n, forward) > 0) n = scale(n, -1);
+        const diffuse = Math.max(0, dot(n, light));
+        const spec = Math.pow(Math.max(0, dot(n, halfway)), 40) * 0.25;
+        let c = tri.color.map(v => v * (0.38 + 0.62 * diffuse) + 255 * spec);
+        const world = add(add(scale(tri.p[0], w0), scale(tri.p[1], w1)), scale(tri.p[2], w2));
+        if (world[1] < 0 && forward[1] < -0.1) {
+          const keep = Math.exp(world[1] * 0.22);
+          c = c.map((v, q) => v * keep + [38, 92, 118][q] * (1 - keep));
+        }
+        color.set(c, at * 3);
+      }
+    }
     const left = (index % 2) * panel, top = Math.floor(index / 2) * panelHeight;
     for (let py = 0; py < panelHeight; py++) for (let px = 0; px < panel; px++) {
-      const u = (px - panel / 2) / pixelsPerStud, v = (panelHeight / 2 - py) / pixelsPerStud;
-      const origin = add(add(add(view.center, scale(forward, -40)), scale(right, u)), scale(up, v));
-      let best = null, bestPart = null;
-      for (const part of parts) {
-        const hit = intersect(part, origin, forward);
-        if (hit && (!best || hit.t < best.t)) { best = hit; bestPart = part; }
+      const sum = [0, 0, 0];
+      for (let a = 0; a < ss; a++) for (let b = 0; b < ss; b++) {
+        const at = ((py * ss + a) * W + px * ss + b) * 3;
+        sum[0] += color[at]; sum[1] += color[at + 1]; sum[2] += color[at + 2];
       }
-      let color = [196, 214, 226];
-      if (best) {
-        const normal = dot(best.normal, forward) > 0 ? scale(best.normal, -1) : best.normal;
-        const shade = 0.42 + 0.58 * Math.max(0, dot(normal, light));
-        color = bestPart.color.map(c => c * shade);
-        const point = add(origin, scale(forward, best.t));
-        // Seen from above, water dims what is under the surface.
-        if (point[1] < 0 && forward[1] < -0.1) {
-          const keep = Math.exp(point[1] * 0.22);
-          color = color.map((c, k) => c * keep + [38, 92, 118][k] * (1 - keep));
-        }
-      }
-      const waterline = Math.abs(dot(add(origin, scale(forward, 40)), [0, 1, 0])) < 0.5 / pixelsPerStud;
-      if (waterline && Math.abs(forward[1]) < 0.3) color = [40, 110, 160];
-      image.set(color.map(Math.round), ((top + py) * width + left + px) * 3);
+      const v = (panelHeight / 2 - py) / view.zoom;
+      let c = sum.map(t => Math.min(255, Math.round(t / (ss * ss))));
+      const waterline = Math.abs(dot(add(view.center, scale(up, v)), [0, 1, 0])) < 0.5 / view.zoom && Math.abs(forward[1]) < 0.3;
+      if (waterline && c[0] === 196 && c[1] === 214) c = [40, 110, 160];
+      image.set(c, ((top + py) * width + left + px) * 3);
     }
   });
   await writeFile(previewPath, png(width, height, image));
-  console.log('Preview written to ' + previewPath + ' (' + views.map(v => v.title).join(', ') + ')');
+  console.log('Preview written to ' + previewPath + ' (' + (fallbackView ? 'fallback body' : 'mesh skin') + ': ' + views.map(v => v.title).join(', ') + ')');
 }
 
 function png(width, height, rgb) {

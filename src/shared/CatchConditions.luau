@@ -56,9 +56,10 @@ function CatchConditions.at(position: Vector3, serverTime: number?): { [string]:
 	}
 end
 
--- "lake" inside the main island's sheltered bay, otherwise the Shared.Biomes id there.
+-- "lake" inside the main island's sheltered bay, otherwise the Shared.Biomes id there (a zone
+-- such as "piratecove" when inside one).
 function CatchConditions.area(position: Vector3): string
-	return if Weather.inLake(position) then "lake" else Biomes.at(position).id
+	return if Weather.inLake(position) then "lake" else Biomes.zoneAt(position).id
 end
 
 return CatchConditions

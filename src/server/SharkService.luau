@@ -7,18 +7,25 @@ local Biomes = require(Shared.Biomes)
 local DayNight = require(Shared.DayNight)
 local Weather = require(Shared.Weather)
 local SpearSkins = require(Shared.SpearSkins)
+local Spears = require(Shared.Spears)
 local HullDamage = require(script.Parent.HullDamage)
 local BoatService = require(script.Parent.BoatService)
 local SharkModel = require(script.Parent.SharkModel)
 
 local SharkService = {}
--- Sharks roam in packs of 1-3 around each boat at sea and only give chase when
--- a hull happens to pass within AGGRO_RANGE of a pack member.
+-- Sharks only hunt the warm reefs of the Coral Shallows and the dark water of
+-- the Cinder Isles. There they roam in packs of 1-2 near a boat and only give
+-- chase when a hull happens to pass within AGGRO_RANGE of a pack member.
+local SHARK_BIOMES = { tropical = true, volcanic = true }
 local DAY_PACKS = 1
 local NIGHT_PACKS = 2
 local MIN_PACK_SIZE = 1
-local MAX_PACK_SIZE = 3
-local SPAWN_DELAY = 8
+local MAX_PACK_SIZE = 2
+-- Every SPAWN_DELAY seconds a boat in shark waters with room for another pack
+-- rolls the spawn chance, so a daytime encounter takes about two minutes.
+local SPAWN_DELAY = 20
+local DAY_SPAWN_CHANCE = 0.15
+local NIGHT_SPAWN_CHANCE = 0.3
 local SPAWN_DISTANCE = 120
 local ROAM_SPEED = 12
 local CHASE_SPEED = 55
@@ -28,16 +35,18 @@ local DESPAWN_RANGE = 450
 local PACK_SPACING = 7
 local BITE_DAMAGE = 8
 local BITE_INTERVAL = 12
-local BITE_REACH = 4
-local BITE_STANDOFF = 3.5
+-- Measured from the shark's origin, about mid-body: its snout reaches ~7.5
+-- studs ahead, so it noses into the hull while biting.
+local BITE_REACH = 5.5
+local BITE_STANDOFF = 5
 local STEP = 0.1
 local random = Random.new()
 local SHARK_HEALTH = 15
 local CONTRIBUTION_WINDOW = 30
-local SPEAR_RANGE = 24
-local SPEAR_COOLDOWN = 0.6
 local sharksByModel = {}
 local lastAttack = {}
+local spears = {}
+local spearThrown: RemoteEvent? = nil
 local rewardCallback
 
 -- Called once per eligible contributor when a shark dies. The caller owns
@@ -113,57 +122,82 @@ local function attack(player: Player, aim)
 	end
 	local boosts = SpearSkins.boosts(player:GetAttribute("SpearSkin"), player:GetAttribute("SpearSkinWear"))
 	local now = workspace:GetServerTimeNow()
-	if now - (lastAttack[player] or -math.huge) < SPEAR_COOLDOWN / (1 + boosts.fireRate) then
+	if now - (lastAttack[player] or -math.huge) < Spears.THROW_COOLDOWN / (1 + boosts.fireRate) then
+		return
+	end
+	local origin = root.Position + Vector3.new(0, Spears.THROW_HEIGHT, 0)
+	local velocity = Spears.throwVelocity(origin, aim)
+	if not velocity then
 		return
 	end
 	lastAttack[player] = now
-	local origin = root.Position
-	local delta = aim - origin
-	if delta.Magnitude < 0.01 then
-		return
-	end
-	local direction = delta.Unit
-	local best, bestDistance
-	for model, shark in sharksByModel do
-		if not shark.dead and model.PrimaryPart then
-			local center = model.PrimaryPart.Position + Vector3.new(0, -1.3, 0)
-			local along = (center - origin):Dot(direction)
-			local closest = origin + direction * math.clamp(along, 0, SPEAR_RANGE)
-			-- The shark model is about 12 studs long; use a generous hit volume
-			-- so aiming at its moving fins and tail is practical.
-			if
-				along > 0
-				and along <= SPEAR_RANGE
-				and (center - closest).Magnitude <= 5.5
-				and (not bestDistance or along < bestDistance)
-			then
-				best, bestDistance = shark, along
-			end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = { character, workspace:FindFirstChild("Sharks") }
+	params.FilterDescendantsInstances = excluded
+	params.IgnoreWater = true
+	-- A deck or railing should not block a crew member from throwing at the
+	-- shark alongside their boat. Other boats and world geometry still do.
+	local boats = workspace:FindFirstChild("PlayerBoats")
+	local floor = workspace:Raycast(root.Position, Vector3.new(0, -10, 0), params)
+	if boats and floor and floor.Instance and floor.Instance:IsDescendantOf(boats) then
+		local boat = floor.Instance
+		while boat.Parent and boat.Parent ~= boats do
+			boat = boat.Parent
+		end
+		if boat.Parent == boats then
+			table.insert(excluded, boat)
+			params.FilterDescendantsInstances = excluded
 		end
 	end
-	if best then
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		local excluded = { character, workspace:FindFirstChild("Sharks") }
-		params.FilterDescendantsInstances = excluded
-		params.IgnoreWater = true
-		-- A deck or railing should not block a crew member from attacking the
-		-- shark alongside their boat. Other boats and world geometry still do.
-		local boats = workspace:FindFirstChild("PlayerBoats")
-		local floor = workspace:Raycast(origin, Vector3.new(0, -10, 0), params)
-		if boats and floor and floor.Instance and floor.Instance:IsDescendantOf(boats) then
-			local boat = floor.Instance
-			while boat.Parent and boat.Parent ~= boats do
-				boat = boat.Parent
+	-- The spear flies on the server's clock, so sharks must be led, not just aimed at.
+	table.insert(spears, {
+		player = player,
+		origin = origin,
+		velocity = velocity,
+		born = now,
+		position = origin,
+		params = params,
+		damage = Spears.THROW_DAMAGE * (1 + boosts.damage),
+	})
+	if spearThrown then
+		spearThrown:FireAllClients(player, origin, velocity, player:GetAttribute("SpearSkin"), player:GetAttribute("SpearSkinWear"))
+	end
+end
+
+-- Advance every spear in flight to `now`, striking the first shark or surface on its path.
+local function stepSpears(now: number)
+	for index = #spears, 1, -1 do
+		local spear = spears[index]
+		local age = math.min(now - spear.born, Spears.THROW_LIFETIME)
+		local from = spear.position
+		local to = Spears.throwAt(spear.origin, spear.velocity, age)
+		spear.position = to
+		local finished = age >= Spears.THROW_LIFETIME
+			or to.Y < Biomes.WaterLevel - Spears.THROW_DEPTH
+			or spear.player.Parent ~= Players
+		local path = to - from
+		if path.Magnitude > 1e-4 and spear.player.Parent == Players then
+			local best, bestAlong
+			for _, shark in sharksByModel do
+				if not shark.dead and shark.surface then
+					local along = Spears.sharkHit(from, to, shark.surface, shark.direction)
+					if along and (not bestAlong or along < bestAlong) then
+						best, bestAlong = shark, along
+					end
+				end
 			end
-			if boat.Parent == boats then
-				table.insert(excluded, boat)
-				params.FilterDescendantsInstances = excluded
+			local obstruction = workspace:Raycast(from, path, spear.params)
+			local blockedAt = obstruction and (obstruction.Position - from).Magnitude / path.Magnitude
+			if best and not (blockedAt and blockedAt < bestAlong) then
+				damageShark(spear.player, best, now, spear.damage)
+				finished = true
+			elseif obstruction then
+				finished = true
 			end
 		end
-		local obstruction = workspace:Raycast(origin, direction * bestDistance, params)
-		if not obstruction then
-			damageShark(player, best, now, 1 + boosts.damage)
+		if finished then
+			table.remove(spears, index)
 		end
 	end
 end
@@ -180,12 +214,21 @@ local function isOpenWater(position: Vector3, params: RaycastParams): boolean
 	return hit ~= nil and hit.Material == Enum.Material.Water
 end
 
+local function inSharkBiome(position: Vector3): boolean
+	return SHARK_BIOMES[Biomes.at(position).id] == true
+end
+
+-- Open water inside a shark biome: sharks spawn, roam and chase only here.
+local function isSharkWater(position: Vector3, params: RaycastParams): boolean
+	return inSharkBiome(position) and isOpenWater(position, params)
+end
+
 local function spawnPosition(target: Vector3, params: RaycastParams): Vector3?
 	local start = random:NextNumber(0, math.pi * 2)
 	for index = 0, 11 do
 		local angle = start + index * math.pi / 6
 		local candidate = target + Vector3.new(math.cos(angle) * SPAWN_DISTANCE, 0, math.sin(angle) * SPAWN_DISTANCE)
-		if isOpenWater(candidate, params) then
+		if isSharkWater(candidate, params) then
 			return candidate
 		end
 	end
@@ -254,7 +297,7 @@ local function spawnPack(folder: Folder, owner: Player, root: BasePart, params: 
 	local facing = headingVector(heading)
 	for index = 1, random:NextInteger(MIN_PACK_SIZE, MAX_PACK_SIZE) do
 		local position = formationPosition(center, heading, index)
-		if not isOpenWater(position, params) then
+		if not isSharkWater(position, params) then
 			position = center
 		end
 		local surface =
@@ -309,7 +352,7 @@ local function moveShark(shark, goal: Vector3, speed: number, params: RaycastPar
 		return
 	end
 	local nextPosition = shark.position + shark.direction * math.min(speed * STEP, distance - keepDistance)
-	if isOpenWater(nextPosition, params) then
+	if isSharkWater(nextPosition, params) then
 		shark.position, shark.stuck = nextPosition, 0
 	else
 		shark.stuck += STEP
@@ -324,6 +367,11 @@ function SharkService.start()
 	spearAttack.Name = "SpearAttack"
 	spearAttack.Parent = ReplicatedStorage
 	spearAttack.OnServerEvent:Connect(attack)
+	-- Tells every client where a spear was thrown so they can draw its flight.
+	local thrown = Instance.new("RemoteEvent")
+	thrown.Name = "SpearThrown"
+	thrown.Parent = ReplicatedStorage
+	spearThrown = thrown
 	Players.PlayerRemoving:Connect(function(player)
 		lastAttack[player] = nil
 		for _, shark in sharksByModel do
@@ -359,7 +407,10 @@ function SharkService.start()
 					and math.abs(root.Position.Y - Biomes.WaterLevel) < 20
 					and isOpenWater(root.Position, params)
 				if eligible then
-					table.insert(boats, { player = player, boat = boat, root = root })
+					table.insert(
+						boats,
+						{ player = player, boat = boat, root = root, sharkWater = inSharkBiome(root.Position) }
+					)
 				end
 			end
 
@@ -406,10 +457,17 @@ function SharkService.start()
 						table.remove(owned, position)
 					end
 				end
-				if #owned < count and now >= timer.nextSpawn then
-					local pack = spawnPack(folder, player, entry.root, params, now, weather)
-					if pack then
-						table.insert(packs, pack)
+				if #owned >= count or not entry.sharkWater then
+					-- The wait starts once there is room for a pack in shark waters,
+					-- so a kill or a reef crossing never brings one straight back.
+					timer.nextSpawn = now + SPAWN_DELAY
+				elseif now >= timer.nextSpawn then
+					local chance = if night then NIGHT_SPAWN_CHANCE else DAY_SPAWN_CHANCE
+					if random:NextNumber() < chance then
+						local pack = spawnPack(folder, player, entry.root, params, now, weather)
+						if pack then
+							table.insert(packs, pack)
+						end
 					end
 					timer.nextSpawn = now + SPAWN_DELAY
 				end
@@ -433,13 +491,14 @@ function SharkService.start()
 							break
 						end
 					end
-					if target and nearestMember(pack, target) > LOSE_RANGE then
+					-- A boat that escapes the reef leaves the hunt behind.
+					if target and (nearestMember(pack, target) > LOSE_RANGE or not target.sharkWater) then
 						target = nil
 					end
 				end
 				if not target then
 					for _, entry in boats do
-						if nearestMember(pack, entry) <= AGGRO_RANGE then
+						if entry.sharkWater and nearestMember(pack, entry) <= AGGRO_RANGE then
 							target = entry
 							break
 						end
@@ -473,6 +532,8 @@ function SharkService.start()
 						moveShark(shark, shark.position + offset, CHASE_SPEED, params, BITE_STANDOFF)
 						local distance = hullOffset(target, shark.position).Magnitude
 						if distance <= BITE_REACH and now - shark.lastBite >= BITE_INTERVAL then
+							-- Clients snap the jaw shut on this.
+							shark.model:SetAttribute("BiteAt", now)
 							if BoatService.damageBoat(target.player, BITE_DAMAGE) then
 								-- Scar the hull where the shark struck. Its own thread keeps a
 								-- cosmetic failure from stopping every shark in this loop.
@@ -493,7 +554,7 @@ function SharkService.start()
 				else
 					pack.heading += random:NextNumber(-0.06, 0.06)
 					local nextCenter = pack.center + headingVector(pack.heading) * (ROAM_SPEED * STEP)
-					if isOpenWater(nextCenter, params) then
+					if isSharkWater(nextCenter, params) then
 						pack.center = nextCenter
 					else
 						pack.heading += math.pi * random:NextNumber(0.5, 1)
@@ -506,14 +567,22 @@ function SharkService.start()
 				end
 
 				for _, shark in pack.sharks do
+					-- Clients open the jaw while the pack hunts a boat.
+					local hunting = target ~= nil
+					if shark.hunting ~= hunting then
+						shark.hunting = hunting
+						shark.model:SetAttribute("Hunting", hunting)
+					end
 					local wave = Weather.heightAt(shark.position, now, weather)
 					local surface = Vector3.new(shark.position.X, Biomes.WaterLevel + wave, shark.position.Z)
 					local biteAge = now - shark.lastBite
 					local lunge = if target and biteAge < 0.6 then math.sin(biteAge / 0.6 * math.pi) * 1.5 else 0
 					local direction = shark.direction
-					placeShark(shark, CFrame.lookAt(surface + direction * lunge, surface + direction * (lunge + 1)))
+					shark.surface = surface + direction * lunge
+					placeShark(shark, CFrame.lookAt(shark.surface, shark.surface + direction))
 				end
 			end
+			stepSpears(now)
 			task.wait(STEP)
 		end
 	end)

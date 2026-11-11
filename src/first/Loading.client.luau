@@ -1,5 +1,14 @@
 -- Native-vector ReplicatedFirst screen using the shared game UI theme. Startup readiness stays tied to
 -- the completed harbour, initialized gear and solid ground at the assigned dock.
+--
+-- Loading happens in two tiers:
+--   * Essential: connected, harbour services running, a live character on solid ground at the
+--     assigned dock and the required gear started. Nobody enters before these (except the gear
+--     fallback below, which still requires a safe dock).
+--   * Scenery: the server's distant generation (city, pirate cove, islands, LOD) and the streamed
+--     area around the dock. The screen waits for these too so the world looks complete, but once
+--     the essentials are ready and SKIP_DELAY has passed the player may skip and start playing
+--     while scenery keeps arriving. SCENERY_TIMEOUT caps how long scenery can hold the screen.
 local Players = game:GetService("Players")
 local ReplicatedFirst = game:GetService("ReplicatedFirst")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -124,7 +133,8 @@ detail.Position = UDim2.fromScale(0.5, 0.855)
 detail.Size = UDim2.new(1, -64, 0, 64)
 detail.TextWrapped = true
 
--- The fallback appears only when gear startup is slow or fails and the dock is safe.
+-- Appears once the essentials are ready (skip the scenery), or as a fallback when gear startup
+-- is slow or fails and the dock is safe.
 local continue = Instance.new("TextButton")
 continue.Name = "Continue"
 continue.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -175,6 +185,27 @@ local tips = {
 	"Take a boat out and find a new stretch of shoreline.",
 }
 
+-- Seconds into loading before the essentials-ready skip can appear
+local SKIP_DELAY = 4
+-- Longest scenery may hold the screen once the essentials are ready
+local SCENERY_TIMEOUT = 30
+-- Longest the client waits for the area around the dock to stream in
+local STREAM_TIMEOUT = 10
+
+local essentialAt: number? = nil
+local streamed = not workspace.StreamingEnabled
+local streamRequested = false
+
+local function requestStream(position: Vector3)
+	streamRequested = true
+	task.spawn(function()
+		-- One request for the surrounding buildings; returns once they arrive or it times out.
+		-- It isn't proof of anything essential (the ground raycast is), only that scenery is in.
+		pcall(player.RequestStreamAroundAsync, player, position, STREAM_TIMEOUT)
+		streamed = true
+	end)
+end
+
 local progress = 0
 while not dismissed do
 	local elapsed = os.clock() - startedAt
@@ -197,16 +228,28 @@ while not dismissed do
 		) ~= nil
 	end
 	local safeToEnter = connected and worldReady and alive and ground
+	local failed = player:GetAttribute("FishingWatersClientError") == true
+	local serverFailed = ReplicatedStorage:GetAttribute("FishingWatersStartupError") == true
+	local essential = safeToEnter and clientReady and not serverFailed
+	if essential and not essentialAt then
+		essentialAt = os.clock()
+	end
+	if essential and not streamRequested then
+		requestStream((root :: BasePart).Position)
+	end
+	-- A generation failure past the harbour only costs scenery, so it must not hold anyone here.
+	local generated = ReplicatedStorage:GetAttribute("FishingWatersGenerationComplete") == true
+		or ReplicatedStorage:GetAttribute("FishingWatersGenerationError") == true
+	local sceneryReady = generated and streamed
 	local targetProgress = if not connected then 0.08
-		elseif not worldReady then 0.3
-		elseif not alive or not ground then 0.6
-		elseif not clientReady then 0.85
-		else 1
+		elseif not worldReady then 0.25
+		elseif not alive or not ground then 0.45
+		elseif not clientReady then 0.65
+		else 0.75 + (if generated then 0.125 else 0) + (if streamed then 0.125 else 0)
 	-- Keep the bar moving forward if readiness briefly fluctuates.
 	progress = math.max(progress, targetProgress)
 	progressFill.Size = UDim2.fromScale(progress, 1)
-	local failed = player:GetAttribute("FishingWatersClientError") == true
-	local serverFailed = ReplicatedStorage:GetAttribute("FishingWatersStartupError") == true
+	local canSkip = essential and elapsed >= SKIP_DELAY
 	if not connected then
 		status.Text = "Connecting to the waters..."
 	elseif not worldReady then
@@ -216,10 +259,16 @@ while not dismissed do
 		status.Text = "Finding your dock..."
 	elseif not clientReady then
 		status.Text = "Loading your fishing gear..."
+	elseif not generated then
+		local step = ReplicatedStorage:GetAttribute("FishingWatersStartupStep")
+		status.Text = if type(step) == "string" then `Loading scenery: {step}...` else "Loading scenery..."
+	elseif not streamed then
+		status.Text = "Loading nearby buildings..."
 	else
 		status.Text = "Ready."
 	end
-	continue.Visible = safeToEnter and (failed or elapsed >= 12)
+	continue.Visible = canSkip or (safeToEnter and (failed or elapsed >= 12))
+	continue.Text = if essential then "Skip loading →" else "Enter harbour →"
 	detail.Text = tips[math.floor(elapsed / 8) % #tips + 1]
 	if serverFailed then
 		status.Text = "The harbour couldn't start"
@@ -229,17 +278,20 @@ while not dismissed do
 		detail.Text = if safeToEnter
 			then "Some gear couldn't load. Enter the harbour, or rejoin to retry."
 			else "Some gear couldn't load. Waiting for a safe place to arrive."
+	elseif canSkip then
+		detail.Text = "You're ready to fish. Skip now and the rest of the world keeps loading while you play."
 	elseif elapsed >= 15 then
 		detail.Text = if safeToEnter
 			then "Your dock is ready. You can enter while your gear finishes."
 			else "Still preparing your arrival. Thanks for hanging in there."
 	end
-	if safeToEnter and clientReady and not serverFailed then
+	if essential and (sceneryReady or os.clock() - (essentialAt :: number) >= SCENERY_TIMEOUT) then
 		break
 	end
 	task.wait(0.1)
 end
-
+-- Skipped: the player entered before everything finished (scenery skip or gear fallback)
+player:SetAttribute("FishingWatersLoadingSkipped", dismissed)
 player:SetAttribute("FishingWatersLoadingSeconds", os.clock() - startedAt)
 continueConnection:Disconnect()
 resizeConnection:Disconnect()

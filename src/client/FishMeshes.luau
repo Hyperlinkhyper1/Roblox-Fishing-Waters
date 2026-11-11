@@ -40,13 +40,19 @@ local started = false
 -- [fishId] = { [band name] = { part, mesh, size, offset } }, false when unavailable.
 local skins: { [string]: any } = {}
 local skinErrors: { [string]: string } = {}
+-- A failed species is retried after this long (the budget may have freed up).
+local SKIN_RETRY_AFTER = 30
+local skinFailedAt: { [string]: number } = {}
+-- Fish skins outrank cosmetic meshes such as the swell water sheet.
+local ALLOCATE = { evict = true }
+local FORCED = { evict = true, force = true }
 -- Part creation and fixed-size copying yield. Only one species may hold a
 -- temporary dynamic mesh at a time, even when many tagged fish arrive together.
 local building = false
 local hydrated: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
 -- One band of the skin as a mesh part, its vertices centred on its bounds.
-local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?, string?)
+local function buildBand(rings, band, options): (MeshPart?, Vector3?, EditableMesh?, string?)
 	local scale = FishModels.SCALE
 	local steps = math.max(2, math.ceil((band.to - band.from) * ANGLE_STEPS))
 	local points, normals = {}, {}
@@ -79,7 +85,7 @@ local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?, stri
 	end
 	local center = (low + high) / 2
 
-	local mesh = EditableMeshBudget.create()
+	local mesh = EditableMeshBudget.create(options)
 	if not mesh then
 		return nil, nil, nil, EditableMeshBudget.failureReason() or "EditableMesh allocation failed"
 	end
@@ -117,7 +123,7 @@ local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?, stri
 			end
 		end
 
-		mesh = EditableMeshBudget.fixed(mesh)
+		mesh = EditableMeshBudget.fixed(mesh, options)
 		if not mesh then
 			return nil
 		end
@@ -140,12 +146,19 @@ local function buildBand(rings, band): (MeshPart?, Vector3?, EditableMesh?, stri
 end
 
 -- Band templates for a species, built once and shared by every fish of it.
-local function skin(fishId: string)
+-- `force` (the mesh test) retries a failed species and the budget right away.
+local function skin(fishId: string, force: boolean?)
 	while building do
 		task.wait()
 	end
-	if skins[fishId] ~= nil then
-		return skins[fishId]
+	local cached = skins[fishId]
+	if cached then
+		return cached
+	elseif cached == false then
+		local failedAt = skinFailedAt[fishId]
+		if not failedAt or (not force and os.clock() - failedAt < SKIN_RETRY_AFTER) then
+			return false
+		end
 	end
 	local spec = FishModels.loft(fishId)
 	if not spec then
@@ -156,13 +169,14 @@ local function skin(fishId: string)
 	building = true
 	local bands = {}
 	for _, band in bandsFor(spec) do
-		local ok, part, center, mesh, reason = pcall(buildBand, spec.rings, band)
+		local ok, part, center, mesh, reason = pcall(buildBand, spec.rings, band, if force then FORCED else ALLOCATE)
 		if not ok or not part or not center or not mesh then
 			for _, built in bands do
 				built.part:Destroy()
 				built.mesh:Destroy()
 			end
 			skins[fishId] = false
+			skinFailedAt[fishId] = os.clock()
 			skinErrors[fishId] = band.name .. " band: " .. (if not ok then tostring(part) else tostring(reason or "unknown mesh creation failure"))
 			building = false
 			return false
@@ -170,12 +184,22 @@ local function skin(fishId: string)
 		bands[band.name] = { part = part, mesh = mesh, size = part.Size, offset = center - spec.anchorPosition }
 	end
 	skins[fishId] = bands
+	skinErrors[fishId] = nil
 	building = false
 	return bands
 end
 
 -- Exercise the same seven bands used by a rainbow trout, then report whether
 -- tagged fish currently in this client actually received their skins.
+-- Tagged fish still wearing the sphere body whose species failed to build.
+local function retryUnskinned(force: boolean?)
+	for _, model in CollectionService:GetTagged(FishModels.LOFT_TAG) do
+		if model:IsA("Model") and model.Parent and not hydrated[model] and not model:FindFirstChild("LoftSkin", true) then
+			task.spawn(FishMeshes.hydrate, model, force)
+		end
+	end
+end
+
 function FishMeshes.diagnose(): string
 	if not MeshFeatures.EditableMeshesEnabled then
 		return "Mesh test FAILED: EditableMeshesEnabled is off."
@@ -183,13 +207,14 @@ function FishMeshes.diagnose(): string
 	if not started then
 		return "Mesh test FAILED: FishMeshes client has not started."
 	end
-	local ok, result = pcall(skin, "RainbowTrout")
+	local ok, result = pcall(skin, "RainbowTrout", true)
 	if not ok then
-		return "Mesh test FAILED: " .. tostring(result)
+		return "Mesh test FAILED: " .. tostring(result) .. " " .. EditableMeshBudget.status()
 	end
 	if not result then
-		return "Mesh test FAILED: " .. (skinErrors.RainbowTrout or "unknown failure")
+		return "Mesh test FAILED: " .. (skinErrors.RainbowTrout or "unknown failure") .. " " .. EditableMeshBudget.status()
 	end
+	retryUnskinned(true)
 	local total, skinned, pending = 0, 0, 0
 	local firstFailure: string? = nil
 	for _, model in CollectionService:GetTagged(FishModels.LOFT_TAG) do
@@ -208,7 +233,7 @@ function FishMeshes.diagnose(): string
 	end
 	local summary = string.format("Rainbow Trout skin available. Client fish: %d; with skins: %d; without skins: %d.", total, skinned, pending)
 	if firstFailure then
-		return "Mesh test PARTIAL: " .. summary .. " Failure: " .. firstFailure
+		return "Mesh test PARTIAL: " .. summary .. " Failure: " .. firstFailure .. " " .. EditableMeshBudget.status()
 	end
 	if pending > 0 then
 		return "Mesh test PARTIAL: " .. summary .. " Some fish may still be loading."
@@ -216,7 +241,7 @@ function FishMeshes.diagnose(): string
 	return "Mesh test PASS: " .. summary .. " Spots and fins remain separate parts."
 end
 
-function FishMeshes.hydrate(model: Instance)
+function FishMeshes.hydrate(model: Instance, force: boolean?)
 	if not model:IsA("Model") or hydrated[model] then
 		return
 	end
@@ -225,9 +250,13 @@ function FishMeshes.hydrate(model: Instance)
 		return
 	end
 	hydrated[model] = true
-	local bands = skin(fishId)
+	local bands = skin(fishId, force)
 	local spec = FishModels.loft(fishId)
 	if not bands or not spec or not model.Parent then
+		if not bands then
+			-- Left as a sphere; retryUnskinned() may try again once the budget frees.
+			hydrated[model] = nil
+		end
 		return
 	end
 	local swatches: { [string]: BasePart } = {}
@@ -317,8 +346,14 @@ function FishMeshes.start()
 	if not MeshFeatures.EditableMeshesEnabled then
 		return
 	end
+	local retriedAt = os.clock()
 	CollectionService:GetInstanceAddedSignal(FishModels.LOFT_TAG):Connect(function(model)
 		task.spawn(FishMeshes.hydrate, model)
+		-- New fish arrive often (catches, menus); use them to revisit earlier failures.
+		if os.clock() - retriedAt >= SKIN_RETRY_AFTER then
+			retriedAt = os.clock()
+			retryUnskinned()
+		end
 	end)
 	for _, model in CollectionService:GetTagged(FishModels.LOFT_TAG) do
 		task.spawn(FishMeshes.hydrate, model)

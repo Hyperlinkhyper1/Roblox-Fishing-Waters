@@ -39,8 +39,10 @@ local Enum = setmetatable({}, { __index = function()
 	return setmetatable({}, { __index = function(_, name) return name end })
 end })
 local packSize = 1
+-- Chance rolls (NextNumber with no range) return `roll`; angles and jitter stay at 0.
+local roll = 0
 local Random = { new = function() return {
-	NextNumber = function() return 0 end,
+	NextNumber = function(_, low) return if low == nil then roll else 0 end,
 	NextInteger = function(_, low, high) return math.clamp(packSize, low, high) end,
 } end }
 local RaycastParams = { new = function() return {} end }
@@ -53,6 +55,8 @@ function Instance.new(class)
 	function object:GetAttribute(name) return self.attributes[name] end
 	if class == "RemoteEvent" then
 		object.OnServerEvent = { Connect = function(_, fn) object.fire = fn end }
+		object.broadcasts = {}
+		function object:FireAllClients(...) table.insert(self.broadcasts, { ... }) end
 	end
 	function object:Destroy() self.destroyed = true end
 	function object:PivotTo(pivot)
@@ -67,9 +71,9 @@ local now, night, water, blocked = 0, false, true, false
 local workspace = {}
 function workspace:GetServerTimeNow() return now end
 function workspace:FindFirstChild() return {} end
-function workspace:Raycast(_, direction, params)
+function workspace:Raycast(origin, direction, params)
 	if not params.IgnoreWater then return if water then { Material = "Water" } else nil end
-	return if blocked and direction.X ~= 0 then { Instance = {} } else nil
+	return if blocked and (direction.X ~= 0 or direction.Z ~= 0) then { Instance = {}, Position = origin + direction * 0.5 } else nil
 end
 local player = {}
 local Players = { GetPlayers = function() return { player } end, PlayerRemoving = { Connect = function() end } }
@@ -88,8 +92,12 @@ local hitTimes = {}
 local SpearSkins = (function()
 -- SPEAR_SKINS_SOURCE --
 end)()
+local Spears = (function()
+-- SPEARS_SOURCE --
+end)()
 local dependencies = {
 	SpearSkins = SpearSkins,
+	Spears = Spears,
 	SharkModel = { build = function(parent, pivot)
 		local model = Instance.new("Model")
 		model.Name = "Shark"
@@ -98,7 +106,10 @@ local dependencies = {
 		model.Parent = parent
 		return model
 	end },
-	Biomes = { MapHalfSize = 5200, WaterLevel = 0, inOceanBounds = function(position)
+	-- Shark waters (Coral Shallows) start at x = 400; nearer the bay is home water.
+	Biomes = { MapHalfSize = 5200, WaterLevel = 0, at = function(position)
+		return { id = if position.X >= 400 then "tropical" else "normal" }
+	end, inOceanBounds = function(position)
 		return (math.abs(position.X) < 5200 and math.abs(position.Z) < 5200)
 			or (position.X > 4200 and position.X < 8200 and position.Z > 4200 and position.Z < 8200)
 	end },
@@ -147,14 +158,46 @@ local function sharks()
 	end
 	return count
 end
-SharkService.start()
-advance(10)
-assert(sharks() == 1, "Daytime should spawn one shark")
-local target, remote
-for _, object in objects do
-	if object.ClassName == "Model" and object.Name == "Shark" then target = object end
-	if object.ClassName == "RemoteEvent" and object.Name == "SpearAttack" then remote = object end
+local function liveSharks()
+	local list = {}
+	for _, object in objects do
+		if object.ClassName == "Model" and object.Name == "Shark" and not object.destroyed then table.insert(list, object) end
+	end
+	return list
 end
+local function sharkPositions()
+	local positions = {}
+	for _, object in liveSharks() do
+		-- The server moves only the root between full pivots.
+		table.insert(positions, (object.PrimaryPart.CFrame or object.pivot).Position)
+	end
+	return positions
+end
+local function nearestShark()
+	local best = math.huge
+	for _, position in sharkPositions() do
+		best = math.min(best, (position - root.Position).Magnitude)
+	end
+	return best
+end
+
+SharkService.start()
+-- Rarity: failed chance rolls keep the reef empty; a successful roll brings one pack.
+roll = 0.5
+advance(65)
+assert(sharks() == 0, "Failed spawn rolls must not bring sharks")
+roll = 0.1
+advance(21)
+assert(sharks() == 1, "A daytime roll under 15% should spawn one shark")
+roll = 0
+
+local remote, thrown
+for _, object in objects do
+	if object.ClassName == "RemoteEvent" and object.Name == "SpearAttack" then remote = object end
+	if object.ClassName == "RemoteEvent" and object.Name == "SpearThrown" then thrown = object end
+end
+assert(remote and thrown, "Spear remotes are published")
+local target = liveSharks()[1]
 local spear = { IsA = function(_, name) return name == "Tool" end, GetAttribute = function(_, name)
 	if name == "SpearId" then return "BasicSpear" end
 	if name == "OwnerUserId" then return 1 end
@@ -167,98 +210,107 @@ player.Character = {
 	FindFirstChild = function() return playerRoot end,
 	GetChildren = function() return { spear } end,
 }
-target.PrimaryPart.Position = Vector3.new(1008, 1.3, 0)
+local function targetPosition() return (target.PrimaryPart.CFrame or target.pivot).Position end
+-- Stand `distance` studs beside the shark (the boat keeps 100 studs off so it
+-- never aggroes), throw at its body and let the spear fly for `wait` seconds.
+local function throw(who, distance, wait)
+	local at = targetPosition()
+	root.Position = at + Vector3.new(0, 0, 100)
+	playerRoot.Position = at + Vector3.new(0, -Spears.THROW_HEIGHT, distance or 10)
+	remote.fire(who or player, at + Vector3.new(0, -Spears.SHARK_DEPTH, 0))
+	advance(wait or 1.1)
+end
+local function sharkHealth() return target:GetAttribute("Health") end
+
 local oldContributor = { Parent = Players, UserId = 1, Character = player.Character, GetAttribute = player.GetAttribute }
 local recentContributor = { Parent = Players, UserId = 1, Character = player.Character, GetAttribute = player.GetAttribute }
 local rewards = {}
 SharkService.setKillRewardCallback(function(recipient) rewards[recipient] = (rewards[recipient] or 0) + 1 end)
 remote.fire(player, "invalid")
 player.GetAttribute = function() return false end
-remote.fire(player, Vector3.new(1008, 0, 0))
+throw()
 player.GetAttribute = function(_, name) return name == "OwnsBasicSpear" end
 player.Character.GetChildren = function() return {} end
-remote.fire(player, Vector3.new(1008, 0, 0))
+throw()
 player.Character.GetChildren = function() return { spear } end
-target.PrimaryPart.Position = Vector3.new(1040, 1.3, 0)
-remote.fire(player, Vector3.new(1040, 0, 0))
-now += 0.7
-target.PrimaryPart.Position = Vector3.new(1008, 1.3, 0)
+assert(#thrown.broadcasts == 0, "Invalid aim, ownership or equipment must not throw a spear")
+throw(player, 100)
+assert(#thrown.broadcasts == 1, "A valid throw is shown to every client")
 blocked = true
-remote.fire(player, Vector3.new(1008, 0, 0))
+throw()
 blocked = false
-assert(target:GetAttribute("Health") == 15, "Invalid aim, ownership, equipment, range or obstruction must not deal damage")
-now += 0.7
-remote.fire(oldContributor, Vector3.new(1008, 0, 0))
+assert(sharkHealth() == 15, "Out-of-range and obstructed throws must not deal damage")
+
+throw(oldContributor)
+assert(sharkHealth() == 12, "A thrown spear deals three damage")
 now += 31
-remote.fire(recentContributor, Vector3.new(1008, 0, 0))
-for _ = 1, 12 do
-	now += 0.7
-	remote.fire(player, Vector3.new(1008, 0, 0))
-end
-assert(target:GetAttribute("Health") == 1 and next(rewards) == nil, "A shark must survive 14 spear hits")
-remote.fire(player, Vector3.new(1008, 0, 0))
-assert(target:GetAttribute("Health") == 1, "Attack cooldown must be enforced")
-now += 0.7
-remote.fire(player, Vector3.new(1008, 0, 0))
+throw(recentContributor)
+throw()
+throw(player, 10, 0.5)
+assert(sharkHealth() == 3 and next(rewards) == nil, "A shark must survive four spear hits")
+throw()
+assert(sharkHealth() == 3, "Throw cooldown must be enforced")
+throw()
 assert(target.destroyed and rewards[player] == 1 and rewards[recentContributor] == 1 and not rewards[oldContributor],
-	"The fifteenth hit must reward each recent contributor once, excluding old hits")
-now += 0.7
-remote.fire(player, Vector3.new(1008, 0, 0))
+	"The fifth hit must reward each recent contributor once, excluding old hits")
+throw()
 assert(rewards[player] == 1 and rewards[recentContributor] == 1, "A dead shark must not award twice")
-advance(10)
-assert(sharks() == 1, "A killed shark should eventually respawn")
-local secondTarget
-for _, object in objects do
-	if object.ClassName == "Model" and object.Name == "Shark" and not object.destroyed then secondTarget = object end
-end
-secondTarget.PrimaryPart.Position = Vector3.new(1008, 1.3, 0)
+
+-- Leading: a spear thrown at where the shark was misses once it has swum on.
+advance(22)
+assert(sharks() == 1, "A killed shark should respawn after the spawn delay")
+target = liveSharks()[1]
+local before = sharkHealth()
+local at = targetPosition()
+root.Position = at + Vector3.new(0, 0, 100)
+playerRoot.Position = at + Vector3.new(0, -Spears.THROW_HEIGHT, 60)
+remote.fire(player, at + Vector3.new(-14, -Spears.SHARK_DEPTH, 0))
+advance(1.1)
+assert(sharkHealth() == before, "Aiming behind a roaming shark must miss")
+at = targetPosition()
+playerRoot.Position = at + Vector3.new(0, -Spears.THROW_HEIGHT, 60)
+-- 60 studs takes ~0.55 s; the roaming shark covers ~6.5 studs in that time.
+remote.fire(player, at + Vector3.new(6.5, -Spears.SHARK_DEPTH, 0))
+advance(1.1)
+assert(sharkHealth() == before - 3, "Leading a roaming shark must hit it at range")
+
 local chosenSkin, chosenWear = "Obsidian", 0.01
 player.GetAttribute = function(_, name)
 	if name == "OwnsBasicSpear" then return true end
 	if name == "SpearSkin" then return chosenSkin end
 	if name == "SpearSkinWear" then return chosenWear end
 end
-now += 0.7
-remote.fire(player, Vector3.new(1008, 0, 0))
-assert(math.abs(secondTarget:GetAttribute("Health") - (15 - 1.144)) < 0.00001, "Factory-new wear must increase shark damage")
+before = sharkHealth()
+throw()
+assert(math.abs(sharkHealth() - (before - 3 * 1.144)) < 0.0001, "Factory-new wear must increase shark damage")
 chosenWear = 0.9
-now += 0.7
-remote.fire(player, Vector3.new(1008, 0, 0))
-assert(math.abs(secondTarget:GetAttribute("Health") - (15 - 1.144 - 1.096)) < 0.00001, "Battle-scarred wear must reduce the damage boost")
+before = sharkHealth()
+throw()
+assert(math.abs(sharkHealth() - (before - 3 * 1.096)) < 0.0001, "Battle-scarred wear must reduce the damage boost")
+assert(thrown.broadcasts[#thrown.broadcasts][4] == "Obsidian", "Throw broadcasts carry the spear skin")
+-- Fire rate: cooldown 1 / (1 + boost). Count accepted throws, not damage.
 chosenSkin, chosenWear = "GoldenHarpoon", 0.01
-now += 0.7
-remote.fire(player, Vector3.new(1008, 0, 0))
-local fastHealth = secondTarget:GetAttribute("Health")
-now += 0.47
-remote.fire(player, Vector3.new(1008, 0, 0))
-assert(secondTarget:GetAttribute("Health") == fastHealth, "Boosted cooldown must still reject attacks that are too fast")
-now += 0.02
-remote.fire(player, Vector3.new(1008, 0, 0))
-assert(secondTarget:GetAttribute("Health") == fastHealth - 1, "Factory-new fire rate must allow a faster attack")
+local function accepted(gap)
+	local count = #thrown.broadcasts
+	now += gap
+	remote.fire(player, targetPosition() + Vector3.new(0, 30, 0))
+	return #thrown.broadcasts > count
+end
+now += 2
+assert(accepted(0), "A rested throw is accepted")
+assert(not accepted(0.79), "Boosted cooldown must still reject throws that are too fast")
+assert(accepted(0.02), "Factory-new fire rate must allow a faster throw")
 chosenWear = 0.9
-now += 0.50
-remote.fire(player, Vector3.new(1008, 0, 0))
-assert(secondTarget:GetAttribute("Health") == fastHealth - 1, "Battle-scarred fire rate must enforce a longer cooldown")
-now += 0.03
-remote.fire(player, Vector3.new(1008, 0, 0))
-assert(secondTarget:GetAttribute("Health") == fastHealth - 2, "Battle-scarred fire rate must allow attacks after its cooldown")
-local function sharkPositions()
-	local positions = {}
-	for _, object in objects do
-		if object.ClassName == "Model" and object.Name == "Shark" and not object.destroyed then
-			-- The server moves only the root between full pivots.
-			table.insert(positions, (object.PrimaryPart.CFrame or object.pivot).Position)
-		end
-	end
-	return positions
-end
-local function nearestShark()
-	local best = math.huge
-	for _, position in sharkPositions() do
-		best = math.min(best, (position - root.Position).Magnitude)
-	end
-	return best
-end
+assert(not accepted(0.85), "Battle-scarred fire rate must enforce a longer cooldown")
+assert(accepted(0.02), "Battle-scarred fire rate must allow throws after its cooldown")
+advance(2)
+
+-- Kill the remaining shark so the chase checks start from a fresh pack.
+chosenSkin = nil
+while not target.destroyed do throw() end
+advance(22)
+assert(sharks() == 1, "Another pack arrives after the delay")
+root.Position = sharkPositions()[1] + Vector3.new(0, 0, 150)
 advance(15)
 assert(hits == 0 and nearestShark() > 100, "A roaming pack must not seek a boat that keeps its distance")
 root.Position = sharkPositions()[1] - Vector3.new(20, 0, 13)
@@ -276,30 +328,45 @@ root.Position = root.Position + Vector3.new(0, 0, 80)
 advance(3)
 assert(nearestShark() < 12, "A chasing pack should follow the boat")
 local hitsBeforeEscape = hits
-root.Position = root.Position + Vector3.new(0, 0, 300)
+root.Position = root.Position + Vector3.new(0, 0, 200)
 advance(15)
 assert(hits == hitsBeforeEscape and sharks() == 1 and nearestShark() > 150,
 	"Outrunning a pack should end the chase without despawning it")
+
+-- Leaving the reef: a chase ends at the biome edge and home water stays empty.
+health = 100
+root.Position = sharkPositions()[1] - Vector3.new(20, 0, 13)
+advance(4)
+local hitsAtEdge = hits
+root.Position = Vector3.new(300, 0, root.Position.Z)
+advance(15)
+assert(hits == hitsAtEdge, "Sharks must not follow a boat out of shark waters")
+advance(30)
+assert(sharks() == 0, "A pack left far behind at the reef edge swims off")
+advance(120)
+assert(sharks() == 0, "Sharks never spawn outside the Coral Shallows and Cinder Isles")
+
+root.Position = Vector3.new(1000, 0, 0)
 night, packSize = true, 3
-advance(20)
-assert(sharks() == 4, "Nighttime should add a second pack, holding up to three sharks")
+advance(45)
+assert(sharks() == 4, "Nighttime should allow a second pack, each holding at most two sharks")
 night = false
 advance(0.2)
-assert(sharks() == 1, "Extra packs should leave when day returns")
+assert(sharks() == 2, "Extra packs should leave when day returns")
 root.Position = Vector3.new(-100, 0, 0)
 local hitsAtBay = hits
 advance(5)
 assert(sharks() == 0 and hits == hitsAtBay, "The bay should immediately stop attacks")
 root.Position = Vector3.new(1000, 0, 0)
 water = false
-advance(10)
+advance(30)
 assert(sharks() == 0 and hits == hitsAtBay, "Land should not spawn sharks")
 water = true
 packSize = 2
 health = 8
-advance(10)
+advance(21)
 assert(sharks() == 2 and hits == hitsAtBay, "A pack of two should spawn and keep to itself")
 root.Position = sharkPositions()[1] - Vector3.new(20, 0, 0)
 advance(30)
 assert(health == 0 and sharks() == 0, "Sharks should stop after the boat reaches zero health")
-print("Shark service: spear validation, 15-hit kills, contribution window, roaming packs and proximity chases passed.")
+print("Shark service: reef-only rare spawns, thrown-spear flight, leading, 5-hit kills, contribution window, roaming packs and proximity chases passed.")

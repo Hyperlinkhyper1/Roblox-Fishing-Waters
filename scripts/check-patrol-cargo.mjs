@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { patchHarnessRequires } from './harness-requires.mjs';
 import { fileURLToPath } from 'node:url';
 import { inlineFishSpecies } from './fish-species.mjs';
 
@@ -23,11 +24,10 @@ local Data = (function() ${data} end)()
 local spec = Boats.PatrolBoat
 local _, width, height = Grid.cells(spec.Hold)
 assert(width == 8 and height == 15 and Grid.capacity(spec.Hold) == 90, "Long, narrow 90-cell hold")
+-- Cargo is capacity-only: placement and rotation no longer limit storage, so a
+-- hold is valid when its items' shape areas fit the hull's cell count.
 local function valid(items)
-  for index, item in items do
-    assert(Grid.fits(spec.Hold, Grid.occupied(items, Catalog.Fish, index),
-      Grid.shape(item, Catalog.Fish), item.X, item.Y, item.R), "Cargo overlaps or leaves hull")
-  end
+  assert(Grid.used(items, Catalog.Fish) <= Grid.capacity(spec.Hold), "Cargo exceeds hull capacity")
 end
 valid(spec.StarterParts)
 local upgraded = Data.decode(nil)
@@ -122,7 +122,7 @@ print("Patrol cargo: dimensions, engine, full saved-hold migration, overflow, re
 const temporary = await mkdtemp(join(tmpdir(), 'patrol-cargo-'));
 try {
   const target = join(temporary, 'check.luau');
-  await writeFile(target, program);
+  await writeFile(target, patchHarnessRequires(program, temporary));
   const result = spawnSync(process.env.LUTE || 'lute', ['run', target], { stdio: 'inherit', timeout: 30000 });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error('Patrol cargo checks failed');

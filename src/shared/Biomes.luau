@@ -14,6 +14,7 @@ export type Look = {
 	ambient: Color3,
 	cloudCover: number,
 	cloudColor: Color3,
+	sunRays: number?, -- daytime sun-ray strength on a clear sky; nil = the usual faint rays
 }
 
 export type Biome = {
@@ -24,6 +25,7 @@ export type Biome = {
 	seabed: Enum.Material,
 	seabedColor: Color3,
 	shelfDepth: number?, -- biome-wide seabed height; nil keeps the deep sea floor
+	parent: string?, -- zones only: the terrain biome they sit inside
 	look: Look,
 }
 
@@ -210,13 +212,46 @@ Biomes.OpenSea = {
 	},
 } :: Biome
 
+-- Pirate Cove: a small biome of its own inside the Coral Shallows, golden and hazy with the low
+-- sun blooming through sea mist. A zone keeps its parent's seabed and terrain (map generation
+-- only walks Biomes.list), but has its own name, mood and fish pool.
+Biomes.PirateCove = {
+	id = "piratecove",
+	name = "Pirate Cove",
+	-- Shared.PirateCove.CENTER; the island (RADIUS 170) plus its anchorage.
+	center = Vector2.new(-650, 2150),
+	radius = 260,
+	parent = "tropical",
+	seabed = Biomes.Tropical.seabed,
+	seabedColor = Biomes.Tropical.seabedColor,
+	shelfDepth = Biomes.Tropical.shelfDepth,
+	look = {
+		waterColor = rgb(104, 132, 152),
+		atmosphereColor = rgb(236, 216, 186),
+		atmosphereDecay = rgb(196, 152, 124),
+		density = 0.4,
+		haze = 2.7,
+		glare = 1.4,
+		tint = rgb(255, 238, 220),
+		saturation = -0.04,
+		contrast = 0.02,
+		ambient = rgb(164, 150, 136),
+		cloudCover = 0.5,
+		cloudColor = rgb(255, 234, 212),
+		sunRays = 0.12,
+	},
+} :: Biome
+
 Biomes.list = { Biomes.Normal, Biomes.Swamp, Biomes.Tropical, Biomes.Volcanic, Biomes.Ice } :: { Biome }
+-- Small biomes nested inside a terrain biome; Biomes.zoneAt checks them first.
+Biomes.zones = { Biomes.PirateCove } :: { Biome }
 
 -- How far a point is into a biome, as a fraction of its radius (0 = center, 1 = edge).
 function Biomes.depthIn(biome: Biome, position: Vector3): number
 	return (Vector2.new(position.X, position.Z) - biome.center).Magnitude / biome.radius
 end
 
+-- The terrain biome at `position` (seabed, scenery, sharks). Ignores zones.
 function Biomes.at(position: Vector3): Biome
 	local best, bestDepth = Biomes.OpenSea, 1
 	for _, biome in Biomes.list do
@@ -226,6 +261,16 @@ function Biomes.at(position: Vector3): Biome
 		end
 	end
 	return best
+end
+
+-- The biome a player is in for its mood, name and fish: a zone when inside one, else Biomes.at.
+function Biomes.zoneAt(position: Vector3): Biome
+	for _, zone in Biomes.zones do
+		if Biomes.depthIn(zone, position) < 1 then
+			return zone
+		end
+	end
+	return Biomes.at(position)
 end
 
 return Biomes

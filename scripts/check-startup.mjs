@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { patchHarnessRequires } from './harness-requires.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = await mkdtemp(join(tmpdir(), 'fishing-startup-'));
 try {
@@ -33,6 +34,7 @@ try {
   const source = (await readFile(join(root, 'src/server/BoatService.luau'), 'utf8'))
     .replace('require(script.Parent.AdminCommands)', '{ start = function() end }')
     .replace('require(script.Parent.BoatData)', 'dependencies.BoatData')
+    .replace('require(script.Parent.AnglerData)', () => `(function()\n${anglerData}\nend)()`)
     .replace('require(script.Parent.RodSerials)', () => `(function()\n${rodSerials}\nend)()`)
     .replace('require(script.Parent.Rowboat)', 'dependencies.Rowboat')
     .replace('require(script.Parent.FishingBoat)', 'dependencies.FishingBoat')
@@ -45,6 +47,7 @@ try {
     .replace('require(script.Parent.DrydockLaunch)', 'dependencies.DrydockLaunch')
     .replace('require(script.Parent.BoatLaunchCollision)', 'dependencies.BoatLaunchCollision')
     .replace('require(ReplicatedStorage.Shared.BoatCatalog)', 'dependencies.BoatCatalog')
+    .replace('require(ReplicatedStorage.Shared.AnglerCatalog)', 'dependencies.AnglerCatalog')
     .replace('require(ReplicatedStorage.Shared.BoatMotion)', `(function()\n${motion}\nend)()`)
     .replace('require(ReplicatedStorage.Shared.RodUpgrades)', () => `(function()\n${rodUpgrades}\nend)()`)
     .replace('require(ReplicatedStorage.Shared.RodSkins)', () => `(function()\n${rodSkins}\nend)()`)
@@ -97,7 +100,7 @@ check(not player:GetAttribute("OwnsStarterRod") and not player:GetAttribute("Own
       .replace('-- BOAT_DATA_SOURCE --', data).replace('-- BOAT_SERVICE_SOURCE --', source)
       + assertions + '\nprint("Wallet startup ' + mode + ': " .. checks .. " checks passed")';
     const path = join(temporary, mode + '.luau');
-    await writeFile(path, program);
+    await writeFile(path, patchHarnessRequires(program, temporary));
     run(path);
   }
   const client = await readFile(join(root, 'src/client/init.client.luau'), 'utf8');

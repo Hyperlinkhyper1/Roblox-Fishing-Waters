@@ -304,7 +304,7 @@ check(
 -- open sea species, and anywhere unknown fishes like the open sea.
 check(Catalog.poolAt("lake") == pool and Catalog.poolAt("normal") == pool, "The bay and Gullhaven Sound share a pool")
 check(Catalog.poolAt("open") == sea and Catalog.poolAt(nil) == sea, "Open water fishes the open sea")
-for _, area in { "swamp", "tropical", "volcanic", "ice" } do
+for _, area in { "swamp", "tropical", "volcanic", "ice", "piratecove" } do
 	local biome = Catalog.poolAt(area)
 	check(biome ~= sea and biome.Inherits == "OpenSea", area .. " has its own pool")
 	for _, id in sea.Fish do
@@ -312,6 +312,17 @@ for _, area in { "swamp", "tropical", "volcanic", "ice" } do
 	end
 	for _, id in biome.Own do
 		check(table.find(biome.Fish, id), area .. " lists its own species: " .. id)
+	end
+end
+-- Pirate Cove is a biome of its own with a fish group nobody else has.
+do
+	local cove = Catalog.poolAt("piratecove")
+	check(cove == Catalog.Pools.PirateCove and cove ~= Catalog.poolAt("tropical"), "Pirate Cove has its own pool")
+	for _, id in { "Parrotfish", "DoubloonFish", "CutlassFish", "BlackflagGrouper" } do
+		check(table.find(cove.Own, id), "Pirate Cove's own group lists " .. id)
+		for name, other in Catalog.Pools do
+			check(other == cove or not table.find(other.Fish, id), id .. " only bites at Pirate Cove, not " .. name)
+		end
 	end
 end
 for name, catchPool in Catalog.Pools do

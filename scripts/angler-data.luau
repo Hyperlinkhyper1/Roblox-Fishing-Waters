@@ -102,15 +102,18 @@ check(
 check(migrated.Angler.Stats.TotalCaught == 0 and legacy.Angler == nil, "Migration is copy-on-write")
 migrated.Angler = b
 migrated.Angler.Settings.EffectsVolume = 20
-local purchased = BoatData.purchase(migrated)
-check(purchased.Cash == 400 and purchased.Angler.Stats.CoinsSpent == 500, "Atomic purchase tracks actual spending")
+-- The Rowboat is free; buy a priced boat so spending is actually tracked.
+local boatPrice = require("../src/shared/BoatCatalog").FishingBoat.Price
+migrated.Cash = boatPrice + 400
+local purchased = BoatData.purchase(migrated, "FishingBoat")
+check(purchased.Cash == 400 and purchased.Angler.Stats.CoinsSpent == boatPrice, "Atomic purchase tracks actual spending")
 check(
 	purchased.Angler.Catches.Trout.Count == 2 and purchased.Angler.Settings.EffectsVolume == 20,
 	"Boat purchases preserve catches and settings"
 )
 local rod = BoatData.decode(purchased)
 check(
-	rod.Angler.Stats.CoinsSpent == 500 and rod.Angler.Catches.Trout.Mutations.Albino == 1,
+	rod.Angler.Stats.CoinsSpent == boatPrice and rod.Angler.Catches.Trout.Mutations.Albino == 1,
 	"Profile decoding preserves spending and catches"
 )
 rod.Angler.Catches.Trout.Mutations.Albino = 900
@@ -250,33 +253,38 @@ rejects({ Holds = { Rowboat = "full" } })
 -- Furniture: bought into stock, placed only in its own room, never on fixtures,
 -- doorways or other furniture, and never picked up from under stored fish.
 local Furniture = require("../src/shared/FurnitureCatalog")
+-- A new profile starts with the built-in fixtures (Data.FIXTURES) already placed;
+-- positions are on the 4.5-stud furniture grid.
 local home = Data.decode(nil)
+local fixtures = #home.Furniture
+check(fixtures == #Data.FIXTURES, "New profiles start with the built-in fixtures")
 check(Data.freezerCount(home) == 1 and Data.storageCapacity(home) == 0, "Built-in freezer only")
-check(Data.placeFurniture(home, "Freezer", -10, 9, 1) == nil, "Unbought furniture cannot be placed")
+check(Data.placeFurniture(home, "Freezer", 9, 72, 1) == nil, "Unbought furniture cannot be placed")
 home = Data.buyFurniture(home, "Freezer")
 home = Data.buyFurniture(home, "StorageRack")
 home = Data.buyFurniture(home, "StorageRack")
 check(home.FurnitureStock.Freezer == 1 and home.FurnitureStock.StorageRack == 2, "Purchases land in stock")
 check(Data.buyFurniture(home, "Sofa") == nil, "Unknown furniture is not sold")
-local _, wrongRoom = Data.placeFurniture(home, "StorageRack", -10, 9, 0)
+local _, wrongRoom = Data.placeFurniture(home, "StorageRack", 9, 72, 0)
 check(wrongRoom and string.find(wrongRoom, "storage room"), "Storage racks stay in the storage room")
-local _, wrongShop = Data.placeFurniture(home, "Freezer", 15, -10, 0)
-check(wrongShop and string.find(wrongShop, "front shop room"), "Freezers stay in the front shop room")
-check(Data.placeFurniture(home, "Freezer", 0, 9, 1) == nil, "The entrance aisle stays clear")
-check(Data.placeFurniture(home, "Freezer", -18, 7, 1) == nil, "Built-in freezer spot stays clear")
-check(Data.placeFurniture(home, "Freezer", -10.25, 9, 1) == nil, "Placements snap to the grid")
-home = assert(Data.placeFurniture(home, "Freezer", -10, 9, 1))
-check(home.FurnitureStock.Freezer == nil and #home.Furniture == 1, "Placing uses the stock")
+local _, wrongShop = Data.placeFurniture(home, "Freezer", 13.5, -9, 0)
+check(wrongShop and string.find(wrongShop, "shop across the street"), "Freezers stay in the shop across the street")
+check(Data.placeFurniture(home, "Freezer", 0, 72, 1) == nil, "The entrance aisle stays clear")
+check(Data.placeFurniture(home, "Freezer", 22.5, 72, 3) == nil, "Built-in freezer spot stays clear")
+check(Data.placeFurniture(home, "Freezer", 9.25, 72, 1) == nil, "Placements snap to the grid")
+home = assert(Data.placeFurniture(home, "Freezer", 9, 72, 1))
+local placedFreezer = fixtures + 1
+check(home.FurnitureStock.Freezer == nil and #home.Furniture == placedFreezer, "Placing uses the stock")
 check(Data.freezerCount(home) == 2, "A placed freezer adds another ice bed")
-home = assert(Data.placeFurniture(home, "StorageRack", 16, -12, 2))
-check(Data.placeFurniture(home, "StorageRack", 16, -12, 2) == nil, "Furniture cannot overlap")
-home = assert(Data.placeFurniture(home, "StorageRack", 16, -6, 2))
+home = assert(Data.placeFurniture(home, "StorageRack", 18, -13.5, 2))
+check(Data.placeFurniture(home, "StorageRack", 18, -13.5, 2) == nil, "Furniture cannot overlap")
+home = assert(Data.placeFurniture(home, "StorageRack", 18, -4.5, 2))
 check(Data.storageCapacity(home) == 24, "Each rack holds twelve fish")
 local fp = Furniture.footprint("Register", 0, 0, 1)
 check(fp[3] - fp[1] == 4.5 and fp[4] - fp[2] == 9, "Quarter turns swap the footprint")
-check(Data.placeFurniture(home, 1, -10, 6, 1) == nil, "Doorways stay clear")
-home = assert(Data.placeFurniture(home, 1, -10, 10, 1))
-check(home.Furniture[1].Z == 10 and #home.Furniture == 3, "Moving keeps one placed copy")
+check(Data.placeFurniture(home, placedFreezer, 0, 72, 1) == nil, "Moved furniture keeps the aisle clear")
+home = assert(Data.placeFurniture(home, placedFreezer, 9, 76.5, 1))
+check(home.Furniture[placedFreezer].Z == 76.5 and #home.Furniture == fixtures + 3, "Moving keeps one placed copy")
 local stash = Data.recordCatch(home, "Trout", "Normal", 3, 48, 900, fish, mutations)
 check(Data.takeStored(stash) == nil, "Empty racks give nothing")
 stash = assert(Data.storeFish(stash))
@@ -323,15 +331,16 @@ check(
 	"A rejected store leaves the backpack untouched"
 )
 check(
-	Data.pickUpFurniture(stash, 2) and Data.pickUpFurniture(Data.pickUpFurniture(stash, 2), 2) == nil,
+	Data.pickUpFurniture(stash, fixtures + 2) and Data.pickUpFurniture(Data.pickUpFurniture(stash, fixtures + 2), fixtures + 2) == nil,
 	"The last rack holding fish stays"
 )
-while Data.canFreeze({ Freezer = stash.Freezer, Furniture = {} }, stash.Storage[1]) do
+-- Fill the built-in freezer alone (the fixtures), then overflow it by one fish.
+while Data.canFreeze({ Freezer = stash.Freezer, Furniture = table.clone(Data.FIXTURES) }, stash.Storage[1]) do
 	table.insert(stash.Freezer, stash.Storage[1])
 end
 table.insert(stash.Freezer, stash.Storage[1])
 local frozenBeforeRestock = #stash.Freezer
-check(Data.pickUpFurniture(stash, 1) == nil, "A freezer holding overflow fish stays")
+check(Data.pickUpFurniture(stash, placedFreezer) == nil, "A freezer holding overflow fish stays")
 local restocked = Data.restockFish(stash, stash.Storage[1])
 check(
 	restocked and #restocked.Freezer == frozenBeforeRestock + 1 and #restocked.Storage == 0,
@@ -339,8 +348,8 @@ check(
 )
 local back = assert(Data.takeStored(stash))
 check(back.Hand and #back.Storage == 0, "Stored fish returns to the hand")
-stash = Data.pickUpFurniture(Data.decode({ Furniture = { { ItemId = "Register", X = -12, Z = 10, R = 1 } } }), 1)
-check(stash and stash.FurnitureStock.Register == 1 and #stash.Furniture == 0, "Picking up returns furniture to stock")
+stash = Data.pickUpFurniture(Data.decode({ Furniture = { { ItemId = "Register", X = -9, Z = 76.5, R = 1 } } }), 1)
+check(stash and stash.FurnitureStock.Register == 1 and #stash.Furniture == #Data.FIXTURES, "Picking up returns furniture to stock")
 rejects({ Furniture = { { ItemId = "Freezer", X = 1, Z = 1, R = 7 } } })
 rejects({ Storage = { { FishId = "Trout" } } })
 rejects({ FurnitureStock = { Freezer = -1 } })

@@ -59,6 +59,7 @@ Catalog.Pools = {
 	OpenSea = { Name = "Open Sea", Area = "open", Junk = JUNK },
 	SoddenMire = { Name = "The Sodden Mire", Area = "swamp", Inherits = "OpenSea", Junk = JUNK },
 	CoralShallows = { Name = "Coral Shallows", Area = "tropical", Inherits = "OpenSea", Junk = JUNK },
+	PirateCove = { Name = "Pirate Cove", Area = "piratecove", Inherits = "OpenSea", Junk = JUNK },
 	CinderIsles = { Name = "Cinder Isles", Area = "volcanic", Inherits = "OpenSea", Junk = JUNK },
 	FrostmereExpanse = { Name = "Frostmere Expanse", Area = "ice", Inherits = "OpenSea", Junk = JUNK },
 }

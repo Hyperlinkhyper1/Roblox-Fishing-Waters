@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { patchHarnessRequires } from './harness-requires.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const folder = await mkdtemp(join(tmpdir(), 'fishing-menu-'));
 try {
@@ -315,7 +316,7 @@ check(not player:GetAttribute("DrydockScreenOpen") and cameraStops > 0, "Finishi
 print("Boat selection UI: preview, funds, purchases, separate ownership, dock chooser and both driver seats passed (recording mocks).")
 `);
   const target = join(folder, 'menu.luau');
-  await writeFile(target, await freezerRuntime() + program);
+  await writeFile(target, patchHarnessRequires(await freezerRuntime() + program, folder));
   const result = spawnSync(process.env.LUTE || 'lute', ['run', target], { cwd: root, encoding: 'utf8', timeout: 30000 });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

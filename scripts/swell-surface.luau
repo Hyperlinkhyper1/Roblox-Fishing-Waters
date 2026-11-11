@@ -40,9 +40,17 @@ local function newMesh()
 		table.insert(self.alphas, alpha)
 		return #self.colors
 	end
+	-- Face ids stay unique after removals, like EditableMesh's.
+	mesh.nextFace = 0
 	function mesh:AddTriangle(a, b, c)
-		table.insert(self.faces, { a, b, c })
-		return #self.faces
+		self.nextFace += 1
+		self.faces[self.nextFace] = { a, b, c }
+		return self.nextFace
+	end
+	function mesh:RemoveFace(face)
+		assert(self.faces[face], "Unknown face")
+		self.faces[face] = nil
+		self.faceNormals[face], self.faceColors[face] = nil, nil
 	end
 	function mesh:SetFaceNormals(face, ids)
 		self.faceNormals[face] = ids
@@ -191,15 +199,10 @@ for id, local_ in mesh.positions do
 	local inner = math.max(math.abs(offset.X), math.abs(offset.Z)) < 264 - 72
 	if inner then
 		local expected = Weather.heightAt(world, now, state)
-		if alpha > 0 then
-			assert(
-				math.abs(local_.Y - expected) < 0.05 + math.abs(expected) * 0.03,
-				"Open-water sheet must show the boats' exact swell height"
-			)
-		else
-			-- Hidden vertices sink well under Terrain water (and its ripples) so they never z-fight it.
-			assert(local_.Y <= math.min(expected, 0) - 1.9, "Hidden sheet must sit well below Terrain water")
-		end
+		assert(
+			math.abs(local_.Y - expected) < 0.05 + math.abs(expected) * 0.03,
+			"Open-water sheet must show the boats' exact swell height"
+		)
 		matched += 1
 	end
 	if local_.Y > 1 then
@@ -214,6 +217,17 @@ assert(
 	matched > 500 and crests > 50 and troughs > 50 and sunk > 50,
 	"Check must see crests, troughs, open water and land"
 )
+-- Only triangles wholly on visible crest are drawn: nothing lies on or under Terrain's water.
+local fullGrid = 2 * (math.sqrt(#mesh.positions) - 1) ^ 2
+local drawn = 0
+for face, ids in mesh.faces do
+	drawn += 1
+	for _, id in ids do
+		assert(mesh.alphas[id] > 0 and mesh.positions[id].Y > 0.18, "Drawn triangles must sit above Terrain's ripples")
+	end
+	assert(mesh.faceNormals[face] and mesh.faceColors[face], "Re-added faces share their vertices' normals and colors")
+end
+assert(drawn > 0 and drawn < fullGrid, "Crests are drawn and calm water is culled: " .. drawn)
 assert(part.LocalTransparencyModifier == 0, "Above water the sheet is shown")
 for quality = 0, 6 do
 	setWaterQuality(quality)

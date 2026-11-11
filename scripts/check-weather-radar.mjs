@@ -95,6 +95,12 @@ local function signal()
   local handlers = {}
   return { Connect = function(_, f) table.insert(handlers, f) end, fire = function(...) for _, f in handlers do f(...) end end }
 end
+function Inst:GetPropertyChangedSignal(name)
+  local signals = rawget(self, "_s") or {}
+  rawset(self, "_s", signals)
+  signals[name] = signals[name] or signal()
+  return signals[name]
+end
 local function descendants(node, list)
   list = list or {}
   for _, child in rawget(node, "_c") do table.insert(list, child) descendants(child, list) end
@@ -174,6 +180,10 @@ island.Name = "Island"
 island.Value = { { base.X - 900, base.Z - 300 }, { base.X - 300, base.Z - 300 }, { base.X - 300, base.Z + 300 }, { base.X - 900, base.Z + 300 } }
 island.Parent = chart
 chart.ChildAdded.fire(island)
+flushDelays()
+-- A company island's coast changes when it is bought or freed; the land repaints.
+island:GetPropertyChangedSignal("Value").fire()
+assert(#delayed == 1, "A changed chart coast repaints the land")
 flushDelays()
 step(2)
 local landFrames, rainFrames, cells = 0, 0, 0

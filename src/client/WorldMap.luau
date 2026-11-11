@@ -170,7 +170,7 @@ function WorldMap.start()
 			marker.Rotation = math.deg(math.atan2(look.X, -look.Z))
 			status.Text = string.format(
 				"%s  ·  X %d / Z %d  ·  %d islands%s",
-				Biomes.at(root.Position).name,
+				Biomes.zoneAt(root.Position).name,
 				math.round(root.Position.X),
 				math.round(root.Position.Z),
 				count,
@@ -291,11 +291,21 @@ function WorldMap.start()
 					line(holder, center:Lerp(a, 0.65), center:Lerp(b, 0.65), ink, 1, 3)
 				end
 			end
-			record.Destroying:Connect(function()
+			local connections = {}
+			local function erase()
+				for _, connection in connections do
+					connection:Disconnect()
+				end
 				holder:Destroy()
 				rendered[record] = nil
 				count -= 1
-			end)
+			end
+			table.insert(connections, record.Destroying:Connect(erase))
+			-- A company island's coast changes when it is bought or freed.
+			table.insert(connections, record:GetPropertyChangedSignal("Value"):Connect(function()
+				erase()
+				draw(record)
+			end))
 		end
 		catalog.ChildAdded:Connect(draw)
 		for _, record in catalog:GetChildren() do

@@ -373,8 +373,9 @@ check(not shade.Visible, "Refit confirmation returns the screen to the drydock m
 binding(nil, "Begin")
 for _, size in { Vector2.new(1920, 1080), Vector2.new(1366, 768), Vector2.new(844, 390), Vector2.new(390, 844) } do
 	workspace.CurrentCamera.ViewportSize = size RunService.RenderStepped:Fire()
-	check(panel.UIScale.Scale * panel.Size.X.Offset <= size.X - 24 + 0.01, "Inventory fits viewport width")
-	check(panel.UIScale.Scale * panel.Size.Y.Offset <= size.Y - 90 + 0.01, "Inventory fits viewport height")
+	-- Matches CargoHold.updateLayout: 8px side margins, and a hotbar gap that shrinks on short screens.
+	check(panel.UIScale.Scale * panel.Size.X.Offset <= size.X - 16 + 0.01, "Inventory fits viewport width")
+	check(panel.UIScale.Scale * panel.Size.Y.Offset <= size.Y - math.min(90, size.Y * 0.17) - 12 + 0.01, "Inventory fits viewport height")
 end
 check(binding(nil, "Begin") == "Sink" and not shade.Visible, "Grave key closes inventory")
 check(coreBackpack == true, "Closing inventory restores the vanilla hotbar")

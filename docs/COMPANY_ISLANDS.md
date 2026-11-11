@@ -6,23 +6,29 @@ can own one island in addition to their harbour home.
 
 ## How an island looks
 
-Every island has the same landform: a wide beach in front, a ragged terrace whose cliffs
-are stacked, tumbled rock blocks (dropping straight into the sea round the back), two
-rocky knolls on its flanks and sea stacks offshore. The stair climbs through a cut in
-the cliff front between rock cheeks. A free island is plain wild land on top of that:
-rough rock steps in the cut, a wooded terrace, rocks scattered unevenly along the shore,
-and one old jetty beside the sale board.
+A free island is a small, sheer mountain rising straight out of the sea: one big
+faceted rock (sometimes with a lesser summit or shoulder beside it, often leaning,
+with a long slope one way and a cliff the other), dark pines thickest round the
+summit, fallen rock along the waterline and a few rock spires offshore. Its only
+landing is a rock ledge at its foot with the sale board and one old jetty. Every
+island's mountain grows from its own seed (`mountainOf(id)`); only the ledge and the
+water out along the jetty are fixed.
 
-While someone owns it (after buying, or when an owner joins and is assigned it)
-the island turns into a harbour village: a planked quay and two piers with rope
-rails, lanterns, bollards and ladders, a stone harbour wall along the cliff front, a
-lantern-lit stone stair in the cut, a village square (well, fire pit, market stall, notice board,
-string lights) and, on the terrace, an **empty fenced plot**. When the owner
-leaves and the island is free again it goes back to wild land.
+While someone owns it (after buying, or when an owner joins and is assigned it) the
+mountain gives way to the company landform: a wide beach in front, a ragged terrace
+whose cliffs are stacked, tumbled rock blocks (dropping straight into the sea round the
+back), rocky knolls, a grassy hill and sea stacks offshore, dressed as a harbour
+village: a planked quay and two piers with rope rails, lanterns, bollards and ladders,
+a stone harbour wall along the cliff front, a lantern-lit stone stair through a cut in
+it, a village square (well, fire pit, market stall, notice board, string lights) and,
+on the terrace, an **empty fenced plot**. When the owner leaves and the island is free
+again it goes back to the mountain.
 
-The ground, sale board and boat marker are permanent. The rest is the island's
-`Dressing` model, rebuilt off-map by `Map/CompanyIslands.dress` and cut into
-streaming pieces (`Lod.pin`) before it replaces the old one.
+The sale board and boat marker are permanent. The island's `Ground` and `Dressing`
+models are rebuilt together off-map by `Map/CompanyIslands.dress`, cut into streaming
+pieces (`Lod.pinGround`, `Lod.pin`) and swapped in the same frame. The distant LOD
+shell is then redrawn (`Lod.reshell`) and `ChartCoast` updated, so the world map and
+weather radar show the island's current coast.
 
 ## The plot and the company kit
 
@@ -64,20 +70,20 @@ player waits for a released plot.
 
 The shared `CompanyIslands` module controls count, price, names, the hand-placed
 `Sites` (bearing, distance and dock turn per island, deliberately not a ring) and
-the plot frame. Each island's landform comes from `shapeOf(id)` in the map module:
+the plot frame. Each owned island's landform comes from `shapeOf(id)` in the map module:
 only the quay front, the square's beach, the cliff front and the terrace round the
 plot are fixed; the outline, hill, knolls and sea stacks grow from the island's seed.
 Fresh generation reserves their footprints before placing procedural
 scenery. Startup adds or upgrades the islands on older Studio-baked maps (version 3
 replaced the houses, version 4 the landform, version 5 the scattered sites and
-per-island shapes), clearing overlapping procedural scenery without touching
+per-island shapes, version 6 the wild mountains), clearing overlapping procedural scenery without touching
 player bases.
 
 ## Validation
 
 ```text
 lute run scripts/company-islands.luau
-node scripts/check-company-islands.mjs [--preview out.png]
+node scripts/check-company-islands.mjs [--preview top.png] [--view side.png]
 lute run scripts/business-paths.luau
 node scripts/check-company-startup.mjs
 node scripts/check-world-startup.mjs
@@ -85,8 +91,10 @@ node scripts/check-world-startup.mjs
 
 The company checker executes production geometry and transaction code with
 recording Roblox doubles. It checks both dressings and the swaps between them,
-stair risers, the empty plot, streaming-piece sizes, island spacing, map migration,
+stair risers, the empty plot, the wild mountains (height, a clear ledge for the sale
+board, open water along the jetty, staying inside the reservation), streaming-piece
+sizes, island spacing, map migration,
 purchase races, allocation on rejoin, dock authorization, porter routes to placed
 racks, and kitchen benches. `--preview` draws the wild and the owned island from
-above. Studio play is still needed for appearance, streaming, boat physics and real
+above; `--view` renders them from a boat out in front. Studio play is still needed for appearance, streaming, boat physics and real
 NPC navigation.

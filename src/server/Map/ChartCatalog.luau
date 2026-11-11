@@ -45,6 +45,13 @@ function Catalog.start(root: Instance)
 		record:SetAttribute("Atoll", model:GetAttribute("ChartAtoll") == true)
 		record:SetAttribute("ChartLabel", model:GetAttribute("ChartLabel"))
 		record.Parent = folder
+		-- A company island's coast changes when it is bought (mountain to village) or freed.
+		model:GetAttributeChangedSignal("ChartCoast"):Connect(function()
+			local value = model:GetAttribute("ChartCoast")
+			if type(value) == "string" then
+				record.Value = value
+			end
+		end)
 		model.Destroying:Connect(function()
 			record:Destroy()
 		end)

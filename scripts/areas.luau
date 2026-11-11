@@ -92,8 +92,25 @@ end
 check(Areas.Biomes.open.name == Biomes.OpenSea.name, "Open sea uses the chart's name")
 check(at(-2400, -2600) == Areas.Biomes.open, "Gap between biomes is open water")
 
--- Landmarks win inside their biome.
+-- Zones are biomes of their own, named and placed like the cove they cover.
 local cove, city = Areas.Landmarks[1], Areas.Landmarks[2]
+check(cove == Areas.Biomes.piratecove and cove.name == Cove.NAME, "Pirate Cove is a biome area")
+check(cove.subtitle ~= "" and cove.accent ~= nil and cove.parent == nil, "Pirate Cove has its own banner")
+check(
+	Biomes.PirateCove.center.X == Cove.CENTER[1] and Biomes.PirateCove.center.Y == Cove.CENTER[2],
+	"The Pirate Cove biome sits on the island"
+)
+check(Biomes.PirateCove.radius >= Cove.RADIUS + 60, "The Pirate Cove biome covers the island and anchorage")
+check(not table.find(Biomes.list, Biomes.PirateCove), "Pirate Cove stays out of terrain generation")
+check(Biomes.at(env.Vector3.new(Cove.CENTER[1], 0, Cove.CENTER[2])) == Biomes.Tropical, "Cove terrain stays tropical")
+check(
+	Biomes.zoneAt(env.Vector3.new(Cove.CENTER[1], 0, Cove.CENTER[2])) == Biomes.PirateCove,
+	"Pirate Cove is the zone at the cove"
+)
+check(Biomes.zoneAt(env.Vector3.new(-1200, 0, 3000)) == Biomes.Tropical, "The rest of the Coral Shallows is tropical")
+check(Biomes.zoneAt(env.Vector3.new(0, 0, 0)) == Biomes.Normal, "Zones leave other biomes alone")
+
+-- Zones and landmarks win inside their biome.
 check(at(Cove.CENTER[1], Cove.CENTER[2]) == cove, "Pirate Cove not announced at the cove")
 check(at(Cove.CENTER[1] + Cove.RADIUS, Cove.CENTER[2]) == cove, "Cove shoreline is outside Pirate Cove")
 check(at(7000, 7000) == city, "City centre is not Modern City")
@@ -117,7 +134,7 @@ check(Areas.announces(nil, normal), "First area is not announced")
 check(Areas.announces(Areas.Biomes.open, normal), "Entering Gullhaven Sound is not announced")
 check(not Areas.announces(normal, normal), "Same area announced twice")
 check(Areas.announces(Areas.Biomes.tropical, cove), "Arriving at Pirate Cove is not announced")
-check(not Areas.announces(cove, Areas.Biomes.tropical), "Leaving the cove re-announces Coral Shallows")
+check(Areas.announces(cove, Areas.Biomes.tropical), "Leaving the Pirate Cove biome does not announce Coral Shallows")
 check(Areas.announces(cove, Areas.Biomes.open), "Sailing from the cove into open water is not announced")
 check(not Areas.announces(city, Areas.Biomes.open), "Leaving the city re-announces open water")
 

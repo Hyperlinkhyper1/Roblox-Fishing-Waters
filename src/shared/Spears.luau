@@ -3,6 +3,82 @@ local Spears = {}
 Spears.PRICE = 250
 Spears.ID = "BasicSpear"
 
+-- Thrown spears: the server simulates every throw with these numbers and each
+-- client draws the same arc, so what players see is what can hit.
+Spears.THROW_SPEED = 110 -- studs per second at release
+Spears.THROW_GRAVITY = 40 -- lighter than workspace gravity so throws read as flat
+Spears.THROW_RANGE = 75 -- the arc is aimed through points up to this far away
+Spears.THROW_COOLDOWN = 1 -- seconds before a fresh spear is in hand
+Spears.THROW_LIFETIME = 1.6
+Spears.THROW_DEPTH = 4 -- studs below the water surface a spear can still strike
+Spears.THROW_DAMAGE = 3
+Spears.THROW_HEIGHT = 1.5 -- release point above the HumanoidRootPart
+
+-- Launch velocity whose arc passes through `aim` (capped at THROW_RANGE).
+function Spears.throwVelocity(origin: Vector3, aim: Vector3): Vector3?
+	local delta = aim - origin
+	local distance = delta.Magnitude
+	if distance < 1 or distance ~= distance then
+		return nil
+	end
+	if distance > Spears.THROW_RANGE then
+		delta = delta.Unit * Spears.THROW_RANGE
+		distance = Spears.THROW_RANGE
+	end
+	local flight = distance / Spears.THROW_SPEED
+	return delta * (1 / flight) + Vector3.new(0, 0.5 * Spears.THROW_GRAVITY * flight, 0)
+end
+
+-- Position and velocity `t` seconds after release.
+function Spears.throwAt(origin: Vector3, velocity: Vector3, t: number): (Vector3, Vector3)
+	local g = Spears.THROW_GRAVITY
+	return origin + velocity * t + Vector3.new(0, -0.5 * g * t * t, 0), velocity + Vector3.new(0, -g * t, 0)
+end
+
+-- Sharks are hit as a capsule along the body: model origin on the surface, the
+-- body axis this far below it, snout towards the facing direction. Sized for
+-- SharkShape at its 1.35 scale (a ~16 stud shark).
+Spears.SHARK_DEPTH = 1.9
+Spears.SHARK_HALF_LENGTH = 6.7
+Spears.SHARK_RADIUS = 3.2
+
+-- Closest distance between segments p1-q1 and p2-q2, and the fraction along p1-q1.
+function Spears.segmentDistance(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3): (number, number)
+	local d1, d2, r = q1 - p1, q2 - p2, p1 - p2
+	local a, e, f = d1:Dot(d1), d2:Dot(d2), d2:Dot(r)
+	local s, t
+	if a <= 1e-9 and e <= 1e-9 then
+		return r.Magnitude, 0
+	elseif a <= 1e-9 then
+		s, t = 0, math.clamp(f / e, 0, 1)
+	else
+		local c = d1:Dot(r)
+		if e <= 1e-9 then
+			s, t = math.clamp(-c / a, 0, 1), 0
+		else
+			local b = d1:Dot(d2)
+			local denominator = a * e - b * b
+			s = if denominator > 1e-9 then math.clamp((b * f - c * e) / denominator, 0, 1) else 0
+			t = (b * s + f) / e
+			if t < 0 then
+				s, t = math.clamp(-c / a, 0, 1), 0
+			elseif t > 1 then
+				s, t = math.clamp((b - c) / a, 0, 1), 1
+			end
+		end
+	end
+	return ((p1 + d1 * s) - (p2 + d2 * t)).Magnitude, s
+end
+
+-- How far along the segment from-to (0..1) it passes through the shark body,
+-- or nil when it misses. `surface` is the shark's origin on the water.
+function Spears.sharkHit(from: Vector3, to: Vector3, surface: Vector3, facing: Vector3): number?
+	local center = surface + Vector3.new(0, -Spears.SHARK_DEPTH, 0)
+	local reach = facing * Spears.SHARK_HALF_LENGTH
+	local distance, along = Spears.segmentDistance(from, to, center + reach, center - reach)
+	return if distance <= Spears.SHARK_RADIUS then along else nil
+end
+
 function Spears.buyProblem(profile): string?
 	if profile.OwnedSpears[Spears.ID] then
 		return "You already own a spear. Find it in your hotbar."
@@ -29,7 +105,7 @@ function Spears.build(skinId: string?, wear: number?): Tool
 	end
 	local tool = Instance.new("Tool")
 	tool.Name = "Spear"
-	tool.ToolTip = "Attack sharks in the sea."
+	tool.ToolTip = "Throw at sharks in the Coral Shallows and Cinder Isles."
 	tool.CanBeDropped = false
 	tool.RequiresHandle = true
 	tool:SetAttribute("SpearId", Spears.ID)

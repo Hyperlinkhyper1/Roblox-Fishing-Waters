@@ -2195,7 +2195,7 @@ check(
 )
 
 store.data.Player_5000 = {
-	Version = 1, Cash = 0, RodSerialScope = "GlobalV1",
+	Version = 1, Cash = 0, OwnedBoats = {}, RodSerialScope = "GlobalV1",
 	Angler = { Catches = {
 		TestFishA = { Count = 2, BiggestKg = 1, Mutations = {} },
 		TestDrop = { Count = 1, BiggestKg = 1, Mutations = {} },

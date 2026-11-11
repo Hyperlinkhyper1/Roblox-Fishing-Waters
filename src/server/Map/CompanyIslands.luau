@@ -1,11 +1,12 @@
 -- Company islands. Local -Z faces Gullhaven.
 --
--- The ground (a sandy shore and a cliff-sided upper terrace), the sale board and
--- the boat marker are permanent. Everything else is a swappable "Dressing": an
--- unowned island is plain wild land with a small jetty, and while someone owns it
--- (Islands.dress) it becomes a detailed harbour village with a quay, two piers, a
--- walled cliff and stone stairs up to an empty fenced plot. The owner furnishes
--- that plot from build mode; FurnitureService builds it under "PlotFurniture".
+-- The sale board and the boat marker are permanent. The island's "Ground" and
+-- "Dressing" swap together (Islands.dress): an unowned island is a small, sheer
+-- mountain of faceted rock crowned with pines, with only a rock ledge and an old
+-- jetty at its foot (mountainOf). While someone owns it, it becomes a sandy shore
+-- and a cliff-sided terrace (shapeOf) dressed as a harbour village with a quay,
+-- two piers, a walled cliff and stone stairs up to an empty fenced plot. The owner
+-- furnishes that plot from build mode; FurnitureService builds it under "PlotFurniture".
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
 local Layout = require(game:GetService("ReplicatedStorage").Shared.CompanyIslands)
@@ -13,7 +14,7 @@ local LowPoly = require(script.Parent.LowPoly)
 local Props = require(script.Parent.Props)
 local Lod = require(script.Parent.Lod)
 
-local Islands = { VERSION = 5 }
+local Islands = { VERSION = 6 }
 local rgb, M = Color3.fromRGB, Enum.Material
 local ROCK, SAND, GRASS = rgb(100, 107, 105), rgb(191, 177, 142), rgb(107, 123, 80)
 local WOOD, TRIM, ROOF = rgb(133, 100, 72), rgb(66, 61, 51), rgb(69, 83, 87)
@@ -478,6 +479,158 @@ local function shapeOf(id: number)
 end
 Islands.shapeOf = shapeOf
 
+----------------------------------------------------------------------------------------------------
+-- Wild land. A free island is a small mountain rising sheer out of the sea: one big
+-- faceted rock, sometimes with a lesser summit or a shoulder beside it, pines on its
+-- gentler faces and a few rock spires offshore. Nothing of the terrace or the beach
+-- shows until someone buys it. Only a rock ledge at its foot (where the sale board
+-- stands) and the water out along the old jetty are fixed.
+
+-- The ledge (x0, z0, x1, z1) and the open water the jetty reaches out over.
+local LEDGE = { -36, -96, -4, -70 }
+local APPROACH = { -34, -260, -6, -96 }
+local SPOKES, RINGS = 20, 7
+
+local function boxDistance(box, p: Vector2): number
+	local dx = math.max(box[1] - p.X, 0, p.X - box[3])
+	local dz = math.max(box[2] - p.Y, 0, p.Y - box[4])
+	return math.sqrt(dx * dx + dz * dz)
+end
+
+-- Height of a triangle mesh (island-local Vector3 corners) at x, z; nil off it.
+local function meshHeight(tris, x: number, z: number): number?
+	for _, tri in tris do
+		local a, b, c = tri[1], tri[2], tri[3]
+		local det = (b.Z - c.Z) * (a.X - c.X) + (c.X - b.X) * (a.Z - c.Z)
+		if math.abs(det) > 1e-6 then
+			local u = ((b.Z - c.Z) * (x - c.X) + (c.X - b.X) * (z - c.Z)) / det
+			local w = ((c.Z - a.Z) * (x - c.X) + (a.X - c.X) * (z - c.Z)) / det
+			if u >= -1e-6 and w >= -1e-6 and u + w <= 1 + 1e-6 then
+				return a.Y * u + b.Y * w + c.Y * (1 - u - w)
+			end
+		end
+	end
+	return nil
+end
+
+local mountains = {}
+
+-- The mountain's faceted surface (island-local triangles), its waterline and the
+-- spires off its shore. Pure and cached per id, like shapeOf.
+local function mountainOf(id: number)
+	if mountains[id] then
+		return mountains[id]
+	end
+	local rng = Random.new(9100 + id * 53)
+	local function peak(center: Vector2, radius: number, height: number, shape: number)
+		return {
+			center = center,
+			radius = radius,
+			height = height,
+			stretch = rng:NextNumber(0.8, 1.25),
+			turn = rng:NextNumber(0, math.pi),
+			-- Low exponents make peaks, high ones hulking domes with sheer sides.
+			shape = shape,
+			-- Leaning: a long slope one way and a sheer face the other.
+			lean = rng:NextNumber(0, 0.5),
+			leanTurn = rng:NextNumber(0, TAU),
+			wobble = wobble(rng, 0.06, 2, 5),
+		}
+	end
+	local cz = rng:NextNumber(12, 38)
+	local main = peak(v2(rng:NextNumber(-22, 22), cz), math.min(rng:NextNumber(44, 80), (cz + 70) / 1.4), rng:NextNumber(46, 92), rng:NextNumber(1.8, 4.5))
+	local peaks = { main }
+	for _ = 1, rng:NextInteger(0, 2) do
+		-- Lesser summits and shoulders beside and behind it, never out over the landing.
+		local a = rng:NextNumber(-0.15, math.pi + 0.15)
+		local center = main.center + v2(math.cos(a), math.sin(a)) * main.radius * rng:NextNumber(0.5, 0.9)
+		local r = math.min(main.radius * rng:NextNumber(0.4, 0.68), (center.Y + 70) / 1.4, (MAX_COAST - 14 - center.Magnitude) / 1.6)
+		if r > 16 then
+			table.insert(peaks, peak(center, r, main.height * rng:NextNumber(0.35, 0.72), rng:NextNumber(1.6, 4)))
+		end
+	end
+	local function rise(p: Vector2): number
+		local best = -math.huge
+		for _, k in peaks do
+			local d = p - k.center
+			local c, s = math.cos(k.turn), math.sin(k.turn)
+			local x, z = (d.X * c + d.Y * s) / k.stretch, (d.Y * c - d.X * s) * k.stretch
+			local theta = math.atan2(z, x)
+			local t = math.sqrt(x * x + z * z) / k.radius * (1 + k.wobble(theta)) / (1 + k.lean * math.cos(theta - k.leanTurn))
+			best = math.max(best, if t < 1 then k.height * (1 - t ^ k.shape) else -(t - 1) * k.radius * 1.6)
+		end
+		-- A cove for the ledge, open water out along the jetty, and nothing past the reservation.
+		return math.min(best, BEACH - 1.5 + boxDistance(LEDGE, p) * 1.2, -10 + boxDistance(APPROACH, p) * 1.2, (MAX_COAST - p.Magnitude) * 1.5)
+	end
+	local reach = 0
+	for _, k in peaks do
+		reach = math.max(reach, (k.center - main.center).Magnitude + k.radius * 1.4 * (1 + k.lean))
+	end
+	-- Radial rings round an off-centre crown; alternate rings sit half a spoke out of
+	-- phase, so the facets don't line up into spokes.
+	local crown = main.center + v2(rng:NextNumber(-0.15, 0.15), rng:NextNumber(-0.15, 0.15)) * main.radius
+	local apex = Vector3.new(crown.X, rise(crown), crown.Y)
+	local rings = {}
+	for i = 1, RINGS do
+		local ring = {}
+		for j = 1, SPOKES do
+			local angle = (j - 1 + (i % 2) * 0.5 + rng:NextNumber(-0.18, 0.18)) / SPOKES * TAU
+			local r = if i == RINGS then reach * 1.1 else reach * i / RINGS * rng:NextNumber(0.92, 1.08)
+			local p = crown + v2(math.cos(angle), math.sin(angle)) * r
+			local h = rise(p)
+			if i == RINGS then
+				h = math.min(h, -24)
+			elseif h > BEACH + 3 and boxDistance(LEDGE, p) > 16 then
+				-- Knock the faces about so the rock reads as split, angular slabs.
+				h = math.max(h + rng:NextNumber(-0.07, 0.07) * main.height, BEACH + 3)
+			end
+			ring[j] = Vector3.new(p.X, h, p.Y)
+		end
+		rings[i] = ring
+	end
+	local tris = {}
+	for j = 1, SPOKES do
+		local n = j % SPOKES + 1
+		table.insert(tris, { apex, rings[1][j], rings[1][n] })
+		for i = 1, RINGS - 1 do
+			local inner, outer = rings[i], rings[i + 1]
+			if i % 2 == 0 then
+				table.insert(tris, { inner[j], outer[j], inner[n] })
+				table.insert(tris, { inner[n], outer[j], outer[n] })
+			else
+				table.insert(tris, { inner[j], outer[j], outer[n] })
+				table.insert(tris, { inner[j], outer[n], inner[n] })
+			end
+		end
+	end
+	-- The waterline, walked in from open water along rays from the crown.
+	local coast = {}
+	for j = 1, 32 do
+		local dir = v2(math.cos(j / 32 * TAU), math.sin(j / 32 * TAU))
+		local r = reach * 1.05
+		while r > 4 and (meshHeight(tris, crown.X + dir.X * r, crown.Y + dir.Y * r) or -1) < 0 do
+			r -= 2
+		end
+		table.insert(coast, crown + dir * r)
+	end
+	-- Rock spires off the sides and back.
+	local spires = {}
+	for _ = 1, rng:NextInteger(1, 4) do
+		local a = rng:NextNumber(-0.3, math.pi + 0.3)
+		local p = crown + v2(math.cos(a), math.sin(a)) * reach * rng:NextNumber(1, 1.3)
+		if p.Magnitude < MAX_COAST + 10 and boxDistance(APPROACH, p) > 30 and boxDistance(LEDGE, p) > 30 and not insidePolygon(coast, p.X, p.Y) then
+			table.insert(spires, { position = p, radius = rng:NextNumber(4, 9), height = rng:NextNumber(6, 26) })
+		end
+	end
+	local mountain = { tris = tris, coast = coast, spires = spires, height = main.height, apex = apex, peaks = #peaks }
+	function mountain.heightAt(x: number, z: number): number?
+		return meshHeight(tris, x, z)
+	end
+	mountains[id] = mountain
+	return mountain
+end
+Islands.mountainOf = mountainOf
+
 -- Height of the upper ground (the hill, a knoll or the terrace) at island-local x, z,
 -- and which of them it is; nil off it.
 local function groundLevel(shape, x: number, z: number): (number?, any)
@@ -757,24 +910,6 @@ local function stairHeight(z: number): number
 	return BEACH + math.clamp(math.ceil((z - STAIR_START) / STAIR_RUN), 0, 32) * 0.625
 end
 
--- A rough natural staircase worn into the cut in the cliff, without a jump.
-local function roughSteps(k)
-	local rng = k.rng
-	local steps = group(k.parent, "RoughSteps")
-	for step = 1, 32 do
-		local height = step * 0.625
-		part(steps, "RoughStep", Vector3.new(rng:NextNumber(13, 15.5), height, STAIR_RUN + 0.05), k.cf(rng:NextNumber(-0.4, 0.4), BEACH + height / 2, STAIR_START + (step - 0.5) * STAIR_RUN, rng:NextNumber(-0.03, 0.03)), shade(rgb(122, 120, 112), rng, 0.08), M.Slate)
-	end
-	-- Loose rock heaped on the cheeks either side of the foot.
-	for side = -1, 1, 2 do
-		for index = 1, 3 do
-			local z = STAIR_START + index * 3.5
-			stone(steps, k, side * rng:NextNumber(11, 15), stairHeight(z) + 2.5, z, rng:NextNumber(1.6, 2.8))
-		end
-	end
-	return steps
-end
-
 -- A random spot on open sand behind `zMin`, clear of the cliffs and the water's edge.
 local function sandSpot(k, zMin: number): (number?, number?)
 	local coast, upper = k.shape.coast, k.shape.upper
@@ -800,75 +935,166 @@ local function clearOfLanding(x: number, z: number): boolean
 	return (z < -78 and math.abs(x) < 75) or (math.abs(x) < 20 and z < FRONT and z > STAIR_START - 10)
 end
 
+local ROCKFACE, WETROCK, MOSS, LEDGE_TOP = rgb(116, 121, 121), rgb(72, 78, 79), rgb(66, 84, 60), rgb(112, 114, 108)
+
+-- A slim spire of faceted rock standing in the sea.
+local function spire(parent: Instance, k, p: Vector2, radius: number, height: number)
+	local rng = k.rng
+	local sides, turn = rng:NextInteger(5, 7), rng:NextNumber(0, TAU)
+	local rings = {}
+	for index, level in { { -8, radius }, { height * rng:NextNumber(0.45, 0.65), radius * rng:NextNumber(0.5, 0.7) } } do
+		local ring = {}
+		for i = 1, sides do
+			local a = turn + (i + rng:NextNumber(-0.2, 0.2)) / sides * TAU
+			local r = level[2] * rng:NextNumber(0.8, 1.15)
+			ring[i] = k.at(p.X + math.cos(a) * r, level[1], p.Y + math.sin(a) * r)
+		end
+		rings[index] = ring
+	end
+	local top = k.at(p.X + rng:NextNumber(-0.3, 0.3) * radius, height, p.Y + rng:NextNumber(-0.3, 0.3) * radius)
+	local core = k.at(p.X, height * 0.3, p.Y)
+	for i = 1, sides do
+		local n = i % sides + 1
+		local color = shade(ROCKFACE, rng, 0.12)
+		LowPoly.triangle(rings[1][i], rings[1][n], rings[2][n], core, color, parent, M.Slate)
+		LowPoly.triangle(rings[1][i], rings[2][n], rings[2][i], core, color, parent, M.Slate)
+		LowPoly.triangle(rings[2][i], rings[2][n], top, core, shade(ROCKFACE, rng, 0.12), parent, M.Slate)
+	end
+end
+
+-- The wild landform: the mountain, the ledge at its foot and the spires offshore.
+local function buildMountain(ground: Model, frame: CFrame, id: number)
+	local rng = Random.new(4900 + id)
+	local mountain = mountainOf(id)
+	local k = kit(frame, ground, rng, shapeOf(id))
+	for _, tri in mountain.tris do
+		local a, b, c = tri[1], tri[2], tri[3]
+		-- Faces deep under water would never be seen.
+		if math.max(a.Y, b.Y, c.Y) > -14 then
+			local normal = (b - a):Cross(c - a).Unit
+			if normal.Y < 0 then
+				normal = -normal
+			end
+			local y = (a.Y + b.Y + c.Y) / 3
+			local color, material = shade(ROCKFACE, rng, 0.14), M.Slate
+			if y < 2.5 then
+				color = shade(WETROCK, rng, 0.08)
+			elseif normal.Y > 0.82 and y > 10 then
+				-- Only the flattest high faces hold enough soil for moss.
+				color, material = shade(MOSS, rng, 0.1), M.Grass
+			end
+			LowPoly.triangle(frame * a, frame * b, frame * c, frame * ((a + b + c) / 3 - normal * 4), color, ground, material)
+		end
+	end
+	local ledge = {}
+	for _, p in { { -38, -98 }, { -21, -100 }, { -3, -97 }, { -1, -83 }, { -3, -68 }, { -20, -63 }, { -37, -67 }, { -40, -83 } } do
+		table.insert(ledge, v2(p[1] + rng:NextNumber(-1.5, 1.5), p[2] + rng:NextNumber(-1.5, 1.5)))
+	end
+	plateau(ground, frame, ledge, BEACH, -10, 3, shade(LEDGE_TOP, rng, 0.04), M.Slate)
+	for _, s in mountain.spires do
+		spire(ground, k, s.position, s.radius, s.height)
+	end
+end
+
 local function buildWild(island: Model, frame: CFrame, id: number): Model
 	local dressing = Instance.new("Model")
 	dressing.Name = "Dressing"
 	dressing:SetAttribute("Kind", "Wild")
 	local rng = Random.new(5100 + id)
+	local mountain = mountainOf(id)
 	local k = kit(frame, dressing, rng, shapeOf(id))
-	local COAST, UPPER = k.shape.coast, k.shape.upper
-	shoreRocks(k, clearOfLanding)
-	cliffRocks(k, clearOfLanding)
-	-- Bare rock on the cliff front too; the village lays a harbour wall there instead.
-	local front = group(dressing, "CliffFront")
-	local edges = normals(UPPER)
-	for index, a in UPPER do
-		local b = UPPER[index % #UPPER + 1]
-		if frontEdge(a, b) then
-			cliffFace(front, k, a, b, edges[index], TERRACE, -3, 2.5)
+	-- Pines on the gentler faces, thickest round the summit.
+	local slopes, total, area = {}, 0, 0
+	for _, tri in mountain.tris do
+		local a, b, c = tri[1], tri[2], tri[3]
+		local cross = (b - a):Cross(c - a)
+		if math.abs(cross.Unit.Y) > 0.6 and math.min(a.Y, b.Y, c.Y) > 8 then
+			local height = (a.Y + b.Y + c.Y) / 3 / mountain.height
+			local weight = cross.Magnitude / 2 * (0.3 + 1.7 * height * height)
+			total += weight
+			area += cross.Magnitude / 2
+			table.insert(slopes, { tri = tri, weight = weight })
 		end
 	end
-	roughSteps(k)
-	woodland(k, 34, 40, { { -14, -30, 14, 10 } })
-	-- Mossy mounds roll the flat terrace top into a wooded hill.
-	local mounds = group(dressing, "Mounds")
-	for _ = 1, 9 do
-		local x, z, y = k.terraceSpot(12, { { -16, -30, 16, 12 } }, true)
-		if x then
-			local radius = rng:NextNumber(6, 11)
-			LowPoly.boulder(k.at(x, y - radius * 0.55, z), radius, rng, shade(GRASS, rng, 0.08), mounds, M.Grass)
+	local wood = group(dressing, "Woodland")
+	local planted = {}
+	local trees = math.clamp(math.round(area / 300), 5, 34)
+	for _ = 1, trees * 4 do
+		if #planted >= trees or total <= 0 then
+			break
 		end
-	end
-	-- A bare beach: driftwood, shells and pebbles.
-	local beach = group(dressing, "Beach")
-	for index = 1, 26 do
-		local x, z = rng:NextNumber(-85, 85), rng:NextNumber(-88, -34)
-		if insidePolygon(COAST, x * 1.05, z * 1.05) and not (math.abs(x + 20) < 5 and z < -80) and not (math.abs(x) < 20 and z > -46) then
-			if index % 4 == 0 then
-				Props.driftwood(beach, k.at(x, BEACH, z), rng)
-			elseif index % 4 == 1 then
-				Props.shells(beach, k.at(x, BEACH, z), rng)
-			elseif index % 4 == 2 then
-				Props.rock(beach, k.at(x, BEACH, z), rng, rng:NextNumber(1.2, 2.6), ROCK)
+		local roll, slope = rng:NextNumber(0, total), slopes[#slopes]
+		for _, candidate in slopes do
+			roll -= candidate.weight
+			if roll <= 0 then
+				slope = candidate
+				break
+			end
+		end
+		local a, b, c = slope.tri[1], slope.tri[2], slope.tri[3]
+		local u, w = rng:NextNumber(), rng:NextNumber()
+		if u + w > 1 then
+			u, w = 1 - u, 1 - w
+		end
+		local p = a + (b - a) * u + (c - a) * w
+		local crowded = false
+		for _, other in planted do
+			if (Vector2.new(other.X, other.Z) - Vector2.new(p.X, p.Z)).Magnitude < 6 then
+				crowded = true
+				break
+			end
+		end
+		if not crowded then
+			table.insert(planted, p)
+			if #planted % 6 == 0 then
+				Props.broadleaf(wood, k.at(p.X, p.Y - 0.4, p.Z), rng, LEAVES)
 			else
-				Props.bush(beach, k.at(x, BEACH, z), rng, { rgb(150, 150, 96), rgb(128, 138, 84) })
+				Props.pine(wood, k.at(p.X, p.Y - 0.4, p.Z), rng, Props.pick(rng, PINES))
 			end
 		end
 	end
-	-- Flotsam and dune grass round the rest of the shore, where there is any sand.
-	for index = 1, 18 do
-		local x, z = sandSpot(k, -40)
-		if x then
-			if index % 3 == 0 then
-				Props.driftwood(beach, k.at(x, BEACH, z), rng)
-			elseif index % 3 == 1 then
-				Props.bush(beach, k.at(x, BEACH, z), rng, { rgb(150, 150, 96), rgb(128, 138, 84) })
-			else
-				Props.shells(beach, k.at(x, BEACH, z), rng)
+	-- Scrub on a few of the faces lower down.
+	for _ = 1, math.min(#slopes, 8) do
+		local tri = slopes[rng:NextInteger(1, #slopes)].tri
+		local p = (tri[1] + tri[2] + tri[3]) / 3
+		Props.bush(wood, k.at(p.X, p.Y - 0.3, p.Z), rng, LEAVES)
+	end
+	-- Fallen rock round the waterline, some of it standing out in the water.
+	local rocks = group(dressing, "ShoreRocks")
+	local crown = v2(mountain.apex.X, mountain.apex.Z)
+	for index, a in mountain.coast do
+		local b = mountain.coast[index % #mountain.coast + 1]
+		for _ = 1, rng:NextInteger(0, 2) do
+			local p = a:Lerp(b, rng:NextNumber())
+			local out = if rng:NextNumber() < 0.3 then rng:NextNumber(5, 16) else rng:NextNumber(-2, 4)
+			p += (p - crown).Unit * out
+			if boxDistance(LEDGE, p) > 6 and boxDistance(APPROACH, p) > 10 then
+				if out > 5 and rng:NextNumber() < 0.5 then
+					LowPoly.boulder(k.at(p.X, rng:NextNumber(-2, -0.5), p.Y), rng:NextNumber(3, 6.5), rng, shade(ROCKFACE, rng, 0.1), rocks, M.Slate)
+				else
+					stone(rocks, k, p.X, rng:NextNumber(-1.4, 0.8), p.Y, rng:NextNumber(2.5, 6))
+				end
 			end
 		end
 	end
-	-- One old jetty to land on, beside the sale board.
+	-- The ledge the sale board stands on, and one old jetty out from it.
+	local ledge = group(dressing, "Ledge")
+	for _, spot in { { -34, -72 }, { -7, -71 }, { -37, -91 } } do
+		stone(ledge, k, spot[1] + rng:NextNumber(-1.5, 1.5), BEACH - 0.4, spot[2] + rng:NextNumber(-1.5, 1.5), rng:NextNumber(1.8, 3.4))
+	end
+	Props.driftwood(ledge, k.at(-9, BEACH, -92), rng)
 	local jetty = group(dressing, "Jetty")
-	planks(jetty, k, -22.5, -128, -17.5, -90, BEACH, true, "JettyPlank")
-	for z = -128, -92, 6 do
+	-- A plank's thickness above the ledge, so the two never fight over one surface.
+	local deck = BEACH + 0.3
+	planks(jetty, k, -22.5, -128, -17.5, -94, deck, true, "JettyPlank")
+	for z = -128, -98, 6 do
 		for _, x in { -22.6, -17.4 } do
-			pile(jetty, k, x, z, BEACH - 0.2)
+			pile(jetty, k, x, z, deck - 0.2)
 		end
 	end
-	bollard(jetty, k, -20, -126.5, BEACH)
-	Props.ropeCoil(jetty, k.at(-21.5, BEACH, -122))
-	lanternPost(jetty, k, -17.8, -127.4, BEACH, math.pi / 2)
+	bollard(jetty, k, -20, -126.5, deck)
+	Props.ropeCoil(jetty, k.at(-21.5, deck, -122))
+	lanternPost(jetty, k, -17.8, -127.4, deck, math.pi / 2)
 	return dressing
 end
 
@@ -1160,52 +1386,18 @@ local function finish(island: Model, dressing: Model)
 	pack(dressing)
 end
 
--- Swaps the island's scenery to the village while owned and back to wild land.
--- The new dressing is built off-map and cut into streaming pieces before it
--- replaces the old one, so clients receive it piece by piece.
-function Islands.dress(island: Model, owned: boolean)
-	local kind = if owned then "Village" else "Wild"
-	if island:GetAttribute("Dressing") == kind then
-		return
-	end
-	island:SetAttribute("Dressing", kind)
-	local token = {}
-	tokens[island] = token
-	task.spawn(function()
-		local frame, id = island:GetAttribute("IslandFrame"), island:GetAttribute("IslandId")
-		local resumed = os.clock()
-		local function pause()
-			if os.clock() - resumed > 0.02 then
-				task.wait()
-				resumed = os.clock()
-			end
-		end
-		local dressing = if owned then buildVillage(island, frame, id, pause) else buildWild(island, frame, id)
-		if tokens[island] ~= token or not island.Parent then
-			dressing:Destroy()
-			return
-		end
-		finish(island, dressing)
-		Lod.pin(dressing)
-		local old = island:FindFirstChild("Dressing")
-		if old then
-			Lod.release(old)
-			old:Destroy()
-		end
-		dressing.Parent = island
-	end)
-end
-
--- The permanent landform both dressings share: the beach, the terrace and its knolls
--- clad in stacked rock, the grassy hill, the cut the stair climbs through and the sea
--- stacks. The straight cliff front is left to the dressing (bare rock or a harbour wall).
-local function buildGround(ground: Model, frame: CFrame, id: number)
+-- The owned island's landform: the beach, the terrace and its knolls clad in stacked
+-- rock, the grassy hill, the cut the stair climbs through and the sea stacks. The
+-- straight cliff front is left to the village dressing's harbour wall.
+local function buildGround(ground: Model, frame: CFrame, id: number, pause: (() -> ())?)
+	local wait = pause or function() end
 	local rng = Random.new(4100 + id)
 	local shape = shapeOf(id)
 	local k = kit(frame, ground, rng, shape)
 	local COAST, UPPER = shape.coast, shape.upper
 	plateau(ground, frame, COAST, BEACH, -20, 7, SAND, M.Sand)
 	plateau(ground, frame, UPPER, TERRACE, BEACH, 1, GRASS, M.Grass)
+	wait()
 	local edges = normals(UPPER)
 	for index, a in UPPER do
 		local b = UPPER[index % #UPPER + 1]
@@ -1214,6 +1406,7 @@ local function buildGround(ground: Model, frame: CFrame, id: number)
 		elseif not frontEdge(a, b) and a.Y ~= NOTCH_BACK then
 			cliffFace(ground, k, a, b, edges[index], TERRACE, -3, 2.5)
 		end
+		wait()
 	end
 	for _, ridge in shape.ridges do
 		plateau(ground, frame, ridge.outline, ridge.top, TERRACE, 1, GRASS, M.Grass)
@@ -1268,6 +1461,68 @@ local function buildGround(ground: Model, frame: CFrame, id: number)
 	end
 end
 
+-- The coast for the world map, in world X/Z.
+local function chart(frame: CFrame, outline: { Vector2 }): string
+	local points = {}
+	for _, point in outline do
+		local world = frame * Vector3.new(point.X, 0, point.Y)
+		table.insert(points, { world.X, world.Z })
+	end
+	return HttpService:JSONEncode(points)
+end
+
+-- Swaps the island to the village (its terrace landform and harbour) while owned
+-- and back to the wild mountain. The new ground and dressing are built off-map and
+-- cut into streaming pieces before they replace the old ones together, so clients
+-- receive them piece by piece; the distant shell is redrawn after.
+function Islands.dress(island: Model, owned: boolean)
+	local kind = if owned then "Village" else "Wild"
+	if island:GetAttribute("Dressing") == kind then
+		return
+	end
+	island:SetAttribute("Dressing", kind)
+	local token = {}
+	tokens[island] = token
+	task.spawn(function()
+		local frame, id = island:GetAttribute("IslandFrame"), island:GetAttribute("IslandId")
+		local resumed = os.clock()
+		local function pause()
+			if os.clock() - resumed > 0.02 then
+				task.wait()
+				resumed = os.clock()
+			end
+		end
+		local ground = Instance.new("Model")
+		ground.Name = "Ground"
+		if owned then
+			buildGround(ground, frame, id, pause)
+		else
+			buildMountain(ground, frame, id)
+		end
+		pause()
+		local dressing = if owned then buildVillage(island, frame, id, pause) else buildWild(island, frame, id)
+		if tokens[island] ~= token or not island.Parent then
+			ground:Destroy()
+			dressing:Destroy()
+			return
+		end
+		finish(island, dressing)
+		Lod.pinGround(ground)
+		Lod.pin(dressing)
+		for _, name in { "Ground", "Dressing" } do
+			local old = island:FindFirstChild(name)
+			if old then
+				Lod.release(old)
+				old:Destroy()
+			end
+		end
+		ground.Parent = island
+		dressing.Parent = island
+		island:SetAttribute("ChartCoast", chart(frame, if owned then shapeOf(id).coast else mountainOf(id).coast))
+		Lod.reshell(island)
+	end)
+end
+
 local function build(root: Instance, id: number)
 	local island = Instance.new("Model")
 	island.Name = "Company Island " .. id
@@ -1276,6 +1531,7 @@ local function build(root: Instance, id: number)
 	island:SetAttribute("OwnerUserId", 0)
 	island:SetAttribute("LodRoot", true)
 	island:SetAttribute("LodRadial", true)
+	-- The village's coast reaches further than the mountain's, so it sets the clearance.
 	local shape = shapeOf(id)
 	local reach = 0
 	for _, point in shape.coast do
@@ -1286,15 +1542,10 @@ local function build(root: Instance, id: number)
 	island:SetAttribute("IslandFrame", frame)
 	island:SetAttribute("PlotFrame", Layout.plotFrame(id))
 	island:SetAttribute("BoatDockFrame", frame * CFrame.new(0, 0, -92))
-	local ground = group(island, "Ground")
-	buildGround(ground, frame, id)
-	local chart = {}
-	for _, point in shape.coast do
-		local world = frame * Vector3.new(point.X, 0, point.Y)
-		table.insert(chart, { world.X, world.Z })
-	end
-	island:SetAttribute("ChartCoast", HttpService:JSONEncode(chart))
-	-- The sale board stands on the beach in front of either dressing.
+	-- Every island starts out wild.
+	buildMountain(group(island, "Ground"), frame, id)
+	island:SetAttribute("ChartCoast", chart(frame, mountainOf(id).coast))
+	-- The sale board stands at the foot of the mountain, and on the village beach.
 	local board = sign(island, frame * CFrame.new(-20, 8.3, -85), "PropertyBoard", Layout.Names[id] .. " / $50,000", 23)
 	prompt(board, "BuyCompanyIslandPrompt", "View island", Layout.Names[id], false)
 	local stand = group(island, "PropertySign")

@@ -100,3 +100,94 @@ export async function renderPreview(lines, path) {
   }
   await writeFile(path, png(width, height, image));
 }
+
+// A low, three-quarter view from the sea in front of each island (local -Z, where the
+// boats come in), as a z-buffered render of every face, lit from one side. Parts under
+// the water plane are hidden, as they mostly are in game.
+const VIEW_W = 640, VIEW_H = 400;
+const WEDGE_FACES = [
+  [[-1, -1, -1], [-1, -1, 1], [-1, 1, 1]], [[1, -1, -1], [1, 1, 1], [1, -1, 1]],
+  [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]], [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
+  [[-1, -1, -1], [-1, 1, 1], [1, 1, 1], [1, -1, -1]],
+];
+const BOX_FACES = [
+  [[-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [-1, 1, -1]], [[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]],
+  [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]], [[-1, 1, -1], [-1, 1, 1], [1, 1, 1], [1, 1, -1]],
+  [[-1, -1, -1], [-1, 1, -1], [1, 1, -1], [1, -1, -1]], [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]],
+];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const crossV = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit = a => { const l = Math.hypot(...a) || 1; return a.map(v => v / l); };
+
+export async function renderView(lines, path) {
+  const tags = [...new Set(lines.map(line => line.trim().split(/\s+/)[1]))];
+  const width = VIEW_W * Math.min(COLUMNS, tags.length), height = VIEW_H * Math.ceil(tags.length / COLUMNS);
+  const image = Buffer.alloc(width * height * 3);
+  const depth = new Float32Array(width * height).fill(Infinity);
+  const eye = [-150, 70, -330], target = [0, 22, 10];
+  const forward = unit(sub(target, eye)), right = unit(crossV(forward, [0, 1, 0])), up = crossV(right, forward);
+  const light = unit([-0.6, 0.75, -0.35]), focal = VIEW_W * 0.95;
+  const sky = [[54, 72, 82], [150, 132, 112]], sea = [32, 72, 82];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const row = y % VIEW_H, at = (y * width + x) * 3;
+      // Horizon where the view ray runs level.
+      const level = dot(forward, [0, 1, 0]) * focal - (row - VIEW_H / 2) * dot(up, [0, 1, 0]);
+      const t = Math.min(1, Math.max(0, row / (VIEW_H * 0.55)));
+      const colour = level > 0 ? sky[0].map((c, k) => c + (sky[1][k] - c) * t) : sea;
+      image[at] = colour[0]; image[at + 1] = colour[1]; image[at + 2] = colour[2];
+    }
+  }
+  const project = q => {
+    const d = sub(q, eye), z = dot(d, forward);
+    return [VIEW_W / 2 + dot(d, right) / z * focal, VIEW_H / 2 - dot(d, up) / z * focal, z];
+  };
+  const triangle = (tile, a, b, c, colour) => {
+    const ox = (tile % COLUMNS) * VIEW_W, oy = Math.floor(tile / COLUMNS) * VIEW_H;
+    const [pa, pb, pc] = [a, b, c].map(project);
+    if (pa[2] < 1 || pb[2] < 1 || pc[2] < 1) return;
+    const area = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pc[0] - pa[0]) * (pb[1] - pa[1]);
+    if (Math.abs(area) < 1e-6) return;
+    const x0 = Math.max(0, Math.floor(Math.min(pa[0], pb[0], pc[0]))), x1 = Math.min(VIEW_W - 1, Math.ceil(Math.max(pa[0], pb[0], pc[0])));
+    const y0 = Math.max(0, Math.floor(Math.min(pa[1], pb[1], pc[1]))), y1 = Math.min(VIEW_H - 1, Math.ceil(Math.max(pa[1], pb[1], pc[1])));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const px = x + 0.5, py = y + 0.5;
+        const w0 = ((pb[0] - px) * (pc[1] - py) - (pc[0] - px) * (pb[1] - py)) / area;
+        const w1 = ((pc[0] - px) * (pa[1] - py) - (pa[0] - px) * (pc[1] - py)) / area;
+        const w2 = 1 - w0 - w1;
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        const z = w0 * pa[2] + w1 * pb[2] + w2 * pc[2];
+        const index = (y + oy) * width + x + ox;
+        if (z >= depth[index]) continue;
+        depth[index] = z;
+        // Distance haze toward the sky colour.
+        const haze = Math.min(0.6, Math.max(0, (z - 250) / 900));
+        const at = index * 3;
+        for (let k = 0; k < 3; k++) image[at + k] = Math.round(colour[k] * (1 - haze) + sky[1][k] * haze);
+      }
+    }
+  };
+  for (const line of lines) {
+    const [, tag, kind, ...n] = line.trim().split(/\s+/);
+    const v = n.map(Number);
+    const p = v.slice(0, 3), r = v.slice(3, 6), u = v.slice(6, 9), b = v.slice(9, 12), s = v.slice(12, 15), c = v.slice(15, 18);
+    const tile = tags.indexOf(tag);
+    const corner = ([x, y, z]) => [0, 1, 2].map(k => p[k] + r[k] * x * s[0] / 2 + u[k] * y * s[1] / 2 + b[k] * z * s[2] / 2);
+    for (const face of kind === 'W' ? WEDGE_FACES : BOX_FACES) {
+      const q = face.map(corner);
+      // Clip at the waterline crudely: faces wholly under it are dropped.
+      if (Math.max(...q.map(point => point[1])) < 0) continue;
+      let normal = unit(crossV(sub(q[1], q[0]), sub(q[2], q[0])));
+      if (dot(normal, sub(q[0], eye)) > 0) normal = normal.map(x => -x);
+      const shade = 0.42 + 0.68 * Math.max(0, dot(normal, light));
+      const colour = c.map(x => Math.min(255, x * 255 * shade));
+      for (let i = 1; i + 1 < q.length; i++) {
+        // Lift points under the sea to the surface so half-sunk faces end at the waterline.
+        triangle(tile, ...[q[0], q[i], q[i + 1]].map(point => point[1] < 0 ? [point[0], 0, point[2]] : point), colour);
+      }
+    }
+  }
+  await writeFile(path, png(width, height, image));
+}

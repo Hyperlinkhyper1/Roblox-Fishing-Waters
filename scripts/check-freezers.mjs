@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { patchHarnessRequires } from './harness-requires.mjs';
 import { freezerRuntime, injectFreezer } from './freezer-test-runtime.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = p => readFile(join(root, p), 'utf8');
@@ -11,7 +12,7 @@ const program = await freezerRuntime() + '\nlocal Data = (function()\n' + data +
 const folder = await mkdtemp(join(tmpdir(), 'freezer-packing-'));
 try {
   const target = join(folder, 'check.luau');
-  await writeFile(target, program);
+  await writeFile(target, patchHarnessRequires(program, folder));
   const result = spawnSync(process.env.LUTE || 'lute', ['run', target], {cwd:root,encoding:'utf8',timeout:60000});
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

@@ -635,6 +635,45 @@ function Lod.pin(model: Model)
 	end
 end
 
+-- A company island swaps its whole Ground when it changes hands (wild mountain or
+-- village terrace). Regroup the new ground into chunks as startup does; call it while
+-- `ground` is still unparented.
+function Lod.pinGround(ground: Model)
+	chunkGround(ground)
+end
+
+-- Redraws an island's distant shell from what stands there now, after its ground was
+-- swapped. The ground count is corrected at once, so the client never waits for parts
+-- of the old ground before the shell gives way.
+local reshells: { [Model]: {} } = setmetatable({}, { __mode = "k" }) :: any
+function Lod.reshell(island: Model)
+	local root = island.Parent
+	local shells = root and root:FindFirstChild("Lod")
+	local id = island:GetAttribute("LodId")
+	if not shells or id == nil or tiled(island) then
+		return
+	end
+	local old = shells:FindFirstChild(tostring(id))
+	if old then
+		old:SetAttribute("Ground", groundCount(island))
+	end
+	local token = {}
+	reshells[island] = token
+	task.spawn(function()
+		local replacement = shell(island)
+		mergeShell(replacement)
+		if reshells[island] ~= token or island.Parent ~= root or shells.Parent ~= root then
+			replacement:Destroy()
+			return
+		end
+		local current = shells:FindFirstChild(tostring(id))
+		if current then
+			current:Destroy()
+		end
+		replacement.Parent = shells
+	end)
+end
+
 -- Forgets the pieces in scenery that is about to be destroyed.
 function Lod.release(model: Instance)
 	for _, d in model:GetDescendants() do

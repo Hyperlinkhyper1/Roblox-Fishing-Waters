@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { patchHarnessRequires } from './harness-requires.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = path => readFile(join(root, path), 'utf8');
 const temporary = await mkdtemp(join(tmpdir(), 'fishing-leaderboards-'));
@@ -111,7 +112,7 @@ print("Leaderboard geometry/display: " .. checks .. " checks passed (recording m
       .replace('-- DEFINITIONS_SOURCE --', () => definitions)
       .replace('-- SERVICE_SOURCE --', () => source);
     const path = join(temporary, mode + '.luau');
-    await writeFile(path, program); run(path);
+    await writeFile(path, patchHarnessRequires(program, temporary)); run(path);
   }
 } finally {
   if (dirname(temporary) !== resolve(tmpdir())) throw new Error('Unexpected temporary path');

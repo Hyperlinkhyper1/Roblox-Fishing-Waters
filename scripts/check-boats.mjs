@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { patchHarnessRequires } from './harness-requires.mjs';
 import { inlineFishSpecies } from './fish-species.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -125,7 +126,7 @@ try {
     .replace('-- BOAT_DATA_SOURCE --', data)
     .replace('-- BOAT_SERVICE_SOURCE --', service);
   const target = join(temporary, 'boat-service.luau');
-  await writeFile(target, program);
+  await writeFile(target, patchHarnessRequires(program, temporary));
   const checks = (process.argv.includes('--crab-cages-only') || process.argv.includes('--mussel-nets-only')) ? [['run', target]] : process.argv.includes('--inventory-only')
     ? [['run', 'scripts/boat-data.luau'], ['run', target]]
     : [['run', 'scripts/boat-data.luau'], ['run', 'scripts/boat-motion.luau'], ['run', target]];

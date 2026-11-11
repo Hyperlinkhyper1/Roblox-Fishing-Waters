@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { patchHarnessRequires } from './harness-requires.mjs';
 
 const read = async path => (await readFile(new URL('../' + path, import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 const cargo = await read('src/shared/Cargo.luau');
@@ -193,7 +194,7 @@ print("Auto Store: " .. checks .. " ownership, saved toggle, catch transaction a
 const folder = await mkdtemp(join(tmpdir(), 'auto-store-'));
 try {
  const target = join(folder, 'checks.luau');
- await writeFile(target, program);
+ await writeFile(target, patchHarnessRequires(program, folder));
  const result = spawnSync(process.env.LUTE || 'lute', ['run', target], { encoding: 'utf8', timeout: 30000 });
  if (result.stdout) process.stdout.write(result.stdout);
  if (result.stderr) process.stderr.write(result.stderr);

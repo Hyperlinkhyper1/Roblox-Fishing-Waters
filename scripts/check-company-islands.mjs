@@ -4,10 +4,13 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { renderPreview } from './company-island-preview.mjs';
-// --preview out.png also renders the wild and the owned island from above.
+import { renderPreview, renderView } from './company-island-preview.mjs';
+// --preview out.png also renders the wild and the owned island from above;
+// --view out.png renders them from a boat out in front.
 const previewAt = process.argv.indexOf('--preview');
 const previewPath = previewAt > 0 ? process.argv[previewAt + 1] : null;
+const viewAt = process.argv.indexOf('--view');
+const viewPath = viewAt > 0 ? process.argv[viewAt + 1] : null;
 const read = path => readFile(path, 'utf8');
 const harbourFootprint = Number((await read('src/server/Map/Harbour.luau')).match(/Harbour\.FOOTPRINT = (\d+)/)[1]);
 // Other fixed places the properties must keep clear of: Pirate Cove and the other biomes.
@@ -75,7 +78,9 @@ local function check(value, message) count += 1; assert(value, message) end
 -- Dressings build in a spawned task; run it at once. Streaming pieces are Studio-only.
 task.spawn = function(callback, ...) callback(...) end
 local pinned = {}
-dependencies.Lod = {pin = function(model) table.insert(pinned, model) end, release = function() end}
+local pinnedGround, reshelled = {}, {}
+dependencies.Lod = {pin = function(model) table.insert(pinned, model) end, release = function() end,
+  pinGround = function(model) table.insert(pinnedGround, model) end, reshell = function(island) table.insert(reshelled, island) end}
 `;
 for (const [name, path] of Object.entries({
   Layout: 'src/shared/CompanyIslands.luau', LowPoly: 'src/server/Map/LowPoly.luau',
@@ -122,13 +127,39 @@ end
 function checkWild(island)
   local frame = island:GetAttribute("IslandFrame")
   local dressing = island:FindFirstChild("Dressing")
+  local ground = island:FindFirstChild("Ground")
   check(dressing and dressing:GetAttribute("Kind") == "Wild" and island:GetAttribute("Dressing") == "Wild", "Unowned islands are plain wild land")
   check(#named(island, "StairTread") == 0 and #named(island, "PlotPad") == 0 and #named(island, "QuayPlank") == 0, "Wild land has no village, quay or plot")
+  check(#named(island, "CliffBlock") == 0 and #named(island, "StairCheek") == 0 and #named(island, "RoughStep") == 0, "Wild land has no terrace, cliff cut or stair")
+  -- A small mountain rising sheer out of the sea.
+  local mountain = MapIslands.mountainOf(island:GetAttribute("IslandId"))
+  check(MapIslands.mountainOf(island:GetAttribute("IslandId")) == mountain, "Mountains are cached, so ground and dressing agree")
+  local top = -math.huge
+  for _, part in ground:GetDescendants() do
+    if part:IsA("BasePart") then top = math.max(top, frame:PointToObjectSpace(part.Position).Y) end
+  end
+  check(mountain.apex.Y > 35 and top > 30, "A free island is a mountain standing well out of the sea")
+  for _, p in mountain.coast do check(p.Magnitude <= Layout.FOOTPRINT - 70, "The mountain stays inside the property reservation") end
+  for _, spire in mountain.spires do
+    check(spire.position.Magnitude <= Layout.FOOTPRINT - 50 and (mountain.heightAt(spire.position.X, spire.position.Y) or -1) < 0, "Rock spires stand in the water inside the reservation")
+  end
+  -- The ledge at its foot stays clear for the sale board, and the jetty for boats.
+  for _, x in { -31, -26, -20, -14, -9 } do
+    for _, z in { -88, -85, -82 } do
+      check((mountain.heightAt(x, z) or -100) < 4.4 - 0.5, "The mountain leaves the ledge clear for the sale board")
+    end
+  end
+  for z = -128, -100, 2 do
+    for _, x in { -24, -20, -16 } do check((mountain.heightAt(x, z) or -100) < 0, "The jetty reaches out over open water") end
+  end
+  for z = -180, -130, 5 do
+    for x = -40, 0, 5 do check((mountain.heightAt(x, z) or -100) < -2, "Boats can sail up to the jetty") end
+  end
+  check(#named(dressing, "Pine") >= 4, "Pines grow on the mountain")
   check(island:FindFirstChild("StorageHouse") == nil and island:FindFirstChild("KitchenHouse") == nil and island:FindFirstChild("OfficeHouse") == nil, "The old company houses are gone")
   check(island:FindFirstChild("SpawnRowboatPrompt", true) == nil, "A free island has no boat launch")
   check(island:FindFirstChild("PropertyBoard") and island:FindFirstChild("BuyCompanyIslandPrompt", true), "The sale board stays on the beach")
   check(island:FindFirstChild("BoatSpawn") and island:FindFirstChild("PlotFurniture"), "Permanent dock marker and furniture holder exist")
-  climb(frame, named(dressing, "RoughStep"), 8, "Wild rock steps")
   check(#named(dressing, "JettyPlank") > 10, "Wild land keeps a jetty to land on")
   checkPieces(dressing)
 end
@@ -137,7 +168,10 @@ function checkVillage(island, owner)
   local dressing = island:FindFirstChild("Dressing")
   check(dressing and dressing:GetAttribute("Kind") == "Village" and island:GetAttribute("Dressing") == "Village", "Owned islands become a village")
   check(#island:GetChildren() == #({island:FindFirstChild("Ground"), island:FindFirstChild("PropertyBoard"), island:FindFirstChild("PropertySign"), island:FindFirstChild("BoatSpawn"), island:FindFirstChild("PlotFurniture"), dressing}), "One dressing replaces the other")
-  check(#named(island, "RoughStep") == 0, "The wild dressing is removed")
+  check(#named(island, "JettyPlank") == 0 and #named(island, "Ledge") == 0, "The wild dressing is removed")
+  local ground = island:FindFirstChild("Ground")
+  check(#named(ground, "CliffBlock") > 20 and #named(ground, "StairCheek") > 4, "The mountain gives way to the terrace and its cliff cut")
+  check(pinnedGround[#pinnedGround] == ground and reshelled[#reshelled] == island, "The swapped ground is cut into chunks and the distant shell redrawn")
   local stairs = dressing:FindFirstChild("TerraceStairs")
   local treads = {}
   for _, part in stairs:GetChildren() do if part.Name == "StairTread" then table.insert(treads, part) end end
@@ -280,6 +314,8 @@ do
     check(shape.hill or #shape.ridges >= 1, "Every island rises above its terrace somewhere")
     for _, stack in shape.stacks do check(not inside(coast, stack.X, stack.Y), "Sea stacks stand in the water") end
     table.insert(areas, area(coast))
+    local mountain = MapIslands.mountainOf(id)
+    print(string.format("@M island %d mountain: summit %.0f, peaks %d, waterline %.0f, spires %d", id, mountain.apex.Y, mountain.peaks, area(mountain.coast), #mountain.spires))
     print(string.format("@S island %d at %.0f studs, bearing %.0f: coast %d pts, area %.0f, hill %s, knolls %d, stacks %d", id, position.Magnitude, bearing, #coast, area(coast), if shape.hill then string.format("r%.0f h%.0f", shape.hill.radius, shape.hill.top - 24.4) else "none", #shape.ridges, #shape.stacks))
   end
   check(farthest - nearest > 600, "Properties sit at clearly different distances from the harbour, not on a ring")
@@ -431,7 +467,15 @@ check(first:GetAttribute("OwnerUserId") == buyer.UserId and profiles[buyer].Cash
 checkVillage(first, buyer.UserId)
 check((synced[first] or 0) > 0, "Buying furnishes the plot from the owner's save")
 checkWild(map:FindFirstChild("Company Island 2"))
-if ${previewPath ? 'true' : 'false'} then
+do
+  local second = map:FindFirstChild("Company Island 2")
+  MapIslands.dress(second, true)
+  checkVillage(second, 0)
+  MapIslands.dress(second, false)
+  checkWild(second)
+  check(pinnedGround[#pinnedGround] == second:FindFirstChild("Ground") and reshelled[#reshelled] == second, "Freeing an island brings its mountain back")
+end
+if ${previewPath || viewPath ? 'true' : 'false'} then
   local function dump(island, tag)
     local frame = island:GetAttribute("IslandFrame")
     for _, part in island:GetDescendants() do
@@ -610,6 +654,10 @@ try {
   if (previewPath && result.status === 0) {
     await renderPreview(parts, previewPath);
     console.log('Preview: ' + parts.length + ' parts drawn to ' + previewPath);
+  }
+  if (viewPath && result.status === 0) {
+    await renderView(parts, viewPath);
+    console.log('View: ' + parts.length + ' parts drawn to ' + viewPath);
   }
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;

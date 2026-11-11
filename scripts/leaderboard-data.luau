@@ -20,7 +20,10 @@ local boosted = Data.recordCatch(nil, "Trout", "Normal", 1, 1, monday, Catalog.F
 local boostedTracked = Data.trackProgress(nil, boosted, monday)
 check(boosted.Stats.TotalXP == Catalog.Fish.Trout.CatchXP * 2, "XP pass doubles lifetime XP")
 check(boostedTracked.Weekly.XP == boosted.Stats.TotalXP, "Weekly XP includes the pass bonus")
-local expectedXP = { Junk = 5, Common = 50, Uncommon = 100, Rare = 200, Epic = 400, Legendary = 800 }
+local expectedXP = {
+	Junk = 5, Common = 50, Uncommon = 100, Rare = 200, Epic = 400, Legendary = 800,
+	Mythical = 1600, Exotic = 3200, Divine = 6400, Limited = 2500, Admin = 25600, Secret = 1000000,
+}
 for id, species in Catalog.Fish do
 	local before = Data.decode({ Stats = { TotalXP = 950 } })
 	local caught = Data.recordCatch(before, id, "Normal", species.AverageKg, 1, monday, Catalog.Fish, Catalog.Mutations)
@@ -29,9 +32,15 @@ for id, species in Catalog.Fish do
 	check(caught.Stats.TotalXP == 950 + xp, "Species awards its rarity XP: " .. id)
 	check(trackedCatch.Weekly.XP == xp and trackedCatch.Weekly.Caught == 1, "Weekly XP matches catch reward: " .. id)
 	check(before.Stats.TotalXP == 950, "Catch reward preserves previous saved data")
+	-- XP is set per rarity tier, so species in one tier share a reward and a
+	-- higher tier always awards more.
+	local tier = Catalog.Rarities[species.Rarity].Order
 	for _, other in Catalog.Fish do
-		if species.Rarity ~= "Junk" and other.Rarity ~= "Junk" and species.RarityDenominator > other.RarityDenominator then
-			check(species.CatchXP > other.CatchXP, "Rarer fish always award more XP")
+		local otherTier = Catalog.Rarities[other.Rarity].Order
+		if otherTier == tier then
+			check(species.CatchXP == other.CatchXP, "One rarity tier shares one XP reward")
+		elseif species.Rarity ~= "Junk" and other.Rarity ~= "Junk" and tier > otherTier then
+			check(species.CatchXP > other.CatchXP, "Rarer tiers always award more XP")
 		end
 	end
 end
@@ -99,8 +108,10 @@ local earned = Data.decode(tracked)
 earned.Stats.CoinsEarned += 125
 earned = Data.trackProgress(tracked, earned, monday + 1)
 check(earned.Weekly.Earned == 125 and earned.Weekly.XP == 100, "Money awards preserve weekly XP")
-local beforePurchase = { Version = 1, Cash = 1000, OwnedBoats = {}, Angler = earned }
-local purchase = BoatData.purchase(beforePurchase)
+-- The Rowboat is free; buy a priced boat so the purchase actually spends.
+local boatPrice = require("../src/shared/BoatCatalog").FishingBoat.Price
+local beforePurchase = { Version = 1, Cash = boatPrice + 500, OwnedBoats = {}, Angler = earned }
+local purchase = BoatData.purchase(beforePurchase, "FishingBoat")
 scores = BoatData.leaderboardScores(purchase, monday)
 check(
 	purchase.Cash == 500 and scores.Earned == 1025 and scores.WeeklyEarned == 125,

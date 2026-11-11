@@ -297,9 +297,12 @@ function BiomeAtmosphere.start()
 					* (1 - rain) * (1 - fog * 0.85),
 			})
 		end
-		-- Rays only where there is a sun to see; mist makes them strongest.
+		-- Rays only where there is a sun to see; mist makes them strongest, and hazy biomes
+		-- (Pirate Cove) let the sun break through more.
 		blend(rays, {
-			Intensity = if underwater then 0 else (0.035 + mist * 0.1 + golden * 0.04) * (1 - overcast) * (1 - night),
+			Intensity = if underwater
+				then 0
+				else ((look.sunRays or 0.035) + mist * 0.1 + golden * 0.04) * (1 - overcast) * (1 - night),
 		})
 		blend(grading, {
 			TintColor = if underwater
@@ -363,8 +366,18 @@ function BiomeAtmosphere.start()
 		local biomeChanged = false
 		if biomeElapsed >= 0.5 then
 			biomeElapsed = 0
-			local stay = current and current ~= Biomes.OpenSea and Biomes.depthIn(current, position) < LEAVE_MARGIN
-			local biome = if stay then current :: Biomes.Biome else Biomes.at(position)
+			local biome = Biomes.zoneAt(position)
+			-- Hold the current biome a little past its edge, unless a zone inside it (Pirate Cove
+			-- in the Coral Shallows) is what claims this spot.
+			if
+				current
+				and biome ~= current
+				and current ~= Biomes.OpenSea
+				and biome.parent ~= current.id
+				and Biomes.depthIn(current, position) < LEAVE_MARGIN
+			then
+				biome = current
+			end
 			if biome ~= current then
 				current = biome
 				biomeChanged = true

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { patchHarnessRequires } from './harness-requires.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lute = process.env.LUTE || 'lute';
@@ -46,7 +47,7 @@ try {
   }
   if (!/return FishingService\s*$/.test(source)) throw new Error('FishingService return hook changed');
   const target = join(temporary, 'fishing-service.luau');
-  await writeFile(target, harness.replace('-- FISHING_SERVICE_SOURCE --', source).replace('-- REAL_BOAT_DATA_SOURCE --', () => skinData));
+  await writeFile(target, patchHarnessRequires(harness.replace('-- FISHING_SERVICE_SOURCE --', () => source).replace('-- REAL_BOAT_DATA_SOURCE --', () => skinData), temporary));
   const result = spawnSync(lute, ['run', target], { cwd: root, encoding: 'utf8', timeout: 30000 });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

@@ -9,15 +9,16 @@ const temporary = await mkdtemp(join(tmpdir(), 'fishing-sharks-'));
 try {
   let service = await readFile(join(root, 'src/server/SharkService.luau'), 'utf8');
   service = service.replace(/local Shared = ReplicatedStorage:WaitForChild\("Shared"\)[\s\S]*?local BoatService = require\(script.Parent.BoatService\)/,
-    'local Biomes, DayNight, Weather, SpearSkins, HullDamage, BoatService = dependencies.Biomes, dependencies.DayNight, dependencies.Weather, dependencies.SpearSkins, dependencies.HullDamage, dependencies.BoatService');
+    'local Biomes, DayNight, Weather, SpearSkins, Spears, HullDamage, BoatService = dependencies.Biomes, dependencies.DayNight, dependencies.Weather, dependencies.SpearSkins, dependencies.Spears, dependencies.HullDamage, dependencies.BoatService');
   service = service.replace('local SharkModel = require(script.Parent.SharkModel)', 'local SharkModel = dependencies.SharkModel');
   const harness = await readFile(join(root, 'scripts/shark-service.luau'), 'utf8');
   const skins = await readFile(join(root, 'src/shared/SpearSkins.luau'), 'utf8');
-  if (!harness.includes('-- SHARK_SERVICE_SOURCE --') || service.includes('require(script')) {
+  const spears = await readFile(join(root, 'src/shared/Spears.luau'), 'utf8');
+  if (!harness.includes('-- SHARK_SERVICE_SOURCE --') || !harness.includes('-- SPEARS_SOURCE --') || service.includes('require(script')) {
     throw new Error('Shark service test hook changed');
   }
   const target = join(temporary, 'shark-service.luau');
-  await writeFile(target, harness.replace('-- SPEAR_SKINS_SOURCE --', skins).replace('-- SHARK_SERVICE_SOURCE --', service));
+  await writeFile(target, harness.replace('-- SPEAR_SKINS_SOURCE --', skins).replace('-- SPEARS_SOURCE --', spears).replace('-- SHARK_SERVICE_SOURCE --', service));
   const result = spawnSync(process.env.LUTE || 'lute', ['run', target], { cwd: root, encoding: 'utf8' });
   process.stdout.write(result.stdout || '');
   process.stderr.write(result.stderr || '');

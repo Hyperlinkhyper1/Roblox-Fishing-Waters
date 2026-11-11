@@ -1,26 +1,38 @@
--- The attack shark, built from mesh ellipsoids and wedge-pair triangle fins like
--- FishModels: a Ball part is always a sphere, so it cannot give a torpedo body.
+-- The attack shark. Its real skin is a smooth triangle mesh (Shared.SharkShape)
+-- that each client builds with EditableMesh (client SharkMeshes), because
+-- EditableMesh never replicates. The server builds a stand-in body from mesh
+-- ellipsoids and wedge fins, tagged SharkFallback, which clients replace with
+-- the skin and which stays visible wherever meshes are unavailable. Eyes, gills,
+-- mouth and teeth sit on the skin's surface and are always shown.
 -- Model space: the snout points -Z, +Y is up and the origin sits on the water
 -- surface, so the dorsal fin and the upper tail lobe cut through the waves.
--- Every visible piece stores its SwimOffset. SwimFlex pieces bend at z = 1.6
--- and SwimTail pieces bend there and again at z = 3.2 (client SharkSwim pivots).
+-- Pieces are designed in SharkShape's design units and built SCALE times larger.
+-- Every visible piece stores its SwimOffset and its SwimSegment (SharkShape
+-- joints, 0 = head), which client SharkSwim bends in turn.
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SharkShape = require(ReplicatedStorage:WaitForChild("Shared").SharkShape)
+
 local SharkModel = {}
 
 local FIN = 0.12
 local rgb = Color3.fromRGB
-local BACK, SIDE, BELLY = rgb(66, 80, 88), rgb(101, 117, 124), rgb(224, 226, 219)
-local FIN_COLOR, GILL = rgb(74, 89, 97), rgb(46, 56, 61)
-local MOUTH, TOOTH, EYE = rgb(58, 28, 32), rgb(240, 237, 224), rgb(12, 14, 16)
+local function palette(name: string): Color3
+	local c = SharkShape.COLORS[name]
+	return rgb(c[1], c[2], c[3])
+end
+local BACK, SIDE, BELLY = palette("Back"), palette("Line"), palette("Belly")
+local FIN_COLOR, GILL = BACK, rgb(36, 43, 49)
+local MOUTH, TOOTH, EYE = rgb(70, 26, 32), rgb(244, 241, 230), rgb(8, 9, 11)
 
--- Long overlapping body sections from snout to tail stalk: centre, size
--- (width, height, length) and the swim segment that carries them. Each one
--- takes over the outline near a swim joint, so the body narrows smoothly
--- instead of pinching between bulges.
+-- Stand-in body: long overlapping ellipsoid sections from snout to tail stalk
+-- (centre and size as width, height, length), roughly following SharkShape's
+-- profile.
 local SECTIONS = {
-	{ "Snout", Vector3.new(0, -1.34, -3.95), Vector3.new(1.75, 1.3, 3.7) },
-	{ "Body", Vector3.new(0, -1.4, -1.1), Vector3.new(3, 2.45, 6.8) },
-	{ "RearBody", Vector3.new(0, -1.37, 2), Vector3.new(1.85, 1.6, 4.6), "SwimFlex" },
-	{ "TailStalk", Vector3.new(0, -1.33, 4), Vector3.new(0.8, 0.9, 2.6), "SwimTail" },
+	{ "Snout", Vector3.new(0, -1.2, -4.4), Vector3.new(1.3, 1.1, 2.6) },
+	{ "Head", Vector3.new(0, -1.28, -3.1), Vector3.new(2.1, 1.8, 4) },
+	{ "Body", Vector3.new(0, -1.42, -0.95), Vector3.new(3, 2.6, 6.9) },
+	{ "RearBody", Vector3.new(0, -1.38, 2.1), Vector3.new(1.7, 1.55, 4) },
+	{ "TailStalk", Vector3.new(0, -1.33, 4.05), Vector3.new(0.7, 0.82, 2.3) },
 }
 
 function SharkModel.build(parent: Instance, frame: CFrame): Model
@@ -35,21 +47,24 @@ function SharkModel.build(parent: Instance, frame: CFrame): Model
 	root.Parent = model
 	model.PrimaryPart = root
 
-	local segment: string? = nil
-	local hull: { { c: Vector3, h: Vector3 } } = {}
+	local fallback = false
+	local scale = SharkShape.SCALE
 
 	local function piece(class: string, name: string, size: Vector3, offset: CFrame, color: Color3): BasePart
 		local item = Instance.new(class) :: BasePart
 		item.Name = name
-		item.Size = size
+		-- Scale the design-unit placement into studs, keeping its rotation.
+		offset = CFrame.new(offset.Position * scale) * offset.Rotation
+		item.Size = size * scale
 		item.CFrame = offset
 		item.Color = color
 		item.Material = Enum.Material.SmoothPlastic
 		item.TopSurface, item.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
 		item.Anchored, item.CanCollide, item.CanTouch, item.CanQuery = true, false, false, false
 		item:SetAttribute("SwimOffset", offset)
-		if segment then
-			item:SetAttribute(segment, true)
+		item:SetAttribute("SwimSegment", SharkShape.segmentAt(offset.Position.Z / scale))
+		if fallback then
+			item:SetAttribute("SharkFallback", true)
 		end
 		item.Parent = model
 		return item
@@ -72,22 +87,8 @@ function SharkModel.build(parent: Instance, frame: CFrame): Model
 			{ name .. "Belly", center - belly, size * Vector3.new(0.95, 0.78, 0.99), BELLY },
 		}
 		for _, layer in layers do
-			table.insert(hull, { c = layer[2], h = layer[3] / 2 })
 			ellipsoid(layer[1], CFrame.new(layer[2]), layer[3], layer[4])
 		end
-	end
-
-	-- Half-width of the body surface at height y and length z.
-	local function surfaceX(y: number, z: number): number
-		local best = 0
-		for _, section in hull do
-			local dy, dz = (y - section.c.Y) / section.h.Y, (z - section.c.Z) / section.h.Z
-			local remaining = 1 - dy * dy - dz * dz
-			if remaining > 0 then
-				best = math.max(best, section.h.X * math.sqrt(remaining))
-			end
-		end
-		return best
 	end
 
 	-- Two wedges split at the foot of the longest edge's altitude.
@@ -131,39 +132,13 @@ function SharkModel.build(parent: Instance, frame: CFrame): Model
 		end
 	end
 
+	fallback = true
 	for _, section in SECTIONS do
-		segment = section[4]
 		layered(section[1], section[2], section[3])
 	end
-
-	segment = nil
-	-- Underslung mouth with a row of teeth along the front of the upper jaw.
-	ellipsoid("Mouth", CFrame.new(0, -2.08, -3.5), Vector3.new(1.7, 0.22, 1.15), MOUTH)
-	ellipsoid("LowerJaw", CFrame.new(0, -2.25, -3.2), Vector3.new(1.5, 0.28, 1.4), BELLY)
-	for _, angle in { -0.75, -0.25, 0.25, 0.75 } do
-		local center = Vector3.new(math.sin(angle) * 0.78, -2.06, -3.5 - math.cos(angle) * 0.52)
-		local along = Vector3.new(math.cos(angle) * 0.78, 0, math.sin(angle) * 0.52).Unit * 0.08
-		fin("Tooth", { center - along, center + along, center + Vector3.new(0, -0.24, 0) }, TOOTH, 0.04)
-	end
 	for _, side in { -1, 1 } do
-		local label = if side < 0 then "Left" else "Right"
-		ellipsoid(
-			label .. "Eye",
-			CFrame.new(side * (surfaceX(-1.12, -3.4) - 0.05), -1.12, -3.4),
-			Vector3.new(0.16, 0.27, 0.29),
-			EYE
-		)
-		for index = 0, 4 do
-			local z = -2.25 + index * 0.25
-			ellipsoid(
-				label .. "Gill" .. index + 1,
-				CFrame.new(side * (surfaceX(-1.5, z) - 0.03), -1.5, z) * CFrame.Angles(0.12, 0, 0),
-				Vector3.new(0.1, 0.95 - index * 0.05, 0.07),
-				GILL
-			)
-		end
 		-- Long swept pectoral fins, angled down and back from the lower flank.
-		fin(label .. "PectoralFin", {
+		fin((if side < 0 then "Left" else "Right") .. "PectoralFin", {
 			Vector3.new(side * 1.2, -1.85, -2.05),
 			Vector3.new(side * 2.4, -2.2, -1.2),
 			Vector3.new(side * 3.55, -2.75, 0.35),
@@ -180,8 +155,6 @@ function SharkModel.build(parent: Instance, frame: CFrame): Model
 		Vector3.new(0, 0.45, 0.92),
 		Vector3.new(0, -0.15, 1.35),
 	}, FIN_COLOR)
-
-	segment = "SwimFlex"
 	fin(
 		"RearDorsalFin",
 		{ Vector3.new(0, -0.8, 2.4), Vector3.new(0, -0.2, 2.85), Vector3.new(0, -0.75, 3.1) },
@@ -195,10 +168,7 @@ function SharkModel.build(parent: Instance, frame: CFrame): Model
 			Vector3.new(side * 0.45, -2.1, 2.45),
 		}, FIN_COLOR)
 	end
-
-	segment = "SwimTail"
-	-- Near-crescent tail: the upper lobe is a little longer than the lower one.
-	ellipsoid("CaudalKeel", CFrame.new(0, -1.33, 4.2), Vector3.new(1.05, 0.16, 1.7), BACK)
+	ellipsoid("CaudalKeel", CFrame.new(0, -1.33, 4.3), Vector3.new(0.88, 0.14, 1.9), BACK)
 	fin("Tail", {
 		Vector3.new(0, -1.33, 4.4),
 		Vector3.new(0, -0.95, 4.55),
@@ -208,6 +178,69 @@ function SharkModel.build(parent: Instance, frame: CFrame): Model
 		Vector3.new(0, -3.15, 5.95),
 		Vector3.new(0, -1.7, 4.6),
 	}, FIN_COLOR)
+
+	-- The stand-in mouth; the skin has its own hinged jaw and teeth.
+	-- Underslung mouth: a dark gape set into the underside, pitched to follow
+	-- it, with the pale lower jaw bulging just behind so only a crescent of
+	-- gape shows at the front.
+	local pitch = math.atan((SharkShape.bottomY(-3.9) - SharkShape.bottomY(-3.0)) / 0.9)
+	local mouthZ = -3.5
+	ellipsoid(
+		"Mouth",
+		CFrame.new(0, SharkShape.bottomY(mouthZ) + 0.06, mouthZ) * CFrame.Angles(pitch, 0, 0),
+		Vector3.new(1.5, 0.22, 1.25),
+		MOUTH
+	)
+	ellipsoid(
+		"LowerJaw",
+		CFrame.new(0, SharkShape.bottomY(-3.18) + 0.05, -3.18) * CFrame.Angles(pitch, 0, 0),
+		Vector3.new(1.38, 0.26, 1.25),
+		BELLY
+	)
+	-- Teeth hang from the front edge of the gape on an elliptical arc
+	-- (half-widths rx across, rz along the body).
+	for index = -3, 3 do
+		local angle = index * 0.34
+		local x, z = math.sin(angle) * 0.6, mouthZ - 0.12 - math.cos(angle) * 0.44
+		local length = 0.17 - math.abs(index) * 0.018
+		local base = SharkShape.undersideY(z, x) + 0.03
+		local outward = Vector3.new(math.sin(angle) * 0.44, 0, -math.cos(angle) * 0.6).Unit
+		piece(
+			"WedgePart",
+			"Tooth",
+			Vector3.new(0.04, length, 0.1),
+			CFrame.fromMatrix(Vector3.new(x, base - length / 2, z), outward, Vector3.new(0, 1, 0))
+				* CFrame.Angles(math.pi, 0, 0),
+			TOOTH
+		)
+	end
+	-- Details on the skin's surface, shown with either body.
+	fallback = false
+	for _, side in { -1, 1 } do
+		local label = if side < 0 then "Left" else "Right"
+		-- Small, flat black eyes set well forward, just above the mouth line.
+		local eyeZ = -3.6
+		local _, _, _, eyeAxis = SharkShape.section(eyeZ)
+		local eyeY = eyeAxis + 0.18
+		ellipsoid(
+			label .. "Eye",
+			CFrame.new(side * (SharkShape.surfaceX(eyeZ, eyeY) - 0.025), eyeY, eyeZ),
+			Vector3.new(0.12, 0.22, 0.25),
+			EYE
+		)
+		-- Five gill slits, raked back and shortening towards the pectoral fin.
+		for index = 0, 4 do
+			local z = -2.5 + index * 0.25
+			local _, _, _, axis = SharkShape.section(z)
+			local y = axis - 0.12
+			ellipsoid(
+				label .. "Gill" .. index + 1,
+				CFrame.new(side * (SharkShape.surfaceX(z, y) - 0.035), y, z) * CFrame.Angles(0.18, 0, 0),
+				Vector3.new(0.09, 1.1 - index * 0.07, 0.065),
+				GILL
+			)
+		end
+	end
 
 	model:PivotTo(frame)
 	model.Parent = parent

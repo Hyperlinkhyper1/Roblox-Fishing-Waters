@@ -248,7 +248,9 @@ reset()
 profile.Angler.Freezer = {}
 profile.Angler.Storage = { record }
 profile.Angler.Holds.Rowboat = { { PartId = "Oar", X = 1, Y = 1, R = 0 } }
-profile.Angler.Furniture = { { ItemId = "StorageRack", X = 10, Z = -8, R = 0 } }
+-- Keep the built-in freezer fixture (Data.FIXTURES) so there is a freezer to restock.
+profile.Angler.Furniture = table.clone(AnglerData.FIXTURES)
+table.insert(profile.Angler.Furniture, { ItemId = "StorageRack", X = 10, Z = -8, R = 0 })
 runPorter(shop, worker, owner)
 check(#profile.Angler.Freezer == 1 and #profile.Angler.Storage == 0 and walkCount == 2, "Porter restocks the freezer from a rack")
 reset()
@@ -292,7 +294,8 @@ check(#profile.Angler.Freezer == 1 and #profile.Angler.Holds.Rowboat == 2
 reset()
 profile.Angler.Holds.Rowboat = { { Fish = oversized, X = 1, Y = 1, R = 0 } }
 profile.Angler.Storage = { oversized, record }
-profile.Angler.Furniture = { { ItemId = "StorageRack", X = 10, Z = -8, R = 0 } }
+profile.Angler.Furniture = table.clone(AnglerData.FIXTURES)
+table.insert(profile.Angler.Furniture, { ItemId = "StorageRack", X = 10, Z = -8, R = 0 })
 runPorter(shop, worker, owner)
 check(#profile.Angler.Freezer == 2 and #profile.Angler.Storage == 1
 	and profile.Angler.Storage[1].Kg == oversized.Kg and #profile.Angler.Holds.Rowboat == 1,
@@ -310,7 +313,8 @@ check(#profile.Angler.KitchenStorage.Fish == 1 and #profile.Angler.Holds.Company
 	and #profile.Angler.Holds.Rowboat == 1,
 	"Kitchen selection checks the player boat when company fish do not match")
 reset()
-profile.Angler.Furniture = { { ItemId = "KitchenStorage", X = -10, Z = -8, R = 0 } }
+profile.Angler.Furniture = table.clone(AnglerData.FIXTURES)
+table.insert(profile.Angler.Furniture, { ItemId = "KitchenStorage", X = -10, Z = -8, R = 0 })
 profile.Angler.KitchenStorage.Targets.Rare = 1
 table.insert(profile.Angler.Holds.Rowboat, 2, { Fish = common, X = 3, Y = 1, R = 0 })
 runPorter(shop, worker, owner)

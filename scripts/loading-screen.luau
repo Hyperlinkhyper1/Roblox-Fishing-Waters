@@ -405,6 +405,10 @@ local function scenario(mode)
 	if mode == "fatal-error" then
 		ReplicatedStorage:SetAttribute("FishingWatersStartupError", true)
 	end
+	-- Scenery modes leave the server's distant generation running and the dock area streaming slowly
+	local slowScenery = string.sub(mode, 1, 8) == "scenery-"
+	ReplicatedStorage:SetAttribute("FishingWatersGenerationComplete", not slowScenery)
+	ReplicatedStorage:SetAttribute("FishingWatersStartupStep", if slowScenery then "City" else nil)
 	local worldLoaded, ground = mode ~= "game", mode ~= "ground"
 	local workspace = Instance.new("Workspace")
 	workspace.StreamingEnabled = true
@@ -435,7 +439,9 @@ local function scenario(mode)
 	end
 	function player:RequestStreamAroundAsync(_, timeout)
 		streamRequests += 1
-		task.wait(timeout or 8)
+		if slowScenery then
+			task.wait(timeout or 8)
+		end
 	end
 	local TweenService = {}
 	function TweenService:Create(target, info, goals)
@@ -642,6 +648,34 @@ local function scenario(mode)
 		ReplicatedStorage:SetAttribute("FishingWatersStartupError", nil)
 		advance(1)
 		check(gui.destroyed, "Recovered startup error should allow the normal readiness path")
+	elseif mode == "scenery-skip" then
+		local button = assert(gui:FindFirstChild("Continue", true))
+		advance(2)
+		check(not gui.destroyed, "Unfinished scenery should hold the overlay while it loads")
+		check(not button.Visible, "Skip must wait a few seconds before appearing")
+		check(string.find(gui:FindFirstChild("Status", true).Text, "City", 1, true) ~= nil, "Scenery status should name the step")
+		advance(2.2)
+		check(button.Visible, "Skip must appear once the essentials are ready and the delay has passed")
+		check(string.find(button.Text, "Skip", 1, true) ~= nil, "Essentials-ready button should offer to skip loading")
+		button.Activated:Fire()
+		advance(1)
+		check(gui.destroyed, "Skip should dismiss while scenery is still loading")
+		check(player:GetAttribute("FishingWatersLoadingSkipped") == true, "A skip should be recorded")
+	elseif mode == "scenery-done" then
+		advance(4.2)
+		check(not gui.destroyed, "Distant generation should hold the overlay")
+		ReplicatedStorage:SetAttribute("FishingWatersGenerationComplete", true)
+		advance(1)
+		check(not gui.destroyed, "Nearby buildings still streaming should hold the overlay")
+		advance(5.5)
+		check(gui.destroyed, "Finished scenery should release the overlay without a skip")
+		check(player:GetAttribute("FishingWatersLoadingSkipped") == false, "Automatic entry is not a skip")
+	elseif mode == "scenery-timeout" then
+		ReplicatedStorage:SetAttribute("FishingWatersStartupStep", nil)
+		advance(29)
+		check(not gui.destroyed, "Scenery may hold the overlay until its timeout")
+		advance(2)
+		check(gui.destroyed, "Stalled scenery must not hold the overlay past its timeout")
 	elseif mode == "client-error" or mode == "slow-client" then
 		advance(2)
 		check(not gui.destroyed, "Incomplete required client startup must keep the overlay")
@@ -708,6 +742,9 @@ for _, mode in
 		"client-error",
 		"slow-client",
 		"fatal-error",
+		"scenery-skip",
+		"scenery-done",
+		"scenery-timeout",
 	}
 do
 	scenario(mode)

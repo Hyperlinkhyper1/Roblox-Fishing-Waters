@@ -1,9 +1,8 @@
 -- Named places the client announces with a big "now entering" banner (client AreaBanner):
--- the five biomes, the open water between them, and landmarks inside them (Pirate Cove,
--- the Modern City). Positions are X/Z only, so this stays a cheap per-tick lookup.
+-- the five biomes, the zones nested inside them (Pirate Cove), the open water between them,
+-- and landmarks (the Modern City). Positions are X/Z only, so this stays a cheap per-tick lookup.
 
 local Biomes = require(script.Parent.Biomes)
-local PirateCove = require(script.Parent.PirateCove)
 
 export type Area = {
 	id: string,
@@ -29,11 +28,16 @@ local BIOME_STYLE = {
 	tropical = { subtitle = "Warm lagoon waters", accent = rgb(110, 222, 214) },
 	volcanic = { subtitle = "Ash and ember waters", accent = rgb(255, 136, 92) },
 	ice = { subtitle = "Frozen northern waters", accent = rgb(196, 230, 255) },
+	piratecove = { subtitle = "Hazy golden waters", accent = rgb(240, 196, 110) },
 	open = { subtitle = "The deep open sea", accent = rgb(120, 160, 205) },
 }
 
 local byBiome: { [string]: Area } = {}
-for _, biome in Biomes.list do
+local terrainAndZones = table.clone(Biomes.list)
+for _, zone in Biomes.zones do
+	table.insert(terrainAndZones, zone)
+end
+for _, biome in terrainAndZones do
 	local style = BIOME_STYLE[biome.id]
 	byBiome[biome.id] = {
 		id = biome.id,
@@ -54,18 +58,10 @@ byBiome.open = {
 }
 Areas.Biomes = byBiome
 
--- Checked before biomes, so a landmark wins inside the biome that holds it.
+-- Checked before biomes, so a zone or landmark wins inside the biome that holds it. Zones are
+-- biomes of their own: leaving one back into its surroundings is announced like any border.
 Areas.Landmarks = {
-	{
-		id = "piratecove",
-		name = PirateCove.NAME,
-		subtitle = "Coral Shallows",
-		accent = rgb(240, 196, 110),
-		center = Vector2.new(PirateCove.CENTER[1], PirateCove.CENTER[2]),
-		-- The island plus its anchorage.
-		radius = PirateCove.RADIUS + 90,
-		parent = "tropical",
-	},
+	byBiome.piratecove,
 	{
 		id = "city",
 		name = "Modern City",
@@ -107,7 +103,7 @@ function Areas.at(position: Vector3, current: Area?): Area
 end
 
 -- Whether moving from `previous` into `area` deserves a banner. Stepping off a landmark back
--- into the water around it (Pirate Cove -> Coral Shallows) is not news.
+-- into the water around it (Modern City -> Open Waters) is not news.
 function Areas.announces(previous: Area?, area: Area): boolean
 	if previous == area then
 		return false

@@ -403,8 +403,20 @@ function Radar.start()
 				coastVersion += 1
 			end)
 		end
-		chart.ChildAdded:Connect(reload)
+		-- A company island's coast also changes when it is bought or freed.
+		local function watch(record: Instance)
+			if record:IsA("StringValue") then
+				record:GetPropertyChangedSignal("Value"):Connect(reload)
+			end
+		end
+		chart.ChildAdded:Connect(function(record)
+			watch(record)
+			reload()
+		end)
 		chart.ChildRemoved:Connect(reload)
+		for _, record in chart:GetChildren() do
+			watch(record)
+		end
 		reload()
 	end)
 	local scanElapsed, refreshElapsed = SCAN_INTERVAL, 0

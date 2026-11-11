@@ -264,4 +264,32 @@ task.spawn(function() report = client.diagnose() end)
 flush()
 assert(report:find("Mesh test FAILED", 1, true) and report:find("API unavailable", 1, true), "Diagnostic must preserve the API failure")
 print("PASS mesh diagnostic reports success and the underlying allocation error")
+client = reset()
+failure, failAt = "budget", 1
+local releasedWater = 0
+dependencies.EditableMeshBudget.onRelease("SwellSurface", function() releasedWater += 1 end)
+local evictedFish = fish("round")
+task.spawn(client.hydrate, evictedFish)
+flush()
+assert(releasedWater == 1, "A starved fish skin must release the cosmetic water mesh")
+assert(not visibleFallback(evictedFish) and allocations == 8, "The skin must build after the water mesh is released")
+assert(dependencies.EditableMeshBudget.status():find("Released for fish: SwellSurface", 1, true))
+print("PASS fish skins evict the swell sheet when the device budget is full")
+
+client = reset()
+failure = "budget"
+client.start()
+local latched = fish("round")
+task.spawn(client.hydrate, latched)
+flush()
+assert(visibleFallback(latched) and allocations == 1)
+failure = nil
+local untagged = collection.GetTagged
+collection.GetTagged = function() return { latched } end
+task.spawn(function() report = client.diagnose() end)
+flush()
+collection.GetTagged = untagged
+assert(report:find("Rainbow Trout skin available", 1, true), "The mesh test must retry a latched budget")
+assert(not visibleFallback(latched), "A successful retry must re-skin fish left as spheres")
+print("PASS mesh test retries a latched failure and re-skins fallback fish")
 print("Recording mocks only; actual device memory and Studio appearance require play testing.")

@@ -31,14 +31,9 @@ local AMPLITUDE_REFRESH = 0.5
 local AMPLITUDE_REFRESHES_PER_FRAME = 200
 -- Neighbour cells sampled for the shoreline taper (a 5x5 block).
 local SHORE_REACH = 2
--- Crests fade in only above Terrain's largest ripple (WaterWaves' MAX_RIPPLE_SIZE, 0.18), so
--- no visible part of the sheet lies within the band Terrain's surface moves through.
-local FADE_FROM, FADE_HEIGHT = 0.25, 0.35
--- Every hidden vertex (calm water, troughs, swell below FADE_FROM) drops this far under the
--- water level. The sheet then crosses Terrain's surface steeply (2 studs over a 12-stud cell)
--- in thin lines. Lying on or just under it, the gently sloped sheet z-fought Terrain water in
--- wide blotches at a distance; vertex alpha alone doesn't stop the depth fight.
-local CALM_DEPTH = 2
+-- Crests fade in above Terrain's ripples instead of fighting its surface. FADE_FROM sits above
+-- Terrain's largest ripple (WaterWaves' MAX_RIPPLE_SIZE, 0.18).
+local FADE_FROM, FADE_HEIGHT = 0.22, 0.35
 -- Clearance kept beneath a hull's sole so open decks never flood.
 local HULL_CLEARANCE = 0.3
 local HULL_MARGIN = 1.5
@@ -97,20 +92,33 @@ function SwellSurface.start()
 				colors[index] = mesh:AddColor(color, 0)
 			end
 		end
-		local function face(a: number, b: number, c: number)
+		local function face(a: number, b: number, c: number): number
 			local id = mesh:AddTriangle(vertices[a], vertices[b], vertices[c])
 			mesh:SetFaceNormals(id, { normals[a], normals[b], normals[c] })
 			mesh:SetFaceColors(id, { colors[a], colors[b], colors[c] })
+			return id
+		end
+		-- Each triangle is drawn only while all three corners are visible crest (see the cull
+		-- after the vertex pass). Vertex alpha alone doesn't hide geometry: hidden stretches of
+		-- the sheet lay on or just under Terrain's water and z-fought it in blotches, and could be
+		-- seen through it as faceted 12-stud triangles.
+		local faceA, faceB, faceC, faceIds = {}, {}, {}, {}
+		local function addCorners(a: number, b: number, c: number)
+			table.insert(faceA, a)
+			table.insert(faceB, b)
+			table.insert(faceC, c)
+			table.insert(faceIds, face(a, b, c))
 		end
 		for row = 0, COUNT - 1 do
 			for column = 0, COUNT - 1 do
 				local a = row * size + column + 1
 				local b, c, d = a + 1, a + size, a + size + 1
 				-- Counter-clockwise seen from above.
-				face(a, c, b)
-				face(b, c, d)
+				addCorners(a, c, b)
+				addCorners(b, c, d)
 			end
 		end
+		local faceCount = #faceA
 		local partOk, part = pcall(function()
 			return AssetService:CreateMeshPartAsync(
 				Content.fromObject(mesh),
@@ -133,6 +141,20 @@ function SwellSurface.start()
 		part.Transparency = 0.55
 		part.LocalTransparencyModifier = 1
 		part.Parent = workspace
+
+		-- The sheet is a dynamic mesh, which Roblox budgets as if maxed out. On a
+		-- tight device it gives way to fish skins (Terrain water stays).
+		local stepped: RBXScriptConnection? = nil
+		local released = false
+		EditableMeshBudget.onRelease("SwellSurface", function()
+			released = true
+			if stepped then
+				stepped:Disconnect()
+			end
+			part:Destroy()
+			mesh:Destroy()
+			warn("[SwellSurface] Water surface released to free EditableMesh memory for fish skins.")
+		end)
 
 		local parameters = RaycastParams.new()
 		parameters.FilterType = Enum.RaycastFilterType.Exclude
@@ -233,7 +255,10 @@ function SwellSurface.start()
 			cell.amplitude = amplitude
 		end
 
-		RunService.RenderStepped:Connect(function(dt: number)
+		if released then
+			return
+		end
+		stepped = RunService.RenderStepped:Connect(function(dt: number)
 			local camera = workspace.CurrentCamera
 			local cameraPosition = camera and camera.CFrame.Position
 			if
@@ -400,7 +425,7 @@ function SwellSurface.start()
 					if amplitude < FLAT_AMPLITUDE then
 						if not flat[index] then
 							flat[index] = true
-							local y = if cell.shown < 0.01 then SUNKEN else -CALM_DEPTH
+							local y = if cell.shown < 0.01 then SUNKEN else 0
 							mesh:SetPosition(vertices[index], Vector3.new(localX[index], y, localZ[index]))
 							mesh:SetNormal(normals[index], Vector3.yAxis)
 							if alphas[index] ~= 0 then
@@ -417,20 +442,30 @@ function SwellSurface.start()
 					if cap and height > cap then
 						height = cap
 					end
-					local alpha = smoothstep((height - FADE_FROM) / FADE_HEIGHT)
-					-- Land cells drop out of sight beneath the shore. Hidden vertices (troughs and
-					-- swell too low to fade in) sink so no stretch of the sheet lies on Terrain's
-					-- surface; visible crests keep the exact height the hulls ride.
-					local y = if cell.shown < 0.01
-						then SUNKEN
-						elseif alpha == 0 then math.min(height, 0) - CALM_DEPTH
-						else height
+					local alpha = if cell.shown < 0.01 then 0 else smoothstep((height - FADE_FROM) / FADE_HEIGHT)
+					-- Land cells drop out of sight beneath the shore.
+					local y = if cell.shown < 0.01 then SUNKEN else height
 					mesh:SetPosition(vertices[index], Vector3.new(localX[index], y, localZ[index]))
 					mesh:SetNormal(normals[index], Vector3.new(-amplitude * sx, 1, -amplitude * sz).Unit)
 					if math.abs(alpha - alphas[index]) > 0.02 or (alpha == 0) ~= (alphas[index] == 0) then
 						alphas[index] = alpha
 						mesh:SetColorAlpha(colors[index], alpha)
 					end
+				end
+			end
+			-- Only triangles lying wholly on visible crest (every corner above FADE_FROM) are kept,
+			-- so nothing of the sheet is drawn in the band Terrain's surface moves through.
+			for f = 1, faceCount do
+				local a, b, c = faceA[f], faceB[f], faceC[f]
+				local show = alphas[a] > 0 and alphas[b] > 0 and alphas[c] > 0
+				local id = faceIds[f]
+				if show then
+					if not id then
+						faceIds[f] = face(a, b, c)
+					end
+				elseif id then
+					mesh:RemoveFace(id)
+					faceIds[f] = nil
 				end
 			end
 			if profiling then

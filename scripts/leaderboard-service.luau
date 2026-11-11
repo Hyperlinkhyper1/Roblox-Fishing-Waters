@@ -272,7 +272,9 @@ check(
 if mode ~= "unpublished" then
 	check(Service.snapshot().WeeklyEarned == nil, "A failed rollover read never sends last week's rows")
 end
-now += 121
+-- Web-only boards (the monthly ones) refresh every 240 s (WEB_REFRESH), and the
+-- failed read at the rollover pushed the next one out; wait past both cadences.
+now += 241
 refresh(9)
 local snapshot = Service.snapshot()
 if mode == "unpublished" then

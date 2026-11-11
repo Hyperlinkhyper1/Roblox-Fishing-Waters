@@ -164,6 +164,18 @@ for _, biome in Biomes.list do
   assert(rgbEqual(Terrain.WaterColor, biome.look.waterColor), "Resurfacing must restore the current biome")
   assert(atmosphere.Density == biome.look.density, "Biome haze must return")
 end
+-- Pirate Cove is a zone inside the Coral Shallows: sailing in from the lagoon must switch to its
+-- own hazy look even though the Coral Shallows would otherwise hold on, and sailing out restores it.
+local cove, coral = Biomes.PirateCove, Biomes.Tropical
+move(coral.center.X, 5, coral.center.Y, 0.6)
+assert(rgbEqual(Terrain.WaterColor, coral.look.waterColor), "Coral Shallows look before the cove")
+move(cove.center.X, 5, cove.center.Y, 0.6)
+assert(rgbEqual(Terrain.WaterColor, cove.look.waterColor), "Sailing into Pirate Cove must switch to its own look")
+assert(atmosphere.Density == cove.look.density and atmosphere.Haze > coral.look.haze, "Pirate Cove haze")
+move(cove.center.X + cove.radius * 1.05, 5, cove.center.Y, 0.6)
+assert(rgbEqual(Terrain.WaterColor, cove.look.waterColor), "Pirate Cove holds just past its edge")
+move(cove.center.X + cove.radius * 1.3, 5, cove.center.Y, 0.6)
+assert(rgbEqual(Terrain.WaterColor, coral.look.waterColor), "Leaving Pirate Cove restores the Coral Shallows")
 move(0, -8, 0, 0.6)
 move(Biomes.Volcanic.center.X, -8, Biomes.Volcanic.center.Y, 0.6)
 underwaterFog()
