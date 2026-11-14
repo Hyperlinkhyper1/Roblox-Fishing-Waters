@@ -323,6 +323,39 @@ function BoatData.decode(raw: any): Profile
 	profile.EquippedBait = if Bait.valid(raw.EquippedBait) and profile.Bait[raw.EquippedBait]
 		then raw.EquippedBait
 		else nil
+	-- Saves from before branches were added have none: they are fishing companies.
+	-- (Shared.Branches holds the catalog; test harnesses inline this file, so the
+	-- shape check lives here.)
+	assert(raw.Branches == nil or type(raw.Branches) == "table", "Invalid company branches")
+	if raw.Branches ~= nil then
+		local branches = {}
+		for id, owned in raw.Branches do
+			assert(type(id) == "string" and #id <= 32 and type(owned) == "boolean", "Invalid company branch")
+			if owned then
+				branches[id] = true
+			end
+		end
+		profile.Branches = if next(branches) then branches else nil
+	end
+	assert(raw.Cafe == nil or type(raw.Cafe) == "table", "Invalid café progress")
+	if raw.Cafe ~= nil then
+		local served = raw.Cafe.Served or 0
+		assert(type(served) == "number" and served >= 0 and served < 2 ^ 53 and served % 1 == 0, "Invalid café progress")
+		-- Café tour progress (Shared.CafeTutorial). Cafés that served coffee before the tour
+		-- existed start with it finished; /tutorial replays it.
+		local step, count = raw.Cafe.TutorialStep, raw.Cafe.TutorialCount or 0
+		local done = if step == nil then served > 0 else raw.Cafe.TutorialDone == true
+		step = step or 1
+		assert(type(step) == "number" and step >= 1 and step < 2 ^ 31 and step % 1 == 0, "Invalid café tutorial step")
+		assert(type(count) == "number" and count >= 0 and count < 2 ^ 31 and count % 1 == 0, "Invalid café tutorial count")
+		profile.Cafe = {
+			Served = served,
+			TutorialStep = step,
+			TutorialDone = done,
+			TutorialCount = count,
+			TutorialRewarded = raw.Cafe.TutorialRewarded == true,
+		}
+	end
 	profile.Angler = AnglerData.decode(raw.Angler)
 	return profile
 end

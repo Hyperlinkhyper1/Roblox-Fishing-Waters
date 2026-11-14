@@ -1001,16 +1001,17 @@ function StructureEditor.new(options)
 			local isRoom = tool == "Room" and not moving and not reshaping
 			roomEntries = if entry and isRoom then room(entry) else nil
 			local cost = 0
+			local expanded = Players.LocalPlayer and Players.LocalPlayer:GetAttribute("MultiplayerPlot") == true
 			if entry then
 				if roomEntries then
 					local checked = table.clone(state.Pieces or {})
 					for _, piece in roomEntries do
-						reason = reason or Catalog.check(checked, piece, site, builtins)
+						reason = reason or Catalog.check(checked, piece, site, builtins, nil, expanded)
 						cost += Catalog.price(piece)
 						table.insert(checked, piece)
 					end
 				else
-					reason = Catalog.check(state.Pieces or {}, entry, site, builtins, moving or reshaping)
+					reason = Catalog.check(state.Pieces or {}, entry, site, builtins, moving or reshaping, expanded)
 					cost = Catalog.price(entry)
 				end
 				if not moving and not reshaping and cost > (state.Cash or 0) then reason = reason or "You need more cash for this build." end

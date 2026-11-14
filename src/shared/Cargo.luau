@@ -44,6 +44,7 @@ end
 
 -- Accepts a hold item ({ Fish = record } or { PartId = ... }) or a bare fish record.
 function Cargo.shape(item, species): { string }
+	if item.Dish then return FALLBACK.Normal end
 	if item.PartId then
 		local part = Cargo.Parts[item.PartId]
 		return if part then part.Shape else FALLBACK.Normal

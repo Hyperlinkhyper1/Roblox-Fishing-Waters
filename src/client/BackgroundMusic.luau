@@ -3,26 +3,35 @@
 -- library (free for every experience). PlayerSettings routes these sounds into
 -- the Music mixer through their AudioCategory, so the Music slider applies.
 local ContentProvider = game:GetService("ContentProvider")
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 
 local Aboard = require(ReplicatedStorage.Shared.Aboard)
+local TechCatalog = require(ReplicatedStorage.Shared.TechCatalog)
+local TechStoreLayout = require(ReplicatedStorage.Shared.TechStoreLayout)
 local Weather = require(ReplicatedStorage.Shared.Weather)
 
 local BackgroundMusic = {}
 local started = false
 -- Drones are mastered quieter than the acoustic island tracks, so the sea
 -- playlist gets a small lift to land at roughly the same loudness.
-local VOLUMES = { Island = 0.22, Ocean = 0.26 }
+local VOLUMES = { Island = 0.22, Ocean = 0.26, TechStore = 0.22 }
 -- Swimming off a dock or stepping onto a moored deck must not flip the music.
 local SWITCH_DELAY = 4
 -- Out at sea the waves carry the quiet between tracks, so leave more of it.
-local GAPS = { Island = NumberRange.new(3, 6), Ocean = NumberRange.new(10, 25) }
+local GAPS = { Island = NumberRange.new(3, 6), Ocean = NumberRange.new(10, 25), TechStore = NumberRange.new(1, 3) }
 local FADE_RATE = 0.8
 
 local PLAYLISTS = {
+	-- Low-key retail lounge music from Roblox's licensed APM library.
+	TechStore = {
+		"rbxassetid://1837379560", -- Fall in Love (lounge / bossa nova)
+		"rbxassetid://1840384233", -- Soft Sounds
+		"rbxassetid://1840684529", -- Cool Vibes
+	},
 	-- APM "Easy Acoustic Chill" vols 1-2: laid-back modern acoustic guitar for
 	-- a sunny fishing village, without sad or high-energy titles.
 	Island = {
@@ -85,6 +94,22 @@ local function atSea(character: Model?): boolean?
 	return false
 end
 
+local function inTechStore(character: Model?): boolean
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not root or not root:IsA("BasePart") or not humanoid or humanoid.Health <= 0 then
+		return false
+	end
+	for _, store in CollectionService:GetTagged(TechCatalog.STORE_TAG) do
+		local frame = store:GetAttribute("StoreFrame")
+		if store:IsDescendantOf(workspace) and typeof(frame) == "CFrame"
+			and TechStoreLayout.inside(frame, root.Position) then
+			return true
+		end
+	end
+	return false
+end
+
 function BackgroundMusic.start()
 	if started then
 		return
@@ -119,7 +144,7 @@ function BackgroundMusic.start()
 	end
 	task.spawn(function()
 		pcall(function()
-			ContentProvider:PreloadAsync({ zones.Island.order[1], zones.Ocean.order[1] })
+			ContentProvider:PreloadAsync({ zones.Island.order[1], zones.Ocean.order[1], zones.TechStore.order[1] })
 		end)
 	end)
 
@@ -146,9 +171,12 @@ function BackgroundMusic.start()
 		if sampleElapsed >= 0.5 then
 			sampleElapsed = 0
 			local sea = atSea(player.Character)
-			local wanted = if sea == nil then current.name elseif sea then "Ocean" else "Island"
+			local wanted = if sea == nil then current.name elseif inTechStore(player.Character) then "TechStore" elseif sea then "Ocean" else "Island"
 			if wanted == current.name then
 				pending = nil
+			elseif wanted == "TechStore" or current.name == "TechStore" then
+				-- Shop doors should change the music promptly in both directions.
+				current, pending = zones[wanted], nil
 			elseif wanted ~= pending then
 				pending, pendingSince = wanted, now
 			elseif now - pendingSince >= SWITCH_DELAY then

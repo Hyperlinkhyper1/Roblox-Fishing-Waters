@@ -33,7 +33,7 @@ Arguments are not case-sensitive.
 
 | Command | What it does |
 |---|---|
-| `/tutorial` | Restart the island tutorial tour from the beginning. |
+| `/tutorial` | Restart your company's tutorial from the beginning: the island tour for fishing companies, the cafe tour for cafe companies (both for a company with both branches). |
 
 ## Admin
 
@@ -51,7 +51,7 @@ Arguments are not case-sensitive.
 | `/fly` | Toggle flight. WASD to move, Space up, Ctrl down. |
 | `/fly speed <studs/s>` | Set flight speed (default 50). Must be a positive number. |
 | `/tp city` | Teleport to the city. |
-| `/tp models` | Teleport to the full-size scale models showcase (outside the ocean; builds the pier if needed). |
+| `/tp models` | Teleport to the full-size scale models showcase (outside the ocean; builds the pier if needed). The pier's east end opens onto a Pets deck with an animated scarlet macaw. |
 
 ### Economy and passes
 
@@ -95,4 +95,4 @@ Events: `halloween`.
 
 - [AdminCommands.luau](../src/server/AdminCommands.luau): `/commands`, `/mutation`, `/event`, `/health`, `/fly`, `/tp`, `/gamepass`
 - [BoatService.luau](../src/server/BoatService.luau): `/set` (cash, weight, weather, season, date)
-- [TutorialService.luau](../src/server/TutorialService.luau): `/tutorial`
+- [TutorialService.luau](../src/server/TutorialService.luau): `/tutorial` (cafe tour: [CafeTutorialService.luau](../src/server/CafeTutorialService.luau))

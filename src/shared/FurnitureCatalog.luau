@@ -42,9 +42,9 @@ Furniture.Order = {
 }
 -- Supplied with a company island (AnglerData.COMPANY_KIT) instead of sold.
 Furniture.KitOrder = { "CompanyPrep", "CompanyDesk" }
--- Part of every base house instead of sold: the office desk from the start, the
--- prep benches with the Supermarket (AnglerData places them).
-Furniture.FixtureOrder = { "PrepBench", "OfficeDesk" }
+-- Part of every base house instead of sold: the desk and workbench from the
+-- start, the prep benches with the Supermarket (AnglerData places them).
+Furniture.FixtureOrder = { "PrepBench", "OfficeDesk", "Workbench" }
 -- Catalogue groups describe the existing inventory; they do not change purchase
 -- rules, placement rooms, or ownership.
 Furniture.Categories = {
@@ -66,7 +66,7 @@ local CATEGORY_BY_ITEM = {
 	FloorLamp = "Lighting", PottedPlant = "Plants", FlowerPlanter = "Plants",
 	BarrelDisplay = "Nautical", CrateStack = "Nautical", RopeBasket = "Nautical", LifeRingStand = "Nautical",
 	AnchorDisplay = "Nautical", FishingNetDisplay = "Nautical", NauticalSign = "Nautical", ShipWheelDisplay = "Nautical",
-	WeatherRadar = "Decor", FishStatue = "Decor", Aquarium = "Decor", Rug = "Decor", CoatRack = "Decor",
+	WeatherRadar = "Decor", FishStatue = "Decor", Aquarium = "Decor", Rug = "Decor", CoatRack = "Decor", Workbench = "Decor",
 }
 function Furniture.category(itemId: string): string
 	return CATEGORY_BY_ITEM[itemId] or "Decor"
@@ -528,6 +528,20 @@ Furniture.Items = {
 		Front = 2,
 		Back = 0,
 	},
+	Workbench = {
+		Name = "Workbench",
+		Price = 0,
+		Fixture = true,
+		Room = "Storage",
+		MaxPlaced = 1,
+		Description = "A sturdy timber workbench with tools, a vise and a shelf. Bring your office PC here to open it up and swap parts.",
+		Cells = { 2, 1 },
+		Centered = true,
+		Width = 8.8,
+		Depth = 4.3,
+		Front = 0,
+		Back = 0,
+	},
 	-- Kit items go only on a company island's plot. Each placed prep bench takes
 	-- the first free company bench key (Recipes.CompanyBuiltIn) as its saved Key.
 	CompanyPrep = {
@@ -601,6 +615,17 @@ Furniture.Rooms = {
 	-- the dining room extension.
 	Yard = { -4.8, -33, 26.5, -15.8 },
 }
+-- Expanded saves keep all existing furniture coordinates and room depths.
+-- Only the outside edges grow; the street, aisles and room boundaries stay put.
+local expandedRooms = {}
+for name, room in Furniture.Rooms do expandedRooms[name] = table.clone(room) end
+for _, name in { "Processing", "Kitchen", "Office", "Dining" } do
+	expandedRooms[name][1] = -49.15
+end
+for _, name in { "Storage", "Yard" } do expandedRooms[name][3] = 49.15 end
+function Furniture.roomsFor(expanded: boolean?)
+	return if expanded then expandedRooms else Furniture.Rooms
+end
 Furniture.RoomNames = {
 	Shop = "shop across the street",
 	Storage = "storage room",
@@ -752,6 +777,16 @@ local function inside(a: { number }, room: { number }): boolean
 	return a[1] >= room[1] - 1e-3 and a[3] <= room[3] + 1e-3 and a[2] >= room[2] - 1e-3 and a[4] <= room[4] + 1e-3
 end
 
+-- Keep the entire model visibly clear of the shop's interior wall faces.
+local SHOP_WALL_CLEARANCE = 0.2
+function Furniture.clearOfShopWalls(entry): boolean
+	local body = Furniture.body(entry.ItemId, entry.X, entry.Z, entry.R)
+	if not body then return true end
+	local room = Furniture.Rooms.Shop
+	return inside(body, { room[1] + SHOP_WALL_CLEARANCE, room[2] + SHOP_WALL_CLEARANCE,
+		room[3] - SHOP_WALL_CLEARANCE, room[4] - SHOP_WALL_CLEARANCE })
+end
+
 local function shrink(a: { number }, by: number): { number }
 	local dx, dz = math.min(by, (a[3] - a[1]) / 2), math.min(by, (a[4] - a[2]) / 2)
 	return { a[1] + dx, a[2] + dz, a[3] - dx, a[4] - dz }
@@ -797,7 +832,7 @@ end
 -- Checks one placement against the room rules and the other placed items
 -- (`placed`, skipping index `skip`) on one site. Returns nil when it fits, or a
 -- player-facing reason.
-local function check(placed, itemId: string, x: number, z: number, r: number, skip: number?, legacy: boolean?, site: string?): string?
+local function check(placed, itemId: string, x: number, z: number, r: number, skip: number?, legacy: boolean?, site: string?, expanded: boolean?): string?
 	local item = Furniture.Items[itemId]
 	if not item then
 		return "That isn't furniture."
@@ -839,8 +874,9 @@ local function check(placed, itemId: string, x: number, z: number, r: number, sk
 		return item.Name .. "s can only go on your company island plot."
 	else
 		local fitsRoom = false
+		local rooms = Furniture.roomsFor(expanded)
 		for _, room in Furniture.allowedRooms(itemId) do
-			if within(Furniture.Rooms[room]) then
+			if within(rooms[room]) and (room ~= "Shop" or Furniture.clearOfShopWalls({ ItemId = itemId, X = x, Z = z, R = r })) then
 				fitsRoom = true
 				break
 			end
@@ -873,14 +909,14 @@ local function check(placed, itemId: string, x: number, z: number, r: number, sk
 	return nil
 end
 
-function Furniture.check(placed, itemId: string, x: number, z: number, r: number, skip: number?, site: string?): string?
-	return check(placed, itemId, x, z, r, skip, false, site)
+function Furniture.check(placed, itemId: string, x: number, z: number, r: number, skip: number?, site: string?, expanded: boolean?): string?
+	return check(placed, itemId, x, z, r, skip, false, site, expanded)
 end
 
 -- Historical saves used half-stud positions. This relaxed snapping is only for
 -- relocating an existing item when the new walls would otherwise cover it.
-function Furniture.checkRelocation(placed, itemId: string, x: number, z: number, r: number, site: string?): string?
-	return check(placed, itemId, x, z, r, nil, true, site)
+function Furniture.checkRelocation(placed, itemId: string, x: number, z: number, r: number, site: string?, expanded: boolean?): string?
+	return check(placed, itemId, x, z, r, nil, true, site, expanded)
 end
 
 -- nil when the item can be bought and placed on this profile's path, otherwise why not.

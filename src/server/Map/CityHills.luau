@@ -17,7 +17,7 @@ local EDGE = 1180 -- the chart's south and east edges, where the hills meet the 
 local CELL = 59 -- the edges fall on grid lines (EDGE is a whole number of cells)
 local EDGE_INDEX = EDGE // CELL
 local I0, I1 = -21, 31 -- vertex columns, x = i * CELL: from the west tip to the outer rim
-local J0, J1 = -20, 31 -- vertex rows, z = j * CELL: from the north tip to the outer rim
+local J0, J1 = -20, 40 -- vertex rows, z = j * CELL: from the north tip to the outer rim
 local LAND_I, LAND_J = -20, -19 -- edge vertices from here on sit on the mainland's own edge
 local DEPTH = I1 * CELL - EDGE -- how far the range reaches past the edges
 local SEA = -22 -- where the tips of the range end, under the water
@@ -34,9 +34,9 @@ CityHills.TRACK = {
 	{ 1110, 1110 },
 	{ 1290, 1140 },
 	{ 1350, 1280 },
-	{ 820, 1440 },
+	{ 1030, 1430 },
 	{ 1400, 1520 },
-	{ 860, 1590 },
+	{ 1000, 1590 },
 	{ 1150, 1615 },
 }
 local TRACK_WIDTH = 6
@@ -151,7 +151,10 @@ local function groundAt(x: number, z: number, jitter: number): number
 	local clearance, level = CityCircuit.level(x, z)
 	if clearance < CityCircuit.BLEND then
 		local base = level - DROP
-		h = base + (h - base) * smoothstep(0, CityCircuit.BLEND, math.max(clearance, 0))
+		local shaped = base + (h - base) * smoothstep(0, CityCircuit.BLEND, math.max(clearance, 0))
+		-- Preserve the level join to the city even where the paddock's earthworks
+		-- blend towards the edge of the hills.
+		h += (shaped - h) * smoothstep(0, 110, depth(x, z))
 	end
 	return h
 end

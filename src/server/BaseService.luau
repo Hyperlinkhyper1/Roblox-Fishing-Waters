@@ -31,13 +31,13 @@ local function setShopSign(base: Model, value: string)
 	end
 end
 
-local function freeBase(): Model?
+local function freeBase(expanded: boolean): Model?
 	local bases = CollectionService:GetTagged(BASE_TAG)
 	table.sort(bases, function(a, b)
 		return (a:GetAttribute("BaseId") or 0) < (b:GetAttribute("BaseId") or 0)
 	end)
 	for _, base in bases do
-		if base:GetAttribute("OwnerUserId") == 0 then
+		if base:GetAttribute("OwnerUserId") == 0 and (not expanded or base:GetAttribute("MultiplayerPlot") == true) then
 			return base :: Model
 		end
 	end
@@ -53,13 +53,44 @@ local function harbourSpawn(): SpawnLocation?
 	return (map and map:FindFirstChild("HarbourSpawn")) :: SpawnLocation?
 end
 
+-- Companies without the fishing branch (Shared.Branches) have no harbour dock.
+-- Saves without branches, or with only unknown ones, are fishing companies.
+local function fishes(profile): boolean
+	local branches = profile and profile.Branches
+	return type(branches) ~= "table" or branches.Fishing == true or branches.Cafe ~= true
+end
+
+-- Somewhere else to spawn (a café in the city) for players without a dock.
+local spawnProvider: ((Player) -> SpawnLocation?)? = nil
+function BaseService.setSpawnProvider(provider: (Player) -> SpawnLocation?)
+	spawnProvider = provider
+end
+
+local function otherSpawn(player: Player): SpawnLocation?
+	if not spawnProvider then return nil end
+	local ok, point = pcall(spawnProvider, player)
+	if not ok then
+		warn("[Bases] Spawn provider failed: " .. tostring(point))
+		return nil
+	end
+	return point
+end
+
 local function claim(player: Player)
-	local base = freeBase()
+	local profile = BoatService.getProfile(player)
+	if profile and not fishes(profile) then
+		player.RespawnLocation = otherSpawn(player) or harbourSpawn()
+		return
+	end
+	local info = profile and profile.SaveInfo
+	local expanded = info ~= nil and (info.PlotExpanded == true or info.Multiplayer == true)
+	local base = freeBase(expanded)
 	if not base then
 		player.RespawnLocation = harbourSpawn()
 		return
 	end
 	owned[player] = base
+	player:SetAttribute("MultiplayerPlot", expanded and base:GetAttribute("MultiplayerPlot") == true)
 	base:SetAttribute("OwnerUserId", player.UserId)
 	player:SetAttribute("BaseId", base:GetAttribute("BaseId"))
 	setBoard(base, player.DisplayName .. "'s Dock")
@@ -116,7 +147,7 @@ end
 local function placeCharacter(player: Player, character: Model)
 	player:SetAttribute("FishingWatersSpawnReady", false)
 	local base = owned[player]
-	local point = if base then spawnPoint(base) else harbourSpawn()
+	local point = if base then spawnPoint(base) else (otherSpawn(player) or harbourSpawn())
 	local root = character:WaitForChild("HumanoidRootPart", 10) :: BasePart?
 	if not point or not root or player.Character ~= character then
 		return
@@ -135,15 +166,37 @@ end
 
 local function onPlayer(player: Player)
 	player:SetAttribute("FishingWatersSpawnReady", false)
-	claim(player)
+	local entered = false
+	local function enterSave()
+		if entered or player.Parent ~= Players or player:GetAttribute("BoatDataStatus") ~= "Ready" then return end
+		entered = true
+		claim(player)
+		if not player.Character then player:LoadCharacter() end
+	end
 	player.CharacterAdded:Connect(function(character)
-		placeCharacter(player, character)
+		task.spawn(placeCharacter, player, character)
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		if humanoid then
+			humanoid.Died:Once(function()
+				task.delay(Players.RespawnTime, function()
+					if player.Parent == Players and player:GetAttribute("BoatDataStatus") == "Ready" and player.Character == character then
+						player:LoadCharacter()
+					end
+				end)
+			end)
+		end
 	end)
 	if player.Character then
 		task.spawn(placeCharacter, player, player.Character)
-	else
-		player:LoadCharacter()
 	end
+	player:GetAttributeChangedSignal("BoatDataStatus"):Connect(enterSave)
+	-- A café company that buys the fishing branch gets its harbour dock now.
+	player:GetAttributeChangedSignal("BranchFishing"):Connect(function()
+		if entered and not owned[player] and player.Parent == Players and player:GetAttribute("BranchFishing") == true then
+			claim(player)
+		end
+	end)
+	enterSave()
 end
 
 function BaseService.start()
@@ -152,7 +205,9 @@ function BaseService.start()
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayer, player)
 	end
-	Players.CharacterAutoLoads = true
+	-- Save selection precedes spawning. Respawns are handled above so Roblox
+	-- cannot automatically create a playable character behind the selector.
+	Players.CharacterAutoLoads = false
 end
 
 return BaseService

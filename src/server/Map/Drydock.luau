@@ -257,6 +257,7 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 			TrawlerPreview = Vector3.new(0, 2.1, 54),
 			TugboatPreview = Vector3.new(0, 2.1, 54),
 			HovercraftPreview = Vector3.new(0, 2.1, 54),
+			SmallFerryPreview = Vector3.new(0, 2.1, 54),
 			SlipwayTop = Vector3.new(0, 2.1, 54),
 			LaunchWater = Vector3.new(0, -frame.Position.Y, 54),
 		}
@@ -270,6 +271,7 @@ local function buildRearDrydock(shop: Model, frame: CFrame)
 				elseif name == "TrawlerPreview" then "TrawlerDisplayOrigin"
 				elseif name == "TugboatPreview" then "TugboatDisplayOrigin"
 				elseif name == "HovercraftPreview" then "HovercraftDisplayOrigin"
+				elseif name == "SmallFerryPreview" then "SmallFerryDisplayOrigin"
 				else name,
 			Vector3.new(1, 1, 1),
 			position.X,
@@ -347,7 +349,7 @@ function Drydock.build(plaza: Model, plazaFrame: CFrame): Model
 	local existing = plaza:FindFirstChild("Drydock")
 	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == LAYOUT_VERSION then
 		-- Saved version-15 shops share this waterline origin; add the new hull without rebuilding the lift.
-		for _, attribute in { "TrawlerPreviewFrame", "TugboatPreviewFrame", "HovercraftPreviewFrame" } do
+		for _, attribute in { "TrawlerPreviewFrame", "TugboatPreviewFrame", "HovercraftPreviewFrame", "SmallFerryPreviewFrame" } do
 			if existing:GetAttribute(attribute) == nil then
 				existing:SetAttribute(attribute, existing:GetAttribute("FishingBoatPreviewFrame"))
 			end

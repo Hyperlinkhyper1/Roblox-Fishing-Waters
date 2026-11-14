@@ -9,6 +9,7 @@ local PatrolBoat = require(script.Parent.PatrolBoat)
 local Trawler = require(script.Parent.Trawler)
 local Tugboat = require(script.Parent.Tugboat)
 local Hovercraft = require(script.Parent.Hovercraft)
+local SmallFerry = require(script.Parent.SmallFerry)
 
 local DrydockLaunch = {}
 -- A purchase first raises the underwater cradle into the basin, then lowers the new hull.
@@ -16,6 +17,7 @@ DrydockLaunch.RAISE_SECONDS = 3
 local LIFT_SECONDS = 4
 local reservations = {}
 local boats = {
+	SmallFerry = { previewName = "SmallFerryPreview", frameAttribute = "SmallFerryPreviewFrame", builder = SmallFerry },
 	Trawler = {
 		previewName = "TrawlerPreview",
 		frameAttribute = "TrawlerPreviewFrame",

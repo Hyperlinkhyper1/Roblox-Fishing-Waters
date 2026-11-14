@@ -41,6 +41,7 @@ const modules = {
   WEATHERRADAR: 'src/server/Map/WeatherRadar.luau',
   FURNITURESHOP: 'src/server/Map/FurnitureShop.luau',
   FURNITURECATALOG: 'src/shared/FurnitureCatalog.luau',
+  PETSHOP: 'src/server/Map/PetShop.luau',
   HARBOUR: 'src/server/Map/Harbour.luau',
   BIOMES: 'src/shared/Biomes.luau',
 };

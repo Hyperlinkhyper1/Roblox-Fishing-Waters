@@ -574,6 +574,7 @@ function Boating.start()
 			elseif boatId == "Trawler" then "Trawler"
 			elseif boatId == "Tugboat" then "Tugboat"
 			elseif boatId == "Hovercraft" then "Hovercraft"
+			elseif boatId == "SmallFerry" then "Small ferry"
 			else "Patrol cruiser"
 		tab.Font, tab.TextSize = Enum.Font.GothamBold, 12
 		tab.Parent = tabs
@@ -954,6 +955,9 @@ function Boating.start()
 		title.Text = spec.Name
 		description.Text = if selectedBoatId == "RacingSpeedboat"
 			then "Our fastest boat with the sharpest turns. Four cockpit seats and 49 units of cargo space: 15 fewer than the fishing boat."
+			elseif
+				selectedBoatId == "SmallFerry"
+			then "Carry passengers between the main island and the city for cash. Begin a trip at the public ferry dock; four passenger seats and a sheltered helm make this a practical harbour boat."
 			elseif
 				selectedBoatId == "Tugboat"
 			then "A black harbour tug with a full rubber fender and the toughest hull in the yard. Twin thrusters pivot it on the spot; cruise at 75 studs/s with the same 64 units of cargo space as the fishing boat."

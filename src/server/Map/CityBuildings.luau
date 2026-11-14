@@ -36,9 +36,10 @@ end
 
 -- Lit windows at night. The client (CityNightLights) turns a NightGlow part to Neon in its
 -- GlowColor once the darkness passes its GlowAt, so the city lights up gradually at dusk.
-local SHOP_GLOW = { rgb(240, 196, 128), rgb(232, 208, 164), rgb(246, 178, 104), rgb(214, 220, 226) }
-local ROOM_GLOW = { rgb(214, 168, 104), rgb(196, 178, 140), rgb(150, 168, 186), rgb(222, 150, 86), rgb(176, 150, 110) }
-local OFFICE_GLOW = { rgb(132, 140, 148), rgb(150, 136, 104), rgb(118, 132, 150) }
+-- Neon shows its colour as emitted light, so these stay bright: dim greys read as unlit glass.
+local SHOP_GLOW = { rgb(255, 214, 150), rgb(250, 228, 186), rgb(255, 196, 118), rgb(234, 240, 246) }
+local ROOM_GLOW = { rgb(255, 198, 124), rgb(244, 216, 164), rgb(196, 214, 236), rgb(255, 176, 100), rgb(232, 200, 146) }
+local OFFICE_GLOW = { rgb(206, 222, 238), rgb(236, 222, 182), rgb(186, 206, 230) }
 
 local function noise(a: number, b: number): number
 	local v = math.sin(a * 12.9898 + b * 78.233) * 43758.5453
@@ -185,6 +186,12 @@ function CityBuildings.build(parent: Instance, base: CFrame, width: number, dept
 	curtain(building, base, topX, topZ, topWidth, topDepth, shoulderY, topHeight, palette, (style + 1) % 3)
 	piece(building, base, "SetbackCornice", Vector3.new(shaftWidth + 1, 1.2, shaftDepth + 1), Vector3.new(shaftX, shoulderY, shaftZ), palette.trim, M.Concrete)
 	piece(building, base, "RoofEdge", Vector3.new(topWidth + 1.4, 1.3, topDepth + 1.4), Vector3.new(topX, height, topZ), palette.metal, M.Metal)
+	-- A radio mast on one back corner, its red aviation beacon blinking after dark (CityNightLights)
+	local mastX, mastZ = topX + topWidth * 0.32, topZ - topDepth * 0.3
+	piece(building, base, "RoofMast", Vector3.new(0.5, 14, 0.5), Vector3.new(mastX, height + 7, mastZ), palette.metal, M.Metal)
+	local beacon = piece(building, base, "AviationBeacon", Vector3.new(1, 1, 1), Vector3.new(mastX, height + 14.4, mastZ), rgb(96, 24, 20), M.SmoothPlastic)
+	beacon.Shape = Enum.PartType.Ball
+	beacon:AddTag("AviationBeacon")
 
 	if style == 0 then
 		-- A pair of stone piers frames a projecting glass oriel above the street.
@@ -269,26 +276,41 @@ local GRIME = {
 	{ wall = rgb(112, 108, 100), trim = rgb(150, 144, 132), glass = rgb(38, 46, 52), roof = rgb(58, 60, 60), mat = M.Concrete },
 }
 local AWNINGS = { rgb(112, 44, 38), rgb(44, 72, 58), rgb(50, 60, 90), rgb(146, 106, 48), rgb(66, 66, 66) }
+local BLADE_SIGNS = { rgb(236, 72, 84), rgb(70, 210, 196), rgb(250, 186, 70), rgb(176, 110, 236), rgb(110, 200, 92), rgb(240, 120, 180) }
 local GROUND_FLOOR = 12
 local STOREY = 10
 
-function CityBuildings.block(parent: Instance, base: CFrame, width: number, depth: number, floors: number, variant: number): Model
+-- The colours and material a `block` of this variant is built in, for pieces built alongside it.
+function CityBuildings.blockLook(variant: number)
+	return GRIME[variant % #GRIME + 1]
+end
+
+-- `ground`, when given, leaves the ground floor open up to that height for the caller to fill
+-- (the city's player cafés, Map/CafePlots): the building starts above it, without the plinth,
+-- shopfronts, awning or blade sign that the street level otherwise gets.
+function CityBuildings.block(parent: Instance, base: CFrame, width: number, depth: number, floors: number, variant: number, ground: number?): Model
 	local building = Instance.new("Model")
 	building.Name = "CityBlock" .. variant
 	local look = GRIME[variant % #GRIME + 1]
-	local height = GROUND_FLOOR + (floors - 1) * STOREY
+	local groundFloor = ground or GROUND_FLOOR
+	local height = groundFloor + (floors - 1) * STOREY
 	building:SetAttribute("LodColor", look.wall)
 	building.Parent = parent
 
-	piece(building, base, "Body", Vector3.new(width, height, depth), Vector3.new(0, height / 2, 0), look.wall, look.mat, true)
-	piece(building, base, "Plinth", Vector3.new(width + 0.4, 1.6, depth + 0.4), Vector3.new(0, 0.8, 0), look.roof, M.Concrete)
-	local shopfronts = piece(building, base, "Shopfronts", Vector3.new(width + 0.3, 6.6, depth + 0.3), Vector3.new(0, 5.1, 0), look.glass, M.Glass)
-	if noise(variant, 1) < 0.8 then
-		nightGlow(shopfronts, SHOP_GLOW, variant, 2)
+	if ground then
+		piece(building, base, "Body", Vector3.new(width, height - ground, depth), Vector3.new(0, (height + ground) / 2, 0), look.wall, look.mat, true)
+		piece(building, base, "Fascia", Vector3.new(width + 0.5, 1.6, depth + 0.5), Vector3.new(0, ground + 0.8, 0), look.trim, M.Concrete)
+	else
+		piece(building, base, "Body", Vector3.new(width, height, depth), Vector3.new(0, height / 2, 0), look.wall, look.mat, true)
+		piece(building, base, "Plinth", Vector3.new(width + 0.4, 1.6, depth + 0.4), Vector3.new(0, 0.8, 0), look.roof, M.Concrete)
+		local shopfronts = piece(building, base, "Shopfronts", Vector3.new(width + 0.3, 6.6, depth + 0.3), Vector3.new(0, 5.1, 0), look.glass, M.Glass)
+		if noise(variant, 1) < 0.8 then
+			nightGlow(shopfronts, SHOP_GLOW, variant, 2)
+		end
+		piece(building, base, "Fascia", Vector3.new(width + 0.5, 1.6, depth + 0.5), Vector3.new(0, 9.4, 0), look.trim, M.Concrete)
 	end
-	piece(building, base, "Fascia", Vector3.new(width + 0.5, 1.6, depth + 0.5), Vector3.new(0, 9.4, 0), look.trim, M.Concrete)
 	for floor = 1, floors - 1 do
-		local y = GROUND_FLOOR + (floor - 1) * STOREY + 5
+		local y = groundFloor + (floor - 1) * STOREY + 5 + (if ground then 1.6 else 0)
 		local band = piece(building, base, "WindowBand", Vector3.new(width + 0.3, 4.4, depth + 0.3), Vector3.new(0, y, 0), look.glass, M.Glass)
 		-- Some flats are home, some aren't: about half the floors light up
 		if noise(variant, floor * 3 + 5) < 0.5 then
@@ -296,16 +318,16 @@ function CityBuildings.block(parent: Instance, base: CFrame, width: number, dept
 		end
 	end
 	if floors > 1 then
-		local upper = height - GROUND_FLOOR
+		local upper = height - groundFloor
 		local columns = math.max(2, math.floor(width / 12))
 		for i = 1, columns - 1 do
 			local x = -width / 2 + i * width / columns
-			piece(building, base, "Pier", Vector3.new(1.3, upper, depth + 0.6), Vector3.new(x, GROUND_FLOOR + upper / 2, 0), look.wall, look.mat)
+			piece(building, base, "Pier", Vector3.new(1.3, upper, depth + 0.6), Vector3.new(x, groundFloor + upper / 2, 0), look.wall, look.mat)
 		end
 		local rows = math.max(2, math.floor(depth / 12))
 		for i = 1, rows - 1 do
 			local z = -depth / 2 + i * depth / rows
-			piece(building, base, "SidePier", Vector3.new(width + 0.6, upper, 1.3), Vector3.new(0, GROUND_FLOOR + upper / 2, z), look.wall, look.mat)
+			piece(building, base, "SidePier", Vector3.new(width + 0.6, upper, 1.3), Vector3.new(0, groundFloor + upper / 2, z), look.wall, look.mat)
 		end
 	end
 	piece(building, base, "Cornice", Vector3.new(width + 1, 1.4, depth + 1), Vector3.new(0, height + 0.3, 0), look.trim, M.Concrete)
@@ -324,8 +346,17 @@ function CityBuildings.block(parent: Instance, base: CFrame, width: number, dept
 		tank.Shape = Enum.PartType.Cylinder
 		tank.CFrame = tank.CFrame * CFrame.Angles(0, 0, math.pi / 2)
 	end
-	if variant % 2 == 1 then
+	if not ground and variant % 2 == 1 then
 		piece(building, base, "Awning", Vector3.new(width * 0.7, 0.5, 3.2), Vector3.new(0, 9.2, depth / 2 + 1.7), AWNINGS[variant % #AWNINGS + 1], M.Fabric)
+	end
+	if not ground and floors > 1 and variant % 3 ~= 1 then
+		-- A projecting shop sign above the fascia, lit in its own colour after dark
+		local color = BLADE_SIGNS[variant % #BLADE_SIGNS + 1]
+		local sign = piece(building, base, "BladeSign", Vector3.new(0.5, 5.5, 2.6), Vector3.new((if variant % 2 == 0 then 1 else -1) * (width / 2 - 2.2), GROUND_FLOOR + 3.2, depth / 2 + 1.6), color:Lerp(rgb(40, 40, 40), 0.35), M.SmoothPlastic)
+		sign:AddTag("NightGlow")
+		sign:SetAttribute("GlowColor", color)
+		sign:SetAttribute("GlowAt", 0.15 + noise(variant, 41) * 0.15)
+		piece(building, base, "BladeSignBracket", Vector3.new(0.3, 0.3, 3.4), Vector3.new((if variant % 2 == 0 then 1 else -1) * (width / 2 - 2.2), GROUND_FLOOR + 6.1, depth / 2 + 1.7), look.roof, M.Metal)
 	end
 	if variant % 7 == 3 and width > 24 then
 		-- A tired rooftop hoarding faces the street

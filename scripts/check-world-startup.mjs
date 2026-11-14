@@ -116,7 +116,10 @@ dependencies.Mediterranean = {
 }
 dependencies.Seabed = {shelf=function() record("shelf") end}
 dependencies.SeabedDetails = {ensure=function() record("seabed") end}
-dependencies.ModernCity = {VERSION=4, build=function() record("city") end}
+dependencies.FerryDocks = {ensureMain=function() record("ferry-dock") end, ensureCity=function() record("city-ferry-stop") end}
+dependencies.ModernCity = {VERSION=4, build=function() record("city") end, trimRendering=function() end}
+dependencies.CityDetail = {prepare=function() end}
+dependencies.SmallCities = {reserve=function() record("reserve-small-cities") end, ensure=function() record("small-cities") end}
 dependencies.PirateCove = {build=function() record("pirate-cove") end}
 dependencies.MetroStations = {ensureCity=function() record("city-metro") end}
 dependencies.Lod = {build=function() record("lod") end, prepareStreaming=function() record("streaming") end, serve=function() end}
@@ -138,7 +141,7 @@ local root = Map.build(function(folder)
   check(index("normal-scenery") == math.huge, "Surrounding islands must not gate readiness")
   record("ready")
 end, function() end)
-for _, name in {"normal-scenery", "swamp", "tropical", "volcanic", "ice", "openSea", "seabed", "lod"} do
+for _, name in {"normal-scenery", "swamp", "tropical", "volcanic", "ice", "openSea", "small-cities", "seabed", "lod"} do
   check(index("ready") < index(name) and index(name) < math.huge, "Retain deferred world feature " .. name)
 end
 events = {}
@@ -147,8 +150,15 @@ check(index("lod") < math.huge, "Studio bake without a callback must still finis
 check(root.Parent == nil, "Explicit rebuild must replace the previous map")
 events = {}
 Map.prepareStreaming(workspace:FindFirstChild("Map"))
+check(index("ferry-dock") < index("streaming"), "Install the public ferry dock before streaming is prepared")
 check(index("house-collision") < index("streaming"), "Simplify saved house collisions before streaming starts")
 check(index("pergolas") < index("house-collision") and index("balconies") < index("house-collision"), "Collapse saved hitboxes before house collisions")
+events = {}
+local bakedCity = object("Model", "Modern City", workspace:FindFirstChild("Map"))
+bakedCity:SetAttribute("CityVersion", dependencies.ModernCity.VERSION)
+Map.ensureCity(workspace:FindFirstChild("Map"))
+check(index("city") == math.huge, "A current baked city must not be rebuilt")
+check(index("city-ferry-stop") < math.huge, "Install the ferry stop in a baked city")
 print("Map startup: " .. checks .. " checks passed")
 `);
 
@@ -363,9 +373,9 @@ if mode == "baked" then
 end
 local modules = {Biomes=Biomes}
 local script = {ServerUpdates="ServerUpdates", ServerHealth="ServerHealth", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
-  BoatService="BoatService", FishingService="FishingService", WeatherService="WeatherService",
-  AnglerService="AnglerService", LeaderboardService="LeaderboardService"}
-for _, name in {"SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "BoatFurnitureService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "BuildingService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "PedestrianService", "OfficeComputerService", "StockMarketService", "OxygenService", "DashboardService"} do
+  BoatService="BoatService", FerryService="FerryService", FishingService="FishingService", WeatherService="WeatherService",
+  AnglerService="AnglerService", LeaderboardService="LeaderboardService", CompanyLeaderboardService="CompanyLeaderboardService"}
+for _, name in {"NpcCollision", "NpcFisherService", "SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "BoatFurnitureService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "BuildingService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "PedestrianService", "OfficeComputerService", "StockMarketService", "ElectionService", "CafeService", "CafeTutorialService", "BranchService", "WebShopService", "TechStoreService", "OxygenService", "DashboardService"} do
   script[name] = name
   modules[name] = {start=function() record(name) end}
 end
@@ -385,19 +395,23 @@ task.defer = function(callback, ...)
   table.insert(deferred, callback)
 end
 local function ready() return ReplicatedStorage:GetAttribute("FishingWatersWorldReady") == true end
-for _, name in {"ServerUpdates", "BaseService", "BoatService", "FishingService", "WeatherService", "AnglerService", "LeaderboardService", "AnglerService", "LeaderboardService"} do
+for _, name in {"ServerUpdates", "BaseService", "BoatService", "FerryService", "FishingService", "WeatherService", "AnglerService", "LeaderboardService", "CompanyLeaderboardService", "AnglerService", "LeaderboardService"} do
   modules[name] = {start=function()
     check(not ready(), "Services must start before world readiness")
     if name == "BaseService" then
       check(index("BoatService") < math.huge and index("FishingService") < math.huge, "Install inventory listeners before characters spawn")
       check(index("LeaderboardService") < math.huge, "Install plaza boards on generated and baked maps before spawning")
       check(root:FindFirstChild("HarbourSpawn") ~= nil, "Never spawn without safe ground")
-      Players.CharacterAutoLoads = true
+      Players.CharacterAutoLoads = false
     end
     record(name)
   end}
 end
 modules.ServerHealth = {start=function() check(not ready(), "Crash recorder must start before the map"); record("ServerHealth") end}
+modules.BoatService.openSaves = function()
+  check(not ready() and index("harbour-built") == math.huge and index("streaming") == math.huge, "Saves must open before the harbour is built")
+  record("saves-open")
+end
 local function cosmetic(name)
   check(ready(), name .. " must not delay the playable harbour")
   record(name)
@@ -415,6 +429,7 @@ modules.Map = {
   prepareStreaming=function() check(not ready(), "Fix harbour streaming before readiness"); record("streaming") end,
   ensureCompanyIslands=function() check(not ready(), "Install company islands before spawning"); record("company-islands") end,
   ensureCity=function() cosmetic("city") end,
+  ensureSmallCities=function() cosmetic("small-cities") end,
   ensurePirateCove=function() cosmetic("pirate-cove") end,
   ensureSeabedDetails=function() cosmetic("seabed") end,
   ensureLod=function() cosmetic("lod") end,
@@ -439,6 +454,7 @@ end
 ${server}
 for _, callback in deferred do callback() end
 if mode ~= "require-error" then
+  check(index("saves-open") < index("BoatService"), "Save selection opens before the wallet service starts")
   check(index("ScaleModels") < math.huge, "Build the admin scale models even when startup fails part-way")
 end
 if mode == "critical-error" or mode == "require-error" then
@@ -446,16 +462,17 @@ if mode == "critical-error" or mode == "require-error" then
   check(ReplicatedStorage:GetAttribute("FishingWatersStartupError"), "Critical failure must reach the loading screen")
   check(not ReplicatedStorage:GetAttribute("FishingWatersGenerationComplete"), "Failed generation cannot be complete")
 elseif mode == "distant-error" then
-  check(ready() and Players.CharacterAutoLoads, "A distant scenery error must not revoke a usable harbour")
+  check(ready() and not Players.CharacterAutoLoads, "A distant scenery error must preserve a usable harbour and save-before-spawn policy")
   check(ReplicatedStorage:GetAttribute("FishingWatersGenerationError"), "Report incomplete distant generation")
   check(not ReplicatedStorage:GetAttribute("FishingWatersStartupError"), "A distant failure is not a harbour startup failure")
 else
-  check(ready() and Players.CharacterAutoLoads, "Completed harbour must become playable")
+  check(ready() and not Players.CharacterAutoLoads, "Completed harbour must become playable without bypassing save selection; last step: " .. tostring(ReplicatedStorage:GetAttribute("FishingWatersStartupStep")))
   check(ReplicatedStorage:GetAttribute("FishingWatersGenerationComplete"), "Full generation must finish")
   check(ReplicatedStorage:GetAttribute("FishingWatersLoadProgress") == 1, "Server progress must finish")
   if mode == "generated" then
     check(index("ensureBases") == math.huge and index("ensureBoating") == math.huge, "Fresh builders must avoid duplicate legacy repairs")
   else
+    check(index("city") < math.huge, "Prepare the city on baked maps")
     for _, name in {"ensurePlazaPaving", "ensureBoating", "ensureFishing", "ensureBases", "ensureMetro"} do
       check(index(name) < index("BaseService"), "Retain required baked-map migration " .. name)
     end
@@ -465,7 +482,7 @@ print("Server startup ${mode}: " .. checks .. " checks passed")
 `);
   }
 
-  const baseService = (await readFile(join(root, 'src/server/BaseService.luau'), 'utf8')).replace('require(script.Parent.BoatService)', '{getProfile=function() return nil end}');
+  const baseService = (await readFile(join(root, 'src/server/BaseService.luau'), 'utf8')).replace('require(script.Parent.BoatService)', '{getProfile=function(player) return player.TestProfile end}');
   for (const withBase of [true, false]) {
     await run('spawn-' + (withBase ? 'base' : 'plaza'), prelude + `
 local threads = {}
@@ -482,13 +499,38 @@ local function resumePlacement()
 end
 local function signal()
   local callbacks = {}
-  return {
-    Connect=function(_, callback) table.insert(callbacks, callback) end,
-    Fire=function(_, ...)
-      for _, callback in callbacks do task.spawn(callback, ...) end
-    end,
-  }
+  local event = {}
+  function event:Connect(callback)
+    local connection = {Connected=true}
+    function connection:Disconnect() self.Connected=false end
+    table.insert(callbacks, {callback=callback, connection=connection})
+    return connection
+  end
+  function event:Once(callback)
+    local connection
+    connection = self:Connect(function(...) connection:Disconnect(); callback(...) end)
+    return connection
+  end
+  function event:Fire(...)
+    for _, entry in table.clone(callbacks) do
+      if entry.connection.Connected then task.spawn(entry.callback, ...) end
+    end
+  end
+  return event
 end
+function methods:GetAttributeChangedSignal(key)
+  self._attributeSignals = self._attributeSignals or {}
+  self._attributeSignals[key] = self._attributeSignals[key] or signal()
+  return self._attributeSignals[key]
+end
+function methods:SetAttribute(key, value)
+  if self._attributes[key] == value then return end
+  self._attributes[key] = value
+  self:GetAttributeChangedSignal(key):Fire()
+end
+local delayed = {}
+task.delay = function(seconds, callback) table.insert(delayed, {seconds=seconds, callback=callback}) end
+Players._children, Players.RespawnTime = {}, 3
 local positionMt = {__sub=function(a, b) return {Magnitude=math.abs(a.X - b.X)} end}
 local function position(x) return setmetatable({X=x}, positionMt) end
 local map = object("Folder", "Map", workspace)
@@ -501,19 +543,25 @@ base:SetAttribute("OwnerUserId", 0)
 local point = object("SpawnLocation", "SpawnPoint", base)
 point.Position = position(200)
 point.CFrame = setmetatable({Position=point.Position}, {__add=function(frame) return frame end})
-local player = object("Player", "Player")
+local player = object("Player", "Player", Players)
 player.UserId, player.DisplayName = 42, "Tester"
 player.CharacterAdded = signal()
-function player:GetAttributeChangedSignal() return signal() end
+player:SetAttribute("BoatDataStatus", "Selecting")
 local function character()
   local item = object("Model", "Character", workspace)
   local root = object("BasePart", "HumanoidRootPart", item)
+  local humanoid = object("Humanoid", "Humanoid", item)
+  humanoid.Died = signal()
   root.Position = position(0)
   function item:WaitForChild(name) return self:FindFirstChild(name) end
   function item:PivotTo(frame) root.Position = frame.Position; record("relocated") end
   return item
 end
-player.Character = character()
+function player:LoadCharacter()
+  self.loads = (self.loads or 0) + 1
+  self.Character = character()
+  self.CharacterAdded:Fire(self.Character)
+end
 Players.PlayerAdded, Players.PlayerRemoving = signal(), signal()
 function Players:GetPlayers() return {player} end
 local CollectionService = {GetTagged=function() return ${withBase ? '{base}' : '{}'} end}
@@ -525,7 +573,11 @@ ${baseService}
 end)()
 Service.start()
 local expected = ${withBase ? 'point' : 'fallback'}
+check(player.Character == nil and not player.loads and player.RespawnLocation == nil, "A player choosing a save must not receive a character or claim property")
+check(not Players.CharacterAutoLoads and player:GetAttribute("FishingWatersSpawnReady") == false, "Save selection keeps automatic spawning and loader entry blocked")
+player:SetAttribute("BoatDataStatus", "Ready")
 check(player.RespawnLocation == expected, "Choose the ${withBase ? 'claimed base' : 'fallback plaza'} explicitly")
+check(player.loads == 1, "Selecting a confirmed save creates exactly one character")
 check(player:GetAttribute("FishingWatersSpawnReady") == false, "Root arrival must not precede final spawn readiness")
 check(index("relocated") == math.huge, "Placement must still be pending during the initial yield")
 resumePlacement()
@@ -541,6 +593,19 @@ check(player:GetAttribute("FishingWatersSpawnReady") == false, "A stale characte
 player.CharacterAdded:Fire(player.Character)
 resumePlacement()
 check(player:GetAttribute("FishingWatersSpawnReady") == true, "The replacement's own placement must release it")
+local dead = player.Character
+dead:FindFirstChild("Humanoid").Died:Fire()
+check(#delayed == 1 and delayed[1].seconds == Players.RespawnTime, "Manual respawn waits the configured Roblox respawn delay")
+local before = player.loads
+table.remove(delayed, 1).callback()
+check(player.loads == before + 1 and player.Character ~= dead, "A confirmed save respawns after death while auto-loading stays disabled")
+resumePlacement()
+check(player:GetAttribute("FishingWatersSpawnReady") == true, "Manual respawn completes the placement handshake")
+player.Character:FindFirstChild("Humanoid").Died:Fire()
+player:SetAttribute("BoatDataStatus", "Unavailable")
+before = player.loads
+table.remove(delayed, 1).callback()
+check(player.loads == before, "Loss of save access blocks a pending respawn")
 print("Server spawn ${withBase ? 'base' : 'plaza'}: " .. checks .. " checks passed")
 `);
   }
@@ -555,6 +620,17 @@ local function signal()
     end,
   }
 end
+function methods:GetAttributeChangedSignal(key)
+  self._attributeSignals = self._attributeSignals or {}
+  self._attributeSignals[key] = self._attributeSignals[key] or signal()
+  return self._attributeSignals[key]
+end
+function methods:SetAttribute(key, value)
+  if self._attributes[key] == value then return end
+  self._attributes[key] = value
+  self:GetAttributeChangedSignal(key):Fire()
+end
+Players._children = {}
 task.spawn = function(callback, ...) callback(...) end
 local map = object("Folder", "Map", workspace)
 local fallback = object("SpawnLocation", "HarbourSpawn", map)
@@ -568,11 +644,11 @@ for id = 1, 15 do
   table.insert(tagged, 1, base)
 end
 local function player(id)
-  local item = object("Player", "Player" .. id)
+  local item = object("Player", "Player" .. id, Players)
   item.UserId, item.DisplayName = 1000 + id, "Player " .. id
   item.CharacterAdded = signal()
-  function item:GetAttributeChangedSignal() return signal() end
-  function item:LoadCharacter() self.loaded = true end
+  item:SetAttribute("BoatDataStatus", "Selecting")
+  function item:LoadCharacter() self.loaded = true; self.loads = (self.loads or 0) + 1 end
   return item
 end
 local occupants = {}
@@ -587,6 +663,10 @@ local Service = (function()
 ${baseService}
 end)()
 Service.start()
+for id, occupant in occupants do
+  check(not occupant.loaded and bases[id]:GetAttribute("OwnerUserId") == 0, "Initial save selection must not reserve any of the 15 bases")
+end
+for _, occupant in occupants do occupant:SetAttribute("BoatDataStatus", "Ready") end
 local claimed = {}
 for id, occupant in occupants do
   local baseId = occupant:GetAttribute("BaseId")
@@ -597,9 +677,11 @@ for id, occupant in occupants do
   check(occupant.RespawnLocation == bases[baseId]:FindFirstChild("SpawnPoint"), "Each player must respawn at their own base")
   check(occupant.loaded, "Players already in the lobby must receive a character")
 end
-check(Players.CharacterAutoLoads, "Enable normal respawns after assigning the lobby")
+check(not Players.CharacterAutoLoads, "Keep automatic spawning disabled after assigning the lobby")
 local overflow = player(16)
 Players.PlayerAdded:Fire(overflow)
+check(not overflow.loaded, "An overflow arrival must still choose a save first")
+overflow:SetAttribute("BoatDataStatus", "Ready")
 check(overflow.RespawnLocation == fallback and overflow:GetAttribute("BaseId") == nil,
   "A full lobby must use the plaza without taking another player's base")
 for id, occupant in occupants do
@@ -610,6 +692,7 @@ Players.PlayerRemoving:Fire(occupants[releasedId])
 check(bases[releasedId]:GetAttribute("OwnerUserId") == 0, "Leaving must free a claimed base")
 local replacement = player(17)
 Players.PlayerAdded:Fire(replacement)
+replacement:SetAttribute("BoatDataStatus", "Ready")
 check(replacement:GetAttribute("BaseId") == releasedId, "The next join must reclaim the released slot")
 check(bases[releasedId]:GetAttribute("OwnerUserId") == replacement.UserId, "Reclaimed ownership must belong to the new player")
 check(replacement.RespawnLocation == bases[releasedId]:FindFirstChild("SpawnPoint"), "Reclaimed slots must supply the new player's respawn")
@@ -620,8 +703,24 @@ for id, occupant in occupants do
 end
 local fullAgain = player(18)
 Players.PlayerAdded:Fire(fullAgain)
+fullAgain:SetAttribute("BoatDataStatus", "Ready")
 check(fullAgain.RespawnLocation == fallback and fullAgain:GetAttribute("BaseId") == nil,
   "Reclaimed capacity must leave the lobby full again")
+for _, occupant in occupants do Players.PlayerRemoving:Fire(occupant) end
+Players.PlayerRemoving:Fire(replacement)
+bases[3]:SetAttribute("MultiplayerPlot", true)
+local enlarged = player(19)
+enlarged.TestProfile = {SaveInfo={Multiplayer=false, PlotExpanded=true}, Angler={ShopSign=""}}
+Players.PlayerAdded:Fire(enlarged)
+enlarged:SetAttribute("BoatDataStatus", "Ready")
+check(enlarged:GetAttribute("BaseId") == 3 and enlarged:GetAttribute("MultiplayerPlot") == true,
+  "Expanded saved plots only claim verified larger property geometry, even after multiplayer is disabled")
+check(enlarged.RespawnLocation == bases[3]:FindFirstChild("SpawnPoint"), "Expanded saves spawn on their larger assigned plot")
+local ordinary = player(20)
+Players.PlayerAdded:Fire(ordinary)
+ordinary:SetAttribute("BoatDataStatus", "Ready")
+check(ordinary:GetAttribute("BaseId") == 1 and not ordinary:GetAttribute("MultiplayerPlot"),
+  "Ordinary saves retain their original plot size and next available base")
 print("15-player base assignment: " .. checks .. " checks passed")
 `);
 } finally {

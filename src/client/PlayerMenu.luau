@@ -3054,6 +3054,12 @@ function Menu.start()
 				"Animate Black Hole Backpacks: spinning accretion disk, fish falling in and stardust. Off by default on phones.",
 				"Equipmentbag"
 			)
+			settingRow(
+				"ParliamentPerformance",
+				"Parliament performance mode",
+				"Draw the parliament's furniture and people as plain blocks and leave out its ornament and the chambers' Aura.",
+				"Settings"
+			)
 		elseif settingTab == "Audio" then
 			settingRow("MasterVolume", "Master volume", "Overall game audio.", "Audio")
 			settingRow("MusicVolume", "Music", "Volume for music tracks.", "Music")

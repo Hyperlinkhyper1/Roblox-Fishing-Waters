@@ -40,6 +40,7 @@ function Service.recordCatch(
 	local ok, message = BoatService.updateProgress(player, function(profile)
 		local emptyHand = profile.Angler.Hand == nil
 		local backpackLayout = BackpackCatalog.layoutFor(player, profile.Angler.BackpackId)
+		local xpBefore = profile.Angler.Stats.TotalXP
 		profile.Angler, destination = Data.recordCatch(
 			profile.Angler,
 			fishId,
@@ -57,6 +58,12 @@ function Service.recordCatch(
 			perfectCatch
 		)
 		count = profile.Angler.Catches[fishId].Count
+		-- The governing party's XP policy (ElectionService publishes PolicyXP; 0 when none).
+		local xpPolicy = ReplicatedStorage:GetAttribute("PolicyXP")
+		if type(xpPolicy) == "number" and xpPolicy > 0 then
+			local stats = profile.Angler.Stats
+			stats.TotalXP += math.floor((stats.TotalXP - xpBefore) * xpPolicy + 0.5)
+		end
 		autoStored = false
 		-- The secret stays in hand so the angler sees it and can choose to Use it.
 		local secret = Catalog.Fish[fishId] ~= nil and Catalog.Fish[fishId].Secret == true

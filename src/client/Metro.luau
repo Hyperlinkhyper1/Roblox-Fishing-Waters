@@ -18,6 +18,8 @@ local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> 
 end
 local Metro = {}
 local started = false
+local BUILD_PARTS_PER_STEP = 8
+local POSE_INTERVAL = 1 / 30
 
 local function make(class, parent, props)
 	local item = Instance.new(class)
@@ -113,20 +115,36 @@ function Metro.start()
 		local train = trains[stop]
 		if train then
 			if train.model then train.model:Destroy() end
+			if train.partial then train.partial:Destroy() end
 			trains[stop] = nil
 		end
 	end)
 	for _, stop in CollectionService:GetTagged("MetroStop") do added(stop) end
-	-- A preloaded destination can arrive while the camera is still at the source.
-	-- Build only nearby trains, outside the render callback, one per Heartbeat.
+	-- Build only nearby trains. Their hundreds of parts are registered in small
+	-- groups across frames, rather than parenting a whole train on arrival.
 	RunService.Heartbeat:Connect(profiled("Metro", function()
 		local camera = workspace.CurrentCamera
 		if not camera or transit:GetAttribute("Ready") ~= true then return end
-		for _, train in trains do
-			if not train.model and (camera.CFrame.Position - train.dock.Position).Magnitude < 650 then
-				debug.profilebegin("Metro/Build")
-				train.model, train.doors = Train.build(visuals, train.dock, false)
-				debug.profileend()
+		for stop, train in trains do
+			if not train.model and not train.building and (camera.CFrame.Position - train.dock.Position).Magnitude < 650 then
+				train.building = true
+				task.spawn(function()
+					local count = 0
+					local ok, model, doors = pcall(Train.build, visuals, train.dock, false, function(partial)
+						train.partial = partial
+						if trains[stop] ~= train then error("Station streamed out", 0) end
+						count += 1
+						if count % BUILD_PARTS_PER_STEP == 0 then task.wait() end
+					end)
+					train.building = false
+					if ok and trains[stop] == train then
+						train.model, train.doors = model, doors
+					elseif train.partial then
+						train.partial:Destroy()
+						if trains[stop] == train then warn("[Metro] Could not build train: " .. tostring(model)) end
+					end
+					train.partial = nil
+				end)
 				return
 			end
 		end
@@ -142,10 +160,11 @@ function Metro.start()
 			local nearby = focus and (focus - train.dock.Position).Magnitude < 650
 			-- Keep the model registered. Reparenting hundreds of parts every arrival
 			-- causes avoidable render-registration spikes on weaker clients.
-			if train.model and (train.active ~= active or (nearby and (train.offset ~= state.offset or train.open ~= state.doors))) then
+			if train.model and (train.active ~= active or (nearby and now >= (train.nextPose or 0) and (train.offset ~= state.offset or train.open ~= state.doors))) then
 				local frame = if active then Schedule.frame(train.dock, now) else train.dock * CFrame.new(0, -100, 0)
 				Train.pose(train.model, train.doors, frame, state.doors)
 				train.active, train.offset, train.open = active, state.offset, state.doors
+				train.nextPose = now + POSE_INTERVAL
 			end
 			if second ~= lastSecond then
 				local message = if not active then "Service preparing" elseif state.boarding then "Doors open · Departs in " .. state.seconds .. "s"

@@ -51,8 +51,54 @@ local FORCED = { evict = true, force = true }
 local building = false
 local hydrated: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
 
+-- Skins of species no fish in the game is wearing (caught fish sold, menus
+-- closed) are rebuilt on demand, so they give their meshes back when another
+-- species can't fit. Fish held outside the game are re-skinned when they return.
+local function releaseIdleSkins(): number
+	local inUse: { [string]: boolean } = {}
+	for model in hydrated do
+		local fishId = model:GetAttribute("LoftFish")
+		if model.Parent and type(fishId) == "string" then
+			inUse[fishId] = true
+		end
+	end
+	local freed = 0
+	for fishId, bands in skins do
+		if bands and not inUse[fishId] then
+			for _, built in bands do
+				built.part:Destroy()
+				built.mesh:Destroy()
+				freed += 1
+			end
+			skins[fishId] = nil
+			for model in hydrated do
+				if model:GetAttribute("LoftFish") == fishId then
+					hydrated[model] = nil
+				end
+			end
+		end
+	end
+	return freed
+end
+EditableMeshBudget.onReclaim("IdleFishSkins", releaseIdleSkins)
+
+-- One line on what this client holds, for the mesh test.
+local function cacheStatus(): string
+	local species, meshes = 0, 0
+	for _, bands in skins do
+		if bands then
+			species += 1
+			for _ in bands do
+				meshes += 1
+			end
+		end
+	end
+	return string.format("Cached fish skins: %d species, %d meshes.", species, meshes)
+end
+
 -- One band of the skin as a mesh part, its vertices centred on its bounds.
-local function buildBand(rings, band, options): (MeshPart?, Vector3?, EditableMesh?, string?)
+-- Built in the species' shared scratch mesh; only the fixed copy is kept.
+local function buildBand(scratch: EditableMesh, rings, band, options): (MeshPart?, Vector3?, EditableMesh?, string?)
 	local scale = FishModels.SCALE
 	local steps = math.max(2, math.ceil((band.to - band.from) * ANGLE_STEPS))
 	local points, normals = {}, {}
@@ -85,15 +131,14 @@ local function buildBand(rings, band, options): (MeshPart?, Vector3?, EditableMe
 	end
 	local center = (low + high) / 2
 
-	local mesh = EditableMeshBudget.create(options)
-	if not mesh then
-		return nil, nil, nil, EditableMeshBudget.failureReason() or "EditableMesh allocation failed"
-	end
+	local mesh: EditableMesh? = nil
 	local ok, part = pcall(function()
+		local scratchMesh = scratch
+		EditableMeshBudget.clear(scratchMesh)
 		local vertexIds, normalIds = {}, {}
 		for index, point in points do
-			vertexIds[index] = mesh:AddVertex(point - center)
-			normalIds[index] = mesh:AddNormal(normals[index])
+			vertexIds[index] = scratchMesh:AddVertex(point - center)
+			normalIds[index] = scratchMesh:AddNormal(normals[index])
 		end
 		-- Wound so (b - a) x (c - a) faces outward, the side Roblox draws.
 		local function face(a: number, b: number, c: number)
@@ -105,8 +150,8 @@ local function buildBand(rings, band, options): (MeshPart?, Vector3?, EditableMe
 			if cross:Dot(normals[a] + normals[b] + normals[c]) < 0 then
 				b, c = c, b
 			end
-			local id = mesh:AddTriangle(vertexIds[a], vertexIds[b], vertexIds[c])
-			mesh:SetFaceNormals(id, { normalIds[a], normalIds[b], normalIds[c] })
+			local id = scratchMesh:AddTriangle(vertexIds[a], vertexIds[b], vertexIds[c])
+			scratchMesh:SetFaceNormals(id, { normalIds[a], normalIds[b], normalIds[c] })
 		end
 		for _, side in sides do
 			local grid = grids[side]
@@ -123,7 +168,7 @@ local function buildBand(rings, band, options): (MeshPart?, Vector3?, EditableMe
 			end
 		end
 
-		mesh = EditableMeshBudget.fixed(mesh, options)
+		mesh = EditableMeshBudget.fixed(scratchMesh, options, true)
 		if not mesh then
 			return nil
 		end
@@ -167,10 +212,22 @@ local function skin(fishId: string, force: boolean?)
 		return false
 	end
 	building = true
+	local options = if force then FORCED else ALLOCATE
+	-- One dynamic mesh for the whole species: every band is built in it and
+	-- copied out at fixed size, so the device budget never holds more than one.
+	local scratch = EditableMeshBudget.create(options)
+	if not scratch then
+		skins[fishId] = false
+		skinFailedAt[fishId] = os.clock()
+		skinErrors[fishId] = "Scratch mesh: " .. (EditableMeshBudget.failureReason() or "EditableMesh allocation failed")
+		building = false
+		return false
+	end
 	local bands = {}
 	for _, band in bandsFor(spec) do
-		local ok, part, center, mesh, reason = pcall(buildBand, spec.rings, band, if force then FORCED else ALLOCATE)
+		local ok, part, center, mesh, reason = pcall(buildBand, scratch, spec.rings, band, options)
 		if not ok or not part or not center or not mesh then
+			scratch:Destroy()
 			for _, built in bands do
 				built.part:Destroy()
 				built.mesh:Destroy()
@@ -183,6 +240,7 @@ local function skin(fishId: string, force: boolean?)
 		end
 		bands[band.name] = { part = part, mesh = mesh, size = part.Size, offset = center - spec.anchorPosition }
 	end
+	scratch:Destroy()
 	skins[fishId] = bands
 	skinErrors[fishId] = nil
 	building = false
@@ -209,10 +267,10 @@ function FishMeshes.diagnose(): string
 	end
 	local ok, result = pcall(skin, "RainbowTrout", true)
 	if not ok then
-		return "Mesh test FAILED: " .. tostring(result) .. " " .. EditableMeshBudget.status()
+		return "Mesh test FAILED: " .. tostring(result) .. " " .. EditableMeshBudget.status() .. " " .. cacheStatus()
 	end
 	if not result then
-		return "Mesh test FAILED: " .. (skinErrors.RainbowTrout or "unknown failure") .. " " .. EditableMeshBudget.status()
+		return "Mesh test FAILED: " .. (skinErrors.RainbowTrout or "unknown failure") .. " " .. EditableMeshBudget.status() .. " " .. cacheStatus()
 	end
 	retryUnskinned(true)
 	local total, skinned, pending = 0, 0, 0
@@ -233,7 +291,7 @@ function FishMeshes.diagnose(): string
 	end
 	local summary = string.format("Rainbow Trout skin available. Client fish: %d; with skins: %d; without skins: %d.", total, skinned, pending)
 	if firstFailure then
-		return "Mesh test PARTIAL: " .. summary .. " Failure: " .. firstFailure .. " " .. EditableMeshBudget.status()
+		return "Mesh test PARTIAL: " .. summary .. " Failure: " .. firstFailure .. " " .. EditableMeshBudget.status() .. " " .. cacheStatus()
 	end
 	if pending > 0 then
 		return "Mesh test PARTIAL: " .. summary .. " Some fish may still be loading."

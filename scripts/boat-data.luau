@@ -215,6 +215,9 @@ check(trawlerAgainResult == "AlreadyOwned" and trawlerAgain.Cash == 0, "Repeat t
 local trawlerPoor, trawlerPoorResult = BoatData.purchase({ Version = 1, Cash = 17499, OwnedBoats = {} }, "Trawler")
 check(trawlerPoorResult == "InsufficientFunds" and trawlerPoor.Cash == 17499 and not trawlerPoor.OwnedBoats.Trawler, "Insufficient trawler funds preserve wallet")
 check(Catalog.Tugboat.Price == 17500 and Catalog.Tugboat.ForwardSpeed == 75, "Tugboat has requested price and speed")
+check(Catalog.SmallFerry.Price == 10500 and Catalog.SmallFerry.Seats == 5, "Small ferry costs 10,500 and seats a driver and four passengers")
+local ferryOwner, ferryResult = BoatData.purchase({ Version = 1, Cash = 10500, OwnedBoats = {} }, "SmallFerry")
+check(ferryResult == "Purchased" and ferryOwner.Cash == 0 and ferryOwner.OwnedBoats.SmallFerry, "Small ferry purchase charges the wallet and saves ownership")
 check(Catalog.Tugboat.Hold == Catalog.FishingBoat.Hold, "Tugboat carries the fishing boat hold")
 check(
 	Catalog.Hovercraft.Price == 4000

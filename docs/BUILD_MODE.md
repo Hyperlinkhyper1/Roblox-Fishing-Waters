@@ -19,6 +19,8 @@ The editor follows the Restaurant Tycoon 3 pattern: everything you place lives i
 
 Furniture is grouped into **All**, **Shop counters**, **Kitchen**, **Storage**, **Tables & seating**, **Lighting**, **Plants**, **Nautical**, and **Decorations** chips. Chips only show groups you have unplaced stock in, with counts. Selected furniture can be rotated in place, moved or picked up.
 
+Every base comes with a decorative **Workbench** in the storage room. It takes **2×1 grid cells**, can be moved, rotated or picked up, and currently has no gameplay use. Existing bases receive it in a free storage-room spot, or in furniture stock if the room is full.
+
 Stairs are no longer offered for new placement; existing saved stairs remain intact.
 
 ## Construction tools

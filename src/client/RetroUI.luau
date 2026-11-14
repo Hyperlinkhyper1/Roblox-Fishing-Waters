@@ -1,6 +1,8 @@
--- Widgets for the office PC's green-phosphor screen (OfficeComputer, StockApp). Everything is
--- drawn on an 800x600 canvas (a ScreenGui laid over the glass): monochrome like the MONOCHROME 14 monitor it runs on,
--- so meaning is carried by text, arrows and inverse video rather than colour.
+-- Widgets for the office PC's screen (OfficeComputer, StockApp). Everything is drawn on an
+-- 800x600 canvas (a ScreenGui laid over the glass) in six colours, so meaning is carried by text,
+-- arrows and inverse video rather than hue. The colours, fonts, phosphor bloom and scanlines
+-- come from the monitor the company bought at Micro Harbour (Shared.TechCatalog): `applyScreen`
+-- swaps them in before the screen is built. The default is the green MONOCHROME 14 tube.
 local TweenService = game:GetService("TweenService")
 
 local RetroUI = {}
@@ -19,6 +21,18 @@ RetroUI.Fonts = {
 	Body = Enum.Font.Code,
 }
 RetroUI.WIDTH, RetroUI.HEIGHT = 800, 600
+-- Bloom: text stroke transparency (1 = crisp). Scanlines/Rim: darkness, or nil for none.
+RetroUI.Style = { Bloom = 0.88, Scanlines = 0.82 :: number?, Rim = 0.55 :: number? }
+
+-- Takes on a monitor's look (a TechCatalog item's Screen). Widgets read these as they are built,
+-- so call it before building the screen.
+function RetroUI.applyScreen(screen: { [string]: any })
+	for _, key in { "Screen", "Panel", "Dim", "Mid", "Bright", "Hot" } do
+		RetroUI.Colors[key] = screen[key]
+	end
+	RetroUI.Fonts.Title, RetroUI.Fonts.Body = screen.Title, screen.Body
+	RetroUI.Style.Bloom, RetroUI.Style.Scanlines, RetroUI.Style.Rim = screen.Bloom, screen.Scanlines, screen.Rim
+end
 
 local FAST = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
@@ -87,7 +101,7 @@ function RetroUI.text(
 	label.TextTruncate = if opts.Wrap then Enum.TextTruncate.None else Enum.TextTruncate.AtEnd
 	-- A faint same-colour stroke reads as phosphor bloom.
 	label.TextStrokeColor3 = label.TextColor3
-	label.TextStrokeTransparency = 0.88
+	label.TextStrokeTransparency = RetroUI.Style.Bloom
 	label.Parent = parent
 	return label
 end
@@ -213,7 +227,7 @@ function RetroUI.button(
 			elseif inverse then RetroUI.Colors.Screen
 			else RetroUI.Colors.Bright
 		RetroUI.setColor(item, color)
-		item.TextStrokeTransparency = if inverse then 1 else 0.88
+		item.TextStrokeTransparency = if inverse then 1 else RetroUI.Style.Bloom
 		stroke.Color = if enabled then RetroUI.Colors.Bright else RetroUI.Colors.Dim
 	end
 	RetroUI.hover(item, function(value)
@@ -272,7 +286,7 @@ function RetroUI.input(parent: Instance, name: string, position: UDim2, size: UD
 	box.TextSize = 22
 	box.PlaceholderColor3 = RetroUI.Colors.Dim
 	RetroUI.setColor(box, RetroUI.Colors.Hot)
-	box.TextStrokeTransparency = 0.88
+	box.TextStrokeTransparency = RetroUI.Style.Bloom
 	box.Parent = parent
 	RetroUI.border(box, RetroUI.Colors.Mid, 2)
 	return box
@@ -285,30 +299,36 @@ function RetroUI.rule(parent: Instance, name: string, position: UDim2, width: UD
 	})
 end
 
--- Faint horizontal scanlines and a darker rim, laid over the whole canvas.
+-- Faint horizontal scanlines and a darker rim, laid over the whole canvas (as dark as the
+-- monitor's Style says; flat panels have neither).
 function RetroUI.scanlines(parent: Instance): Frame
 	local overlay = RetroUI.frame(parent, "Scanlines", UDim2.new(), UDim2.fromScale(1, 1), { ZIndex = 50 })
 	overlay.Active = false
-	for y = 0, RetroUI.HEIGHT - 1, 4 do
-		RetroUI.frame(overlay, "Line", UDim2.fromOffset(0, y), UDim2.new(1, 0, 0, 1), {
-			BackgroundTransparency = 0.82,
-			BackgroundColor3 = Color3.new(0, 0, 0),
-			ZIndex = 50,
-		})
+	local lines, rim = RetroUI.Style.Scanlines, RetroUI.Style.Rim
+	if lines then
+		for y = 0, RetroUI.HEIGHT - 1, 4 do
+			RetroUI.frame(overlay, "Line", UDim2.fromOffset(0, y), UDim2.new(1, 0, 0, 1), {
+				BackgroundTransparency = lines,
+				BackgroundColor3 = Color3.new(0, 0, 0),
+				ZIndex = 50,
+			})
+		end
 	end
-	local vignette = RetroUI.frame(overlay, "Rim", UDim2.new(), UDim2.fromScale(1, 1), {
-		BackgroundTransparency = 0,
-		BackgroundColor3 = Color3.new(0, 0, 0),
-		ZIndex = 51,
-	})
-	local gradient = Instance.new("UIGradient")
-	gradient.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.55),
-		NumberSequenceKeypoint.new(0.12, 1),
-		NumberSequenceKeypoint.new(0.88, 1),
-		NumberSequenceKeypoint.new(1, 0.55),
-	})
-	gradient.Parent = vignette
+	if rim then
+		local vignette = RetroUI.frame(overlay, "Rim", UDim2.new(), UDim2.fromScale(1, 1), {
+			BackgroundTransparency = 0,
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			ZIndex = 51,
+		})
+		local gradient = Instance.new("UIGradient")
+		gradient.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, rim),
+			NumberSequenceKeypoint.new(0.12, 1),
+			NumberSequenceKeypoint.new(0.88, 1),
+			NumberSequenceKeypoint.new(1, rim),
+		})
+		gradient.Parent = vignette
+	end
 	passThrough[overlay] = true
 	for _, item in overlay:GetDescendants() do
 		if item:IsA("GuiObject") then

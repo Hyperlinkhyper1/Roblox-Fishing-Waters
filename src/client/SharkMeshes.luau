@@ -29,7 +29,8 @@ local function color(band: string): Color3
 end
 
 -- One skin as a mesh part, its vertices centred on its bounds.
-local function buildSkin(spec): (MeshPart?, Vector3?, EditableMesh?)
+-- Built in the shared scratch mesh; only the fixed copy is kept.
+local function buildSkin(scratch: EditableMesh, spec): (MeshPart?, Vector3?, EditableMesh?)
 	local points, normals = {}, {}
 	local low, high = Vector3.one * math.huge, -Vector3.one * math.huge
 	for index, p in spec.positions do
@@ -39,22 +40,20 @@ local function buildSkin(spec): (MeshPart?, Vector3?, EditableMesh?)
 		low, high = low:Min(point), high:Max(point)
 	end
 	local center = (low + high) / 2
-	local mesh = EditableMeshBudget.create(ALLOCATE)
-	if not mesh then
-		return nil, nil, nil
-	end
+	local mesh: EditableMesh? = nil
 	local ok, part = pcall(function()
+		EditableMeshBudget.clear(scratch)
 		local vertexIds, normalIds = {}, {}
 		for index, point in points do
-			vertexIds[index] = mesh:AddVertex(point - center)
-			normalIds[index] = mesh:AddNormal(normals[index])
+			vertexIds[index] = scratch:AddVertex(point - center)
+			normalIds[index] = scratch:AddNormal(normals[index])
 		end
 		-- SharkShape already winds every triangle outward, the side Roblox draws.
 		for _, tri in spec.triangles do
-			local id = mesh:AddTriangle(vertexIds[tri[1]], vertexIds[tri[2]], vertexIds[tri[3]])
-			mesh:SetFaceNormals(id, { normalIds[tri[1]], normalIds[tri[2]], normalIds[tri[3]] })
+			local id = scratch:AddTriangle(vertexIds[tri[1]], vertexIds[tri[2]], vertexIds[tri[3]])
+			scratch:SetFaceNormals(id, { normalIds[tri[1]], normalIds[tri[2]], normalIds[tri[3]] })
 		end
-		mesh = EditableMeshBudget.fixed(mesh, ALLOCATE)
+		mesh = EditableMeshBudget.fixed(scratch, ALLOCATE, true)
 		if not mesh then
 			return nil
 		end
@@ -82,10 +81,18 @@ local function skins()
 		return templates
 	end
 	building = true
+	-- One dynamic mesh for all eighteen skins; see EditableMeshBudget.
+	local scratch = EditableMeshBudget.create(ALLOCATE)
+	if not scratch then
+		failedAt = os.clock()
+		building = false
+		return nil
+	end
 	local built = {}
 	for _, spec in SharkShape.build() do
-		local part, center, mesh = buildSkin(spec)
+		local part, center, mesh = buildSkin(scratch, spec)
 		if not part or not center or not mesh then
+			scratch:Destroy()
 			for _, skin in built do
 				skin.part:Destroy()
 				skin.mesh:Destroy()
@@ -97,6 +104,7 @@ local function skins()
 		table.insert(built, { part = part, mesh = mesh, offset = CFrame.new(center), segment = spec.segment, band = spec.band, jaw = spec.jaw == true })
 		task.wait()
 	end
+	scratch:Destroy()
 	templates = built
 	building = false
 	return templates

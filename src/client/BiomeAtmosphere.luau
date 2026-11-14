@@ -254,6 +254,7 @@ function BiomeAtmosphere.start()
 			})
 			blend(clouds, { Cover = 1, Density = 0.9, Color = Color3.fromRGB(31, 7, 48) })
 			blend(rays, { Intensity = 0 })
+			blend(bloom, { Threshold = 1.7, Intensity = 0.5 })
 			blend(Lighting, {
 				Ambient = Color3.fromRGB(39, 15, 61),
 				OutdoorAmbient = Color3.fromRGB(47, 18, 68),
@@ -297,6 +298,12 @@ function BiomeAtmosphere.start()
 					* (1 - rain) * (1 - fog * 0.85),
 			})
 		end
+		-- After dark the bloom threshold drops so lit windows, signs and street lamps (Neon,
+		-- CityNightLights) glow into the night air; by day only the sun and its glitter bloom.
+		blend(bloom, {
+			Threshold = 1.7 - night * 0.75,
+			Intensity = 0.5 + night * 0.4,
+		})
 		-- Rays only where there is a sun to see; mist makes them strongest, and hazy biomes
 		-- (Pirate Cove) let the sun break through more.
 		blend(rays, {

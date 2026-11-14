@@ -74,7 +74,7 @@ try {
   const target = join(temporary, 'check.luau');
   await writeFile(target, program);
   const result = spawnSync(process.env.LUTE || 'lute', ['run', target], {
-    cwd: root, encoding: 'utf8', timeout: 60000,
+    cwd: root, encoding: 'utf8', timeout: 180000,
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);

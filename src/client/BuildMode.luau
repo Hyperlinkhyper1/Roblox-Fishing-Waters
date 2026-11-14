@@ -50,6 +50,7 @@ local HEIGHTS = {
 	CompanyDesk = 4.7,
 	PrepBench = 4.2,
 	OfficeDesk = 4.8,
+	Workbench = 6.2,
 }
 -- The furniture cards: everything sold, then the company island kit and the
 -- house's own fixtures (shown once picked up).
@@ -646,7 +647,7 @@ function BuildMode.start()
 			end
 		end
 		for _, roomId in if site == "Company" then {} else Furniture.allowedRooms(held.ItemId) do
-			local room = Furniture.Rooms[roomId]
+			local room = Furniture.roomsFor(player:GetAttribute("MultiplayerPlot") == true)[roomId]
 			plate(model, room, floor + 0.05, ROOM, 0.75).Name = "AllowedRoom"
 			for _, area in Furniture.blocked(held.ItemId) do
 				-- Only show keep-clear zones in the allowed rooms.
@@ -823,10 +824,16 @@ function BuildMode.start()
 		if not x then
 			return
 		end
+		local expanded = player:GetAttribute("MultiplayerPlot") == true
+		-- Validation scans the placed furniture. Do it only when the snapped tile,
+		-- rotation, or authoritative state changes, rather than on every frame.
+		if spot and spot.X == x and spot.Z == z and spot.R == held.R
+			and spot.State == state and spot.Expanded == expanded and spot.Site == site
+			and spot.ItemId == held.ItemId and spot.From == held.From then return end
 		local skip = if type(held.From) == "number" then held.From else nil
-		local reason = Furniture.check(placed(), held.ItemId, x, z, held.R, skip, site)
-		if spot and spot.X == x and spot.Z == z and spot.R == held.R and spot.Reason == reason then return end
-		spot = { X = x, Z = z, R = held.R, Reason = reason }
+		local reason = Furniture.check(placed(), held.ItemId, x, z, held.R, skip, site, expanded)
+		spot = { X = x, Z = z, R = held.R, Reason = reason, State = state, Expanded = expanded,
+			Site = site, ItemId = held.ItemId, From = held.From }
 		updatePreview()
 		render()
 	end
@@ -906,7 +913,7 @@ function BuildMode.start()
 			return
 		end
 		local index, r = selected, (entry.R + 1) % 4
-		local reason = Furniture.check(placed(), entry.ItemId, entry.X, entry.Z, r, index, site)
+		local reason = Furniture.check(placed(), entry.ItemId, entry.X, entry.Z, r, index, site, player:GetAttribute("MultiplayerPlot") == true)
 		if reason then
 			notice(reason)
 			return
@@ -1009,7 +1016,7 @@ function BuildMode.start()
 					Color = rgb(184, 150, 222), Material = Enum.Material.SmoothPlastic, Transparency = 0.35,
 				})
 			end
-			for _, area in Building.Bounds[site or "Home"] do
+			for _, area in Building.bounds(site, player:GetAttribute("MultiplayerPlot") == true) do
 				for column = math.ceil((area[1] - offset) / size), math.floor((area[3] - offset) / size) do
 					line(column * size + offset, (area[2] + area[4]) / 2, 0.035, area[4] - area[2])
 				end
@@ -1051,6 +1058,7 @@ function BuildMode.start()
 			EntranceStep = true, FrontApproachStep = true,
 			-- The shop building across the street.
 			ShopFloor = true, ShopEntranceStep = true, ShopForecourt = true,
+			MultiplayerYardFloor = true,
 		}
 		for _, part in base:GetDescendants() do
 			if part:IsA("BasePart") and part.CanQuery and (
@@ -1082,11 +1090,28 @@ function BuildMode.start()
 			samples[key] = false
 			return nil
 		end
+		-- Adjacent cells on the same flat or sloping surface can share one part.
+		-- Keeping a part per cell made the overlay very expensive to render.
+		local runStart: Vector3? = nil
+		local runEnd: Vector3? = nil
+		local function flushLine()
+			if not runStart or not runEnd then return end
+			local first, last = runStart, runEnd
+			local length = (last - first).Magnitude
+			make("Part", folder, {
+				Name = "GroundGridLine", Anchored = true, CanCollide = false,
+				CanQuery = false, CanTouch = false, CastShadow = false,
+				Material = Enum.Material.SmoothPlastic, Color = rgb(235, 245, 255), Transparency = 0.3,
+				Size = Vector3.new(0.024, 0.08, length),
+				CFrame = CFrame.lookAt((first + last) / 2, last, up),
+			})
+			runStart, runEnd = nil, nil
+		end
 		local function line(x1: number, z1: number, x2: number, z2: number, depth: number)
 			-- The house already has its own uninterrupted overlay. Five samples
 			-- also prevent a line from spanning water or a sudden height change.
 			local mx, mz = (x1 + x2) / 2, (z1 + z2) / 2
-			if math.abs(mx) < halfWidth and math.abs(mz) < halfLength then return end
+			if math.abs(mx) < halfWidth and math.abs(mz) < halfLength then flushLine(); return end
 			local points, count = {}, 0
 			for index = 0, 4 do
 				local t = index / 4
@@ -1094,7 +1119,7 @@ function BuildMode.start()
 				points[index + 1] = point
 				if point then count += 1 end
 			end
-			if count == 0 then return end
+			if count == 0 then flushLine(); return end
 			local first, last = points[1], points[5]
 			local continuous = count == 5
 			if continuous then
@@ -1111,38 +1136,52 @@ function BuildMode.start()
 				if depth < 3 then
 					line(x1, z1, mx, mz, depth + 1)
 					line(mx, mz, x2, z2, depth + 1)
+				else
+					flushLine()
 				end
 				return
 			end
 			local length = (last - first).Magnitude
 			if length < 0.01 then return end
-			make("Part", folder, {
-				Name = "GroundGridLine", Anchored = true, CanCollide = false,
-				CanQuery = false, CanTouch = false, CastShadow = false,
-				Material = Enum.Material.SmoothPlastic, Color = rgb(235, 245, 255), Transparency = 0.3,
-				Size = Vector3.new(0.024, 0.08, length),
-				CFrame = CFrame.lookAt((first + last) / 2, last, up),
-			})
+			if runStart and runEnd then
+				local previous = runEnd - runStart
+				local nextSegment = last - first
+				if (runEnd - first).Magnitude > 0.01
+					or previous.Unit:Dot(nextSegment.Unit) < 0.99999 then
+					flushLine()
+				end
+			end
+			if not runStart then runStart = first end
+			runEnd = last
 		end
 		local size = BaseGrid.CELL_SIZE
-		for column = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN + 1 do
+		local minColumn, maxColumn = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN
+		if player:GetAttribute("MultiplayerPlot") == true then
+			local area = Building.bounds("Home", true)[1]
+			minColumn = math.floor((area[1] + halfWidth) / size) + 1
+			maxColumn = math.ceil((area[3] + halfWidth) / size)
+		end
+		for column = minColumn, maxColumn + 1 do
 			local x = -halfWidth + (column - 1) * size
 			for row = BaseGrid.BASE_MIN_ROW, BaseGrid.BASE_MAX_ROW do
 				local z = -halfLength + (row - 1) * size
 				line(x, z, x, z + size, 0)
 			end
+			flushLine()
 		end
 		for row = BaseGrid.BASE_MIN_ROW, BaseGrid.BASE_MAX_ROW + 1 do
 			local z = -halfLength + (row - 1) * size
-			for column = BaseGrid.BASE_MIN_COLUMN, BaseGrid.BASE_MAX_COLUMN do
+			for column = minColumn, maxColumn do
 				local x = -halfWidth + (column - 1) * size
 				line(x, z, x + size, z, 0)
 			end
+			flushLine()
 		end
 	end
 
 	local function panBy(delta: Vector2)
-		local limit = if site == "Company" then Vector2.new(60, 40) else PAN_LIMIT
+		local limit = if site == "Company" then Vector2.new(60, 40)
+			elseif player:GetAttribute("MultiplayerPlot") == true then Vector2.new(76, PAN_LIMIT.Y) else PAN_LIMIT
 		pan = Vector2.new(
 			math.clamp(pan.X + delta.X, -limit.X, limit.X),
 			math.clamp(pan.Y + delta.Y, -limit.Y, limit.Y)
@@ -1342,7 +1381,8 @@ function BuildMode.start()
 		-- Perspective depth matters here: the near corners need more room.
 		local distance = 18
 		local fitHeight = if structures and structures:isActive() and structures:section() ~= "Furniture" then 18 else ROOF_HEIGHT
-		local fitX, fitZ = if site == "Company" then 34 else 26, if site == "Company" then 24 else 18
+		local fitX = if site == "Company" then 34 elseif player:GetAttribute("MultiplayerPlot") == true then 52 else 26
+		local fitZ = if site == "Company" then 24 else 18
 		for _, x in { -fitX, fitX } do
 			for _, z in { -fitZ, fitZ } do
 				for _, y in { 0, fitHeight } do

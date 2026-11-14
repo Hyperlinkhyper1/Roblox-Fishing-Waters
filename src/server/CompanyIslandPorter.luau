@@ -44,7 +44,7 @@ end
 local function tick(island, state)
 	local owner = Players:GetPlayerByUserId(island:GetAttribute("OwnerUserId") or 0)
 	local profile = owner and BoatService.getProfile(owner)
-	if not owner or not profile or not profile.Angler.Staff.Porter then
+	if not owner or not BoatService.isBusinessHost(owner) or not profile or not profile.Angler.Staff.Porter then
 		clear(state)
 		return
 	end
@@ -55,13 +55,14 @@ local function tick(island, state)
 	if not state.worker or state.worker.humanoid.Health <= 0 then
 		clear(state)
 		local model = CustomerService.npc.spawn(point(30, 4.4, -82), "Porter")
-		if island:GetAttribute("OwnerUserId") ~= owner.UserId or owner.Parent ~= Players then model:Destroy(); return end
+		if island:GetAttribute("OwnerUserId") ~= owner.UserId or owner.Parent ~= Players or not BoatService.isBusinessHost(owner) then model:Destroy(); return end
 		model.Name, model.Parent = "CompanyPorter", island
 		state.worker = { model = model, humanoid = model:FindFirstChildOfClass("Humanoid"), root = model:FindFirstChild("HumanoidRootPart"), active = true }
 	end
 	local worker = state.worker
 	local function valid()
-		return worker.active and island.Parent ~= nil and island:GetAttribute("OwnerUserId") == owner.UserId and owner.Parent == Players
+		return worker.active and island.Parent ~= nil and island:GetAttribute("OwnerUserId") == owner.UserId
+			and owner.Parent == Players and BoatService.isBusinessHost(owner)
 	end
 	local function walk(position)
 		return Navigation.walk(worker, position, valid, true)

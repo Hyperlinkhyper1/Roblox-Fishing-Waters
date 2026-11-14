@@ -2,9 +2,15 @@
 -- The start straight and the pits sit on the low ground right behind the last suburb road. A
 -- tight hairpin at its far end (La Source) turns the lap back along the hillside, which drops
 -- into the valley for a flick and a steep compression up the other side (Eau Rouge and
--- Raidillon). A long climbing straight (Kemmel) runs up to a chicane at the top of the lap
--- (Les Combes), then a hairpin (Bruxelles) and a long double-apex left (Pouhon) carry it back
--- down past a fast right (Stavelot) to a final chicane (the bus stop) before the start line.
+-- Raidillon). A long climbing straight (Kemmel) runs up to Les Combes, where the lap dives into
+-- a loop at the back of the range (a fast Malmedy and the Rivage hairpin), then a hairpin
+-- (Bruxelles) and a long double-apex left (Pouhon) carry it back down past a fast right
+-- (Stavelot) to a final chicane (the bus stop) before the start line.
+--
+-- Around it: tyre walls in the gravel traps, hoardings along the straights, countdown boards
+-- before the braking zones, camera towers and marshal huts, grandstands, and pits with a car,
+-- a pit-stop rig and a pit-wall stand for every team, and a paddock of transporters and
+-- hospitality units behind them.
 --
 -- The lap runs clockwise. Its corners are straight lines filleted with circular arcs, sampled
 -- every STEP studs. CityHills shapes its facets to the circuit (see CityHills): the track's
@@ -16,7 +22,7 @@ local LowPoly = require(script.Parent.LowPoly)
 local CityCircuit = {}
 
 local TOP = 8 -- the city's walkable land height (see ModernCity)
-local WIDTH = 28
+local WIDTH = 36
 local HALF = WIDTH / 2
 local STEP = 2 -- roughly: the spacing is stretched a little so a whole number of samples closes the lap
 local GRADE = 0.11 -- steepest climb, and half that through the hairpins
@@ -38,7 +44,8 @@ CityCircuit.CORNERS = {
 	{ 45, 1368, 60, "Raidillon" },
 	{ -70, 1440, 170, "Raidillon crest" },
 	{ -500, 1470, 40, "Les Combes" },
-	{ -555, 1442, 40, "Les Combes exit" },
+	{ -564, 1541, 80, "Malmedy" },
+	{ -709, 1545, 42, "Rivage" },
 	{ -830, 1452, 45, "Bruxelles" },
 	{ -845, 1335, 45, "Bruxelles exit" },
 	{ -640, 1342, 220, "Pouhon" },
@@ -50,19 +57,32 @@ CityCircuit.CORNERS = {
 	{ -140, 1287, 25, "Bus Stop exit" },
 }
 
-local START_Z = 1287 -- the start straight runs due east along this line
+-- Stretch the infield and long straights, retaining the start straight near the
+-- city. Corner radii remain independently designed. The west end of the range tapers into the
+-- sea (see CityHills), so the lap grows east and deep into the hills to the south instead.
+local EAST_STRETCH, WEST_STRETCH, SOUTH_STRETCH = 1.4, 1.1, 2.4
+local function stretch(point: { any })
+	local dx = point[1] - 200
+	point[1] = 200 + dx * (if dx > 0 then EAST_STRETCH else WEST_STRETCH)
+	point[2] = 1390 + (point[2] - 1287) * SOUTH_STRETCH
+end
+for _, corner in CityCircuit.CORNERS do
+	stretch(corner)
+end
+
+local START_Z = 1390 -- the start straight runs due east along this line
 CityCircuit.START_Z = START_Z
 CityCircuit.START_X = 200 -- the start/finish line
 local PIT_FROM, PIT_TO = -60, 540 -- pit lane, alongside the start straight on its north side
-local GARAGES_FROM, GARAGE_WIDTH, GARAGES = 0, 16, 25
-local PADDOCK_FROM, PADDOCK_TO = -10, 440
+local GARAGES_FROM, GARAGE_WIDTH, GARAGES = 0, 18, 25
+local PADDOCK_FROM, PADDOCK_TO = -10, 480
 local ACCESS_X = 245 -- the paddock road comes up between two empty plots on the last suburb road
 local SUBURB_ROAD_EDGE = 1117 -- south edge of the last suburb road (ModernCity, z = 1110)
 -- Across the start straight, northwards from its centreline
 local PIT_WALL = HALF + 3 -- inner face of the pit wall
-local LANE_IN, LANE_OUT = HALF + 4.5, HALF + 18.5
-local GARAGE_FRONT, GARAGE_BACK = HALF + 19.5, HALF + 39.5
-local PADDOCK_BACK = HALF + 80
+local LANE_IN, LANE_OUT = HALF + 4.5, HALF + 22.5
+local GARAGE_FRONT, GARAGE_BACK = HALF + 23.5, HALF + 47.5
+local PADDOCK_BACK = HALF + 82
 CityCircuit.ACCESS_X = ACCESS_X
 CityCircuit.PADDOCK_NORTH = START_Z - PADDOCK_BACK
 
@@ -243,6 +263,12 @@ function CityCircuit.shape(terrain: (number, number) -> number)
 		natural[k] = terrain(SX[k], SZ[k])
 	end
 	local h = smooth(smooth(natural, 120), 120)
+	-- Keep the paddock road drivable even when the hills behind the circuit rise
+	-- dramatically. The lap's grade pass eases the approach down to this level.
+	local accessLimit = TOP + (START_Z - PADDOCK_BACK - SUBURB_ROAD_EDGE) * 0.3
+	for k = startFrom, startTo do
+		h[k] = math.min(h[k], accessLimit)
+	end
 	-- Hold the gradient, gentler through the hairpins
 	for _ = 1, 40 do
 		local changed = false
@@ -253,9 +279,6 @@ function CityCircuit.shape(terrain: (number, number) -> number)
 				local limit = (if math.abs(SK[k]) > 1 / 70 then GRADE / 2 else GRADE) * STEP
 				if h[k] > h[before] + limit then
 					h[k] = h[before] + limit
-					changed = true
-				elseif h[k] < h[before] - limit then
-					h[k] = h[before] - limit
 					changed = true
 				end
 			end
@@ -576,7 +599,7 @@ local function keySamples(): { number }
 				break
 			end
 			local turn = TX[a] * TX[next] + TZ[a] * TZ[next]
-			if turn < math.cos(math.rad(6)) then
+			if turn < math.cos(math.rad(2)) then
 				break
 			end
 			local bends = false
@@ -606,10 +629,10 @@ local function buildTrack(ground: Instance, kept: { number })
 	for s = 1, #kept do
 		local a, b = kept[s], kept[s % #kept + 1]
 		local la, ra, lb, rb = across(a, -HALF), across(a, HALF), across(b, -HALF), across(b, HALF)
-		local below = (la + rb) / 2 - Vector3.new(0, 6, 0)
+		local below = (la + rb) / 2 - Vector3.new(0, 9, 0)
 		local model = surfaceModel(4)
-		LowPoly.triangle(center + la, center + ra, center + rb, center + below, ASPHALT, model, M.Asphalt, 3)
-		LowPoly.triangle(center + la, center + rb, center + lb, center + below, ASPHALT, model, M.Asphalt, 3)
+		LowPoly.triangle(center + la, center + ra, center + rb, center + below, ASPHALT, model, M.Asphalt, 8)
+		LowPoly.triangle(center + la, center + rb, center + lb, center + below, ASPHALT, model, M.Asphalt, 8)
 		-- White lines along both edges
 		for _, side in { -1, 1 } do
 			local p0, p1 = across(a, side * (HALF - 1.2), 0.04), across(b, side * (HALF - 1.2), 0.04)
@@ -772,7 +795,7 @@ local function buildStart(ground: Instance)
 		end
 	end
 	-- The grid: staggered slots behind the line
-	for slot = 0, 11 do
+	for slot = 0, 19 do
 		local gx = x - 12 - slot * 10
 		local o = if slot % 2 == 0 then -6 else 6
 		part(
@@ -784,6 +807,11 @@ local function buildStart(ground: Instance)
 			M.SmoothPlastic,
 			false
 		)
+		for _, side in { -1, 1 } do
+			part(model, "GridSlotSide", Vector3.new(5, 0.2, 0.6),
+				CFrame.new(world(gx - 2.5, sfLevel(gx - 2.5) + 0.05, START_Z + o + side * 3.2)),
+				LINE, M.SmoothPlastic, false)
+		end
 	end
 	-- Start gantry with its row of lights
 	local gx = x + 6
@@ -923,6 +951,26 @@ local function buildPits(ground: Instance)
 			)
 		end
 	end
+	-- Individual working pit boxes: painted stops on the apron, team-coloured
+	-- fascia, tool cabinets, timing screens and spare tyres inside each garage.
+	-- In their own streaming pieces, so the pit building stays within its part budget
+	local boxes = pieces(ground, "PitBoxes", 200)
+	for g = 0, GARAGES - 1 do
+		local gx = x0 + g * GARAGE_WIDTH
+		local team = TEAMS[g // 2 % #TEAMS + 1]
+		local box = boxes(10)
+		sfBox(box, "PitBoxBackLine", gx + 2, gx + GARAGE_WIDTH - 2, LANE_OUT - 4, LANE_OUT - 3.5, 0.06, 0.16, LINE, M.SmoothPlastic, false)
+		for _, side in { 2, GARAGE_WIDTH - 2.5 } do
+			sfBox(box, "PitBoxSideLine", gx + side, gx + side + 0.5, LANE_OUT - 4, GARAGE_FRONT - 0.2, 0.06, 0.16, LINE, M.SmoothPlastic, false)
+		end
+		sfBox(box, "PitStopMark", gx + GARAGE_WIDTH / 2 - 1.5, gx + GARAGE_WIDTH / 2 + 1.5, LANE_OUT - 3, LANE_OUT - 2.5, 0.08, 0.18, team, M.SmoothPlastic, false)
+		sfBox(box, "GarageFloorMark", gx + 1, gx + GARAGE_WIDTH - 1, GARAGE_BACK - 4, GARAGE_BACK - 3.6, 0.06, 0.16, team, M.SmoothPlastic, false)
+		sfBox(box, "ToolCabinet", gx + 1, gx + 3.5, GARAGE_BACK - 4, GARAGE_BACK - 1.5, 0, 3.2, team, M.Metal)
+		sfBox(box, "TimingScreen", gx + 1.2, gx + 3.3, GARAGE_BACK - 2, GARAGE_BACK - 1.4, 3.5, 5.2, rgb(25, 35, 43), M.SmoothPlastic, false)
+		for tire = 0, 2 do
+			sfBox(box, "SpareTyre", gx + GARAGE_WIDTH - 4.2, gx + GARAGE_WIDTH - 1.6, GARAGE_BACK - 4.5, GARAGE_BACK - 1.9, tire * 1.1, tire * 1.1 + 1, rgb(28, 29, 31), M.Rubber)
+		end
+	end
 	-- Race control over the start line, with the podium balcony facing the straight
 	local tx = CityCircuit.START_X
 	sfBox(
@@ -1004,8 +1052,8 @@ local function buildPits(ground: Instance)
 			"Transporter",
 			px - 3.5,
 			px + 3.5,
-			GARAGE_BACK + 12,
-			GARAGE_BACK + 34,
+			GARAGE_BACK + 8,
+			GARAGE_BACK + 28,
 			1,
 			9,
 			team,
@@ -1016,8 +1064,8 @@ local function buildPits(ground: Instance)
 			"TransporterCab",
 			px - 3.5,
 			px + 3.5,
+			GARAGE_BACK + 28,
 			GARAGE_BACK + 34,
-			GARAGE_BACK + 40,
 			0.5,
 			7.5,
 			rgb(40, 42, 46),
@@ -1140,10 +1188,21 @@ end
 
 -- Grandstands where the views are, as front-edge endpoints (rows climb to the left of a -> b)
 CityCircuit.GRANDSTANDS = {
-	{ "MainGrandstand", { 540, 1408 }, { 290, 1414 }, 12, true, rgb(30, 60, 150) },
-	{ "EauRougeGrandstand", { 250, 1436 }, { 160, 1436 }, 10, false, rgb(200, 40, 40) },
-	{ "BusStopGrandstand", { -120, 1356 }, { -240, 1356 }, 7, false, rgb(240, 190, 30) },
+	{ "MainGrandstand", { 540, 1386 }, { 290, 1391 }, 12, true, rgb(30, 60, 150) },
+	{ "EauRougeGrandstand", { 250, 1418 }, { 160, 1418 }, 10, false, rgb(200, 40, 40) },
+	{ "BusStopGrandstand", { -120, 1330 }, { -240, 1330 }, 7, false, rgb(240, 190, 30) },
 }
+
+for _, stand in CityCircuit.GRANDSTANDS do
+	for _, endpoint in { stand[2], stand[3] } do
+		stretch(endpoint)
+	end
+end
+-- Across the start straight from the pits, behind the debris fence (already in final coordinates)
+table.insert(
+	CityCircuit.GRANDSTANDS,
+	{ "PitGrandstand", { 480, START_Z + HALF + VERGE + 5 }, { 250, START_Z + HALF + VERGE + 5 }, 8, true, rgb(236, 236, 232) }
+)
 
 -- An arched footbridge over the track, like the one over the climb out of the valley
 local function footbridge(ground: Instance, k: number)
@@ -1232,6 +1291,339 @@ local function marshals(ground: Instance)
 	end
 end
 
+-- A part that lights up after dark (see CityNightLights)
+local function glow(p: BasePart, color: Color3, at: number): BasePart
+	p:AddTag("NightGlow")
+	p:SetAttribute("GlowColor", color)
+	p:SetAttribute("GlowAt", at)
+	return p
+end
+
+-- Keeps the hills' trees and farms off a prop's footprint
+local function claim(x: number, z: number, reach: number)
+	table.insert(STANDS, { x - reach, x + reach, z - reach, z + reach })
+end
+
+local HOARDINGS = {
+	rgb(200, 30, 36),
+	rgb(236, 236, 232),
+	rgb(30, 60, 150),
+	rgb(240, 190, 30),
+	rgb(0, 130, 90),
+	rgb(30, 30, 34),
+	rgb(240, 120, 20),
+}
+
+-- Along the barriers: tyre walls in front of the armco wherever a gravel trap opens up,
+-- advertising hoardings behind it on the straights, and a debris fence along the start straight
+-- facing the pits
+local function buildTrackside(ground: Instance, kept: { number })
+	local tyres = pieces(ground, "CircuitTyreWall", 200)
+	local boards = pieces(ground, "CircuitHoarding", 200)
+	local boardCount = 0
+	local function onGround(k: number, o: number, lift: number): Vector3
+		local x, z = SX[k] - TZ[k] * o, SZ[k] + TX[k] * o
+		return Vector3.new(x, surface(x, z) + lift, z)
+	end
+	for _, side in { -1, 1 } do
+		local lastK: number? = nil
+		local belt = 0
+		for s = 1, #kept + 1 do
+			local k = kept[(s - 1) % #kept + 1]
+			local room = if side > 0 then RR[k] else RL[k]
+			local pit = side < 0 and k >= startFrom and k <= startTo
+			if room < 5 or pit then
+				lastK = nil
+				continue
+			end
+			if lastK then
+				local j = lastK :: number
+				local roomJ = if side > 0 then RR[j] else RL[j]
+				local straight = SK[j] == 0 and SK[k] == 0
+				local start = side > 0 and k >= startFrom and k <= startTo and j >= startFrom
+				if math.min(room, roomJ) > VERGE + 8 then
+					-- Tyres stacked three high just inside the armco, with a coloured belt over them
+					local a, b = onGround(j, side * (HALF + roomJ - 1.4), 1.2), onGround(k, side * (HALF + room - 1.4), 1.2)
+					local frame, length = span(a, b)
+					if length > 0.5 and length < 60 then
+						belt += 1
+						part(tyres(2), "TyreWall", Vector3.new(1.8, 2.4, length + 0.3), frame, rgb(26, 26, 28), M.Rubber)
+						part(
+							tyres(),
+							"TyreWallBelt",
+							Vector3.new(1.9, 0.9, length + 0.3),
+							frame * CFrame.new(0, 0.5, 0),
+							if belt % 2 == 0 then KERB_RED else KERB_WHITE,
+							M.SmoothPlastic,
+							false
+						)
+					end
+				elseif start then
+					-- Debris fence on posts along the straight, in front of the pit grandstand
+					local a, b = onGround(j, side * (HALF + roomJ + 0.6), 6.5), onGround(k, side * (HALF + room + 0.6), 6.5)
+					local frame, length = span(a, b)
+					if length > 0.5 and length < 60 then
+						local fence = part(
+							boards(2),
+							"CatchFence",
+							Vector3.new(0.2, 8, length + 0.2),
+							frame,
+							rgb(90, 96, 100),
+							M.Metal,
+							false
+						)
+						fence.Transparency = 0.6
+						part(boards(), "CatchFencePost", Vector3.new(0.5, 11, 0.5), CFrame.new(center + b - Vector3.new(0, 1.5, 0)), STEEL, M.Metal)
+					end
+				elseif straight then
+					-- A hoarding standing just behind the armco, facing the track
+					local a, b = onGround(j, side * (HALF + roomJ + 0.8), 0.6), onGround(k, side * (HALF + room + 0.8), 0.6)
+					local frame, length = span(a, b)
+					if length > 4 and length < 60 then
+						boardCount += 1
+						part(
+							boards(),
+							"Hoarding",
+							Vector3.new(0.3, 5, length - 0.6), -- sunk well into the ground, which sags between joints
+							frame,
+							HOARDINGS[boardCount % #HOARDINGS + 1],
+							M.SmoothPlastic
+						)
+					end
+				end
+			end
+			lastK = k
+		end
+		task.wait()
+	end
+end
+
+-- Countdown boards before the braking zones of the slow corners: three, two and one stripes at
+-- 150, 100 and 50 studs out, behind the barrier on whichever side has room
+local function buildDistanceBoards(ground: Instance)
+	local model = pieces(ground, "CircuitBoards", 200)
+	for k = 1, COUNT do
+		local tight = math.abs(SK[k]) > 1 / 70
+		local before = SK[wrap(k - 1)]
+		if not tight or before ~= 0 then
+			continue
+		end
+		-- Only on a real braking zone: a long straight run into the corner
+		local clear = true
+		for d = 1, 80 do
+			if math.abs(SK[wrap(k - d)]) > 1 / 200 then
+				clear = false
+				break
+			end
+		end
+		if not clear then
+			continue
+		end
+		local outside = if SK[k] > 0 then -1 else 1
+		for stripes = 1, 3 do
+			local m = wrap(k - stripes * 25)
+			local side = outside
+			if (if side > 0 then RR[m] else RL[m]) < 5 or (side < 0 and m >= startFrom and m <= startTo) then
+				side = -side
+			end
+			local room = if side > 0 then RR[m] else RL[m]
+			if room < 5 or (side < 0 and m >= startFrom and m <= startTo) then
+				continue
+			end
+			local p = across(m, side * (HALF + room + 2.5))
+			local y = surface(p.X, p.Z)
+			local base = world(p.X, y, p.Z)
+			local facing = Vector3.new(-TX[m], 0, -TZ[m]) -- towards the oncoming cars
+			local m0 = model(3 + stripes)
+			part(m0, "DistanceBoardPost", Vector3.new(0.4, 4.5, 0.4), CFrame.new(base + Vector3.new(0, 2.25, 0)), STEEL, M.Metal)
+			local frame = CFrame.lookAt(base + Vector3.new(0, 5.6, 0), base + Vector3.new(0, 5.6, 0) + facing)
+			part(m0, "DistanceBoard", Vector3.new(2.6, 2.6, 0.3), frame, KERB_WHITE, M.SmoothPlastic)
+			for i = 1, stripes do
+				local lift = (i - (stripes + 1) / 2) * 0.75
+				part(
+					m0,
+					"DistanceStripe",
+					Vector3.new(2.2, 0.4, 0.1),
+					frame * CFrame.new(0, lift, -0.18),
+					rgb(24, 24, 26),
+					M.SmoothPlastic,
+					false
+				)
+			end
+			claim(p.X, p.Z, 3)
+		end
+	end
+end
+
+-- TV camera platforms on scaffold towers outside the big corners
+local CAMERA_CORNERS = { "La Source", "Eau Rouge", "Malmedy", "Rivage", "Pouhon", "Stavelot" }
+local function buildCameraTowers(ground: Instance)
+	local model = pieceModel(ground, "CircuitCameras")
+	for _, corner in CityCircuit.CORNERS do
+		if not table.find(CAMERA_CORNERS, corner[4]) then
+			continue
+		end
+		local k = nearest(corner[1], corner[2], 240)
+		if not k then
+			continue
+		end
+		local kk = k :: number
+		local side = if SK[kk] > 0 then -1 else 1
+		local room = if side > 0 then RR[kk] else RL[kk]
+		local p = across(kk, side * (HALF + room + 9))
+		local y = surface(p.X, p.Z)
+		local height = 16
+		for _, leg in { { -1.6, -1.6 }, { 1.6, -1.6 }, { -1.6, 1.6 }, { 1.6, 1.6 } } do
+			-- Each leg down to the slope under it
+			local foot = surface(p.X + leg[1], p.Z + leg[2]) - 0.5
+			part(
+				model,
+				"CameraTowerLeg",
+				Vector3.new(0.5, y + height - foot, 0.5),
+				CFrame.new(world(p.X + leg[1], (y + height + foot) / 2, p.Z + leg[2])),
+				STEEL,
+				M.Metal
+			)
+		end
+		for _, lift in { 5, 10 } do
+			part(
+				model,
+				"CameraTowerBrace",
+				Vector3.new(3.7, 0.3, 3.7),
+				CFrame.new(world(p.X, y + lift, p.Z)),
+				STEEL,
+				M.Metal,
+				false
+			)
+		end
+		part(model, "CameraPlatform", Vector3.new(5, 0.5, 5), CFrame.new(world(p.X, y + height, p.Z)), rgb(60, 62, 66), M.DiamondPlate)
+		part(model, "CameraRoof", Vector3.new(5.4, 0.3, 5.4), CFrame.new(world(p.X, y + height + 4.5, p.Z)), rgb(240, 120, 20), M.SmoothPlastic, false)
+		-- The camera on its tripod, looking at the track
+		local at = world(p.X, y + height + 1.6, p.Z)
+		local track = world(SX[kk], y + height + 1.6, SZ[kk])
+		part(model, "TvCamera", Vector3.new(0.9, 0.9, 2), CFrame.lookAt(at, track), rgb(30, 30, 34), M.SmoothPlastic, false)
+		part(model, "CameraTripod", Vector3.new(0.3, 1.2, 0.3), CFrame.new(at - Vector3.new(0, 0.9, 0)), rgb(30, 30, 34), M.Metal, false)
+		claim(p.X, p.Z, 4)
+	end
+end
+
+-- A low-poly car parked nose-out in a garage. `gx` is the garage's west wall; the nose points at
+-- the pit lane (smaller `o`)
+local function pitCar(parent: Instance, gx: number, team: Color3)
+	local mid = gx + GARAGE_WIDTH / 2
+	local c = GARAGE_FRONT + 10
+	local DARK = rgb(28, 29, 31)
+	local function box(name: string, x0: number, x1: number, o0: number, o1: number, y0: number, y1: number, color: Color3, material: Enum.Material?, collidable: boolean?)
+		sfBox(parent, name, mid + x0, mid + x1, c + o0, c + o1, y0, y1, color, material or M.SmoothPlastic, collidable)
+	end
+	box("PitCar", -1.4, 1.4, -6.6, 6.2, 0.35, 1.3, team)
+	box("PitCarSidepods", -2.7, 2.7, -1.2, 3.4, 0.35, 1.7, team, nil, false)
+	box("PitCarEngineCover", -0.9, 0.9, 0, 5.6, 1.3, 2.7, team, nil, false)
+	box("PitCarCockpit", -0.7, 0.7, -2.6, -0.4, 1.3, 2, DARK, nil, false)
+	box("PitCarHalo", -0.8, 0.8, -2.8, -2.5, 1.3, 2.5, DARK, nil, false)
+	box("PitCarFrontWing", -3.3, 3.3, -7.4, -6.4, 0.25, 0.6, DARK, nil, false)
+	box("PitCarRearWing", -2.5, 2.5, 6.1, 6.9, 2.3, 3.3, DARK, nil, false)
+	for _, side in { -1, 1 } do
+		for _, axle in { -4.4, 4.6 } do
+			box("PitCarWheel", side * 2.9 - 0.65, side * 2.9 + 0.65, axle - 1, axle + 1, 0, 1.9, DARK, M.Rubber, false)
+		end
+	end
+end
+
+-- Working detail in the pits and paddock: a car in every garage under its strip lights, the
+-- pit-stop light rigs hanging off the roof over each box, team stands on the pit wall, the pit
+-- lane's speed signs and exit light, flags along the roof, and hospitality units in the paddock
+local function buildPitDetail(ground: Instance)
+	local x0 = GARAGES_FROM
+	local cars = pieces(ground, "PitCars", 200)
+	local rigs = pieces(ground, "PitRigs", 200)
+	for g = 0, GARAGES - 1 do
+		local gx = x0 + g * GARAGE_WIDTH
+		local mid = gx + GARAGE_WIDTH / 2
+		local team = TEAMS[g // 2 % #TEAMS + 1]
+		pitCar(cars(11), gx, team)
+		local rig = rigs(5)
+		local strip = sfBox(rig, "GarageLight", mid - 0.4, mid + 0.4, GARAGE_FRONT + 2, GARAGE_BACK - 3, 7.4, 7.7, rgb(236, 236, 232), M.SmoothPlastic, false)
+		glow(strip, rgb(255, 250, 235), 0.2)
+		-- The pit-stop rig: a boom from the roof edge and the light the driver waits on
+		sfBox(rig, "PitRigBoom", mid - 0.3, mid + 0.3, GARAGE_FRONT - 6.5, GARAGE_FRONT, 13.2, 13.8, STEEL, M.Metal, false)
+		sfBox(rig, "PitRigDrop", mid - 0.2, mid + 0.2, GARAGE_FRONT - 6.3, GARAGE_FRONT - 5.9, 9.5, 13.2, STEEL, M.Metal, false)
+		sfBox(rig, "PitRigLight", mid - 0.9, mid + 0.9, GARAGE_FRONT - 6.6, GARAGE_FRONT - 5.6, 8.3, 9.5, rgb(30, 30, 34), M.SmoothPlastic, false)
+		sfBox(rig, "PitRigLamp", mid - 0.6, mid + 0.6, GARAGE_FRONT - 6.75, GARAGE_FRONT - 6.6, 8.6, 9.2, rgb(40, 220, 80), M.Neon, false)
+	end
+	task.wait()
+
+	-- Team stands on the pit wall: an awning on two posts, a row of screens and a desk
+	local wall = pieceModel(ground, "PitWallStands")
+	for g = 0, GARAGES - 1, 2 do
+		local mid = x0 + (g + 1) * GARAGE_WIDTH
+		if g == GARAGES - 1 then
+			mid = x0 + (g + 0.5) * GARAGE_WIDTH
+		end
+		local team = TEAMS[g // 2 % #TEAMS + 1]
+		sfBox(wall, "PitWallAwning", mid - 7, mid + 7, PIT_WALL - 1.5, PIT_WALL + 3, 9.3, 9.8, team, M.SmoothPlastic, false)
+		for _, end_ in { -6.5, 6.5 } do
+			sfBox(wall, "PitWallStandPost", mid + end_ - 0.2, mid + end_ + 0.2, PIT_WALL + 0.55, PIT_WALL + 0.95, 3.2, 9.3, STEEL, M.Metal, false)
+		end
+		sfBox(wall, "PitWallDesk", mid - 6, mid + 6, PIT_WALL + 1.5, PIT_WALL + 2.8, 3.6, 4, rgb(60, 62, 66), M.SmoothPlastic, false)
+		for i = -1, 1 do
+			local screen = sfBox(wall, "PitWallScreen", mid + i * 3.6 - 1.4, mid + i * 3.6 + 1.4, PIT_WALL + 1.5, PIT_WALL + 1.7, 4.6, 6.4, rgb(25, 35, 43), M.SmoothPlastic, false)
+			glow(screen, rgb(70, 140, 200), 0.3)
+		end
+	end
+	-- Speed limit signs at both ends of the lane, and the light at its exit
+	for _, sx in { PIT_FROM + 4, PIT_TO - 4 } do
+		sfBox(wall, "PitSpeedSignPost", sx - 0.2, sx + 0.2, LANE_OUT + 1.3, LANE_OUT + 1.7, 0, 5, STEEL, M.Metal)
+		sfBox(wall, "PitSpeedSign", sx - 0.15, sx + 0.15, LANE_OUT, LANE_OUT + 3, 5, 8, KERB_RED, M.SmoothPlastic, false)
+		sfBox(wall, "PitSpeedSignFace", sx - 0.2, sx + 0.2, LANE_OUT + 0.5, LANE_OUT + 2.5, 5.5, 7.5, KERB_WHITE, M.SmoothPlastic, false)
+	end
+	local ex = PIT_TO - 2
+	sfBox(wall, "PitExitLightPost", ex - 0.25, ex + 0.25, PIT_WALL + 0.5, PIT_WALL + 1, 3.2, 9, STEEL, M.Metal)
+	sfBox(wall, "PitExitLight", ex - 0.4, ex + 0.4, PIT_WALL + 0.1, PIT_WALL + 1.4, 7.5, 10.2, rgb(30, 30, 34), M.SmoothPlastic, false)
+	sfBox(wall, "PitExitLamp", ex - 0.55, ex - 0.4, PIT_WALL + 0.35, PIT_WALL + 1.15, 9, 9.8, KERB_RED, M.Neon, false)
+	sfBox(wall, "PitExitLamp", ex - 0.55, ex - 0.4, PIT_WALL + 0.35, PIT_WALL + 1.15, 7.9, 8.7, rgb(40, 220, 80), M.Neon, false)
+	-- Team flags along the front of the roof
+	for g = 0, GARAGES - 1, 2 do
+		local fx = x0 + g * GARAGE_WIDTH + 4
+		local team = TEAMS[g // 2 % #TEAMS + 1]
+		sfBox(wall, "RoofFlagPole", fx - 0.15, fx + 0.15, GARAGE_FRONT - 4.15, GARAGE_FRONT - 3.85, 15, 23, STEEL, M.Metal, false)
+		sfBox(wall, "RoofFlag", fx + 0.15, fx + 3.4, GARAGE_FRONT - 4.08, GARAGE_FRONT - 3.92, 20.6, 22.8, team, M.Fabric, false)
+	end
+	task.wait()
+
+	-- Hospitality units between the transporters, each with an awning out to its truck
+	local paddock = pieceModel(ground, "PaddockHospitality")
+	for t = 0, 9 do
+		local px = x0 + 18 + t * 38
+		local hx = px + 19
+		if math.abs(px - ACCESS_X) < 20 or math.abs(hx - ACCESS_X) < 20 or hx + 7 > PADDOCK_TO - 4 then
+			continue
+		end
+		local team = TEAMS[t % #TEAMS + 1]
+		sfBox(paddock, "Hospitality", hx - 7, hx + 7, GARAGE_BACK + 10, GARAGE_BACK + 30, 0, 5.5, rgb(70, 100, 120), M.Glass)
+		sfBox(paddock, "HospitalityUpper", hx - 7.4, hx + 7.4, GARAGE_BACK + 9.6, GARAGE_BACK + 30.4, 5.5, 10, team, M.SmoothPlastic)
+		sfBox(paddock, "HospitalityRail", hx - 7.4, hx + 7.4, GARAGE_BACK + 9.6, GARAGE_BACK + 10, 10, 11.6, STEEL, M.Metal).Transparency = 0.4
+		local awning = sfBox(paddock, "PaddockAwning", px + 3.5, hx - 7, GARAGE_BACK + 11, GARAGE_BACK + 26, 7.6, 8, rgb(236, 236, 232), M.Fabric, false)
+		awning.Transparency = 0.1
+		for _, o in { 15, 21 } do
+			local tx = (px + 3.5 + hx - 7) / 2
+			sfBox(paddock, "PaddockTable", tx - 1.2, tx + 1.2, GARAGE_BACK + o - 1.2, GARAGE_BACK + o + 1.2, 0, 1.4, rgb(236, 236, 232), M.SmoothPlastic)
+		end
+	end
+	-- Lamps along the paddock rail
+	for lx = PADDOCK_FROM + 20, PADDOCK_TO - 10, 40 do
+		if math.abs(lx - ACCESS_X) < 14 then
+			continue
+		end
+		sfBox(paddock, "PaddockLampPost", lx - 0.25, lx + 0.25, PADDOCK_BACK - 2.5, PADDOCK_BACK - 2, 0, 11, rgb(60, 62, 66), M.Metal)
+		glow(
+			sfBox(paddock, "PaddockLamp", lx - 0.8, lx + 0.8, PADDOCK_BACK - 3.4, PADDOCK_BACK - 1.6, 11, 11.6, rgb(220, 220, 210), M.SmoothPlastic, false),
+			rgb(255, 236, 200),
+			0.35
+		)
+	end
+end
+
 function CityCircuit.build(ground: Instance, origin: Vector3, ground_surface: (number, number) -> number)
 	assert(shaped, "CityCircuit.shape first")
 	center = origin
@@ -1249,9 +1641,13 @@ function CityCircuit.build(ground: Instance, origin: Vector3, ground_surface: (n
 	end
 	task.wait()
 	buildBarriers(ground, kept)
+	buildTrackside(ground, kept)
 	buildStart(ground)
 	buildPits(ground)
+	buildPitDetail(ground)
 	task.wait()
+	buildDistanceBoards(ground)
+	buildCameraTowers(ground)
 	for _, stand in CityCircuit.GRANDSTANDS do
 		local a, b = stand[2] :: { number }, stand[3] :: { number }
 		grandstand(

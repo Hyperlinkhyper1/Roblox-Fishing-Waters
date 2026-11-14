@@ -16,17 +16,45 @@ local BASE_TAG = "PlayerBase"
 local REACH = 14
 
 local seated: { [Player]: Instance } = {}
+-- Other services (CafeTutorialService) hear when someone sits down at their own desk.
+local sitListeners: { (Player, Instance) -> () } = {}
 
+-- Café staff rooms (Map/CafePlots) have the same PC; every member of the café's company may use it.
+local CAFE_TAG = "CafePlot"
+
+-- The player's nearest own desk: their harbour base's office and/or their company café's staff room.
 local function ownDesk(player: Player): Instance?
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local best, bestDistance = nil, math.huge
+	local function consider(holder: Instance)
+		local desk = holder:FindFirstChild("OfficeDesk", true)
+		if not desk or not desk:IsA("Model") then
+			return
+		end
+		local chair = desk:FindFirstChild("Chair")
+		local seat = chair and chair:FindFirstChild("Seat")
+		local distance = if root and root:IsA("BasePart") and seat and seat:IsA("BasePart")
+			then (root.Position - seat.Position).Magnitude
+			else math.huge - 1
+		if distance < bestDistance then
+			best, bestDistance = desk, distance
+		end
+	end
 	for _, base in CollectionService:GetTagged(BASE_TAG) do
 		if base:GetAttribute("OwnerUserId") == player.UserId then
-			local desk = base:FindFirstChild("OfficeDesk", true)
-			if desk and desk:IsA("Model") then
-				return desk
+			consider(base)
+		end
+	end
+	local companyId = player:GetAttribute("CompanyId")
+	if type(companyId) == "string" and companyId ~= "" then
+		for _, plot in CollectionService:GetTagged(CAFE_TAG) do
+			if plot:GetAttribute("CompanyId") == companyId then
+				consider(plot)
 			end
 		end
 	end
-	return nil
+	return best
 end
 
 local function seatOf(desk: Instance): Seat?
@@ -79,6 +107,9 @@ local function sit(player: Player): (boolean, string?)
 	if not desk then
 		return false, "This isn't your computer."
 	end
+	if desk:GetAttribute("PcAway") == true then
+		return false, "Your PC isn't on the desk. Bring it back from the workbench first."
+	end
 	local seat = seatOf(desk)
 	local humanoid, root = humanoidOf(player)
 	if not seat or not humanoid or not root then
@@ -115,6 +146,11 @@ local function sit(player: Player): (boolean, string?)
 	return true
 end
 
+-- `callback(player, desk)` after a player sits down at one of their own office desks.
+function Service.onSit(callback: (Player, Instance) -> ())
+	table.insert(sitListeners, callback)
+end
+
 function Service.start()
 	if started then
 		return
@@ -135,6 +171,12 @@ function Service.start()
 		lastRequest[player] = os.clock()
 		if action == "Sit" then
 			local ok, message = sit(player)
+			if ok then
+				local desk = seated[player]
+				for _, listener in sitListeners do
+					task.spawn(listener, player, desk)
+				end
+			end
 			return { Ok = ok, Message = message }
 		elseif action == "Stand" then
 			local humanoid = humanoidOf(player)

@@ -36,9 +36,12 @@ function NpcCollision.bind(model: Model)
 	local originals = {}
 	local function assign(part: Instance)
 		if part:IsA("BasePart") and originals[part] == nil then
-			originals[part] = { group = part.CollisionGroup, touch = part.CanTouch }
+			originals[part] = { group = part.CollisionGroup, touch = part.CanTouch, query = part.CanQuery }
 			part.CollisionGroup = GROUP
 			part.CanTouch = false
+			-- Non-colliding body parts should not intercept clicks or raycasts.
+			-- Keep the colliding root queryable so the humanoid can stand on the world.
+			if not part.CanCollide then part.CanQuery = false end
 		end
 	end
 	-- Accessories or carried objects may be parented after the avatar is made.
@@ -50,6 +53,7 @@ function NpcCollision.bind(model: Model)
 		if original ~= nil then
 			part.CollisionGroup = original.group
 			part.CanTouch = original.touch
+			part.CanQuery = original.query
 			originals[part] = nil
 		end
 	end)

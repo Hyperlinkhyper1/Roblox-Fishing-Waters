@@ -110,6 +110,16 @@ function Leaderboard.start()
 	close.TextSize = 24
 	close.TextColor3 = Color3.fromRGB(245, 245, 245)
 	close.Parent = panel
+	local tabs = {}
+	for index, text in { "People", "Companies" } do
+		local tab = Instance.new("TextButton")
+		tab.Name = text .. "Tab"
+		tab.Position, tab.Size = UDim2.fromOffset(40 + (index - 1) * 105, 0), UDim2.fromOffset(100, 25)
+		tab.BackgroundTransparency, tab.Text, tab.TextSize = 1, text, 13
+		tab.Font, tab.TextColor3 = Enum.Font.GothamMedium, Theme.Colors.Text
+		tab.Parent = panel
+		tabs[text] = tab
+	end
 
 	local header = Instance.new("Frame")
 	header.Name = "Header"
@@ -133,10 +143,48 @@ function Leaderboard.start()
 	local layout = Instance.new("UIListLayout")
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = list
+	local companyHeader = Instance.new("Frame")
+	companyHeader.Name, companyHeader.BackgroundTransparency = "CompanyHeader", 1
+	companyHeader.Position, companyHeader.Size = header.Position, header.Size
+	companyHeader.Visible, companyHeader.Parent = false, panel
+	local function companyColumns(parent, title, worth, crew, isHeader)
+		local name = label(parent, title, UDim2.fromScale(0, 0), UDim2.new(0.56, -4, 1, 0))
+		local money = label(parent, worth, UDim2.fromScale(0.56, 0), UDim2.new(0.30, -2, 1, 0), Enum.TextXAlignment.Right)
+		local members = label(parent, crew, UDim2.fromScale(0.86, 0), UDim2.new(0.14, 0, 1, 0), Enum.TextXAlignment.Right)
+		if isHeader then
+			for _, item in { name, money, members } do item.TextSize = 12 end
+		else
+			Theme.text(money, Theme.Colors.Green)
+		end
+		return name, money, members
+	end
+	companyColumns(companyHeader, "Company", "Net worth", "Crew", true)
+	local companyList = Instance.new("ScrollingFrame")
+	companyList.Name, companyList.Position, companyList.Size = "Companies", list.Position, list.Size
+	companyList.BackgroundTransparency, companyList.BorderSizePixel = 1, 0
+	companyList.ScrollBarThickness, companyList.ScrollBarImageColor3 = list.ScrollBarThickness, list.ScrollBarImageColor3
+	companyList.AutomaticCanvasSize, companyList.CanvasSize = Enum.AutomaticSize.Y, UDim2.new()
+	companyList.Visible, companyList.Parent = false, panel
+	local companyLayout = Instance.new("UIListLayout")
+	companyLayout.SortOrder, companyLayout.Parent = Enum.SortOrder.LayoutOrder, companyList
+	local companyRows = {}
+	local selectedTab = "People"
+	local refreshCompanies
+	local updateOrder
+	local function selectTab(name)
+		selectedTab = name
+		header.Visible, list.Visible = name == "People", name == "People"
+		companyHeader.Visible, companyList.Visible = name == "Companies", name == "Companies"
+		for text, tab in tabs do tab.TextTransparency = if text == name then 0 else 0.4 end
+		if updateOrder then updateOrder() end
+		if refreshCompanies then refreshCompanies() end
+	end
+	for name, tab in tabs do tab.Activated:Connect(function() selectTab(name) end) end
 
 	local expanded = true
 	local function updateVisibility()
 		local available = localPlayer:GetAttribute("BuildModeOpen") ~= true
+			and localPlayer:GetAttribute("SaveSelectionRequired") ~= true
 		toggle.Visible = available and not expanded
 		panel.Visible = available and expanded
 	end
@@ -155,17 +203,20 @@ function Leaderboard.start()
 		end
 	end)
 	localPlayer:GetAttributeChangedSignal("BuildModeOpen"):Connect(updateVisibility)
+	localPlayer:GetAttributeChangedSignal("SaveSelectionRequired"):Connect(updateVisibility)
 	updateVisibility()
 
 	local entries = {}
-	local function updateOrder()
+	updateOrder = function()
 		local sorted = {}
 		for player in entries do
 			table.insert(sorted, player)
 		end
 		-- Fit the current roster without leaving an empty panel, while keeping
 		-- longer lists scrollable and bounded by the viewport's height.
-		constraint.MaxSize = Vector2.new(320, math.min(300, 55 + #sorted * 32))
+		if selectedTab == "People" then
+			constraint.MaxSize = Vector2.new(320, math.min(300, 55 + #sorted * 32))
+		end
 		table.sort(sorted, function(a, b)
 			local aMoney = entries[a].moneyValue or -math.huge
 			local bMoney = entries[b].moneyValue or -math.huge
@@ -176,6 +227,62 @@ function Leaderboard.start()
 		end)
 		for index, player in sorted do
 			entries[player].row.LayoutOrder = index
+		end
+	end
+	refreshCompanies = function()
+		local grouped = {}
+		for player in entries do
+			local id = player:GetAttribute("CompanyId")
+			if type(id) ~= "string" or id == ""
+				or player:GetAttribute("BoatDataStatus") ~= "Ready" then continue end
+			local group = grouped[id]
+			if not group then
+				group = { Name = player:GetAttribute("CompanyName") or "Company", Worth = 0, Count = 0 }
+				grouped[id] = group
+			end
+			local icon = player:GetAttribute("CompanyIcon")
+			if type(icon) == "number" and icon > 0 then group.Icon = icon end
+			-- Every member publishes the same wallet; count that value once.
+			group.Worth = math.max(group.Worth, tonumber(player:GetAttribute("CompanyNetWorth")) or 0)
+			group.Count += 1
+		end
+		for id, row in companyRows do
+			if not grouped[id] then row:Destroy(); companyRows[id] = nil end
+		end
+		local sorted = {}
+		for id, group in grouped do group.Id = id; table.insert(sorted, group) end
+		table.sort(sorted, function(a, b)
+			return if a.Worth == b.Worth then a.Id < b.Id else a.Worth > b.Worth
+		end)
+		for rank, group in sorted do
+			local row = companyRows[group.Id]
+			if not row then
+				row = Instance.new("Frame")
+				row.Name, row.Size, row.BackgroundTransparency = group.Id, UDim2.new(1, 0, 0, 32), 1
+				local name, money, members = companyColumns(row, "", "", "", false)
+				name.Name, money.Name, members.Name = "CompanyName", "NetWorth", "Crew"
+				-- Company icon (a decal/image ID chosen in save settings) before the name.
+				local icon = Instance.new("ImageLabel")
+				icon.Name, icon.AnchorPoint = "Icon", Vector2.new(0, 0.5)
+				icon.Position, icon.Size = UDim2.new(0, 0, 0.5, 0), UDim2.fromOffset(22, 22)
+				icon.BackgroundColor3, icon.BorderSizePixel = Color3.fromRGB(20, 34, 48), 0
+				icon.ScaleType = Enum.ScaleType.Crop
+				Theme.corner(icon, 5)
+				local initial = label(icon, "", UDim2.fromScale(0, 0), UDim2.fromScale(1, 1), Enum.TextXAlignment.Center)
+				initial.Name, initial.TextSize = "Initial", 12
+				icon.Parent = row
+				name.Position, name.Size = UDim2.fromOffset(28, 0), UDim2.new(0.56, -32, 1, 0)
+				row.Parent, companyRows[group.Id] = companyList, row
+			end
+			row.LayoutOrder = rank
+			row.Icon.Image = if group.Icon then "rbxthumb://type=Asset&id=" .. tostring(group.Icon) .. "&w=150&h=150" else ""
+			row.Icon.Initial.Text = if group.Icon then "" else string.upper(string.match(group.Name, "%w") or "?")
+			row.CompanyName.Text = group.Name
+			row.NetWorth.Text = "$" .. formatMoney(group.Worth)
+			row.Crew.Text = tostring(group.Count) .. "/5"
+		end
+		if selectedTab == "Companies" then
+			constraint.MaxSize = Vector2.new(320, math.min(300, 55 + math.max(1, #sorted) * 32))
 		end
 	end
 
@@ -224,6 +331,9 @@ function Leaderboard.start()
 		end
 		table.insert(entry.connections, player:GetAttributeChangedSignal("Level"):Connect(refreshLevel))
 		table.insert(entry.connections, player:GetAttributeChangedSignal("BestiaryPercent"):Connect(refreshBestiary))
+		for _, attribute in { "CompanyId", "CompanyName", "CompanyIcon", "CompanyNetWorth", "CompanyMultiplayer", "BoatDataStatus" } do
+			table.insert(entry.connections, player:GetAttributeChangedSignal(attribute):Connect(refreshCompanies))
+		end
 		table.insert(
 			entry.connections,
 			player:GetPropertyChangedSignal("DisplayName"):Connect(function()
@@ -249,6 +359,7 @@ function Leaderboard.start()
 		bindStats()
 		refreshLevel()
 		refreshBestiary()
+		refreshCompanies()
 	end
 
 	Players.PlayerAdded:Connect(addPlayer)
@@ -266,10 +377,12 @@ function Leaderboard.start()
 		end
 		entry.row:Destroy()
 		updateOrder()
+		refreshCompanies()
 	end)
 	for _, player in Players:GetPlayers() do
 		addPlayer(player)
 	end
+	selectTab("People")
 
 	-- CoreGui can be unavailable during early startup.
 	task.spawn(function()

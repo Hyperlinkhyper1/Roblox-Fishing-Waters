@@ -223,8 +223,9 @@ function NpcNavigation.walk(
 		local grid = require(game:GetService("ReplicatedStorage").Shared.BaseGrid)
 		local startLocal = gridFrame:PointToObjectSpace(root.Position)
 		local goalLocal = gridFrame:PointToObjectSpace(target)
-		local startColumn = grid.localToExtendedCell(startLocal.X, startLocal.Z)
-		local goalColumn = grid.localToExtendedCell(goalLocal.X, goalLocal.Z)
+		local expanded = npc.gridExpanded == true
+		local startColumn = grid.localToExtendedCell(startLocal.X, startLocal.Z, expanded)
+		local goalColumn = grid.localToExtendedCell(goalLocal.X, goalLocal.Z, expanded)
 		if startColumn and goalColumn then
 			local overlap = OverlapParams.new()
 			overlap.FilterType = Enum.RaycastFilterType.Exclude
@@ -283,12 +284,19 @@ function NpcNavigation.walk(
 					and supportedBetween(from, to, true, 1)
 			end
 			local function route(subdivisions: number): { Vector3 }?
+				local startPosition = Vector3.new(root.Position.X, feet(), root.Position.Z)
+				-- Most short trips inside a clear shop need no grid search. Use the
+				-- same body sweep and floor checks as the grid's simplified edges.
+				if clearBetween(startPosition, target) and supportedBetween(startPosition, target, true) then
+					return { target }
+				end
 				-- Furniture cells are 4.5 studs wide. A one-cell doorway can sit
 				-- between their centers (the lobby door does), leaving no usable
 				-- edge on that lattice. Retry at half-cell spacing while keeping
 				-- the same physical bounds and full body/floor clearance checks.
 				local spacing = grid.CELL_SIZE / subdivisions
-				local minColumn, maxColumn = grid.BASE_MIN_COLUMN * subdivisions, grid.BASE_MAX_COLUMN * subdivisions
+				local firstColumn, lastColumn = grid.columnBounds(expanded)
+				local minColumn, maxColumn = firstColumn * subdivisions, lastColumn * subdivisions
 				local minRow, maxRow = grid.BASE_MIN_ROW * subdivisions, grid.BASE_MAX_ROW * subdivisions
 				local queue, previous, points, usable, edges, cost, closed = {}, {}, {}, {}, {}, {}, {}
 				local function key(column: number, row: number): number
@@ -308,8 +316,12 @@ function NpcNavigation.walk(
 				-- Multiple nearby entry cells avoid stranding a rig that starts
 				-- beside a fixture or was pushed away from a cell center.
 				local starts = {}
-				for row = minRow, maxRow do
-					for column = minColumn, maxColumn do
+				local originX, originZ = grid.extendedCellToLocal(0, 0)
+				local centerColumn = (startLocal.X - originX) / spacing
+				local centerRow = (startLocal.Z - originZ) / spacing
+				local radius = 1.5 * subdivisions
+				for row = math.max(minRow, math.ceil(centerRow - radius)), math.min(maxRow, math.floor(centerRow + radius)) do
+					for column = math.max(minColumn, math.ceil(centerColumn - radius)), math.min(maxColumn, math.floor(centerColumn + radius)) do
 						local x, z = grid.extendedCellToLocal(column / subdivisions, row / subdivisions)
 						local distance = (Vector3.new(x - startLocal.X, 0, z - startLocal.Z)).Magnitude
 						if distance <= grid.CELL_SIZE * 1.5 and isUsable(column, row) then

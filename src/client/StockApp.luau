@@ -222,7 +222,7 @@ function StockApp.mount(content: Frame, onStatus: (string) -> ()): App
 			row.Day.Text = percent(now - base, base)
 			for _, label in { row.Ticker, row.Price, row.Day } do
 				RetroUI.setColor(label, if isSelected then C.Screen else C.Bright)
-				label.TextStrokeTransparency = if isSelected then 1 else 0.88
+				label.TextStrokeTransparency = if isSelected then 1 else RetroUI.Style.Bloom
 			end
 			if not isSelected and owned(ticker) > 0 then
 				RetroUI.setColor(row.Ticker, C.Hot)

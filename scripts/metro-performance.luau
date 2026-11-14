@@ -64,13 +64,41 @@ end
 local camera = Instance.new("Camera")
 camera.CFrame, camera.CameraType, camera.FieldOfView = dock, Enum.CameraType.Custom, 74
 camera.CameraSubject, workspace.CurrentCamera = humanoid, camera
+-- Resume yielded train construction once per simulated frame.
+local threads = {}
+task.spawn = function(callback)
+	local thread = coroutine.create(callback)
+	local ok, message = coroutine.resume(thread)
+	check(ok, tostring(message))
+	if coroutine.status(thread) ~= "dead" then table.insert(threads, thread) end
+end
+task.wait = function() coroutine.yield() end
+local function continueBuild(model)
+	local steps = 0
+	while #threads > 0 do
+		local before = #model:GetDescendants()
+		local thread = table.remove(threads, 1)
+		local ok, message = coroutine.resume(thread)
+		check(ok, tostring(message))
+		-- Parts may include GUI descendants, so count only the physical parts.
+		local partCount = 0
+		for _, item in model:GetDescendants() do if item:IsA("BasePart") then partCount += 1 end end
+		if model._previousParts then check(partCount - model._previousParts <= 8, "At most eight train parts per build step") end
+		model._previousParts = partCount
+		if coroutine.status(thread) ~= "dead" then table.insert(threads, thread) end
+		steps += 1
+		check(steps < 200 and #model:GetDescendants() >= before, "Train construction makes bounded progress")
+	end
+	check(steps > 1, "Train construction spans multiple frames")
+end
 require("MetroClient").start()
 now = 10
 render()
 local visuals = workspace.MetroVisuals
 check(#visuals:GetChildren() == 0, "Stop registration and rendering never build trains")
 clientHeartbeat:Fire()
-check(#visuals:GetChildren() == 1, "Heartbeat builds the nearby train")
+check(#visuals:GetChildren() == 1, "Heartbeat starts the nearby train")
+continueBuild(visuals:GetChildren()[1])
 clientHeartbeat:Fire()
 render()
 check(#visuals:GetChildren() == 1, "The preloaded destination never builds a distant train")
@@ -87,6 +115,7 @@ remote.OnClientEvent:Fire("Transfer", { dock = destination.TrainDock.CFrame })
 now = 48
 render()
 clientHeartbeat:Fire()
+continueBuild(visuals:GetChildren()[2])
 render()
 check(#visuals:GetChildren() == 2, "Destination train builds after camera transfer")
 check((camera.CFrame.Position - destination.TrainDock.Position).Magnitude < 400, "Camera follows the destination train")
@@ -98,6 +127,19 @@ player.CharacterRemoving:Fire()
 check(camera.CameraType == Enum.CameraType.Custom and not playerGui.MetroJourney.Enabled, "Respawn restores the camera")
 collection.removed:Fire(destination)
 check(#visuals:GetChildren() == 1, "A streamed-out station releases its visual train")
+local interrupted = stop("Interrupted", camera.CFrame)
+collection.added:Fire(interrupted)
+clientHeartbeat:Fire()
+check(#visuals:GetChildren() == 2 and #threads == 1, "A nearby train starts incrementally")
+collection.removed:Fire(interrupted)
+check(#visuals:GetChildren() == 1, "Streaming out removes the partly built train")
+while #threads > 0 do
+	local thread = table.remove(threads, 1)
+	local ok, message = coroutine.resume(thread)
+	check(ok, tostring(message))
+	if coroutine.status(thread) ~= "dead" then table.insert(threads, thread) end
+end
+check(#visuals:GetChildren() == 1, "Cancelled construction never recreates the train")
 local unloaded = stop("Unloaded", dock * CFrame.new(8000, 0, 0))
 collection.added:Fire(unloaded)
 collection.removed:Fire(unloaded)

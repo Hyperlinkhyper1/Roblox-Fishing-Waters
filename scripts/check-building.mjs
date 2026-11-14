@@ -14,6 +14,7 @@ const files = {
   service: 'src/server/BuildingService.luau', editor: 'src/client/StructureEditor.luau',
   data: 'src/server/AnglerData.luau', server: 'src/server/init.server.luau',
   build: 'src/client/BuildMode.luau', rules: 'scripts/building.luau',
+  plots: 'src/shared/MultiplayerPlots.luau',
   geometry: 'scripts/building-geometry.luau', cityMocks: 'scripts/check-city.mjs',
 };
 const sources = Object.fromEntries(await Promise.all(Object.entries(files).map(async ([name,path]) => [name,await read(path)])));
@@ -34,7 +35,7 @@ if (process.argv.includes('--static')) {
   process.exit(0);
 }
 
-let program = `local Building = (function()\n${sources.catalog}\nend)()\n`;
+let program = `local MultiplayerPlots = (function()\n${sources.plots}\nend)()\nlocal Building = (function()\n${sources.catalog.replace('require("./MultiplayerPlots")', 'MultiplayerPlots')}\nend)()\n`;
 program += sources.rules.replace("local Building = require('../src/shared/BuildingCatalog')", '');
 const mocks = sources.cityMocks.match(/const mocks = String.raw`([\s\S]*?)`;/)?.[1];
 assert(mocks, 'Geometry recording doubles were not found');
@@ -48,6 +49,7 @@ program += `\ndo
 local houseFrame=CFrame.new(100,5,-200)*CFrame.Angles(0,math.pi/2,0)
 local floorY,site,grid=0.16,nil,nil
 local spacing,height=4.5,24
+local player={GetAttribute=function() return false end}
 local structures={isActive=function() return true end,section=function() return "Build" end,gridSize=function() return spacing end,elevation=function() return height end}
 local BaseGrid={CELL_SIZE=4.5}
 local rgb=Color3.fromRGB
@@ -70,6 +72,20 @@ check(#grid:GetChildren()==78,'Changing grid size must redraw the construction l
 grid:Destroy();site='Company';floorY=0;spacing=4.5;height=12;showGrid()
 check(#grid:GetChildren()==40,'Company construction grid must use its full plot bounds')
 grid:Destroy()
+site=nil;floorY=0.16;spacing=4.5;height=0
+player.GetAttribute=function() return true end
+showGrid()
+local farLeft,farRight,roadLine=false,false,false
+for _,line in grid:GetChildren() do
+ local p=houseFrame:PointToObjectSpace(line.Position)
+ if p.X < -45 then farLeft=true end
+ if p.X > 45 then farRight=true end
+ if line.Size.Z>0.04 and p.Z-line.Size.Z/2<40 and p.Z+line.Size.Z/2>40 then roadLine=true end
+end
+check(farLeft and farRight,'The multiplayer construction grid reaches both wider property edges')
+check(not roadLine,'The wider construction grid never spans the road between home and shop')
+grid:Destroy()
+player.GetAttribute=function() return false end
 for _,where in {'Home','Company'} do
  site=if where=='Home' then nil else where
  floorY=if site=='Company' then 0 else 0.16
@@ -93,6 +109,74 @@ for _,where in {'Home','Company'} do
  end
 end
 end\n`;
+// Exercise the actual outdoor grid branch with a flat surface interrupted by a gap.
+const fullGridEnd = sources.build.indexOf('\n\tlocal function panBy(', gridStart);
+assert(fullGridEnd > gridStart, 'Outdoor grid branch was not found');
+program += `
+do
+ local houseFrame=CFrame.new()
+ local house={Parent={GetDescendants=function() return {} end}}
+ local site,grid,floorY=nil,nil,0.16
+ local FLOOR_Y=0.16
+ local structures=nil
+ local player={GetAttribute=function() return false end}
+ local BaseGrid={CELL_SIZE=4.5, COLUMNS=4, ROWS=4, HALF_WIDTH=9, HALF_LENGTH=9,
+  BASE_MIN_COLUMN=-2, BASE_MAX_COLUMN=14, BASE_MIN_ROW=-18, BASE_MAX_ROW=22}
+ local rgb=Color3.fromRGB
+ local function make(class,parent,properties)
+  local item=Instance.new(class)
+  for key,value in properties do item[key]=value end
+  item.Parent=parent
+  return item
+ end
+ local function plate(parent,area,y,color,transparency)
+  return make('Part',parent,{Size=Vector3.new(area[3]-area[1],0.08,area[4]-area[2]),
+   CFrame=houseFrame*CFrame.new((area[1]+area[3])/2,y,(area[2]+area[4])/2)})
+ end
+ workspace.Raycast=function(_,origin)
+  if origin.Z > 18 and origin.Z < 27 then return nil end
+  return {Position=Vector3.new(origin.X,0,origin.Z), Normal=Vector3.yAxis, Material=Enum.Material.SmoothPlastic}
+ end
+ ${sources.build.slice(gridStart,fullGridEnd)}
+ showGrid()
+ local count, merged=0,false
+ for _,part in grid:GetChildren() do
+  if part.Name=='GroundGridLine' then
+   count+=1
+   if part.Size.Z > BaseGrid.CELL_SIZE * 2 then merged=true end
+   local half=part.CFrame.LookVector * part.Size.Z / 2
+   local a,b=part.Position-half,part.Position+half
+   check(not (math.min(a.Z,b.Z)<18 and math.max(a.Z,b.Z)>27), 'Grid lines must not bridge a gap')
+  end
+ end
+ check(merged and count < 200, 'Contiguous grid cells should merge into long parts')
+ grid:Destroy()
+end
+`;
+const aimStart = sources.build.indexOf('\tlocal function aim(');
+const aimEnd = sources.build.indexOf('\n\tlocal function hold(', aimStart);
+assert(aimStart >= 0 && aimEnd > aimStart, 'Furniture aiming was not found');
+program += `
+do
+ local held={ItemId='A',From=1,R=0}
+ local state,spot,site={},nil,nil
+ local expanded=false
+ local player={GetAttribute=function() return expanded end}
+ local x,z=1,2
+ local function pointerSpot() return x,z end
+ local checksMade=0
+ local Furniture={check=function() checksMade+=1; return nil end}
+ local function placed() return {} end
+ local function updatePreview() end
+ local function render() end
+ ${sources.build.slice(aimStart,aimEnd)}
+ aim(nil); aim(nil)
+ check(checksMade==1, 'A stationary furniture preview must reuse validation')
+ x=2; aim(nil); held.R=1; aim(nil); state={}; aim(nil); expanded=true; aim(nil)
+ site='Company'; aim(nil); held.ItemId='B'; aim(nil); held.From=2; aim(nil)
+ check(checksMade==8, 'Moving, rotating, state, plot, site and held item changes must revalidate')
+end
+`;
 program += '\noutput("Building geometry: " .. checks .. " cutout, restoration, preview, and structural selection checks passed (recording doubles; no Studio rendering).")\n';
 // Parsing the complete modules catches syntax errors outside paths covered by the rule tests.
 for (const name of ['renderer','service','editor','build']) program += `\nlocal function parse_${name}()\n${sources[name]}\nend\n`;
@@ -111,6 +195,11 @@ try {
   if (saved.stderr) process.stderr.write(saved.stderr);
   if (saved.error) throw saved.error;
   if (saved.status !== 0) throw new Error(`Building persistence checks failed (${saved.status})`);
+  const expanded = spawnSync(runtime, ['run',join(root,'scripts/multiplayer-building.luau')], {cwd:root,encoding:'utf8',timeout:60000,maxBuffer:4*1024*1024});
+  if (expanded.stdout) process.stdout.write(expanded.stdout);
+  if (expanded.stderr) process.stderr.write(expanded.stderr);
+  if (expanded.error) throw expanded.error;
+  if (expanded.status !== 0) throw new Error(`Multiplayer building bounds checks failed (${expanded.status})`);
 } finally {
   await rm(folder,{recursive:true,force:true});
 }

@@ -15,6 +15,7 @@ local Islands = require(script.Parent.Islands)
 local LowPoly = require(script.Parent.LowPoly)
 local Med = require(script.Parent.Mediterranean)
 local MetroStations = require(script.Parent.MetroStations)
+local PetShop = require(script.Parent.PetShop)
 local PlazaHouses = require(script.Parent.PlazaHouses)
 local Props = require(script.Parent.Props)
 local RodShop = require(script.Parent.RodShop)
@@ -1680,6 +1681,7 @@ local function buildPlaza(parent: Instance, center: Vector2, rng: Random)
 	RodShop.build(model, CFrame.new(at(0, 0, 0.8)))
 	FurnitureShop.build(model, CFrame.new(at(0, 0, 0.8)))
 	BackpackShop.build(model, CFrame.new(at(0, 0, 0.8)))
+	PetShop.build(model, CFrame.new(at(0, 0, 0.8)))
 end
 
 local HOUSE_HALF = { cube = 14, town = 10, villa = 15, green = 9 } -- half the frontage along the street
@@ -2474,11 +2476,12 @@ function Harbour.ensureBoating(root: Instance)
 	Harbour.ensureBaseBoatClearance(root)
 end
 
--- Saved maps also receive the enterable tackle shop, its purchase counter and the furniture shop.
+-- Saved maps also receive the enterable tackle shop, its purchase counter, the furniture shop and the pet shop.
 function Harbour.ensureFishing(root: Instance)
 	RodShop.ensure(root)
 	FurnitureShop.ensure(root)
 	BackpackShop.ensure(root)
+	PetShop.ensure(root)
 
 	PlazaHouses.ensure(root)
 end

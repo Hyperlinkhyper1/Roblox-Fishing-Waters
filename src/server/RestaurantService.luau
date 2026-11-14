@@ -290,6 +290,13 @@ local function serve(player: Player, diner)
 		assert(chosen, "That dish is no longer on your kitchen pass.")
 		local data, paid = AnglerData.sellDish(current.Angler, chosen, Recipes.RESTAURANT_MARKUP, "DinersServed")
 		assert(data, "That dish is no longer on your kitchen pass.")
+		-- The governing party's dish policy (ElectionService publishes PolicyDishPrice; 0 when none).
+		local share = ReplicatedStorage:GetAttribute("PolicyDishPrice")
+		if type(share) == "number" and share > 0 then
+			local bonus = math.floor(paid * share)
+			data.Stats.CoinsEarned += bonus
+			paid += bonus
+		end
 		current.Angler = data
 		current.Cash += paid
 		price = paid

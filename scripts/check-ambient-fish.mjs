@@ -14,6 +14,7 @@ const mocks = read('scripts/drydock-geometry.luau').split('local function loadBo
 const terrainProbe = `local TerrainProbe = (function()\n${read('src/client/TerrainProbe.luau')
   .replace(/require\(ReplicatedStorage\.Shared\.Biomes\)/, 'dependencies.Biomes')}\nend)()`;
 const client = read('src/client/AmbientFish.luau')
+  .replace('local model = Instance.new("Model")', 'local model = Instance.new("Model"); totalCreated += 1; created[id] = (created[id] or 0) + 1')
   .replace(/require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'dependencies.$1')
   .replace(/: Weather\.State\?/g, '')
   .replace(/local TerrainProbe = require\(script\.Parent\.TerrainProbe\)/, () => terrainProbe);

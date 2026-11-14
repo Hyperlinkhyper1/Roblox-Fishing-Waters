@@ -145,7 +145,7 @@ function WorldMap.start()
 		label(chart, "Charting the islands...", UDim2.fromScale(0.06, 0.915), UDim2.fromScale(0.88, 0.035), 15)
 	label(
 		chart,
-		"Red arrow: you  •  North is up  •  M / Esc to fold",
+		"Red arrow: you  •  Blue diamond: ferry destination  •  M / Esc to fold",
 		UDim2.fromScale(0.06, 0.955),
 		UDim2.fromScale(0.88, 0.03),
 		14
@@ -158,8 +158,22 @@ function WorldMap.start()
 	marker.TextStrokeTransparency = 0
 	marker.ZIndex = 10
 	marker.Visible = false
+	local ferryMarker = label(canvas, "◆", UDim2.fromScale(0.5, 0.5), UDim2.fromOffset(24, 24), 24)
+	ferryMarker.Name = "FerryDestination"
+	ferryMarker.AnchorPoint = Vector2.new(0.5, 0.5)
+	ferryMarker.TextColor3 = Color3.fromRGB(29, 105, 157)
+	ferryMarker.TextStrokeColor3 = paper
+	ferryMarker.TextStrokeTransparency = 0
+	ferryMarker.ZIndex = 10
+	ferryMarker.Visible = false
 	local count = 0
 	local function update()
+		local destination = player:GetAttribute("FerryDestinationPosition")
+		ferryMarker.Visible = typeof(destination) == "Vector3"
+		if ferryMarker.Visible then
+			local target = project(destination.X, destination.Z)
+			ferryMarker.Position = UDim2.fromScale(math.clamp(target.X, 0.015, 0.985), math.clamp(target.Y, 0.015, 0.985))
+		end
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		marker.Visible = root ~= nil

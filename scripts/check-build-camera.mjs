@@ -42,6 +42,8 @@ local ROOF_HEIGHT = 8.4
 -- Build mode at home: the company plot site is covered by check-company-islands.
 local site, floorY = nil, FLOOR_Y
 local structures = nil
+local multiplayer = false
+local player = {GetAttribute=function() return multiplayer end}
 local Furniture = (function()
 ${furniture}
 end)()
@@ -63,6 +65,8 @@ ${section('\tlocal function mousePosition(', '\n\tlocal function aim(')}
 ${section('\tlocal function panBy(', '\n\tlocal function freezeCharacter(')}
 ${section('\tlocal function updateCamera(', '\n\tlocal exit')}
 local checks = 0
+for _,wide in {false,true} do
+multiplayer=wide
 for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} do
   for _, topInset in {0, 36, 58} do
     for _, rotation in {0, math.pi / 2, math.pi, math.pi * 1.5} do
@@ -88,7 +92,8 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
         return Vector2.new(size[1] / 2 + focal * p.X / -p.Z,
           size[2] / 2 - focal * p.Y / -p.Z)
       end
-      for _, x in {-24.75, 24.75} do
+      local halfWidth=if multiplayer then 49.5 else 24.75
+      for _, x in {-halfWidth, halfWidth} do
         for _, z in {-15.75, 15.75} do
           for _, y in {0, ROOF_HEIGHT} do
             local screen = project(houseFrame * Vector3.new(x, FLOOR_Y + y, z))
@@ -179,18 +184,21 @@ ${section('\tlocal function clickWorld(', '\n\tUserInputService.InputBegan:Conne
       changeZoom(100)
       assert(zoom == 0.45, "Zoom in must be bounded")
       panBy(Vector2.new(1e6, -1e6))
-      assert(pan.X == PAN_LIMIT.X and pan.Y == -PAN_LIMIT.Y, "Panning must stay near the build area")
+      local limitX=if multiplayer then 76 else PAN_LIMIT.X
+      assert(pan.X == limitX and pan.Y == -PAN_LIMIT.Y, "Panning must stay near the selected plot's build area")
       clearNavigation()
       focused = true
       assert(cameraInput("pan", "Begin", {KeyCode = "D"}) == "Pass", "Text input must stay usable")
       updateCamera(0.1)
-      assert(pan.X == PAN_LIMIT.X, "Typing must not pan")
+      assert(pan.X == limitX, "Typing must not pan")
       focused = false
       checks += 10
      end
     end
   end
 end
+end
+multiplayer=false
 -- Frame-rate independence and normalized diagonal movement.
 workspace.CurrentCamera.ViewportSize = Vector2.new(1920, 1080)
 panel.AbsolutePosition = Vector2.new(12, 878)

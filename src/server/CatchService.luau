@@ -137,6 +137,11 @@ local function cast(player: Player, target: any, heldSeconds: any)
 		send(player, "Cancelled", "Your tackle box is still loading. Try again in a moment.")
 		return
 	end
+	-- Café companies fish once they buy the fishing branch (office PC, BRANCHES app).
+	if player:GetAttribute("BranchFishing") == false then
+		send(player, "Cancelled", "Your company has no fishing branch yet. Buy it in the BRANCHES app on your office PC.")
+		return
+	end
 	local backpack = BackpackCatalog.layoutFor(player, profile.Angler.BackpackId)
 	if not AnglerData.hasCatchSpace(profile.Angler, backpack, Catalog.Fish) then
 		send(player, "Cancelled", "Your hand and backpack are full. Make room before fishing.")
@@ -173,6 +178,13 @@ local function cast(player: Player, target: any, heldSeconds: any)
 		and CastTiming.isPerfect(heldSeconds)
 	if perfect then
 		boosts.luck += CastTiming.PerfectLuck
+	end
+	-- The governing party's policy (ElectionService publishes Policy<Kind>; 0 when none).
+	for stat, kind in { luck = "Luck", size = "Size", reel = "Reel", handling = "Reel" } do
+		local amount = ReplicatedStorage:GetAttribute("Policy" .. kind)
+		if type(amount) == "number" and amount > 0 then
+			boosts[stat] = (boosts[stat] or (if stat == "luck" then 0 else 1)) + amount
+		end
 	end
 	local state =
 		{ tool = tool, target = surface, phase = "Waiting", boosts = boosts, perfectThrow = perfect, bait = baitId }

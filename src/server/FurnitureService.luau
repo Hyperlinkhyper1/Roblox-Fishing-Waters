@@ -17,6 +17,7 @@ local FishFreezer = require(script.Parent.Map.FishFreezer)
 local ShopDesk = require(script.Parent.Map.ShopDesk)
 local OfficeDesk = require(script.Parent.Map.OfficeDesk)
 local StorageRack = require(script.Parent.Map.StorageRack)
+local Workbench = require(script.Parent.Map.Workbench)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
@@ -205,6 +206,8 @@ local function buildItem(parent: Model, houseFrame: CFrame, entry, userId: numbe
 	elseif entry.ItemId == "OfficeDesk" then
 		-- Client OfficeComputer and OfficeComputerService find it by name in the base.
 		model = OfficeDesk.build(parent, frame)
+	elseif entry.ItemId == "Workbench" then
+		model = Workbench.build(parent, frame)
 	elseif entry.ItemId == "CompanyDesk" then
 		model = CompanyIslandMap.buildDesk(parent, frame)
 		local anchor = promptAnchor(model, frame * CFrame.new(0, 3.6, 2.4))
@@ -447,7 +450,9 @@ local function place(player: Player, from: any, x: any, z: any, r: any, site: st
 		return false, problem
 	end
 	return run(player, function(profile)
-		local data, reason = AnglerData.placeFurniture(profile.Angler, from, x, z, r, site)
+		local info = profile.SaveInfo
+		local expanded = info ~= nil and (info.PlotExpanded == true or info.Multiplayer == true)
+		local data, reason = AnglerData.placeFurniture(profile.Angler, from, x, z, r, site, expanded)
 		if data then
 			if data.Building then
 				local list = if site == "Company" then data.CompanyFurniture else data.Furniture
@@ -703,6 +708,7 @@ local function buildPreviews(parent: Instance)
 		CompanyDesk = CompanyIslandMap.buildDesk,
 		PrepBench = function(p, f) return Kitchen.buildStation(p, f, "Prep", Kitchen.BUILT_IN_WIDTH) end,
 		OfficeDesk = OfficeDesk.build,
+		Workbench = Workbench.build,
 	}
 	local ids = table.clone(Furniture.Order)
 	table.move(Furniture.KitOrder, 1, #Furniture.KitOrder, #ids + 1, ids)

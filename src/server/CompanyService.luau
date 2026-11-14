@@ -203,7 +203,7 @@ local function build(base: Model, owner: Player, boatId: string)
 			warn("[Company] Fisherman: " .. tostring(worker))
 			return
 		end
-		if not crew.active then
+		if not crew.active or not BoatService.isBusinessHost(owner) then
 			worker:Destroy()
 			return
 		end
@@ -296,6 +296,7 @@ local function landFish(crew, owner: Player)
 	roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)
 	local full = false
 	local ok = BoatService.updateProgress(owner, function(current)
+		assert(crew.active and BoatService.isBusinessHost(owner), "This company's fisherman moved to another crew member.")
 		local boatId = assignment(current)
 		assert(boatId == crew.boatId, "The fisherman has another boat now.")
 		local data = AnglerData.fishermanCatch(
@@ -415,7 +416,7 @@ end
 local function syncBase(base: Model)
 	local crew = crews[base]
 	local owner = npc.ownerOf(base)
-	local profile = owner and BoatService.getProfile(owner)
+	local profile = owner and BoatService.isBusinessHost(owner) and BoatService.getProfile(owner)
 	local boatId = assignment(profile)
 	if crew and (not owner or crew.ownerId ~= owner.UserId or crew.boatId ~= boatId or crew.dock ~= dockFrame(base)) then
 		despawn(crew)

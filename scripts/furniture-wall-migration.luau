@@ -23,8 +23,8 @@ assert(Furniture.intersectsGridWall(old.Furniture[2]), 'Expected dining wall con
 assert(Furniture.intersectsGridWall(old.Furniture[3]), 'Expected dining entrance conflict')
 assert(Furniture.intersectsGridWall(old.Furniture[7]), 'Expected enclosed office conflict')
 local data = Data.decode(old)
--- The house fixtures (freezer, till, office desk) join after the saved furniture.
-assert(#data.Furniture == #old.Furniture + #Data.FIXTURES and data.FurnitureStock.Freezer == 1, 'Purchases changed')
+-- The house fixtures and workbench join after the saved furniture.
+assert(#data.Furniture == #old.Furniture + #Data.FIXTURES + 1 and data.FurnitureStock.Freezer == 1, 'Purchases changed')
 -- The plant stood in the old front shop room, so it moved with the shop into its
 -- own building across the street (turned to face the house), clear of every wall.
 local plant = data.Furniture[1]
@@ -45,7 +45,7 @@ assert(
 assert(old.Furniture[1].X == 6 and old.Furniture[1].Z == 3, 'Decode mutated the original profile')
 assert(#data.Freezer == 1 and #data.Storage == 1 and #data.KitchenStorage.Fish == 1, 'Fish were lost')
 assert(data.Kitchen.GrillStation.Dish.RecipeId == 'Grilled' and data.Kitchen.GrillStation.ReadyAt == 1000, 'Cooking job was lost')
-assert(data.FurnitureWallVersion == 2 and not data.FurnitureWallMigrationPending, 'Migration should complete')
+assert(data.FurnitureWallVersion == 3 and not data.FurnitureWallMigrationPending, 'Migration should complete')
 local again = Data.decode(data)
 for i, entry in data.Furniture do
 	assert(again.Furniture[i].X == entry.X and again.Furniture[i].Z == entry.Z, 'Migration was not idempotent')
@@ -55,7 +55,7 @@ end
 -- after a successful pickup frees room. Unknown items must never block decoding.
 local pending = Data.decode({
 	-- Already in the shop building's coordinates, so only the wall retry applies.
-	ShopBuildingVersion = 1, FurnitureWallVersion = 2, FurnitureWallMigrationPending = true,
+	ShopBuildingVersion = 1, FurnitureWallVersion = 3, FurnitureWallMigrationPending = true,
 	Furniture = { { ItemId = 'PottedPlant', X = 6, Z = 3, R = 0 }, { ItemId = 'PottedPlant', X = 18, Z = -12, R = 0 } },
 })
 assert(pending.Furniture[1].X == 6 and pending.Furniture[1].Z == 3, 'Ordinary decode retried pending relocation')
@@ -74,6 +74,7 @@ local blockedRaw = {
 }
 local blocked = Data.decode(blockedRaw)
 assert(blocked.FurnitureWallMigrationPending and #blocked.Furniture == 3 + #Data.FIXTURES, 'Unplaceable furniture must remain owned and placed')
+assert(blocked.FurnitureStock.Workbench == 1, 'A full room keeps the new workbench in stock')
 assert(blocked.Furniture[1].X == 6 and blocked.Furniture[1].Z == 1.5, 'Failed relocation must retain the original position')
 assert(#blocked.Freezer == 1 and #blocked.Storage == 1 and blocked.Kitchen.GrillStation.ReadyAt == 1000, 'Blocked migration lost contents')
 local unblocked = assert(Data.pickUpFurniture(blocked, 2))

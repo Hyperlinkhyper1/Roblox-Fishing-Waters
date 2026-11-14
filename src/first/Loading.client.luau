@@ -209,6 +209,16 @@ end
 local progress = 0
 while not dismissed do
 	local elapsed = os.clock() - startedAt
+	-- The selector must be usable before a save creates a character or equips gear.
+	-- Keep the loading screen alive underneath it, then resume the usual dock safety gates.
+	local awaitingSave = player:GetAttribute("SaveSelectionMounted") == true
+		and player:GetAttribute("SaveSelectionRequired") ~= false
+		and player:GetAttribute("BoatDataStatus") ~= "Ready"
+	-- The selector sets SaveSelectionOpening the moment a save is picked, so this screen
+	-- returns at once while the server opens the save (and finishes the harbour).
+	local opening = awaitingSave and player:GetAttribute("SaveSelectionOpening") == true
+	local selecting = awaitingSave and not opening
+	screen.Visible = not selecting
 	local connected = game:IsLoaded()
 	local worldReady = ReplicatedStorage:GetAttribute("FishingWatersWorldReady") == true
 	local clientReady = player:GetAttribute("FishingWatersClientReady") == true
@@ -227,7 +237,7 @@ while not dismissed do
 			groundParams
 		) ~= nil
 	end
-	local safeToEnter = connected and worldReady and alive and ground
+	local safeToEnter = not awaitingSave and connected and worldReady and alive and ground
 	local failed = player:GetAttribute("FishingWatersClientError") == true
 	local serverFailed = ReplicatedStorage:GetAttribute("FishingWatersStartupError") == true
 	local essential = safeToEnter and clientReady and not serverFailed
@@ -255,6 +265,10 @@ while not dismissed do
 	elseif not worldReady then
 		local stage = ReplicatedStorage:GetAttribute("FishingWatersLoadStage")
 		status.Text = (if type(stage) == "string" then stage else "Preparing the harbour") .. "..."
+	elseif opening then
+		status.Text = if player:GetAttribute("SaveTeleporting") == true
+			then "Joining your company server..."
+			else "Opening your save..."
 	elseif not alive or not ground then
 		status.Text = "Finding your dock..."
 	elseif not clientReady then

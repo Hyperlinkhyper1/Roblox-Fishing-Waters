@@ -1,6 +1,7 @@
 -- Recipe picker for the Supermarket path's kitchen stations. Pressing Cook at a
--- station lists what it can make from the fish you carry; the server checks the
--- fish, the station and the recipe again before anything cooks.
+-- station lists what it can make from the fish you carry; picking a recipe starts
+-- the hand-cooking minigame (CookingMinigame) and its score grades the dish. The
+-- server checks the fish, the station and the recipe again before anything cooks.
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,6 +9,8 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
+local CookingMinigame = require(script.Parent.CookingMinigame)
+local Recipes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Recipes"))
 
 local Kitchen = {}
 local started = false
@@ -111,30 +114,75 @@ function Kitchen.start()
 	Theme.scroll(list)
 	make("UIListLayout", list, { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 8) })
 
+	-- Hand cooking plays out here in place of the recipe list.
+	local stage = make("Frame", card, {
+		Name = "CookingStage",
+		Position = UDim2.fromOffset(18, 100),
+		Size = UDim2.new(1, -36, 1, -116),
+		BackgroundTransparency = 1,
+		Visible = false,
+	})
+
 	local stationKey: string? = nil
 	local activePrompt: ProximityPrompt? = nil
 	local options = nil
 	local pending = false
+	local stopGame: (() -> ())? = nil
 	local render
 	local function hide()
+		if stopGame then
+			stopGame()
+			stopGame = nil
+		end
+		stage.Visible, list.Visible = false, true
 		overlay.Visible = false
 		stationKey, activePrompt, options = nil, nil, nil
 	end
-	local function cook(recipeId: string)
-		if pending or not stationKey then
+	-- The server checks the fish and station again, then rates the dish by `quality`.
+	local function serve(key: string, recipeId: string, quality: number)
+		local ok, result = pcall(request.InvokeServer, request, "Cook", key, recipeId, quality)
+		if stationKey ~= key then
 			return
 		end
-		pending = true
-		render()
-		local ok, result = pcall(request.InvokeServer, request, "Cook", stationKey, recipeId)
-		pending = false
 		if ok and type(result) == "table" then
 			if result.Message ~= "" then
 				notice(result.Message)
 			end
-			if result.Ok then
-				hide()
-				return
+		else
+			notice("The kitchen couldn't be reached. Try again.")
+		end
+		hide()
+	end
+	local function cook(recipeId: string)
+		local key = stationKey
+		if pending or not key or stopGame then
+			return
+		end
+		pending = true
+		render()
+		local ok, result = pcall(request.InvokeServer, request, "Begin", key, recipeId)
+		pending = false
+		if stationKey ~= key then
+			return
+		end
+		if ok and type(result) == "table" and result.Ok then
+			local recipe = options and options.Recipes
+			local name = recipeId
+			for _, item in recipe or {} do
+				if item.Id == recipeId then
+					name = item.Name
+				end
+			end
+			title.Text = name
+			status.Text = "Do each step to cook it. Perfect work sells for 25% more, sloppy work for 15% less."
+			list.Visible, stage.Visible = false, true
+			stopGame = CookingMinigame.run(stage, Recipes.Steps[recipeId] or {}, function(quality)
+				serve(key, recipeId, quality)
+			end)
+			return
+		elseif ok and type(result) == "table" then
+			if result.Message ~= "" then
+				notice(result.Message)
 			end
 			options = result.Options or options
 		else
@@ -143,6 +191,9 @@ function Kitchen.start()
 		render()
 	end
 	render = function()
+		if stopGame then
+			return
+		end
 		for _, child in list:GetChildren() do
 			if child:IsA("Frame") then
 				child:Destroy()
@@ -176,7 +227,7 @@ function Kitchen.start()
 				Size = UDim2.new(1, -170, 0, 22),
 				TextSize = 16,
 			})
-			label(row, recipe.Problem or string.format("Sells for $%d · ready in %ds", recipe.Value or 0, recipe.Seconds), {
+			label(row, recipe.Problem or string.format("Sells for $%d · %d cooking steps", recipe.Value or 0, #(Recipes.Steps[recipe.Id] or {})), {
 				Position = UDim2.fromOffset(12, 32),
 				Size = UDim2.new(1, -170, 0, 36),
 				TextSize = 12,
@@ -203,7 +254,12 @@ function Kitchen.start()
 		end
 	end
 	close.Activated:Connect(hide)
-	overlay.Activated:Connect(hide)
+	-- A stray click outside the card must not throw away a half-cooked dish.
+	overlay.Activated:Connect(function()
+		if not stopGame then
+			hide()
+		end
+	end)
 	UserInputService.InputBegan:Connect(function(input)
 		if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.ButtonB then
 			hide()
@@ -217,7 +273,7 @@ function Kitchen.start()
 	end)
 	ProximityPromptService.PromptTriggered:Connect(function(prompt, who)
 		local key = prompt:GetAttribute("StationKey")
-		if who ~= player or prompt.Name ~= "CookPrompt" or type(key) ~= "string" then
+		if who ~= player or prompt.Name ~= "CookPrompt" or type(key) ~= "string" or stopGame then
 			return
 		end
 		stationKey, activePrompt, options = key, prompt, nil

@@ -3,9 +3,15 @@
 -- until RETRY_AFTER has passed (or a caller forces a fresh attempt).
 --
 -- Roblox counts a live dynamic EditableMesh against the device budget as if it
--- were maxed out, so a long-lived cosmetic mesh (the swell water sheet) can
--- leave no room at all for fish skins. Such holders register a release
--- callback; an allocation with `evict` frees them and tries once more.
+-- were maxed out, and a destroyed one doesn't always hand that budget back on
+-- the same frame. Builders therefore reuse one scratch dynamic mesh (clear())
+-- and keep only fixed-size copies (fixed(..., keepSource)).
+--
+-- A long-lived cosmetic mesh (the swell water sheet) can leave no room at all
+-- for fish skins. Such holders register a one-shot release callback; caches
+-- that can rebuild later (skins nobody is showing) register a reclaimer that
+-- may run on every shortage. An allocation with `evict` frees both and tries
+-- once more.
 local AssetService = game:GetService("AssetService")
 
 local EditableMeshBudget = {}
@@ -14,6 +20,7 @@ local failedAt = -math.huge
 local failureReason: string? = nil
 local evicted: { string } = {}
 local releasers: { [string]: () -> () } = {}
+local reclaimers: { [string]: () -> number } = {}
 
 export type Options = { force: boolean?, evict: boolean? }
 
@@ -27,6 +34,16 @@ function EditableMeshBudget.onRelease(name: string, release: () -> ()): () -> ()
 	return function()
 		if releasers[name] == release then
 			releasers[name] = nil
+		end
+	end
+end
+
+-- Caches that can free meshes repeatedly; `reclaim` returns how many it freed.
+function EditableMeshBudget.onReclaim(name: string, reclaim: () -> number): () -> ()
+	reclaimers[name] = reclaim
+	return function()
+		if reclaimers[name] == reclaim then
+			reclaimers[name] = nil
 		end
 	end
 end
@@ -45,6 +62,12 @@ function EditableMeshBudget.status(): string
 	)
 end
 
+local function noteEvicted(name: string)
+	if not table.find(evicted, name) then
+		table.insert(evicted, name)
+	end
+end
+
 local function attempt(label: string, allocate: () -> EditableMesh?): (EditableMesh?, string?)
 	local ok, result = pcall(allocate)
 	if ok and result then
@@ -56,21 +79,37 @@ local function attempt(label: string, allocate: () -> EditableMesh?): (EditableM
 			else tostring(result))
 end
 
+-- Frees every releasable holder and reclaimable cache; true if anything went.
+local function evict(): boolean
+	local freed = false
+	for name, release in releasers do
+		releasers[name] = nil
+		noteEvicted(name)
+		freed = true
+		local ok, message = pcall(release)
+		if not ok then
+			warn("[EditableMeshBudget] Releasing " .. name .. " failed: " .. tostring(message))
+		end
+	end
+	for name, reclaim in reclaimers do
+		local ok, count = pcall(reclaim)
+		if not ok then
+			warn("[EditableMeshBudget] Reclaiming " .. name .. " failed: " .. tostring(count))
+		elseif type(count) == "number" and count > 0 then
+			noteEvicted(name)
+			freed = true
+		end
+	end
+	return freed
+end
+
 local function allocate(label: string, options: Options?, create: () -> EditableMesh?): EditableMesh?
 	local force = options and options.force
 	if not force and os.clock() - failedAt < RETRY_AFTER then
 		return nil
 	end
 	local mesh, reason = attempt(label, create)
-	if not mesh and options and options.evict and next(releasers) then
-		for name, release in releasers do
-			releasers[name] = nil
-			table.insert(evicted, name)
-			local ok, message = pcall(release)
-			if not ok then
-				warn("[EditableMeshBudget] Releasing " .. name .. " failed: " .. tostring(message))
-			end
-		end
+	if not mesh and options and options.evict and evict() then
 		-- A destroyed mesh doesn't always hand its budget back on the same frame.
 		for _ = 1, 3 do
 			task.wait()
@@ -91,15 +130,27 @@ function EditableMeshBudget.create(options: Options?): EditableMesh?
 	end)
 end
 
--- Fish geometry never changes after construction. Keep only the smaller fixed
--- copy; the temporary dynamic mesh must be released even if copying fails.
-function EditableMeshBudget.fixed(mesh: EditableMesh, options: Options?): EditableMesh?
+-- Empties a scratch dynamic mesh so the next piece can be built in it without
+-- allocating (and budgeting) another one.
+function EditableMeshBudget.clear(mesh: EditableMesh)
+	for _, face in mesh:GetFaces() do
+		mesh:RemoveFace(face)
+	end
+	mesh:RemoveUnused()
+end
+
+-- Geometry that never changes after construction keeps only the smaller fixed
+-- copy. The dynamic source is destroyed even if copying fails, unless the
+-- caller keeps it as a scratch mesh (`keepSource`) and destroys it itself.
+function EditableMeshBudget.fixed(mesh: EditableMesh, options: Options?, keepSource: boolean?): EditableMesh?
 	-- The dynamic mesh is already held, so this copy is always attempted.
 	local copyOptions: Options = { force = true, evict = options and options.evict }
 	local ok, fixed = pcall(allocate, "CreateEditableMeshAsync (fixed-size copy)", copyOptions, function()
 		return AssetService:CreateEditableMeshAsync(Content.fromObject(mesh), { FixedSize = true })
 	end)
-	mesh:Destroy()
+	if not keepSource then
+		mesh:Destroy()
+	end
 	if not ok then
 		failedAt = os.clock()
 		failureReason = "CreateEditableMeshAsync (fixed-size copy): " .. tostring(fixed)

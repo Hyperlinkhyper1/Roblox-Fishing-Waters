@@ -3,6 +3,8 @@
 -- ReplicatedStorage.StockMarket: P_<ticker> is the price now, O_<ticker> the in-game day's open.
 -- Trades are only accepted from a player sitting at their own office PC. Holdings are saved on
 -- the profile as `Portfolio` (Shared.Stocks.decode) and pay a dividend every 7 in-game days.
+-- Trading needs the company's Harbour Exchange trading license (sold at Micro Harbour in the
+-- city, Shared.TechCatalog); dividends on shares already held keep paying without one.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -11,6 +13,7 @@ local OfficeComputerService = require(script.Parent.OfficeComputerService)
 local StockPrices = require(script.Parent.StockPrices)
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 local Stocks = require(ReplicatedStorage.Shared.Stocks)
+local TechCatalog = require(ReplicatedStorage.Shared.TechCatalog)
 
 local Service = {}
 local started = false
@@ -206,6 +209,13 @@ function Service.start()
 		end
 		if not OfficeComputerService.atDesk(player) then
 			return { Ok = false, Message = "Sit at your office computer to trade.", State = view(player) }
+		end
+		if not TechCatalog.hasLicense(BoatService.getProfile(player), "StockExchange") then
+			return {
+				Ok = false,
+				Message = "Trading needs a license from " .. TechCatalog.STORE_NAME .. " in the city.",
+				State = view(player),
+			}
 		end
 		lastRequest[player] = os.clock()
 		busy[player] = true

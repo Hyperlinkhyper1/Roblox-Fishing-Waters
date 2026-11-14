@@ -394,7 +394,12 @@ local function scenario(mode)
 	local humanoid = Instance.new("Humanoid")
 	humanoid.Health = if mode == "dead-character" then 0 else 100
 	humanoid.Parent = character
-	player.Character = if mode == "character" then nil else character
+	player.Character = if mode == "character" or mode == "save-selection" then nil else character
+	if mode == "save-selection" then
+		player:SetAttribute("SaveSelectionMounted", true)
+		player:SetAttribute("SaveSelectionRequired", true)
+		player:SetAttribute("BoatDataStatus", "Selecting")
+	end
 	player:SetAttribute(
 		"FishingWatersClientReady",
 		mode ~= "client" and mode ~= "client-error" and mode ~= "slow-client"
@@ -638,6 +643,27 @@ local function scenario(mode)
 		end
 		advance(1)
 		check(gui.destroyed, mode .. " readiness should release the overlay immediately when satisfied")
+	elseif mode == "save-selection" then
+		advance(15)
+		check(not gui.destroyed and not screen.Visible, "Mounted save selection replaces the loading screen before any character exists")
+		check(not assert(gui:FindFirstChild("Continue", true)).Visible, "Loading cannot bypass save selection")
+		check(streamRequests == 0, "Waiting for a save does not request a character's streamed surroundings")
+		player:SetAttribute("SaveSelectionOpening", true)
+		advance(0.2)
+		check(screen.Visible and gui:FindFirstChild("Status", true).Text == "Opening your save...", "Picking a save brings loading back before the server confirms it")
+		check(not assert(gui:FindFirstChild("Continue", true)).Visible, "An unconfirmed pick cannot skip into the harbour")
+		player:SetAttribute("SaveSelectionOpening", nil)
+		advance(0.2)
+		check(not screen.Visible, "A failed pick hands the screen back to the selector")
+		player:SetAttribute("SaveSelectionOpening", true)
+		player:SetAttribute("SaveSelectionRequired", false)
+		player:SetAttribute("BoatDataStatus", "Loading")
+		advance(1)
+		check(not gui.destroyed and screen.Visible, "After selection the loader resumes dock safety while character data loads")
+		player.Character = character
+		player:SetAttribute("BoatDataStatus", "Ready")
+		advance(1)
+		check(gui.destroyed, "Chosen save releases normal loading only when the dock is ready")
 	elseif mode == "fatal-error" then
 		advance(13.2)
 		check(not gui.destroyed, "Fatal world startup error must keep the overlay")
@@ -739,6 +765,7 @@ for _, mode in
 		"placement",
 		"client",
 		"ground",
+		"save-selection",
 		"client-error",
 		"slow-client",
 		"fatal-error",

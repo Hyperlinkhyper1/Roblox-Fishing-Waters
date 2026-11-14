@@ -18,7 +18,7 @@ local Vector3 = {new=function(...) return {} end}
 local CFrame = {new=function(...) return {} end}
 local Random = {new=function() return {} end}
 local task = {spawn=function() end}
-local deps = {FishFreezer={ICE_Z={X=0, Y=0}}, BaseGrid={SHOP_FRONT=65.25}, BoatService={setBoatLock=function(callback) assert(type(callback) == "function") end}}
+local deps = {FishFreezer={ICE_Z={X=0, Y=0}}, Kitchen={CASE_SPOTS={}, SHELF_SPOTS={}}, BaseGrid={SHOP_FRONT=65.25}, BoatService={setBoatLock=function(callback) assert(type(callback) == "function") end}}
 local CustomerService = (function()
 ${customer}
 end)()

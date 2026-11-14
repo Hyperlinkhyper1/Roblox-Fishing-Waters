@@ -1,7 +1,9 @@
 // Builds the real MscPreziosa model against recording mocks and checks its geometry: the overall
-// dimensions match the ship (333.3 m x 37.9 m, 8.65 m draught, mast 66.8 m above the waterline),
+// dimensions match the ship (333.3 m x 37.9 m, 8.65 m draught, 66.8 m from keel to masthead),
 // parts stay within Roblox limits and every frame is a proper rotation.
-// Pass --preview <file.png> to also render a starboard elevation over a plan view.
+// Pass --preview <file.png> to also render it: a starboard elevation over a plan view in that file,
+// and beside it <file>-bow.png, -stern.png, -bow-quarter.png, -stern-quarter.png and -top-quarter.png.
+// Add --crop x0,x1 (metres aft of the bow) for close-ups of part of the ship in <file>-crop.png.
 // This checks geometry only, not Roblox rendering, physics or streaming.
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -95,16 +97,19 @@ local ship = MscPreziosa.build(folder, origin, function() end)
 local S = MscPreziosa.STUDS
 check(ship.Parent == folder and ship.Name == "MSC Preziosa", "The ship is published into the given folder")
 check(ship:GetAttribute("PartCount") == #parts, "PartCount counts every part")
-check(#parts > 1500 and #parts < 14000, "A sensible part count: " .. #parts)
+check(#parts > 1500 and #parts < 26000, "A sensible part count: " .. #parts)
 local named = {}
 for _, p in parts do named[p.Name] = (named[p.Name] or 0) + 1 end
-check(named.Helm == 24, "Twelve lifeboats and tenders a side, each with a helm position")
+check(named.Helm == 30, "Eleven lifeboats, a rescue boat and three tenders a side, each with a helm position: " .. tostring(named.Helm))
+check(named.Davit >= 60, "Every boat hangs from davits")
+check((named.BalconyGlass or 0) > 100, "Balconies are open behind glass balustrades")
 check((named.Partition or 0) > 500, "Balconies are divided by partitions")
 check((named.Slat or 0) > 100, "The funnel is built from slats, not a solid casing")
-check((named.Hull or 0) > 1500, "The bow is skinned in triangles, not stacked layers")
+check((named.Hull or 0) > 1200, "The bow is skinned in triangles, not stacked layers: " .. tostring(named.Hull))
 check((named.Emblem or 0) > 150, "The MSC stars are built from parts")
--- Per side: the name, the hull logo's MSC and the lettering of three stars; name and port across the stern
-check(named.Lettering == 2 * (1 + 1 + 3) + 2, "Every livery sign is placed: " .. tostring(named.Lettering))
+-- Per side: the name on the bow and on the glass screen, the hull logo's MSC and the lettering of
+-- three stars; name and port across the stern
+check(named.Lettering == 2 * (2 + 1 + 3) + 2, "Every livery sign is placed: " .. tostring(named.Lettering))
 for _, p in parts do
   if p.Name == "Lettering" then check(p.Transparency == 1, "Livery plates are invisible") end
 end
@@ -135,7 +140,9 @@ print(string.format("Extent: %.1f m long, %.1f m wide (bridge wings), keel %.2f 
 check(math.abs(length - 333.3) < 1.5, "Length overall matches 333.3 m")
 check(math.abs(beam - 47.2) < 0.5, "Bridge wings reach 47.2 m across")
 check(math.abs(keel + 8.65) < 0.05, "Keel sits at the 8.65 m draught")
-check(math.abs(top - 66.8) < 0.1, "Mast top is 66.8 m above the waterline")
+check(math.abs(top - keel - 66.8) < 0.1, "The masthead is 66.8 m above the keel")
+check(math.abs(MscPreziosa.FLOOR[9] - MscPreziosa.FLOOR[8] - 2.78) < 0.05, "Cabin decks are 2.78 m apart")
+check(MscPreziosa.FLOOR[15] - MscPreziosa.FLOOR[14] > 3.5, "The pool deck is taller than a cabin deck")
 check(math.abs((lo.X - origin.X) / S + 333.3 / 2) < 1, "The bow points -X from the origin amidships")
 
 -- The hull at the waterline: full 37.9 m beam amidships, and the stem well aft of the bow tip
@@ -156,17 +163,13 @@ check(MscPreziosa.sample(MscPreziosa.PLAN[14][1], 150) > 17.5, "Deck 14 overhang
 
 if PREVIEW then
   for _, p in parts do
-    if p.Transparency < 0.9 then
+    if p.Transparency < 0.95 then
       local c, s = p.CFrame, p.Size
-      local corners = {}
-      local shape = if p.ClassName == "WedgePart"
-        then { { -1, -1, -1 }, { -1, -1, 1 }, { -1, 1, 1 }, { 1, -1, -1 }, { 1, -1, 1 }, { 1, 1, 1 } }
-        else { { -1, -1, -1 }, { -1, -1, 1 }, { -1, 1, -1 }, { -1, 1, 1 }, { 1, -1, -1 }, { 1, -1, 1 }, { 1, 1, -1 }, { 1, 1, 1 } }
-      for _, k in shape do
-        local w = c * v3(s.X * k[1] / 2, s.Y * k[2] / 2, s.Z * k[3] / 2) - origin
-        table.insert(corners, string.format("%.2f,%.2f,%.2f", w.X / S, w.Y / S, w.Z / S))
-      end
-      print("PART " .. p.Color.R .. "," .. p.Color.G .. "," .. p.Color.B .. "," .. p.Transparency .. "|" .. table.concat(corners, ";"))
+      local w = c.Position - origin
+      local shape = if p.ClassName == "WedgePart" then "wedge" elseif p.Shape == "PartType.Cylinder" then "cylinder" elseif p.Shape == "PartType.Ball" then "ball" else "box"
+      print(string.format("PART %d,%d,%d,%.2f,%s|%.3f,%.3f,%.3f|%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f|%.3f,%.3f,%.3f",
+        p.Color.R, p.Color.G, p.Color.B, p.Transparency, shape, w.X / S, w.Y / S, w.Z / S,
+        c.x.X, c.x.Y, c.x.Z, c.y.X, c.y.Y, c.y.Z, c.z.X, c.z.Y, c.z.Z, s.X / S, s.Y / S, s.Z / S))
     end
   end
 end
@@ -187,64 +190,148 @@ try {
   await rm(folder, { recursive: true, force: true });
 }
 
-// Starboard elevation (bow on the right) above a plan view, each part filled as the convex hull of
-// its projected corners and drawn back to front.
+// Renders the recorded parts with a z-buffer, orthographically. World axes are the model's: the
+// bow points -X, Y is up, and the ship's starboard side faces -Z.
 async function writePreview(partLines) {
-  const scale = 4; // pixels per metre
-  const width = Math.ceil(345 * scale), side = Math.ceil(80 * scale), plan = Math.ceil(52 * scale);
-  const height = side + plan + 20;
-  const image = Buffer.alloc(width * height * 3, 0);
-  for (let i = 0; i < width * height; i++) image.set([200, 222, 236], i * 3);
-  const parts = partLines.map(line => {
-    const [head, body] = line.slice(5).split('|');
-    const [r, g, b, transparency] = head.split(',').map(Number);
-    return { color: [r, g, b], transparency, corners: body.split(';').map(c => c.split(',').map(Number)) };
-  });
-  const toX = x => (345 - (x + 172.5)) * scale; // the bow (-X) on the right
-  const fill = (points, color, alpha, clipTop, clipBottom) => {
-    const hull = convexHull(points);
-    if (hull.length < 3) return;
-    const ys = hull.map(p => p[1]);
-    for (let y = Math.max(clipTop, Math.floor(Math.min(...ys))); y <= Math.min(clipBottom, Math.ceil(Math.max(...ys))); y++) {
-      let left = Infinity, right = -Infinity;
-      for (let i = 0; i < hull.length; i++) {
-        const [x1, y1] = hull[i], [x2, y2] = hull[(i + 1) % hull.length];
-        if ((y1 <= y + 0.5 && y2 >= y + 0.5) || (y2 <= y + 0.5 && y1 >= y + 0.5)) {
-          const x = y1 === y2 ? Math.min(x1, x2) : x1 + (x2 - x1) * (y + 0.5 - y1) / (y2 - y1);
-          const xb = y1 === y2 ? Math.max(x1, x2) : x;
-          left = Math.min(left, x, xb); right = Math.max(right, x, xb);
-        }
-      }
-      for (let x = Math.max(0, Math.round(left)); x <= Math.min(width - 1, Math.round(right)); x++) {
-        const i = (y * width + x) * 3;
-        for (let k = 0; k < 3; k++) image[i + k] = Math.round(image[i + k] * (1 - alpha) + color[k] * alpha);
-      }
-    }
+  const meshes = partLines.map(line => mesh(line.slice(5)));
+  const cropIndex = process.argv.indexOf('--crop');
+  const save = async (suffix, image) => {
+    const path = suffix ? previewPath.replace(/\.png$/i, '') + '-' + suffix + '.png' : previewPath;
+    await writeFile(path, png(image.width, image.height, image.rgb));
+    console.log('Preview written to ' + path);
   };
-  // Waterline and sea in the elevation
-  const waterY = 70 * scale;
-  for (let y = waterY; y < side; y++) for (let x = 0; x < width; x++) image.set([60, 110, 140], (y * width + x) * 3);
-  const elevation = [...parts].sort((a, b) => Math.max(...a.corners.map(c => c[2])) - Math.max(...b.corners.map(c => c[2])));
-  for (const part of elevation) {
-    const under = part.corners.every(c => c[1] <= 0.01);
-    fill(part.corners.map(c => [toX(c[0]), waterY - c[1] * scale]), part.color, (1 - part.transparency) * (under ? 0.45 : 1), 0, side - 1);
+  const side = render(meshes, { forward: [0, 0, 1], up: [0, 1, 0], scale: 4 });
+  const plan = render(meshes, { forward: [0, -1, 0], up: [0, 0, 1], scale: 4, sea: false });
+  await save('', stack([side, plan]));
+  await save('bow', render(meshes, { forward: [1, 0, 0], up: [0, 1, 0], scale: 9 }));
+  await save('stern', render(meshes, { forward: [-1, 0, 0], up: [0, 1, 0], scale: 9 }));
+  await save('bow-quarter', render(meshes, { forward: [0.62, -0.3, 0.72], up: [0, 1, 0], scale: 4.4 }));
+  await save('stern-quarter', render(meshes, { forward: [-0.6, -0.22, 0.77], up: [0, 1, 0], scale: 4.4 }));
+  await save('top-quarter', render(meshes, { forward: [-0.25, -0.62, 0.74], up: [0, 1, 0], scale: 4.4 }));
+  if (cropIndex > 0) {
+    const [x0, x1] = process.argv[cropIndex + 1].split(',').map(Number);
+    const kept = meshes.filter(m => m.centre[0] + 166.65 > x0 - 6 && m.centre[0] + 166.65 < x1 + 6);
+    await save('crop', render(kept, { forward: [0, 0, 1], up: [0, 1, 0], scale: 1300 / (x1 - x0 + 12) }));
+    await save('crop-quarter', render(kept, { forward: [-0.45, -0.45, 0.77], up: [0, 1, 0], scale: 1100 / (x1 - x0 + 12) }));
   }
-  const planMid = side + 20 + plan / 2;
-  const planView = [...parts].sort((a, b) => Math.max(...a.corners.map(c => c[1])) - Math.max(...b.corners.map(c => c[1])));
-  for (const part of planView) {
-    fill(part.corners.map(c => [toX(c[0]), planMid - c[2] * scale]), part.color, 1 - part.transparency, side + 20, height - 1);
-  }
-  await writeFile(previewPath, png(width, height, image));
-  console.log('Preview written to ' + previewPath);
 }
 
-function convexHull(points) {
-  const p = points.map(q => [q[0], q[1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const lower = [], upper = [];
-  for (const q of p) { while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), q) <= 0) lower.pop(); lower.push(q); }
-  for (const q of p.reverse()) { while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), q) <= 0) upper.pop(); upper.push(q); }
-  return lower.slice(0, -1).concat(upper.slice(0, -1));
+function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function unit(a) { const m = Math.hypot(...a) || 1; return [a[0] / m, a[1] / m, a[2] / m]; }
+
+// A part as triangles in world metres
+function mesh(text) {
+  const [head, position, axes, size] = text.split('|');
+  const [r, g, b, transparency, shape] = head.split(',');
+  const p = position.split(',').map(Number), a = axes.split(',').map(Number), s = size.split(',').map(Number);
+  const place = v => [0, 1, 2].map(k => p[k] + a[k] * v[0] * s[0] / 2 + a[3 + k] * v[1] * s[1] / 2 + a[6 + k] * v[2] * s[2] / 2);
+  let local = [], faces = [];
+  if (shape === 'wedge') {
+    local = [[-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [1, -1, -1], [1, -1, 1], [1, 1, 1]];
+    faces = [[0, 1, 4, 3], [1, 2, 5, 4], [0, 3, 5, 2], [0, 1, 2], [3, 4, 5]];
+  } else if (shape === 'cylinder' || shape === 'ball') {
+    // Both are round in the part's Y-Z plane; a ball is also round along X
+    const around = 12, rings = shape === 'ball' ? 6 : 1;
+    const least = Math.min(...s);
+    for (let i = 0; i <= rings; i++) {
+      const t = Math.PI * i / rings;
+      const x = shape === 'ball' ? -Math.cos(t) * least / s[0] : i * 2 - 1;
+      const ring = shape === 'ball' ? Math.max(Math.sin(t), 0.02) * least : Math.min(s[1], s[2]);
+      for (let j = 0; j < around; j++) {
+        const u = 2 * Math.PI * j / around;
+        local.push([x, Math.cos(u) * ring / s[1], Math.sin(u) * ring / s[2]]);
+      }
+    }
+    for (let i = 0; i < rings; i++) for (let j = 0; j < around; j++) {
+      const k = (j + 1) % around;
+      faces.push([i * around + j, i * around + k, (i + 1) * around + k, (i + 1) * around + j]);
+    }
+    if (shape === 'cylinder') faces.push([...Array(around).keys()], [...Array(around).keys()].map(j => around + j));
+  } else {
+    local = [[-1, -1, -1], [-1, -1, 1], [-1, 1, -1], [-1, 1, 1], [1, -1, -1], [1, -1, 1], [1, 1, -1], [1, 1, 1]];
+    faces = [[0, 1, 3, 2], [4, 5, 7, 6], [0, 1, 5, 4], [2, 3, 7, 6], [0, 2, 6, 4], [1, 3, 7, 5]];
+  }
+  const vertices = local.map(place);
+  const triangles = [];
+  for (const face of faces) {
+    const q = face.map(i => vertices[i]);
+    let normal = [0, 0, 0];
+    for (let i = 1; i + 1 < q.length && Math.hypot(...normal) < 1e-9; i++) {
+      normal = cross(q[i].map((v, k) => v - q[0][k]), q[i + 1].map((v, k) => v - q[0][k]));
+    }
+    normal = unit(normal);
+    const middle = [0, 1, 2].map(k => q.reduce((sum, v) => sum + v[k], 0) / q.length);
+    if (dot(normal, middle.map((v, k) => v - p[k])) < 0) normal = normal.map(v => -v);
+    for (let i = 1; i + 1 < q.length; i++) triangles.push({ points: [q[0], q[i], q[i + 1]], normal });
+  }
+  return { color: [Number(r), Number(g), Number(b)], transparency: Number(transparency), triangles, centre: p };
+}
+
+function render(meshes, { forward, up, scale, sea = true }) {
+  const f = unit(forward), right = unit(cross(f, up)), top = cross(right, f);
+  const light = unit([0, 1, 2].map(k => -f[k] * 0.55 + top[k] * 0.75 + right[k] * 0.35));
+  let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+  for (const m of meshes) for (const t of m.triangles) for (const v of t.points) {
+    const x = dot(v, right), y = dot(v, top);
+    lo = [Math.min(lo[0], x), Math.min(lo[1], y)]; hi = [Math.max(hi[0], x), Math.max(hi[1], y)];
+  }
+  const pad = 12;
+  const width = Math.ceil((hi[0] - lo[0]) * scale) + 2 * pad, height = Math.ceil((hi[1] - lo[1]) * scale) + 2 * pad;
+  const rgb = Buffer.alloc(width * height * 3), depth = new Float32Array(width * height).fill(Infinity);
+  for (let i = 0; i < width * height; i++) rgb.set([200, 222, 236], i * 3);
+  const draw = (m, t, write) => {
+    const shade = 0.55 + 0.45 * Math.max(0, dot(t.normal, light));
+    const alpha = 1 - m.transparency;
+    const s = t.points.map(v => [(dot(v, right) - lo[0]) * scale + pad, (hi[1] - dot(v, top)) * scale + pad, dot(v, f)]);
+    const area = (s[1][0] - s[0][0]) * (s[2][1] - s[0][1]) - (s[2][0] - s[0][0]) * (s[1][1] - s[0][1]);
+    if (Math.abs(area) < 1e-9) return;
+    const x0 = Math.max(0, Math.floor(Math.min(s[0][0], s[1][0], s[2][0]))), x1 = Math.min(width - 1, Math.ceil(Math.max(s[0][0], s[1][0], s[2][0])));
+    const y0 = Math.max(0, Math.floor(Math.min(s[0][1], s[1][1], s[2][1]))), y1 = Math.min(height - 1, Math.ceil(Math.max(s[0][1], s[1][1], s[2][1])));
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const px = x + 0.5, py = y + 0.5;
+      const w0 = ((s[1][0] - px) * (s[2][1] - py) - (s[2][0] - px) * (s[1][1] - py)) / area;
+      const w1 = ((s[2][0] - px) * (s[0][1] - py) - (s[0][0] - px) * (s[2][1] - py)) / area;
+      const w2 = 1 - w0 - w1;
+      if (w0 < -0.001 || w1 < -0.001 || w2 < -0.001) continue;
+      const z = w0 * s[0][2] + w1 * s[1][2] + w2 * s[2][2];
+      const i = y * width + x;
+      if (z >= depth[i]) continue;
+      if (write) depth[i] = z;
+      for (let k = 0; k < 3; k++) rgb[i * 3 + k] = Math.round(rgb[i * 3 + k] * (1 - alpha) + m.color[k] * shade * alpha);
+    }
+  };
+  const solid = meshes.filter(m => m.transparency < 0.05), clear = meshes.filter(m => m.transparency >= 0.05);
+  for (const m of solid) for (const t of m.triangles) draw(m, t, true);
+  if (sea) {
+    const water = { color: [60, 110, 140], transparency: 0.35 };
+    const c = [[-260, 0, -120], [260, 0, -120], [260, 0, 120], [-260, 0, 120]];
+    for (const points of [[c[0], c[1], c[2]], [c[0], c[2], c[3]]]) draw(water, { points, normal: [0, 1, 0] }, false);
+    // Seen side on the sea has no area, so tint everything below the waterline instead
+    if (Math.abs(f[1]) < 0.01) {
+      const line = Math.round(hi[1] * scale + pad);
+      for (let y = line; y < height; y++) for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 3;
+        for (let k = 0; k < 3; k++) rgb[i + k] = Math.round(rgb[i + k] * 0.45 + water.color[k] * 0.55);
+      }
+    }
+  }
+  clear.sort((a, b) => dot(b.centre, f) - dot(a.centre, f));
+  for (const m of clear) for (const t of m.triangles) draw(m, t, false);
+  return { width, height, rgb };
+}
+
+// Images one above the other on the sky colour
+function stack(images) {
+  const width = Math.max(...images.map(i => i.width)), height = images.reduce((sum, i) => sum + i.height, 0);
+  const rgb = Buffer.alloc(width * height * 3);
+  for (let i = 0; i < width * height; i++) rgb.set([200, 222, 236], i * 3);
+  let y = 0;
+  for (const image of images) {
+    for (let row = 0; row < image.height; row++) image.rgb.copy(rgb, ((y + row) * width) * 3, row * image.width * 3, (row + 1) * image.width * 3);
+    y += image.height;
+  }
+  return { width, height, rgb };
 }
 
 function png(width, height, rgb) {

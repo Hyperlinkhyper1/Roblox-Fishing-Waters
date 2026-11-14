@@ -8,6 +8,10 @@ local RunService = game:GetService("RunService")
 local TextChatService = game:GetService("TextChatService")
 
 local BoatData = require(script.Parent.BoatData)
+local SaveData = require(script.Parent.SaveData)
+local CompanyWorth = require(script.Parent.CompanyWorth)
+local CompanyProfile = require(script.Parent.CompanyProfile)
+local SaveService = require(script.Parent.SaveService)
 local AnglerData = require(script.Parent.AnglerData)
 local RodSerials = require(script.Parent.RodSerials)
 local AdminCommands = require(script.Parent.AdminCommands)
@@ -19,6 +23,7 @@ local PatrolBoat = require(script.Parent.PatrolBoat)
 local Trawler = require(script.Parent.Trawler)
 local Tugboat = require(script.Parent.Tugboat)
 local Hovercraft = require(script.Parent.Hovercraft)
+local SmallFerry = require(script.Parent.SmallFerry)
 local DrydockLaunch = require(script.Parent.DrydockLaunch)
 local BoatLaunchCollision = require(script.Parent.BoatLaunchCollision)
 local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
@@ -40,10 +45,12 @@ local builders = {
 	Trawler = Trawler,
 	Tugboat = Tugboat,
 	Hovercraft = Hovercraft,
+	SmallFerry = SmallFerry,
 }
 
 local BoatService = {}
 local profiles = {}
+local saveQueues = {}
 local active = {}
 local requests = {}
 local spawnTimes = {}
@@ -90,10 +97,35 @@ local function notify(player: Player, message: string)
 	end
 end
 
-local function publish(player: Player, state)
+local function publishOne(player: Player, state)
 	player:SetAttribute("WalletSessionOnly", studioSession)
 	player:SetAttribute("BoatDataStatus", state.status)
+	local info = if state.status == "Ready" then state.profile.SaveInfo else nil
+	player:SetAttribute("ActiveSaveOwnerId", if info then info.OwnerUserId else nil)
+	player:SetAttribute("ActiveSaveSlot", if info then info.Slot else nil)
+	player:SetAttribute("CompanyId", if info then SaveData.id(info.OwnerUserId, info.Slot) else nil)
+	player:SetAttribute("CompanyName", if info then info.Name else nil)
+	player:SetAttribute("CompanyIcon", if info then info.Icon else nil)
+	player:SetAttribute("CompanyMultiplayer", if info then info.Multiplayer else false)
+	player:SetAttribute("CompanyNetWorth", if info then state.netWorth or CompanyWorth.calculate(state.profile) else nil)
 	player:SetAttribute("Cash", state.profile.Cash)
+	-- Company branches (Shared.Branches; mirrored here because test harnesses
+	-- inline this file). Saves without any, or with only unknown ones, fish.
+	local ready = state.status == "Ready"
+	local branches = state.profile.Branches
+	local hasCafe = type(branches) == "table" and branches.Cafe == true
+	local hasFishing = type(branches) ~= "table" or branches.Fishing == true or not hasCafe
+	player:SetAttribute("BranchFishing", ready and hasFishing)
+	player:SetAttribute("BranchCafe", ready and hasCafe)
+	player:SetAttribute("CafeServed", if ready and state.profile.Cafe then state.profile.Cafe.Served else 0)
+	-- Café tour progress (Shared.CafeTutorial.state, mirrored for the same reason). A company
+	-- without the café branch, or one that has not loaded, has no tour to show.
+	local cafe = state.profile.Cafe
+	local cafeStep = if cafe and cafe.TutorialStep then cafe.TutorialStep else 1
+	local cafeDone = if cafe and cafe.TutorialStep then cafe.TutorialDone == true else (cafe ~= nil and cafe.Served > 0)
+	player:SetAttribute("CafeTutorialStep", cafeStep)
+	player:SetAttribute("CafeTutorialCount", if cafe and cafe.TutorialCount then cafe.TutorialCount else 0)
+	player:SetAttribute("CafeTutorialDone", not (ready and hasCafe) or cafeDone)
 	for id in BoatCatalog do
 		player:SetAttribute("Owns" .. id, state.status == "Ready" and state.profile.OwnedBoats[id] == true)
 		player:SetAttribute("BoatLocked" .. id, BoatData.pathLocked(state.profile, id))
@@ -182,10 +214,54 @@ local function publish(player: Player, state)
 	player:SetAttribute("AnglerRevision", (player:GetAttribute("AnglerRevision") or 0) + 1)
 end
 
+-- Every company member sees the same committed wallet immediately. Revision
+-- checks prevent a slow read or another server's earlier result moving it back.
+local function applySave(key, profile)
+	local netWorth = CompanyWorth.calculate(profile)
+	for member, state in profiles do
+		if state.key == key and state.status == "Ready" and member.Parent == Players then
+			local info = SaveData.info(profile, state.ownerId, state.slot)
+			if info.Revision < ((state.profile.SaveInfo or {}).Revision or 0) then continue end
+			if not SaveData.canPlay(info, member.UserId) then
+				state.status = "Unavailable"
+				publishOne(member, state)
+				member:Kick("Your access to this company changed. Rejoin to choose another save.")
+			elseif info.Revision >= ((state.profile.SaveInfo or {}).Revision or 0) then
+				state.netWorth = netWorth
+				state.profile = CompanyProfile.view(profile, member.UserId)
+				publishOne(member, state)
+			end
+		end
+	end
+end
+
+local function publish(player: Player, state)
+	if state.key and state.status == "Ready" then
+		applySave(state.key, state.profile)
+	else
+		publishOne(player, state)
+	end
+end
+
 -- Server modules share the existing atomic store and lock; no client can submit a profile.
 function BoatService.getProfile(player: Player)
 	local state = profiles[player]
 	return if state and state.status == "Ready" then BoatData.decode(state.profile) else nil
+end
+
+-- A hired worker is a company asset. Joining with another crew member must
+-- not create another paid fisherman, chef, seller or porter for the same save.
+function BoatService.isBusinessHost(player: Player): boolean
+	local state = profiles[player]
+	if not state or state.status ~= "Ready" or player.Parent ~= Players then return false end
+	local host = player
+	for other, candidate in profiles do
+		if candidate.status == "Ready" and candidate.key == state.key and other.Parent == Players then
+			if other.UserId == state.ownerId then return other == player end
+			if other.UserId < host.UserId then host = other end
+		end
+	end
+	return host == player
 end
 
 -- decode(nil) is only valid for a first-time load. An absent save result must
@@ -195,23 +271,61 @@ local function committedProfile(saved)
 	return BoatData.decode(saved)
 end
 
+local function writeProfile(player, state, transform)
+	assert(store and state.key, "No save is selected")
+	local now = os.time()
+	return store:UpdateAsync(state.key, function(raw)
+		assert(raw ~= nil, "The selected save is unavailable")
+		local canonical = BoatData.decode(raw)
+		local profile = CompanyProfile.view(canonical, player.UserId)
+		local info = SaveData.info(profile, state.ownerId, state.slot)
+		assert(SaveData.canPlay(info, player.UserId), "Company access has changed")
+		local nextProfile = transform(profile) or profile
+		nextProfile.SaveInfo = SaveData.touch(info, now)
+		return CompanyProfile.merge(canonical, nextProfile, player.UserId)
+	end)
+end
+
 -- Multiple gameplay actions can arrive during a DataStore yield. Keep them in
 -- arrival order so each sees the last committed profile and publishes in order.
 local function acquireSave(player: Player, state): boolean
-	state.nextSave = (state.nextSave or 0) + 1
-	local ticket = state.nextSave
+	local key = state.key
+	if not key then return false end
+	local queue = saveQueues[key]
+	if not queue then
+		queue = { nextSave = 0, finishedSaves = 0, busy = false, cancelled = {} }
+		saveQueues[key] = queue
+	end
+	queue.nextSave += 1
+	local ticket = queue.nextSave
 	while profiles[player] == state and player.Parent == Players do
-		if not state.busy and ticket == (state.finishedSaves or 0) + 1 then
+		if not queue.busy and ticket == queue.finishedSaves + 1 then
+			queue.busy = true
+			state.saveQueue = queue
 			state.busy = true
 			return true
 		end
 		task.wait(0.05)
 	end
+	queue.cancelled[ticket] = true
+	while queue.cancelled[queue.finishedSaves + 1] do
+		queue.cancelled[queue.finishedSaves + 1] = nil
+		queue.finishedSaves += 1
+	end
 	return false
 end
 
 local function releaseSave(state)
-	state.finishedSaves = (state.finishedSaves or 0) + 1
+	local queue = state.saveQueue
+	if queue then
+		queue.finishedSaves += 1
+		while queue.cancelled[queue.finishedSaves + 1] do
+			queue.cancelled[queue.finishedSaves + 1] = nil
+			queue.finishedSaves += 1
+		end
+		queue.busy = false
+	end
+	state.saveQueue = nil
 	state.busy = false
 end
 
@@ -247,8 +361,7 @@ function BoatService.updateProgress(player: Player, transform, rodSkinId: any, s
 		if profiles[player] ~= state or player.Parent ~= Players then
 			error("This session has ended")
 		end
-		local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
-			local profile = BoatData.decode(raw)
+		local result = writeProfile(player, state, function(profile)
 			assert(profile.RodSerialScope == RodSerials.Scope, "Rod serial migration is required")
 			local previous = BoatData.decode(profile)
 			transform(profile, serial)
@@ -266,8 +379,7 @@ function BoatService.updateProgress(player: Player, transform, rodSkinId: any, s
 		releaseSave(state)
 		return false, "This session has ended."
 	end
-	state.profile = saved
-	publish(player, state)
+	applySave(state.key, saved)
 	releaseSave(state)
 	return true, "Saved."
 end
@@ -276,31 +388,21 @@ local function loadPlayer(player: Player)
 	if profiles[player] then
 		return
 	end
-	local state = { profile = BoatData.decode(nil), status = "Loading", busy = false }
+	local state = { profile = BoatData.decode(nil), status = "Selecting", busy = false }
 	profiles[player] = state
+	player:SetAttribute("SaveSelectionRequired", true)
 	publish(player, state)
-	for attempt = 1, 3 do
-		local success, result = pcall(function()
-			local key = "Player_" .. player.UserId
-			local loaded = BoatData.decode(store:GetAsync(key))
-			return RodSerials.migrate(store, key, loaded)
-		end)
-		if profiles[player] ~= state then
-			return
-		end
-		if success then
-			state.profile, state.status = result, "Ready"
-			publish(player, state)
-			return
-		end
-		warn("[Boats] Could not load player " .. player.UserId .. ": " .. tostring(result))
-		if attempt < 3 then
-			task.wait(attempt)
-		end
-	end
-	state.status = "Unavailable"
-	publish(player, state)
-	notify(player, "Boat data could not load. Rejoin to try again.")
+end
+
+local function activatePlayer(player, key, profile, owner, slot)
+	local state = profiles[player]
+	if not state or player.Parent ~= Players then return end
+	assert(state.status == "Selecting", "A save is already selected")
+	state.key, state.ownerId, state.slot = key, owner, slot
+	state.profile, state.status = CompanyProfile.view(profile, player.UserId), "Ready"
+	player:SetAttribute("SaveSelectionRequired", false)
+	player:SetAttribute("SaveSelectionError", nil)
+	applySave(key, profile)
 end
 
 local function nearPrompt(player: Player, prompt: ProximityPrompt): boolean
@@ -406,8 +508,7 @@ function BoatService.setCashFromCommand(player: Player, message: string)
 		return
 	end
 	local success, saved = pcall(function()
-		local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
-			local profile = BoatData.decode(raw)
+		local result = writeProfile(player, state, function(profile)
 			profile.Cash = amount
 			return profile
 		end)
@@ -424,8 +525,7 @@ function BoatService.setCashFromCommand(player: Player, message: string)
 		releaseSave(state)
 		return
 	end
-	state.profile = profile
-	publish(player, state)
+	applySave(state.key, profile)
 	releaseSave(state)
 	notify(player, "Cash set to $" .. tostring(profile.Cash) .. ".")
 end
@@ -449,8 +549,7 @@ local function setFromCommand(player: Player, message: string)
 		local state = readyState(player)
 		if not state or not acquireSave(player, state) then return end
 		local success, saved = pcall(function()
-			local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
-				local profile = BoatData.decode(raw)
+			local result = writeProfile(player, state, function(profile)
 				profile.Angler.Stats.TotalXP = xp
 				return profile
 			end)
@@ -467,8 +566,7 @@ local function setFromCommand(player: Player, message: string)
 			releaseSave(state)
 			return
 		end
-		state.profile = profile
-		publish(player, state)
+		applySave(state.key, profile)
 		releaseSave(state)
 		notify(player, "Level set to " .. tostring(level) .. ".")
 		return
@@ -631,7 +729,7 @@ local function purchase(player: Player, boatId: string?)
 	end
 	launching[player] = reservation
 	local success, saved = pcall(function()
-		local result = store:UpdateAsync("Player_" .. player.UserId, function(raw)
+		local result = writeProfile(player, state, function(raw)
 			local profile = BoatData.purchase(raw, id)
 			return profile
 		end)
@@ -653,8 +751,7 @@ local function purchase(player: Player, boatId: string?)
 		DrydockLaunch.release(reservation)
 		return
 	end
-	state.profile = profile
-	publish(player, state)
+	applySave(state.key, profile)
 	releaseSave(state)
 	if profile.OwnedBoats[id] then
 		-- The launch camera follows the lowering, after the cradle has risen.
@@ -1337,6 +1434,12 @@ local function buildPreviews(parent: Instance)
 	folder.Parent = parent
 end
 
+-- Called at server boot, before the harbour is built: players can list, create
+-- and edit saves while the map loads. Entering a save waits for start().
+function BoatService.openSaves()
+	SaveService.open(store, studioSession)
+end
+
 function BoatService.start()
 	if started then
 		return
@@ -1560,10 +1663,39 @@ function BoatService.start()
 		removeBoat(player)
 		profiles[player], requests[player], spawnTimes[player] = nil, nil, nil
 	end)
-	Players.PlayerAdded:Connect(loadPlayer)
-	for _, player in Players:GetPlayers() do
-		task.spawn(loadPlayer, player)
-	end
+	require(script.Parent.CompanyLeaderboardService).configure(store, studioSession)
+	SaveService.start(store, studioSession, {
+		prepare = loadPlayer,
+		activate = activatePlayer,
+		apply = applySave,
+		beforeActivate = function(_, profile)
+			local info = profile.SaveInfo
+			if info and (info.PlotExpanded == true or info.Multiplayer == true) then
+				local ok, reason = require(script.Parent.MultiplayerPlots).prepare(workspace:FindFirstChild("Map"))
+				assert(ok, reason or "The larger multiplayer plots could not be prepared. Please retry.")
+			end
+		end,
+	})
+	-- Companies normally share a reserved server. This also reconciles Roblox's
+	-- separate cross-play server instances and edits made from the save selector.
+	task.spawn(function()
+		while true do
+			task.wait(15)
+			local checked = {}
+			for _, state in profiles do
+				if state.status == "Ready" and state.profile.SaveInfo and state.profile.SaveInfo.Multiplayer and not checked[state.key] then
+					checked[state.key] = true
+					local ok, raw = pcall(store.GetAsync, store, state.key)
+					if ok and type(raw) == "table" then
+						local valid, profile = pcall(BoatData.decode, raw)
+						if valid and profile.SaveInfo and profile.SaveInfo.Revision > (state.profile.SaveInfo.Revision or 0) then
+							applySave(state.key, profile)
+						end
+					end
+				end
+			end
+		end
+	end)
 end
 
 return BoatService

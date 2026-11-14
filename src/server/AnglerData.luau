@@ -88,6 +88,8 @@ Data.FIXTURES = {
 	{ ItemId = "Register", X = -18, Z = 72, R = 3 }, -- clear of the front window's sill
 	{ ItemId = "OfficeDesk", X = -18, Z = 4.5, R = 0 }, -- against the office's back wall
 }
+-- Granted separately so adding the workbench never re-grants the older fixtures.
+Data.WORKBENCH = { ItemId = "Workbench", X = 4.5, Z = -13.5, R = 0 }
 -- Bench keys handed to placed PrepBench benches in the house, in order
 -- (Recipes.BuiltIn), and where the Supermarket puts each one: against the
 -- kitchen's left wall, where the built-in benches stood.
@@ -148,6 +150,9 @@ Data.DefaultSettings = {
 	WeatherEffects = true,
 	-- Black Hole Backpack animation; the client turns it off on join for phones.
 	BackpackAnimation = true,
+	-- Draws the parliament's furniture and people as single blocks; the client turns it on
+	-- for the Performance preset.
+	ParliamentPerformance = false,
 	AutoStore = true,
 	MasterVolume = 100,
 	MusicVolume = 100,
@@ -253,7 +258,8 @@ local function itemValid(item)
 		and number(item.R, true)
 		and item.R <= 3
 		and (item.Locked == nil or type(item.Locked) == "boolean")
-		and (if item.PartId ~= nil then type(item.PartId) == "string" and item.Fish == nil else recordValid(item.Fish))
+		and (if item.PartId ~= nil then type(item.PartId) == "string" and item.Fish == nil and item.Dish == nil
+			elseif item.Dish ~= nil then item.Fish == nil and dishValid(item.Dish) else recordValid(item.Fish))
 end
 function Data.validSetting(key, value)
 	local default = Data.DefaultSettings[key]
@@ -281,7 +287,7 @@ end
 -- kitchen's front corner was enclosed as the owner's office. Move only affected
 -- furniture, retaining its entry and rotation so freezer/rack capacity and
 -- active kitchen jobs stay attached to the player's profile.
-local FURNITURE_WALL_VERSION = 2
+local FURNITURE_WALL_VERSION = 3
 local function migrateFurnitureWalls(data, retry)
 	if data.FurnitureWallVersion == FURNITURE_WALL_VERSION and not retry then return end
 	data.FurnitureWallMigrationPending = nil
@@ -292,7 +298,9 @@ local function migrateFurnitureWalls(data, retry)
 		local catalog = furniture()
 		for _, index in indices do
 			local entry = data.Furniture[index]
-			if not catalog.intersectsGridWall(entry) then continue end
+			local shopItem = table.find(catalog.allowedRooms(entry.ItemId), "Shop") ~= nil
+				and entry.Z >= catalog.Rooms.Shop[2] and entry.Z <= catalog.Rooms.Shop[4]
+			if not catalog.intersectsGridWall(entry) and (not shopItem or catalog.clearOfShopWalls(entry)) then continue end
 			local others = {}
 			for otherIndex, other in data.Furniture do
 				if otherIndex ~= index and catalog.Items[other.ItemId] then table.insert(others, other) end
@@ -406,6 +414,41 @@ local function migrateBenches(data)
 		end
 		data.HomeBenches = 1
 	end
+end
+
+-- Add the decorative workbench once, after older layout migrations. Existing
+-- furniture stays where its owner put it; a full storage room keeps it in stock.
+local function migrateWorkbench(data)
+	if data.WorkbenchVersion == 1 then return end
+	local catalog = furniture()
+	if catalog.count(data.Furniture, "Workbench") == 0 and (data.FurnitureStock.Workbench or 0) == 0 then
+		local spot = Data.WORKBENCH
+		local best, bestDistance
+		local function consider(x, z, r)
+			local distance = (x - spot.X) ^ 2 + (z - spot.Z) ^ 2
+			if bestDistance and distance >= bestDistance then return end
+			local entry = { ItemId = "Workbench", X = x, Z = z, R = r }
+			if catalog.check(data.Furniture, "Workbench", x, z, r) == nil
+				and not catalog.intersectsGridWall(entry) then
+				best, bestDistance = entry, distance
+			end
+		end
+		consider(spot.X, spot.Z, spot.R)
+		if not best then
+			local room, grid = catalog.Rooms.Storage, catalog.GRID
+			for x = math.ceil(room[1] / grid) * grid, room[3], grid do
+				for z = math.ceil(room[2] / grid) * grid, room[4], grid do
+					for r = 0, 3 do consider(x, z, r) end
+				end
+			end
+		end
+		if best then
+			table.insert(data.Furniture, best)
+		else
+			data.FurnitureStock.Workbench = 1
+		end
+	end
+	data.WorkbenchVersion = 1
 end
 
 function Data.decode(raw)
@@ -642,6 +685,7 @@ function Data.decode(raw)
 	assert(data.CompanyKit == nil or data.CompanyKit == 1, "Invalid company kit")
 	assert(data.FixtureVersion == nil or number(data.FixtureVersion, true), "Invalid fixture version")
 	assert(data.HomeBenches == nil or data.HomeBenches == 1, "Invalid home benches")
+	assert(data.WorkbenchVersion == nil or data.WorkbenchVersion == 1, "Invalid workbench version")
 	-- Owners from before the kit had built-in houses; they get the same fixtures
 	-- once, to place themselves. A purchase is granted it the same way.
 	if data.CompanyIsland and not data.CompanyKit then
@@ -655,6 +699,7 @@ function Data.decode(raw)
 	migrateFurnitureWalls(data)
 	migrateFurnitureCells(data)
 	migrateBenches(data)
+	migrateWorkbench(data)
 	-- Crab cages wait in Stock until dropped by the dock; Placed spots are dock-local
 	-- studs (Shared.CrabCages holds the rules, which are checked when cages move).
 	if data.CrabCages == nil then
@@ -912,6 +957,7 @@ function Data.moveCargo(raw, boatId, layout, from, to, species, backpack)
 	else
 		return nil, "That item can't be moved."
 	end
+	if item.Dish then return nil, "Use inventory to stock this dish." end
 	if to == "Release" or to == "Hand" then
 		if item.PartId then
 			return nil, "Boat parts stay in the hold."
@@ -1040,6 +1086,7 @@ function Data.setBackpackLock(raw, index, locked, expected)
 	local item = data.Backpack[index]
 	if
 		not item
+		or not item.Fish
 		or type(locked) ~= "boolean"
 		or type(expected) ~= "table"
 		or item.X ~= expected.X
@@ -1087,6 +1134,14 @@ function Data.moveInventory(raw, source, index, destination, expected, boatId, l
 	local item = if source == "Hand" and data.Hand then { Fish = data.Hand, Locked = data.Hand.Locked }
 		elseif items then items[index] else nil
 	local identity = if source == "Hand" then data.Hand else item
+	if item and item.Dish then
+		if source ~= "Backpack" or not matches(item, expected) then return nil, "That dish changed. Select it again." end
+		if destination ~= "Pantry" then return nil, "Choose where to stock this dish." end
+		if #data.Pantry >= Data.pantryCapacity(data) then return nil, "Your kitchen pass is full." end
+		table.insert(data.Pantry, item.Dish)
+		table.remove(items, index)
+		return data
+	end
 	if not item or not item.Fish or not matches(identity, expected) then
 		return nil, "That fish changed. Select it again."
 	elseif source == destination then
@@ -1279,7 +1334,7 @@ function Data.stockFreezer(raw, includeHand)
 	local index = 1
 	while index <= #data.Backpack do
 		local item = data.Backpack[index]
-		if not favorite(item) and Data.canFreeze(data, item.Fish) then
+		if item.Fish and not favorite(item) and Data.canFreeze(data, item.Fish) then
 			table.insert(data.Freezer, item.Fish)
 			table.remove(data.Backpack, index)
 			moved += 1
@@ -1369,7 +1424,7 @@ function Data.storeFish(raw, includeHand)
 	local index = 1
 	while index <= #data.Backpack and #data.Storage < capacity do
 		local item = data.Backpack[index]
-		if not favorite(item) then
+		if item.Fish and not favorite(item) then
 			table.insert(data.Storage, item.Fish)
 			table.remove(data.Backpack, index)
 			moved += 1
@@ -1437,7 +1492,7 @@ end
 
 -- Places a bought item (`from` is an item id) or moves a placed one (`from` is
 -- its index in the site's list) on `site` (see siteList).
-function Data.placeFurniture(raw, from, x, z, r, site)
+function Data.placeFurniture(raw, from, x, z, r, site, expanded)
 	local data = Data.decode(raw)
 	local catalog = furniture()
 	if site == "Company" and not data.CompanyIsland then
@@ -1467,7 +1522,7 @@ function Data.placeFurniture(raw, from, x, z, r, site)
 	if locked then
 		return nil, locked
 	end
-	local reason = catalog.check(list, itemId, x, z, r, skip, site)
+	local reason = catalog.check(list, itemId, x, z, r, skip, site, expanded)
 	if reason then
 		return nil, reason
 	end
@@ -1667,7 +1722,9 @@ end
 -- Starts cooking the carried fish at a kitchen station. `key` is a built-in bench key
 -- or a station's furniture id; `species` is AnglerCatalog.Fish (for the fish's rarity).
 -- The fish leaves the hand now and the dish is saved on the station, so it is never lost.
-function Data.startCooking(raw, key, recipeId, species, now)
+-- `quality` (0..1) is the hand-cooking minigame score: the dish is ready at once and its
+-- value follows Recipes.grade. Without it (chefs) the dish cooks on the recipe's timer.
+function Data.startCooking(raw, key, recipeId, species, now, quality)
 	local data = Data.decode(raw)
 	local book = recipes()
 	local station = type(key) == "string" and book.stationOf(key)
@@ -1687,6 +1744,8 @@ function Data.startCooking(raw, key, recipeId, species, now)
 		return nil, "Carry a fish to the station first."
 	elseif data.Hand.Locked then
 		return nil, "Unlock this favorite before cooking it."
+	elseif quality ~= nil and (type(quality) ~= "number" or quality ~= quality or quality < 0 or quality > 1) then
+		return nil, "That cooking result isn't valid."
 	end
 	local fish = data.Hand
 	local problem = book.problem(recipeId, station, species[fish.FishId] and species[fish.FishId].Rarity)
@@ -1699,28 +1758,28 @@ function Data.startCooking(raw, key, recipeId, species, now)
 			FishId = fish.FishId,
 			Mutation = fish.Mutation,
 			Kg = fish.Kg,
-			Value = book.value(recipeId, fish.Value),
+			Value = if quality ~= nil
+				then math.max(1, math.floor(book.value(recipeId, fish.Value) * book.grade(quality).Multiplier))
+				else book.value(recipeId, fish.Value),
 			MadeAt = now,
 			NeonColor = fish.NeonColor,
 		},
-		ReadyAt = now + book.Items[recipeId].Seconds,
+		ReadyAt = if quality ~= nil then now else now + book.Items[recipeId].Seconds,
 	}
 	data.Hand = nil
 	return data
 end
 
--- A finished dish goes from its station onto the kitchen pass.
-function Data.collectDish(raw, key, now)
+-- Manual collection puts the finished dish in the backpack; it stays at the station if full.
+function Data.collectDish(raw, key, now, backpackLayout, species)
 	local data = Data.decode(raw)
 	local job = type(key) == "string" and data.Kitchen[key]
-	if not job then
-		return nil, "Nothing is cooking here."
-	elseif now < job.ReadyAt then
-		return nil, "It's still cooking."
-	elseif #data.Pantry >= Data.pantryCapacity(data) then
-		return nil, "Your kitchen pass is full. Sell some dishes or place another food display case."
-	end
-	table.insert(data.Pantry, job.Dish)
+	if not job then return nil, "Nothing is cooking here."
+	elseif now < job.ReadyAt then return nil, "It's still cooking."
+	elseif not backpackLayout then return nil, "Your backpack is unavailable." end
+	local spot = cargo().bestSpot(backpackLayout.Hold, data.Backpack, { Dish = job.Dish }, species)
+	if not spot then return nil, "Your backpack is full. Make room before collecting the dish." end
+	table.insert(data.Backpack, { Dish = job.Dish, X = spot.X, Y = spot.Y, R = spot.R })
 	data.Kitchen[key] = nil
 	data.Stats.FoodCooked += 1
 	return data
@@ -1796,7 +1855,12 @@ function Data.collectChefDish(raw, role, key, now)
 	if not CHEF_PATHS[role] or not job or job.ChefRole ~= role then
 		return nil, "This chef has no dish at that station."
 	end
-	return Data.collectDish(data, key, now)
+	if now < job.ReadyAt then return nil, "It's still cooking." end
+	if #data.Pantry >= Data.pantryCapacity(data) then return nil, "Your kitchen pass is full." end
+	table.insert(data.Pantry, job.Dish)
+	data.Kitchen[key] = nil
+	data.Stats.FoodCooked += 1
+	return data
 end
 
 -- A customer or diner pays for one dish. `multiplier` is 1 in the shop and the

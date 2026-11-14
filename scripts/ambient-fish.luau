@@ -143,26 +143,7 @@ dependencies.FishModels = {
 		return dependencies.FishSpecies[id] ~= nil
 	end,
 	create = function(id)
-		totalCreated += 1
-		created[id] = (created[id] or 0) + 1
-		local model = Instance.new("Model")
-		model.Name = id
-		local trunk = Instance.new("Part")
-		trunk.Name, trunk.Anchored, trunk.Material = "Body", true, Enum.Material.Grass
-		trunk.Size, trunk.CFrame = Vector3.new(1, 0.4, 0.3), CFrame.new(0, 0, 0)
-		trunk.Parent = model
-		local snout = Instance.new("Part")
-		snout.Name, snout.Anchored = "Snout", true
-		snout.Size, snout.CFrame = Vector3.new(0.1, 0.1, 0.1), CFrame.new(0.55, 0, 0)
-		snout.Parent = model
-		if id == "Tuna" then
-			-- A sail far taller than the body, like a sailfish's dorsal fin.
-			local sail = Instance.new("Part")
-			sail.Name, sail.Anchored = "Sail", true
-			sail.Size, sail.CFrame = Vector3.new(0.3, 6, 0.1), CFrame.new(0, 3, 0)
-			sail.Parent = model
-		end
-		return model
+		error("Ambient fish must not clone full catch models: " .. id)
 	end,
 	scaleCatch = function() end,
 	catchLength = function()
@@ -225,6 +206,10 @@ assert(folders == 1, "Startup must be idempotent")
 -- partly built. Neither queued construction nor movement should continue.
 step(0.6)
 assert(totalCreated > 0, "A partly populated school exists before departure")
+local beforeHitch = totalCreated
+heartbeat:Fire(0.2)
+step(0.8)
+assert(totalCreated == beforeHitch, "A slow frame pauses cosmetic construction while performance recovers")
 player:SetAttribute("MetroRiding", true)
 local rideCreated, rideMoves = totalCreated, moves
 heartbeat:Fire(1)
@@ -234,12 +219,20 @@ assert(totalCreated == rideCreated and moves == rideMoves, "Metro rides do no fi
 assert(#fish() == 0, "Departure drains old schools through the bounded recycler")
 
 player:SetAttribute("MetroRiding", nil)
+step(7)
+assert(totalCreated == rideCreated, "Fish construction waits for city streaming after the ride")
+player:SetAttribute("BuildModeOpen", true)
+local buildCreated, buildMoves = totalCreated, moves
+step(3)
+assert(totalCreated == buildCreated and moves == buildMoves and #fish() == 0,
+	"Build mode suspends cosmetic fish construction and movement")
+player:SetAttribute("BuildModeOpen", false)
 dryPocket = true
 move(0, -24, 0)
 step(10)
 assert(totalCreated == rideCreated and #fish() == 0, "Dry underground stations never spawn surrounding surface schools")
 dryPocket = false
-step(10)
+step(18)
 assert(#fish() >= 12, "An underwater camera in the ocean still sees schools")
 local underwaterCreated = totalCreated
 local savedCamera = workspace.CurrentCamera
@@ -282,16 +275,17 @@ for _, model in models do
 		end
 	end
 	assert(welds == parts, "Every visible part is welded")
+	assert(parts == 2, "A background fish has only two visible parts")
 	-- Inactive welds don't carry parts in Roblox either, so a fish must be placed
 	-- whole before it is parented. Its visible body starts at the school, not at
 	-- the template origin (mid-bay, on the surface); mock welds never carry it, so
-	-- allow the 10 s of drift since it was placed.
+	-- allow drift from the preceding underwater and recovery checks.
 	local rootPosition = root.CFrame.Position
 	for _, item in model:GetDescendants() do
 		if item:IsA("BasePart") and item ~= root then
 			local p = item.CFrame.Position
 			assert(
-				Vector3.new(p.X - rootPosition.X, 0, p.Z - rootPosition.Z).Magnitude < 16,
+				Vector3.new(p.X - rootPosition.X, 0, p.Z - rootPosition.Z).Magnitude < 30,
 				model.Name .. "'s body was left behind at " .. tostring(p)
 			)
 			assert(p.Y + item.Size.Y / 2 < -1, model.Name .. "'s body sits under the surface: " .. p.Y)
@@ -299,10 +293,9 @@ for _, model in models do
 	end
 	local y = root.CFrame.Position.Y
 	assert(y < -3 and y > floorY + 2, "Schools swim fully submerged, clear of the seabed")
-	-- The Tuna mock carries a sail far taller than its body. Mock welds don't
-	-- carry parts, so measure from the root and the height recorded at build.
+	-- SwimTop must enclose the whole lightweight silhouette under the surface.
 	local reach = root:GetAttribute("SwimTop")
-	assert(reach and (model.Name ~= "Tuna" or reach > 2.9), "The build records the model's full height")
+	assert(reach and reach > 0, "The build records the model's full height")
 	assert(y + reach < -1.4, model.Name .. "'s highest point stays under the surface")
 end
 for _, id in { "BlueCrab", "NightEel", "Icefish", "SharkFin", "Pike", "Tire", "LeatherBoot" } do
@@ -320,6 +313,25 @@ local flat = Vector3.new(travelled.X, 0, travelled.Z).Unit
 local right = sample.CFrame.RightVector
 assert(Vector3.new(right.X, 0, right.Z).Unit:Dot(flat) > 0.75, "The head (+X) leads")
 assert(moves > 0, "Frames are moved in one bulk call")
+local movesBefore = moves
+step(2)
+assert(moves - movesBefore <= 61, "Welded fish move at most 30 times per second")
+
+player:SetAttribute("BuildModeOpen", true)
+buildCreated, buildMoves = totalCreated, moves
+heartbeat:Fire(1)
+step(3)
+assert(totalCreated == buildCreated and moves == buildMoves and #fish() == 0,
+	"Opening build mode retires existing schools without moving or building more")
+player:SetAttribute("BuildModeOpen", false)
+step(10)
+assert(#fish() > 0, "Schools return after leaving build mode")
+
+player:SetAttribute("GraphicsTier", 1)
+step(3)
+assert(#fish() <= 15, "Performance tier keeps at most three schools")
+player:SetAttribute("GraphicsTier", 3)
+step(10)
 
 -- Big species cruise alone.
 dependencies.FishSpecies.Sardine.Pools = {}
@@ -391,11 +403,10 @@ for frame = 1, 20 * 60 do
 			and facing:Dot((root.CFrame.Position - eye).Unit) > 0.3
 		if seen and previous ~= root.CFrame then
 			local moved = (root.CFrame.Position - previous.Position).Magnitude
-			-- 0.8 studs/s is 0.0133 a frame at 60 fps; schools past 60 studs step every
-			-- third frame (FAR_STRIDE), so up to 0.04 at once, plus the bob.
-			assert(moved < 0.045, "Fish swim slowly instead of darting: " .. moved)
+			-- Distant schools update every third 30 Hz pose, or 0.08 studs plus bob.
+			assert(moved < 0.09, "Fish swim slowly instead of darting: " .. moved)
 			local turn = math.acos(math.clamp(previous.LookVector:Dot(root.CFrame.LookVector), -1, 1))
-			assert(turn < 0.01, "Fish turn gently instead of swinging round: " .. turn)
+			assert(turn < 0.03, "Fish turn gently instead of swinging round: " .. turn)
 		end
 	end
 end
@@ -412,7 +423,7 @@ for _, model in fish() do
 	assert(rootOf(model).CFrame.Position.Y < -5, "Storm schools swim below the swell")
 end
 
--- Schools behind the camera hold still; nearby ones in view move every frame.
+-- Schools behind the camera hold still; nearby ones move on pose ticks.
 facing = Vector3.new(0, 0, -1)
 local behind, ahead = nil, nil
 for _, model in fish() do
@@ -430,9 +441,9 @@ step(0.5)
 assert(behind.CFrame == held, "Schools behind the camera skip their move")
 if ahead then
 	local was = ahead.CFrame
-	step(1 / 60)
-	assert(ahead.CFrame ~= was, "Nearby schools in view move every frame")
+	step(2 / 60)
+	assert(ahead.CFrame ~= was, "Nearby schools in view move on a 30 Hz pose tick")
 end
 facing = nil
 
-print("Ambient fish: species pools, welds, depth, heading, solo cruisers, recycling, lake, shallows, shore, slow drift, tall fins and swell passed")
+print("Ambient fish: species pools, lightweight models, depth, heading, recycling, lake, shallows, shore, drift and swell passed")

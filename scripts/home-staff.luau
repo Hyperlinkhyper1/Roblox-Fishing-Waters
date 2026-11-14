@@ -1,4 +1,6 @@
 local checks = 0
+-- Sales read the governing party's price policy from ReplicatedStorage; none is in force here.
+local ReplicatedStorage = { GetAttribute = function() return nil end }
 local function check(value, message)
 	checks += 1
 	assert(value, message)
@@ -48,8 +50,10 @@ local function companyDock()
 	return nil, nil
 end
 local profile, failSave, beforeTransform
+local businessHost = true
 local saves = 0
 local BoatService = {
+	isBusinessHost = function() return businessHost end,
 	activeBoat = function() return boatId, activeBoat end,
 	getProfile = function() return profile end,
 	updateProgress = function(_, transform)
@@ -116,6 +120,7 @@ local function fillFreezer(data)
 end
 local worker, shop, customer
 local function reset()
+	businessHost = true
 	currentOwner, boatOwner, activeBoat, boatId = owner, 42, boat, "Rowboat"
 	mooredCompany = false
 	boat.PrimaryPart.Position, boat.PrimaryPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0), Vector3.new(0, 0, 0)
@@ -132,6 +137,28 @@ local function reset()
 	failSave, beforeTransform, onWalk, manualNear, walkCount = false, nil, nil, false, 0
 	furnitureRefreshes = 0
 end
+reset()
+businessHost = false
+sell(owner, customer, worker)
+check(profile.Cash == 100 and not customer.sold, "Non-host company member cannot run a duplicate hired seller")
+manualNear = true
+sell(owner, customer)
+check(profile.Cash == 120 and customer.sold, "Company members can still serve customers manually")
+reset()
+businessHost = false
+runPorter(shop, worker, owner)
+check(#profile.Angler.Freezer == 1 and #profile.Angler.Holds.Rowboat == 2 and walkCount == 0,
+	"Non-host company member cannot run a duplicate hired porter")
+reset()
+onWalk = function() businessHost = false end
+runPorter(shop, worker, owner)
+check(#profile.Angler.Freezer == 1 and #profile.Angler.Holds.Rowboat == 2,
+	"Porter stops without losing cargo when company hosting changes mid-trip")
+reset()
+beforeTransform = function() businessHost = false end
+sell(owner, customer, worker)
+check(profile.Cash == 100 and #profile.Angler.Freezer == 1,
+	"Seller rechecks company hosting inside the wallet transaction")
 reset()
 sell(owner, customer)
 check(profile.Cash == 100 and not customer.sold, "Manual sale still requires proximity")

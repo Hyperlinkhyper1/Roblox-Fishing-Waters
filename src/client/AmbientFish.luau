@@ -17,6 +17,7 @@ local AmbientFish = {}
 local started = false
 local TAU = math.pi * 2
 local MAX_SCHOOLS = 8
+local SCHOOL_BUDGET = { 3, 5, MAX_SCHOOLS }
 local SCHOOL_SIZE = NumberRange.new(3, 5)
 -- Big species cruise alone instead of in shoals.
 local SOLO_KG = 20
@@ -28,7 +29,9 @@ local SCHOOL_GAP = 35
 local SPAWN_TRIES = 6
 -- School selection is spaced out; models are built or recycled on Heartbeat.
 local SPAWN_INTERVAL = 0.6
-local MODEL_INTERVAL = 0.12
+local MODEL_INTERVAL = 0.3
+local METRO_SETTLE = 8 -- leave the destination's streaming time to settle before adding fish
+local HITCH_SETTLE = 1 -- let frames recover before registering another cosmetic model
 local MAX_POOLED_FISH = MAX_SCHOOLS * SCHOOL_SIZE.Max
 -- From higher up the shallow schools are invisible anyway.
 local MAX_CAMERA_HEIGHT = 140
@@ -37,6 +40,7 @@ local MAX_CAMERA_HEIGHT = 140
 local NEAR_DISTANCE = 60
 local FAR_STRIDE = 3
 local BEHIND_DOT = 0.15
+local MOVE_INTERVAL = 1 / 30
 -- Depth of a fish's top below the calm surface; body size and swell add to it.
 -- Shallower schools read as sitting on the water when seen from above.
 local DEPTH = NumberRange.new(5, 8.5)
@@ -121,22 +125,38 @@ end
 -- Every visible part is welded to one anchored, invisible root, so a frame moves
 -- a single part per fish instead of every fin.
 local function build(id: string): (Model?, BasePart?)
-	local model = FishModels.create(id)
-	if not model then
-		return nil, nil
-	end
-	FishModels.scaleCatch(model, FishSpecies[id].AverageKg)
-	-- Builders draw the head toward +X around the origin; keep that axis.
+	-- These fish are small background silhouettes. Full catch models contain many
+	-- meshes and welds; cloning even one can stall a frame while the city streams.
+	local species = FishSpecies[id]
+	if not species then return nil, nil end
+	local length = FishModels.catchLength(species.AverageKg, id)
+	local model = Instance.new("Model")
+	model.Name = id
+	local seed = 0
+	for i = 1, #id do seed = (seed * 31 + string.byte(id, i)) % 4 end
+	local colors = {
+		Color3.fromRGB(135, 165, 172), Color3.fromRGB(128, 153, 125),
+		Color3.fromRGB(145, 154, 172), Color3.fromRGB(166, 154, 130),
+	}
+	local color = colors[seed + 1]
 	local root = Instance.new("Part")
 	root.Name = "SwimRoot"
 	root.Size = Vector3.one * 0.2
-	root.CFrame = CFrame.new(model:GetPivot().Position)
+	root.CFrame = CFrame.new()
 	root.Transparency = 1
 	root.Anchored = true
-	-- Highest point above the root. Swimming only yaws the fish, so this holds
-	-- at any heading and keeps tall fins under the surface.
-	local box, size = model:GetBoundingBox()
-	root:SetAttribute("SwimTop", box.Position.Y + size.Y / 2 - root.Position.Y)
+	root:SetAttribute("SwimTop", length * 0.23)
+	local body = Instance.new("Part")
+	body.Name, body.Shape = "Body", Enum.PartType.Ball
+	body.Size = Vector3.new(length * 0.8, length * 0.3, length * 0.22)
+	body.Color, body.Material = color, Enum.Material.SmoothPlastic
+	body.Parent = model
+	local tail = Instance.new("Part")
+	tail.Name = "Tail"
+	tail.Size = Vector3.new(length * 0.16, length * 0.28, length * 0.04)
+	tail.CFrame = CFrame.new(-length * 0.45, 0, 0)
+	tail.Color, tail.Material = color, Enum.Material.SmoothPlastic
+	tail.Parent = model
 	for _, item in model:GetDescendants() do
 		if item:IsA("BasePart") then
 			item.Anchored = false
@@ -164,7 +184,7 @@ function AmbientFish.start()
 	local player = Players.LocalPlayer
 	local function canSimulate(): boolean
 		local camera = workspace.CurrentCamera
-		if not camera or player:GetAttribute("MetroRiding") then
+		if not camera or player:GetAttribute("MetroRiding") or player:GetAttribute("BuildModeOpen") then
 			return false
 		end
 		local eye = camera.CFrame.Position
@@ -268,8 +288,18 @@ function AmbientFish.start()
 	-- Limit cloning, parenting and disposal to one fish per Heartbeat. A bounded
 	-- species-specific pool avoids rebuilding schools as the boat travels.
 	local modelElapsed = MODEL_INTERVAL
+	local wasRiding = false
+	local resumeBuildAt = 0
 	RunService.Heartbeat:Connect(function(dt: number)
 		modelElapsed += dt
+		local riding = player:GetAttribute("MetroRiding") == true
+		if wasRiding and not riding then
+			resumeBuildAt = os.clock() + METRO_SETTLE
+		end
+		wasRiding = riding
+		if dt > 0.05 then
+			resumeBuildAt = math.max(resumeBuildAt, os.clock() + HITCH_SETTLE)
+		end
 		if #retired > 0 then
 			debug.profilebegin("AmbientFish/Recycle")
 			local fish = table.remove(retired)
@@ -289,7 +319,7 @@ function AmbientFish.start()
 			return
 		end
 		-- Check here too: the ride attribute can change between render updates.
-		if not canSimulate() or modelElapsed < MODEL_INTERVAL then
+		if not canSimulate() or os.clock() < resumeBuildAt or modelElapsed < MODEL_INTERVAL then
 			return
 		end
 		modelElapsed = 0
@@ -358,13 +388,13 @@ function AmbientFish.start()
 		end
 	end)
 
-	-- Movement runs every rendered frame: stepping slower than the display reads
-	-- as jitter on something this close to the camera.
+	-- Fish move slowly. Limit welded model updates to 30 Hz while keeping school
+	-- simulation on every frame; this avoids moving all their parts at display rate.
 	local spawnElapsed = SPAWN_INTERVAL
+	local moveElapsed = 0
 	local frame = 0
 	RunService.RenderStepped:Connect(function(dt: number)
 		dt = math.min(dt, 0.1)
-		frame += 1
 		if not canSimulate() then
 			for index = #schools, 1, -1 do
 				despawn(schools[index])
@@ -378,6 +408,11 @@ function AmbientFish.start()
 		end
 		local eye = camera.CFrame.Position
 		local look = camera.CFrame.LookVector
+		local tier = math.clamp(player:GetAttribute("GraphicsTier") or 3, 1, 3)
+		local schoolBudget = SCHOOL_BUDGET[tier]
+		while #schools > schoolBudget do
+			despawn(schools[#schools])
+		end
 		local flat = Vector3.new(eye.X, 0, eye.Z)
 		for index = #schools, 1, -1 do
 			local school = schools[index]
@@ -387,11 +422,17 @@ function AmbientFish.start()
 			end
 		end
 		spawnElapsed += dt
-		if #schools < MAX_SCHOOLS and spawnElapsed >= SPAWN_INTERVAL then
+		if #schools < schoolBudget and spawnElapsed >= SPAWN_INTERVAL then
 			spawnElapsed = 0
 			spawn(eye)
 		end
 
+		moveElapsed += dt
+		local moveFrame = moveElapsed >= MOVE_INTERVAL
+		if moveFrame then
+			moveElapsed %= MOVE_INTERVAL
+			frame += 1
+		end
 		local now = os.clock()
 		local roots, frames = {}, {}
 		for index = #schools, 1, -1 do
@@ -425,7 +466,7 @@ function AmbientFish.start()
 			school.center += forward * speed * dt
 			local toSchool = school.center - eye
 			local distance = toSchool.Magnitude
-			local shown = look:Dot(toSchool / distance) > BEHIND_DOT
+			local shown = moveFrame and distance > 0 and look:Dot(toSchool / distance) > BEHIND_DOT
 				and (distance < NEAR_DISTANCE or (frame + index) % FAR_STRIDE == 0)
 			for _, fish in school.members do
 				-- The formation translates with the school but never rotates, so a

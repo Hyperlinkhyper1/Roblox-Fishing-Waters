@@ -104,7 +104,7 @@ local function plan(ped, now: number)
 		for i = first, last do
 			local p = Network.point(network, route[i])
 			for _, shop in businesses do
-				if shop.cell and owned(shop) and now >= (ped.tried[shop] or 0)
+				if not shop.arrivalInterval and shop.cell and owned(shop) and now >= (ped.tried[shop] or 0)
 					and (p - shop.streetWorld).Magnitude <= PASSING_RADIUS then
 					local interest = shop.interest()
 					if interest > 0 then
@@ -173,23 +173,33 @@ local function offer(ped, now: number): boolean
 	local ok, accepted = pcall(shop.visit, guest)
 	if not ok then warn("[Pedestrians] Visit: " .. tostring(accepted)) end
 	if not ok or not accepted then guest.finish(nil) end
-	return true
+	return true, ok and accepted == true
 end
 
-local function spawn(now: number)
+local function spawn(now: number, targetShop)
 	serial += 1
 	local cell = network.cells[random:NextInteger(1, #network.cells)]
-	-- Seed some walkers near occupied shops, then send them on long journeys.
-	local shops = {}
-	for _, shop in businesses do if shop.street and owned(shop) then table.insert(shops, shop) end end
-	if #shops > 0 and serial <= #shops * 8 then
-		local shop = shops[(serial - 1) % #shops + 1]
-		local nearby = {}
-		for _, at in network.cells do
-			local d = (Network.point(network, at) - shop.streetWorld).Magnitude
-			if d >= 8 and d <= 35 then table.insert(nearby, at) end
+	if targetShop then cell = targetShop.cell end
+	-- Sample several cells and pick the one furthest from other walkers' current
+	-- positions, avoiding the initial pile-up without concentrating at shops.
+	if not targetShop then
+		local bestDistance = -1
+		local positions = {}
+		for other in people do
+			if not other.guest then
+				local trip = Pedestrians.decode(other.config:GetAttribute("Trip"))
+				local sample = trip and Pedestrians.sample(trip, now)
+				table.insert(positions, if sample then Vector3.new(sample.x, sample.y, sample.z) else other.position)
+			end
 		end
-		if #nearby > 0 then cell = nearby[random:NextInteger(1, #nearby)] end
+		for _ = 1, 8 do
+			local candidate = network.cells[random:NextInteger(1, #network.cells)]
+			local point, nearest = Network.point(network, candidate), math.huge
+			for _, position in positions do
+				nearest = math.min(nearest, (point - position).Magnitude)
+			end
+			if nearest > bestDistance then cell, bestDistance = candidate, nearest end
+		end
 	end
 	local config = Instance.new("Configuration")
 	config.Name = "Walker" .. serial
@@ -201,8 +211,15 @@ local function spawn(now: number)
 	}
 	config:SetAttribute("Look", ped.look)
 	people[ped], population = true, population + 1
-	plan(ped, now)
+	if targetShop then
+		ped.position = Vector3.new(targetShop.world.X, network.grid.height[cell], targetShop.world.Z)
+		ped.pending = targetShop
+		publish(ped, {cell}, now, targetShop)
+	else
+		plan(ped, now)
+	end
 	config.Parent = folder
+	return ped
 end
 
 local function build(): boolean
@@ -233,7 +250,7 @@ local function build(): boolean
 	return true
 end
 
-function Streets.register(base: Model, frame: CFrame, key: string, position: Vector3, visit, interest)
+function Streets.register(base: Model, frame: CFrame, key: string, position: Vector3, visit, interest, arrivalInterval: number?)
 	registered[base] = registered[base] or {}
 	local shop = registered[base][key]
 	if not shop then
@@ -242,6 +259,7 @@ function Streets.register(base: Model, frame: CFrame, key: string, position: Vec
 		table.insert(businesses, shop)
 	end
 	shop.frame, shop.position, shop.visit, shop.interest = frame, position, visit, interest
+	shop.arrivalInterval = arrivalInterval
 	revision += 1
 end
 
@@ -261,6 +279,19 @@ function Streets.start(sharedFolder: Folder)
 				if not ok or not result then continue end
 			end
 			if not network then continue end
+			for _, shop in businesses do
+				if shop.arrivalInterval and shop.cell and shop.street and owned(shop)
+					and now >= (shop.nextScheduledArrival or 0) and visitors < Pedestrians.MAX_VISITORS
+					and shop.interest() > 0 then
+					local avatars = ReplicatedStorage:FindFirstChild(Pedestrians.AVATAR_FOLDER)
+					if avatars then
+						local ped = spawn(now, shop)
+						local _, accepted = offer(ped, now)
+						shop.nextScheduledArrival = now + (if accepted then shop.arrivalInterval else 1)
+						if not accepted then remove(ped) end
+					end
+				end
+			end
 			if now >= nextCensus then
 				nextCensus = now + 3
 				local owners, seen = 0, {}

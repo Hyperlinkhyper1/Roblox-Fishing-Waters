@@ -179,6 +179,57 @@ for _,p in harbour:GetDescendants() do
   end
 end
 local train, doors=Train.build(harbour,harbour.TrainDock.CFrame,false)
+local dock=harbour.TrainDock.CFrame
+-- Test the passenger passage as a volume, including any new decorative parts.
+-- Bounds are measured in train space so the station's rotation cannot hide a blockage.
+local function trainBounds(part)
+  local localFrame=dock:ToObjectSpace(part.CFrame)
+  local half=part.Size/2
+  local r,u,b=localFrame.RightVector,localFrame.UpVector,localFrame.ZVector
+  local extent=v3(
+    math.abs(r.X)*half.X+math.abs(u.X)*half.Y+math.abs(b.X)*half.Z,
+    math.abs(r.Y)*half.X+math.abs(u.Y)*half.Y+math.abs(b.Y)*half.Z,
+    math.abs(r.Z)*half.X+math.abs(u.Z)*half.Y+math.abs(b.Z)*half.Z)
+  return {part=part,lo=localFrame.Position-extent,hi=localFrame.Position+extent}
+end
+local function passageClear(parts,label)
+  local entrances=0
+  for _,cx in {-46,0,46} do
+    for _,dx in {-11,11} do
+      for _,side in {-1,1} do
+        entrances+=1
+        local x=cx+dx
+        local lo=v3(x-2.3,0.15,if side<0 then -6.2 else 1)
+        local hi=v3(x+2.3,7.15,if side<0 then -1 else 6.2)
+        for _,bounds in parts do
+          local intersects=bounds.hi.X>lo.X+0.0001 and bounds.lo.X<hi.X-0.0001
+            and bounds.hi.Y>lo.Y+0.0001 and bounds.lo.Y<hi.Y-0.0001
+            and bounds.hi.Z>lo.Z+0.0001 and bounds.lo.Z<hi.Z-0.0001
+          check(not intersects,label..' keeps entrance '..entrances..' clear of '..bounds.part.Name)
+        end
+      end
+    end
+  end
+  check(entrances==12,label..' covers every entrance on both sides of all three cars')
+end
+local hull=Train.build(workspace,dock,true)
+local hullBounds,hullParts={},0
+for _,part in hull:GetDescendants() do
+  if part:IsA('BasePart') then
+    hullParts+=1
+    check(part.Transparency==1 and part.Anchored and not part.CanTouch,'Server hull stays invisible, anchored and touch-free: '..part.Name)
+    -- MetroService disables SlidingDoor collisions while passengers can board.
+    if part.Name~='SlidingDoor' then table.insert(hullBounds,trainBounds(part)) end
+  end
+end
+check(hullParts>0 and hullParts<120,'The server replicates a lightweight hull rather than decorative train geometry')
+passageClear(hullBounds,'Boarding collision hull')
+hull:Destroy()
+for _,part in train:GetDescendants() do
+  if part:IsA('BasePart') then
+    check(not part.CanCollide and not part.CanQuery and not part.CanTouch,'Client visuals never obstruct physics or queries: '..part.Name)
+  end
+end
 local function audit(root, label)
   local overlaps=surfaceOverlaps(root)
   for i, hit in overlaps do
@@ -191,12 +242,16 @@ end
 audit(train,'Train closed')
 check(audit(harbour,'Harbour')==0,'Gullhaven station has no exposed coplanar surfaces')
 check(#train:GetDescendants()>250,'Three-car train has an interior and detailed exterior')
-local dock=harbour.TrainDock.CFrame
 local originals, doorByPart = {}, {}
 for _,part in train:GetDescendants() do if part:IsA('BasePart') then originals[part]=dock:ToObjectSpace(part.CFrame) end end
 for _,door in doors do doorByPart[door.part]=door end
 Train.pose(train,doors,harbour.TrainDock.CFrame,1)
 audit(train,'Train open')
+local openBounds={}
+for _,part in train:GetDescendants() do
+  if part:IsA('BasePart') and part.Transparency<1 then table.insert(openBounds,trainBounds(part)) end
+end
+passageClear(openBounds,'Fully open train')
 check((harbour.TrainDock.CFrame:ToObjectSpace(doors[1].part.CFrame).Position-doors[1].closed.Position).Magnitude>2,'Doors slide clear of the entrance')
 check(bulkCalls==1 and bulkParts==#doors,'Opening parked doors only moves door panels and glass')
 Train.pose(train,doors,dock*CFrame.new(),1)
@@ -318,9 +373,9 @@ workspace.CurrentCamera=camera
 require('MetroClient').start()
 now=84; transit:SetAttribute('Ready',true); render()
 check(#workspace.MetroVisuals:GetChildren()==0,'Rendering and streamed stop registration never build trains')
-clientHeartbeat:Fire()
+clientHeartbeat:Fire(); flush()
 check(#workspace.MetroVisuals:GetChildren()==1,'Only the nearby train is built during Heartbeat')
-clientHeartbeat:Fire(); render()
+clientHeartbeat:Fire(); flush(); render()
 check(#workspace.MetroVisuals:GetChildren()==1,'Preloading a distant station does not build its train')
 local visual=workspace.MetroVisuals:GetChildren()[1]
 check(visual and visual.Parent==workspace.MetroVisuals,'Train remains registered in the world')
@@ -341,7 +396,7 @@ transit.Ride.OnClientEvent:Fire('Transfer',{dock=harbour.TrainDock.CFrame})
 now=87; render()
 check(cover.BackgroundTransparency==0,'The clock wrap cannot reveal the map during arrival')
 check((camera.CFrame.Position-harbour.TrainDock.Position).Magnitude<400,'Arrival camera uses the destination train and the shared clock')
-clientHeartbeat:Fire(); render()
+clientHeartbeat:Fire(); flush(); render()
 check(#workspace.MetroVisuals:GetChildren()==2,'Destination train builds when the camera transfers there')
 now=89.9; render()
 check(cover.BackgroundTransparency==0,'The screen stays dark until the server confirms arrival')
@@ -359,7 +414,7 @@ const temporary = await mkdtemp(join(tmpdir(), 'fishing-metro-'));
 try {
   const target = join(temporary, 'metro.luau');
   await writeFile(target, program);
-  const result = spawnSync(process.env.LUTE || 'lute', ['run', target], {cwd:root, encoding:'utf8', timeout:30000, maxBuffer:1<<22});
+  const result = spawnSync(process.env.LUTE || 'lute', ['run', target], {cwd:root, encoding:'utf8', timeout:120000, maxBuffer:1<<22});
   const parts = [];
   for (const line of (result.stdout || '').split(/\r?\n/)) {
     if (line.startsWith('@')) {

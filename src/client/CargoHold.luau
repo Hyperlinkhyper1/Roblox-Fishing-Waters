@@ -12,6 +12,7 @@ local BoatCatalog = require(ReplicatedStorage.Shared.BoatCatalog)
 local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
 local Cargo = require(ReplicatedStorage.Shared.Cargo)
 local Inventory = require(ReplicatedStorage.Shared.Inventory)
+local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local Bait = require(ReplicatedStorage.Shared.Bait)
 local Passes = require(ReplicatedStorage.Shared.Gamepasses)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
@@ -352,7 +353,7 @@ function CargoHold.start()
 	local actions = {}
 	for index, spec in { { "Hand", "Take in hand", CYAN }, { "Backpack", "To backpack", CYAN },
 		{ "Boat", "To boat", VIOLET }, { "Favorite", "Favorite", GOLD }, { "Release", "Release", RED },
-		{ "Use", "Use", GOLD } } do
+		{ "Use", "Use", GOLD }, { "Pantry", "Stock dish", MINT } } do
 		local control = button(panel, spec[2], { Name = "Action" .. spec[1], Position = UDim2.fromOffset(LEFT + (index - 1) * 139, 432),
 			Size = UDim2.fromOffset(131, 32), TextSize = 13, Visible = false }, spec[3])
 		actions[spec[1]] = control
@@ -383,6 +384,7 @@ function CargoHold.start()
 		for index, control in { actions.Hand, actions.Backpack, actions.Boat, actions.Favorite, actions.Release } do
 			control.Position = UDim2.fromOffset(LEFT + (index - 1) * 139, 432 + extra)
 		end
+		actions.Pantry.Position = UDim2.fromOffset(LEFT, 432 + extra)
 		openCrate.Position = UDim2.fromOffset(LEFT, 432 + extra)
 		fitPart.Position = UDim2.fromOffset(LEFT, 432 + extra)
 		cancelPart.Position = UDim2.fromOffset(LEFT + 208, 432 + extra)
@@ -478,7 +480,7 @@ function CargoHold.start()
 		end
 		bulk.Visible = open and aboard and tab ~= "Backpack" and not state.Pending
 		if not open then return end
-		local entries = Inventory.entries(state, Catalog, Cargo)
+		local entries = Inventory.entries(state, Catalog, Cargo, Recipes)
 		local filtered, totalWorth = Inventory.visible(entries, tab, view, searchBox.Text, sortBy, ascending)
 		worth.Text = "Total worth: " .. money(totalWorth)
 		local crates = player:GetAttribute("BaitCrates")
@@ -561,7 +563,7 @@ function CargoHold.start()
 					TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Center,
 					TextStrokeTransparency = 0.3, ZIndex = 3 })
 				make("UITextSizeConstraint", nameLabel, { MaxTextSize = 13, MinTextSize = 7 })
-				text(tile, if fish then FishCatch.formatKg(fish.Kg) else "Fitted", {
+				text(tile, if fish then FishCatch.formatKg(fish.Kg) elseif entry.Item.Dish then "Dish" else "Fitted", {
 					Position = UDim2.fromOffset(4, CARD_HEIGHT - 19), Size = UDim2.fromOffset(CARD - 8, 16),
 					TextSize = 11, TextColor3 = CREAM, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 3 })
 				text(tile, if entry.Source == "Hand" then "IN HAND" elseif entry.Source == "Boat" then "BOAT" else "", {
@@ -577,7 +579,7 @@ function CargoHold.start()
 				end
 				table.insert(cards, { Button = tile, Outline = outline, Entry = entry, Y = y })
 				tile.Activated:Connect(function() selected, crateSelected = entry, false render() end)
-				tile.MouseButton2Click:Connect(function() selected, crateSelected = entry, false favorite(entry) end)
+				tile.MouseButton2Click:Connect(function() if entry.Item.Fish then selected, crateSelected = entry, false favorite(entry) end end)
 			end
 			list.CanvasSize = UDim2.fromOffset(0, math.ceil((#filtered + slots) / 8) * (CARD_HEIGHT + GAP))
 		end
@@ -597,7 +599,7 @@ function CargoHold.start()
 		local secret = species ~= nil and species.Secret == true
 		local reserved = state.Pending ~= nil
 		for name, control in actions do
-			control.Visible = fish ~= nil and not reserved
+			control.Visible = (if name == "Pantry" then selected ~= nil and selected.Item.Dish ~= nil else fish ~= nil) and not reserved
 			control.Active = not pending
 			if name == "Hand" then
 				control.Visible = control.Visible and selected.Source ~= "Hand"

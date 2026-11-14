@@ -95,7 +95,8 @@ local function check(ok, message)
 	assert(ok, message)
 end
 local shop = { model = {} }
-local customer = { record = record, model = {
+local item = { record = record }
+local customer = { items = { item }, model = {
 	FindFirstChild = function()
 		return true
 	end,
@@ -104,32 +105,32 @@ shop.customers = { customer }
 
 api.refresh(shop)
 local original = shop.displayFish[1].model
-check(api.take(shop, customer) == original, "Pickup moves the actual displayed fish")
+check(api.take(shop, customer, item, 0) == original, "Pickup moves the actual displayed fish")
 check(original.Parent == customer.model and not original.destroyed, "Display refresh preserves the carried fish")
 check(#shop.displayFish == 0 and #freezer == 1, "Pickup clears ice immediately and retains stock until payment")
 api.refresh(shop)
 check(#shop.displayFish == 0, "Periodic refresh cannot restore a fish at the counter")
-customer.taken = false
+item.taken = false
 api.refresh(shop)
 check(#shop.displayFish == 1, "Cancelled sale returns the fish to the freezer display")
 -- Equal records still represent separate fish: only the chosen one leaves.
 freezer = { record, table.clone(record) }
 api.refresh(shop)
 original = shop.displayFish[1].model
-check(api.take(shop, customer) == original and #shop.displayFish == 1, "Pickup removes exactly one identical catch")
+check(api.take(shop, customer, item, 0) == original and #shop.displayFish == 1, "Pickup removes exactly one identical catch")
 table.remove(freezer, 1)
-customer.sold, customer.taken = true, false
+item.taken = false
 api.refresh(shop)
 check(#shop.displayFish == 1, "Selling one identical catch preserves the other display")
-customer.taken = false
-customer.record = table.clone(record)
-customer.record.Mutation = "Golden"
-check(api.take(shop, customer) == nil, "Pickup cannot take another mutation")
-customer.record = record
+item.taken = false
+item.record = table.clone(record)
+item.record.Mutation = "Golden"
+check(api.take(shop, customer, item, 0) == nil, "Pickup cannot take another mutation")
+item.record = record
 customer.model.FindFirstChild = function()
 	return nil
 end
-check(api.take(shop, customer) == nil and #shop.displayFish == 1, "Missing hand leaves freezer intact")
+check(api.take(shop, customer, item, 0) == nil and #shop.displayFish == 1, "Missing hand leaves freezer intact")
 customer.model.FindFirstChild = function()
 	return true
 end
@@ -141,9 +142,13 @@ for index = 1, 30 do
 end
 api.refresh(shop)
 check(#shop.displayFish == 30, "All packed fish display beyond the former 24-fish cap")
-customer.record = freezer[29]
+item.record = freezer[29]
 original = shop.displayFish[29].model
-check(api.take(shop, customer) == original and #shop.displayFish == 29, "Customers can pick up stock beyond index 24")
+local survivor = shop.displayFish[1].model
+local modelsBeforePickup = #models
+check(api.take(shop, customer, item, 0) == original and #shop.displayFish == 29, "Customers can pick up stock beyond index 24")
+check(shop.displayFish[1].model == survivor and not survivor.destroyed, "Pickup reuses unrelated display models")
+check(#models == modelsBeforePickup, "Pickup creates no replacement models")
 api.refresh(shop)
 check(#shop.displayFish == 29, "A customer keeps its reserved space until payment")
 print("Freezer pickup: " .. checks .. " production display and transfer checks passed.")

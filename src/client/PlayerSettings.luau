@@ -21,7 +21,7 @@ local lowered = false
 
 local PRESETS = { "Performance", "Balanced", "Quality" }
 local function presetValues(level: number)
-	return { Shadows = level == 3, WeatherEffects = level >= 2 }
+	return { Shadows = level == 3, WeatherEffects = level >= 2, ParliamentPerformance = level == 1 }
 end
 
 local function applyPerformance()
@@ -29,10 +29,15 @@ local function applyPerformance()
 	Players.LocalPlayer:SetAttribute("WeatherEffectsEnabled", performance.WeatherEffects)
 	-- Read by BlackHoleBackpack for every worn black hole pack in view.
 	Players.LocalPlayer:SetAttribute("BackpackAnimationEnabled", performance.BackpackAnimation)
+	-- The black hole pack's dynamic light is only worth its cost on the Quality preset, so
+	-- phones, low quality levels and anything FrameRateGuard has stepped down lose the glow.
+	Players.LocalPlayer:SetAttribute("BackpackGlowEnabled", tier >= 3)
 	-- Computers get the full supercell tower and denser billows. The rain deck
 	-- under the supercell remains present on every device, including Performance mode.
 	Players.LocalPlayer:SetAttribute("VolumetricCloudsEnabled", device == "Computer" and performance.WeatherEffects)
 	Players.LocalPlayer:SetAttribute("GraphicsTier", tier)
+	-- Read by client/Parliament: one block per piece of furniture and per person, no ornament.
+	Players.LocalPlayer:SetAttribute("ParliamentPerformanceMode", performance.ParliamentPerformance == true)
 end
 
 local function detectPerformance()

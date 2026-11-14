@@ -13,6 +13,8 @@ local function dummy(parent)
 end
 local FishFreezer = { build = dummy }
 local ShopDesk = { build = dummy }
+local OfficeDesk = { build = dummy }
+local Workbench = { build = dummy }
 local StorageRack = { build = dummy }
 local Kitchen = { buildCase = dummy, buildStorage = dummy, buildStation = dummy }
 local DiningRoom = { buildTable = dummy }

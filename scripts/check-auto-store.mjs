@@ -47,7 +47,7 @@ function market:UserOwnsGamePassAsync(id, pass)
  return owns and pass == 3722004182
 end
 local game = { GetService = function(_, name)
- return ({ Players = players, MarketplaceService = market, ReplicatedStorage = {} })[name]
+ return ({ Players = players, MarketplaceService = market, ReplicatedStorage = { GetAttribute = function() return nil end } })[name]
 end }
 local task = { spawn = function(fn, ...) fn(...) end }
 local function player(id)

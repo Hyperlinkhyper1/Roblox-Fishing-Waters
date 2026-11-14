@@ -9,6 +9,7 @@
 --      their per-frame work competed with the world streaming in.
 local player = game:GetService("Players").LocalPlayer
 local modules = {
+	"SaveSelection",
 	"OverlayInset",
 	"AdminFly",
 	"Leaderboard",
@@ -16,10 +17,14 @@ local modules = {
 	"BiomeAtmosphere",
 	"AreaBanner",
 	"Lod",
+	"CityDetail",
+	"Parliament",
+	"ParliamentBallot",
 	"Metro",
 	"Oxygen",
 	"Boating",
 	"BoatHealth",
+	"Ferry",
 	"BoatRefit",
 	"ParkedBoats",
 	"DrydockLift",
@@ -45,6 +50,10 @@ local modules = {
 	"CrabCages",
 	"MusselNets",
 	"OfficeComputer",
+	"WebShopApp",
+	"Cafe",
+	"TechStore",
+	"PcWorkshop",
 
 	"PlayerMenu",
 	"WorldMap",
@@ -69,10 +78,12 @@ local afterLoading = {
 	"VolumetricClouds",
 	"SupercellWeather",
 	"BlackHoleWeather",
+	"ShowcasePets",
 	"AmbientFish",
 	"SharkSwim",
 	"SharkMeshes",
 	"Pedestrians",
+	"CityTraffic",
 	"NpcFishers",
 	"BoatAudio",
 	"BoatSpray",
@@ -81,8 +92,8 @@ local afterLoading = {
 	"CoastalAmbience",
 	"BackgroundMusic",
 }
-local required = { Boating = true, Fishing = true, Oxygen = true, RodPhysics = true, PlayerMenu = true }
-local REQUIRED_COUNT = 5
+local required = { SaveSelection = true, Boating = true, Fishing = true, Oxygen = true, RodPhysics = true, PlayerMenu = true }
+local REQUIRED_COUNT = 6
 -- Most startup work one frame may take before the next module waits for the following frame
 local FRAME_BUDGET = 0.008
 -- A module that holds the frame this long before its first yield is named in the output

@@ -415,7 +415,7 @@ local function inventoryAction(player: Player, action: string, payload: any): (b
 	elseif source ~= "Hand" and (type(index) ~= "number" or index % 1 ~= 0 or index < 1) then
 		return false, "Choose a fish."
 	elseif action == "InventoryMove" and destination ~= "Hand" and destination ~= "Backpack"
-		and destination ~= "Boat" and destination ~= "Release" then
+		and destination ~= "Boat" and destination ~= "Release" and destination ~= "Pantry" then
 		return false, "Choose where to move the fish."
 	end
 	local profile = BoatService.getProfile(player)

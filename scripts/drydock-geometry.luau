@@ -388,6 +388,12 @@ local function loadHovercraft()
 	-- HOVERCRAFT_SOURCE --
 end
 dependencies.Hovercraft = loadHovercraft()
+do
+	local function loadSmallFerry()
+		-- SMALLFERRY_SOURCE --
+	end
+	dependencies.SmallFerry = loadSmallFerry()
+end
 local function loadShipwright()
 	-- SHIPWRIGHT_SOURCE --
 end
@@ -448,6 +454,9 @@ local function loadFurnitureCatalog()
 end
 dependencies.FurnitureCatalog = loadFurnitureCatalog()
 dependencies.FurnitureShop = loadFurnitureShop()
+dependencies.PetShop = (function()
+	-- PETSHOP_SOURCE --
+end)()
 
 local function loadBiomes()
 	-- BIOMES_SOURCE --

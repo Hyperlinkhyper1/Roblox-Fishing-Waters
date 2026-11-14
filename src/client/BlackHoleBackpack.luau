@@ -57,6 +57,7 @@ type Rig = {
 	dust: ParticleEmitter?,
 	glow: PointLight?,
 	glowBase: number,
+	glowOn: boolean, -- whether the PointLight is currently enabled
 	posed: boolean,
 }
 
@@ -64,6 +65,11 @@ local rigs: { [Model]: Rig } = {}
 
 local function enabled(): boolean
 	return Players.LocalPlayer:GetAttribute("BackpackAnimationEnabled") ~= false
+end
+
+-- The singularity PointLight is dropped on low-end devices (see PlayerSettings).
+local function glowAllowed(): boolean
+	return Players.LocalPlayer:GetAttribute("BackpackGlowEnabled") ~= false
 end
 
 -- Worn packs only: store and preview copies are anchored and have no joints.
@@ -87,6 +93,7 @@ local function track(model: Instance)
 		dust = nil,
 		glow = nil,
 		glowBase = 0.9,
+		glowOn = true,
 		posed = false,
 	}
 	for _, joint in handle:GetChildren() do
@@ -170,7 +177,7 @@ local function pose(rig: Rig, now: number)
 	if rig.dust and not rig.dust.Enabled then
 		rig.dust.Enabled = true
 	end
-	if rig.glow then
+	if rig.glow and rig.glowOn then
 		rig.glow.Brightness = rig.glowBase * (1 + 0.35 * math.sin(t * 2.2))
 	end
 	rig.posed = true
@@ -204,12 +211,21 @@ function BlackHoleBackpack.start()
 			end
 		end
 		local animate = enabled()
+		local glow = glowAllowed()
 		local camera = workspace.CurrentCamera
 		local eye = if camera then camera.CFrame.Position else nil
 		for model, rig in rigs do
 			if not model.Parent then
 				rigs[model] = nil
-			elseif not animate then
+				continue
+			end
+			-- Independent of the animation setting: a still pack keeps its light too.
+			if rig.glow and rig.glowOn ~= glow then
+				rig.glowOn = glow
+				rig.glow.Enabled = glow
+				rig.glow.Brightness = rig.glowBase
+			end
+			if not animate then
 				if rig.posed then
 					rest(rig)
 				end

@@ -17,6 +17,11 @@ BaseGrid.BASE_MAX_COLUMN = 14
 BaseGrid.BASE_MIN_ROW = -18
 BaseGrid.BASE_MAX_ROW = 22
 
+function BaseGrid.columnBounds(expanded: boolean?): (number, number)
+	return if expanded then -6 else BaseGrid.BASE_MIN_COLUMN,
+		if expanded then 18 else BaseGrid.BASE_MAX_COLUMN
+end
+
 -- The customer shop is its own building across the ring road, in the same
 -- house-local frame: its front wall faces the house at SHOP_FRONT and its back
 -- wall is at SHOP_BACK. Its floor plan is the old in-house shop room turned half
@@ -49,10 +54,11 @@ function BaseGrid.extendedCellToLocal(column: number, row: number): (number, num
 	return BaseGrid.cellToLocal(column, row)
 end
 
-function BaseGrid.localToExtendedCell(x: number, z: number): (number?, number?)
+function BaseGrid.localToExtendedCell(x: number, z: number, expanded: boolean?): (number?, number?)
 	local column = math.floor((x + BaseGrid.HALF_WIDTH) / BaseGrid.CELL_SIZE) + 1
 	local row = math.floor((z + BaseGrid.HALF_LENGTH) / BaseGrid.CELL_SIZE) + 1
-	if column < BaseGrid.BASE_MIN_COLUMN or column > BaseGrid.BASE_MAX_COLUMN
+	local minColumn, maxColumn = BaseGrid.columnBounds(expanded)
+	if column < minColumn or column > maxColumn
 		or row < BaseGrid.BASE_MIN_ROW or row > BaseGrid.BASE_MAX_ROW then
 		return nil, nil
 	end

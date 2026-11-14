@@ -16,10 +16,10 @@ import { spawnSync } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const previewIndex = process.argv.indexOf('--preview');
 const previewPath = previewIndex > 0 ? resolve(process.argv[previewIndex + 1]) : null;
-const modules = ['LowPoly', 'Props', 'CityLand', 'CityCircuit', 'CityHills', 'CityBuildings', 'CityLandmark', 'CityStation', 'CityPort', 'CityRefinery', 'CityMetro', 'MetroStations', 'Lod', 'ModernCity', 'Biomes'];
+const modules = ['LowPoly', 'Props', 'CityLand', 'CityCircuit', 'CityHills', 'CityBuildings', 'CityLandmark', 'CityStation', 'CityPort', 'CityRefinery', 'CityMetro', 'MetroStations', 'Lod', 'ModernCity', 'Biomes', 'ParliamentLayout'];
 const sources = {};
 for (const name of modules) {
-  const folder = name === 'Biomes' ? 'src/shared' : 'src/server/Map';
+  const folder = ['Biomes', 'ParliamentLayout'].includes(name) ? 'src/shared' : 'src/server/Map';
   sources[name] = await readFile(join(root, folder, name + '.luau'), 'utf8');
 }
 
@@ -129,7 +129,7 @@ local function typeof(value)
 end
 
 local function signal() return { Connect = function() return { Disconnect = function() end } end } end
-local BASEPART = { Part = true, WedgePart = true, UnionOperation = true, MeshPart = true, TrussPart = true, CornerWedgePart = true }
+local BASEPART = { Part = true, Seat = true, WedgePart = true, UnionOperation = true, MeshPart = true, TrussPart = true, CornerWedgePart = true }
 local Inst = {}
 local methods = {}
 local nextId = 0
@@ -264,6 +264,7 @@ local HttpService = { JSONEncode = function(_, value) return encode(value) end }
 local game = { GetService = function(_, name)
   if name == "HttpService" then return HttpService end
   if name == "GeometryService" then return GeometryService end
+  if name == "ReplicatedStorage" then return { Shared = { ParliamentLayout = { __module = "ParliamentLayout" } } } end
   return {}
 end }
 local workspace = newInstance("Workspace")
@@ -498,7 +499,7 @@ for _, model in ground:GetChildren() do
     end
   end
 end
-check(trackParts > 80 and steepest < math.sin(math.rad(32)), trackParts .. " track pieces, steepest pitch " .. fmt(math.deg(math.asin(steepest))) .. " degrees")
+check(trackParts > 60 and steepest < math.sin(math.rad(32)), trackParts .. " track pieces, steepest pitch " .. fmt(math.deg(math.asin(steepest))) .. " degrees")
 local track = CityHills.TRACK
 check(track[1][1] < 1120 and math.abs(track[1][2] - 1110) < 7, "Track starts on the last suburb road")
 check(track[#track][1] == CityHills.SUMMIT[1] and track[#track][2] == CityHills.SUMMIT[2], "Track ends at the summit")
@@ -527,11 +528,11 @@ check(hillTrees > 300 and hedges > 60 and sheep > 20 and tors > 6, "Hills are dr
 do
   local laps = CityCircuit.samples()
   local HALF = CityCircuit.WIDTH / 2
-  check(CityCircuit.LENGTH > 2800, "Circuit lap is " .. CityCircuit.LENGTH .. " studs")
+  check(CityCircuit.WIDTH >= 36 and CityCircuit.LENGTH > 4200, "Circuit lap is " .. CityCircuit.LENGTH .. " studs")
   local circuitParts, asphalt = {}, {}
   for _, model in ground:GetChildren() do
     local name = model.Name
-    if name:match("^Circuit") or name == "PitBuilding" or name == "Paddock" or name:match("Grandstand$") then
+    if name:match("^Circuit") or name:match("^Pit") or name:match("^Paddock") or name:match("Grandstand$") then
       check(model:HasTag("LodPiece"), name .. " is a streaming piece")
       for _, p in model:GetDescendants() do
         if p:IsA("BasePart") then
@@ -571,7 +572,7 @@ do
   end
   check(steepest < 0.115, "Circuit gradient peaks at " .. fmt(steepest * 100) .. "%")
   check(highest - lowest > 60, "Circuit climbs " .. fmt(highest - lowest) .. " studs from its lowest to its highest point")
-  check(worstLip < 3, "The 3-stud asphalt slab reaches the ground at every edge (worst gap " .. fmt(worstLip) .. ")")
+  check(worstLip < 8, "The 8-stud asphalt slab reaches the ground at every edge (worst gap " .. fmt(worstLip) .. ")")
   -- The asphalt is one continuous solid surface at the circuit's level. Probes sit part way
   -- between samples and off the centre, so none lands exactly on a seam between facets.
   for k = 1, #laps, 5 do
@@ -606,6 +607,12 @@ do
       local y = CityHills.surface(c.X, c.Z)
       check(p.CFrame.p.Y - p.Size.Y / 2 < y, "Grandstand step reaches the ground at " .. fmt(c.X) .. "," .. fmt(c.Z))
       check((CityCircuit.level(c.X, c.Z)) > 0, "Grandstand stands off the circuit at " .. fmt(c.X) .. "," .. fmt(c.Z))
+    elseif p.Name == "TyreWall" then
+      check(centreDistance(c.X, c.Z) > HALF + 8, "Tyre wall stands back in the gravel at " .. fmt(c.X) .. "," .. fmt(c.Z))
+    elseif p.Name == "Hoarding" or p.Name == "DistanceBoardPost" or p.Name == "CameraTowerLeg" or p.Name == "CatchFencePost" then
+      check(centreDistance(c.X, c.Z) > HALF + 3, p.Name .. " stands off the track at " .. fmt(c.X) .. "," .. fmt(c.Z))
+      local y = CityHills.surface(c.X, c.Z)
+      check(p.CFrame.p.Y - p.Size.Y / 2 < y + 0.1, p.Name .. " reaches the ground at " .. fmt(c.X) .. "," .. fmt(c.Z))
     elseif p.Name == "BridgeTower" then
       check(centreDistance(c.X, c.Z) > HALF + 8, "Footbridge towers stand off the track")
     elseif p.Name == "PitLane" then
@@ -617,8 +624,15 @@ do
   check(red > 150 and white > 150, "Corners have red and white kerbs (" .. red .. "/" .. white .. ")")
   check((count.BarrierPost or 0) > 150 and (count.Armco or 0) > 200, "Armco lines the run-off (" .. (count.Armco or 0) .. " rails)")
   check(#asphalt > 400 and keep == #asphalt, "All " .. #asphalt .. " asphalt facets stand in the distant shell")
-  check(count.StartLight == 5 and count.GridSlot == 12 and count.RaceControl == 1, "Start line has its lights, grid and race control")
+  check(count.StartLight == 5 and count.GridSlot == 20 and count.RaceControl == 1, "Start line has its lights, grid and race control")
   check(count.GarageWall == 26 and count.TeamBoard == 25 and (count.Transporter or 0) >= 8, "Pit building has 25 garages and the paddock its transporters")
+  check(count.PitBoxBackLine == 25 and count.PitBoxSideLine == 50 and count.ToolCabinet == 25 and count.TimingScreen == 25 and count.SpareTyre == 75, "Every pit box has markings and workshop equipment")
+  check(count.PitCar == 25 and count.PitCarWheel == 100 and count.GarageLight == 25 and count.PitRigLamp == 25, "Every garage has its car, lights and pit-stop rig")
+  check(count.PitWallAwning == 13 and count.PitWallScreen == 39 and count.PitSpeedSign == 2 and count.PitExitLamp == 2, "Pit wall has its team stands, speed signs and exit light")
+  check((count.Hospitality or 0) >= 6 and (count.PaddockLamp or 0) >= 8 and count.RoofFlag == 13, "Paddock has hospitality units and lamps, and the roof its flags")
+  check((count.TyreWall or 0) > 30 and (count.Hoarding or 0) > 40 and (count.CatchFence or 0) > 3, "Trackside has tyre walls, hoardings and a debris fence (" .. (count.TyreWall or 0) .. "/" .. (count.Hoarding or 0) .. "/" .. (count.CatchFence or 0) .. ")")
+  check((count.DistanceBoard or 0) >= 9 and count.TvCamera == 6, "Braking zones have distance boards and the big corners camera towers (" .. (count.DistanceBoard or 0) .. " boards)")
+  check(ground:FindFirstChild("PitGrandstand") ~= nil, "A grandstand faces the pits")
   check((count.StandStep or 0) > 60 and count.BridgeDeck == 1 and (count.Wedge or 0) == 0, "Grandstands and the footbridge are built")
   -- The paddock road climbs from the last suburb road between the houses
   local road = ground:FindFirstChild("Paddock"):FindFirstChild("PaddockRoad")

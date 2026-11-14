@@ -121,8 +121,15 @@ other changes. Run `lute run scripts/business-paths.luau` afterwards.
 - **Fish Supermarket**: two prep benches appear in the gray-tiled processing room.
   Take a fish from a freezer (**F**), carry it to a bench, press **Cook** and pick a
   recipe. Better recipes need rarer fish and a bought station (grill, smokehouse,
-  sushi bar). Collect the dish onto the kitchen pass (6 dishes, plus 6 per food
-  display case). Shop customers buy dishes from placed food display cases.
+  sushi bar). Cooking by hand is a short minigame (`Recipes.Steps`, client
+  `CookingMinigame`): mash (click fast), timing (click while the marker is in the
+  green) and hold (release in the green) steps. The average score grades the dish:
+  Perfect ×1.25, Great ×1.1, Good ×1, Sloppy ×0.85 (`Recipes.Grades`). The server
+  refuses results that come back sooner than `Recipes.minigameSeconds`. The finished
+  dish goes straight into your backpack, or waits on the station if it is full.
+  Chefs still cook on each recipe's `Seconds` timer. Select the dish in Inventory and
+  choose **Stock dish** to put it on the kitchen pass (6 dishes, plus 6 per food
+  display case or supermarket shelf). Shop customers buy stocked dishes.
 - **The Restaurant**: a dining room is built behind the processing room. Place
   dining tables there. Diners sit down and order one specific dish. Serve it to
   earn 1.5x the dish value (`Recipes.RESTAURANT_MARKUP`).

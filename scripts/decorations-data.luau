@@ -6,12 +6,17 @@ local function check(value, message)
 	assert(value, message)
 end
 
--- Every profile starts with the house fixtures (freezer, till, office desk).
+-- Every profile starts with the house fixtures and a decorative workbench.
 local fixtures = Data.decode(nil).Furniture
 local FIXTURES = #fixtures
 for index, fixture in fixtures do
-	check(Furniture.Items[fixture.ItemId].Keep and Data.pickUpFurniture(Data.decode(nil), index) == nil,
-		"The only " .. fixture.ItemId .. " can be moved but never picked up")
+	if Furniture.Items[fixture.ItemId].Keep then
+		check(Data.pickUpFurniture(Data.decode(nil), index) == nil,
+			"The only " .. fixture.ItemId .. " can be moved but never picked up")
+	else
+		check(Data.pickUpFurniture(Data.decode(nil), index) ~= nil,
+			fixture.ItemId .. " can be picked up")
+	end
 end
 check(Data.placeFurniture(Data.decode(nil), 3, -22.5, 9, 0) ~= nil, "The office desk moves within the office")
 check(Data.placeFurniture(Data.decode(nil), 3, -9, -9, 0) == nil, "The office desk stays in the office")

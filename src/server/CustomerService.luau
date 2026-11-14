@@ -36,7 +36,7 @@ local OWNER_PROMPT_TAG = "ShopOwnerPrompt"
 local WALK_SPEED = 9
 local STAFF_WALK_SPEED = 16
 local WAIT_SECONDS = 150
-local ARRIVAL_SECONDS = 25
+local ARRIVAL_SECONDS = 20
 local SERVE_DISTANCE = 14
 local MAX_USER_ID = 3_000_000_000
 local avatarTemplates: { [number]: Model } = {}
@@ -369,12 +369,23 @@ local function refreshDisplay(shop)
 		return
 	end
 	shop.displaySignature = signature
-	if shop.display then
-		shop.display:Destroy()
+	local display = shop.display
+	if not display then
+		display = Instance.new("Model")
+		display.Name = "FrozenFishDisplay"
+		display.Parent = shop.model
+		shop.display = display
 	end
-	local display = Instance.new("Model")
-	display.Name = "FrozenFishDisplay"
-	shop.display = display
+	-- Keep unchanged fish instead of rebuilding the entire freezer whenever a
+	-- customer takes one. A carried fish is already outside this container.
+	local available = {}
+	for _, entry in shop.displayFish or {} do
+		if entry.model.Parent == display then
+			local key = recordKey(entry.record)
+			available[key] = available[key] or {}
+			table.insert(available[key], entry)
+		end
+	end
 	shop.displayFish = {}
 	local placements = if profile then AnglerData.freezerLayout(profile.Angler) else {}
 	shop.shown = 0
@@ -390,18 +401,25 @@ local function refreshDisplay(shop)
 			continue
 		end
 		local frame = frames[placement.Freezer]
-		local fish = fishModel(record, true)
+		local old = available[key] and table.remove(available[key])
+		local fish = if old then old.model else fishModel(record, true)
 		if not fish then
 			continue
 		end
-		local turn = CFrame.Angles(0, if placement.Rotated then 0 else math.pi / 2, 0)
-			* (if placement.Flat then CFrame.identity else CFrame.Angles(math.pi / 2, 0, 0))
-		restOn(fish, FishFreezer.iceSurface(frame, placement.X, placement.Z), turn)
-		fish.Parent = display
+		local positionKey = table.concat({ tostring(frame), tostring(placement.X), tostring(placement.Z),
+			tostring(placement.Rotated), tostring(placement.Flat) }, "|")
+		if not old or old.positionKey ~= positionKey then
+			local turn = CFrame.Angles(0, if placement.Rotated then 0 else math.pi / 2, 0)
+				* (if placement.Flat then CFrame.identity else CFrame.Angles(math.pi / 2, 0, 0))
+			restOn(fish, FishFreezer.iceSurface(frame, placement.X, placement.Z), turn)
+		end
+		if not old then fish.Parent = display end
 		shop.shown += 1
-		table.insert(shop.displayFish, { record = record, model = fish, freezer = frame })
+		table.insert(shop.displayFish, { record = record, model = fish, freezer = frame, positionKey = positionKey })
 	end
-	display.Parent = shop.model
+	for _, entries in available do
+		for _, entry in entries do entry.model:Destroy() end
+	end
 end
 
 local function setAnchored(model: Model, anchored: boolean)
@@ -527,7 +545,7 @@ local function refreshFoodDisplay(shop)
 		end
 	end
 	for _, slot in slots do
-		table.insert(keys, tostring(slot.spot.Position))
+		table.insert(keys, tostring(slot.spot))
 	end
 	local shown = math.min(#dishes, #slots)
 	for index = 1, shown do
@@ -538,12 +556,22 @@ local function refreshFoodDisplay(shop)
 		return
 	end
 	shop.foodSignature = signature
-	if shop.foodDisplay then
-		shop.foodDisplay:Destroy()
+	local display = shop.foodDisplay
+	if not display then
+		display = Instance.new("Model")
+		display.Name = "FoodDisplay"
+		display.Parent = shop.model
+		shop.foodDisplay = display
 	end
-	local display = Instance.new("Model")
-	display.Name = "FoodDisplay"
-	shop.foodDisplay, shop.displayFood = display, {}
+	local available = {}
+	for _, entry in shop.displayFood or {} do
+		if entry.model.Parent == display then
+			local key = dishKey(entry.record)
+			available[key] = available[key] or {}
+			table.insert(available[key], entry)
+		end
+	end
+	shop.displayFood = {}
 	for index = 1, shown do
 		local dish = dishes[index]
 		local key = dishKey(dish)
@@ -552,13 +580,17 @@ local function refreshFoodDisplay(shop)
 			continue
 		end
 		local slot = slots[index]
-		local model = dishModel(dish, slot.spot)
+		local old = available[key] and table.remove(available[key])
+		local model = if old then old.model else dishModel(dish, slot.spot)
 		if model then
-			model.Parent = display
-			table.insert(shop.displayFood, { record = dish, model = model, freezer = slot.fixture, depth = slot.depth, food = true })
+			if old and old.spot ~= slot.spot then model:PivotTo(slot.spot) end
+			if not old then model.Parent = display end
+			table.insert(shop.displayFood, { record = dish, model = model, freezer = slot.fixture, depth = slot.depth, food = true, spot = slot.spot })
 		end
 	end
-	display.Parent = shop.model
+	for _, entries in available do
+		for _, entry in entries do entry.model:Destroy() end
+	end
 end
 
 local function takeFood(shop, customer, heldItem, stackIndex): Model?
@@ -585,9 +617,12 @@ end
 -- Route over the base's house-local grid so NPCs find the doorways instead of
 -- walking a straight line into a wall.
 local function walk(customer, target: Vector3, allowed: (() -> boolean)?, stayOnGround: boolean?, straight: boolean?): boolean
+	local owner = customer.shop or customer.restaurant
 	if customer.gridFrame == nil then
-		local owner = customer.shop or customer.restaurant
 		customer.gridFrame = owner and owner.frame
+	end
+	if customer.gridExpanded == nil then
+		customer.gridExpanded = owner ~= nil and owner.base ~= nil and owner.base:GetAttribute("MultiplayerPlot") == true
 	end
 	return NpcNavigation.walk(customer, target, allowed, stayOnGround, straight)
 end
@@ -818,7 +853,7 @@ local function sell(player: Player, customer, worker)
 		end
 		if worker then
 			local desk = mainRegister(shop, profile)
-			return shop.staff.Seller == worker
+			return BoatService.isBusinessHost(player) and shop.staff.Seller == worker
 				and worker.active
 				and worker.humanoid.Health > 0
 				and profile.Angler.Staff.Seller == true
@@ -844,6 +879,13 @@ local function sell(player: Player, customer, worker)
 				data, paid = AnglerData.sellFrozen(angler, item.record)
 			end
 			if not data then return nil, 0 end
+			-- The governing party's price policy (ElectionService publishes Policy<Kind>; 0 when none).
+			local share = ReplicatedStorage:GetAttribute(if item.food then "PolicyDishPrice" else "PolicyFishPrice")
+			if type(share) == "number" and share > 0 then
+				local bonus = math.floor(paid * share)
+				data.Stats.CoinsEarned += bonus
+				paid += bonus
+			end
 			angler, total = data, total + paid
 		end
 		return angler, total
@@ -1093,6 +1135,7 @@ local function unloadTrip(shop, worker, owner: Player, boatId: string, boat: Mod
 			currentId, currentBoat = companyDock(shop, owner)
 		end
 		return ownerOf(shop.base) == owner
+			and BoatService.isBusinessHost(owner)
 			and worker.active
 			and shop.staff.Porter == worker
 			and worker.humanoid.Health > 0
@@ -1157,6 +1200,7 @@ local function restockTrip(shop, worker, owner: Player, load, rack: CFrame, kitc
 	end
 	local function valid(): boolean
 		return worker.active
+			and BoatService.isBusinessHost(owner)
 			and shop.staff.Porter == worker
 			and worker.humanoid.Health > 0
 			and ownerOf(shop.base) == owner
@@ -1205,7 +1249,7 @@ end
 -- player's own, but a company boat with nothing usable never hides it.
 local function porterTrip(shop, worker, owner: Player)
 	local profile = BoatService.getProfile(owner)
-	if not profile or not profile.Angler.Staff.Porter then
+	if not BoatService.isBusinessHost(owner) or not profile or not profile.Angler.Staff.Porter then
 		return
 	end
 	local data = profile.Angler
@@ -1328,7 +1372,7 @@ local function porterTrip(shop, worker, owner: Player)
 end
 
 local function runPorter(shop, worker, owner: Player)
-	if worker.busy then
+	if worker.busy or not BoatService.isBusinessHost(owner) then
 		return
 	end
 	worker.busy = true
@@ -1381,7 +1425,8 @@ local function ensureStaff(shop, owner: Player, role: string)
 				then (desk * CFrame.new(0, 0, ShopDesk.DEPTH / 2 + 1.4)).Position
 				else (shop.frame * CFrame.new(-10, 0.16, 10)).Position
 			model = spawnCustomer(position, role)
-			if ownerOf(shop.base) ~= owner or not (BoatService.getProfile(owner) and BoatService.getProfile(owner).Angler.Staff[role]) then
+			if ownerOf(shop.base) ~= owner or not BoatService.isBusinessHost(owner)
+				or not (BoatService.getProfile(owner) and BoatService.getProfile(owner).Angler.Staff[role]) then
 				model:Destroy()
 				return
 			end
@@ -1648,7 +1693,7 @@ local function registerShop(base: Model)
 		if not profile or os.clock() < shop.nextArrival
 			or (#profile.Angler.Freezer == 0 and #profile.Angler.Pantry == 0) then return 0 end
 		return if ShopUpgrades.hasAdvertisement(profile.Angler) then 0.6 else 0.35
-	end)
+	end, ARRIVAL_SECONDS)
 	local function owned()
 		removeStaff(shop)
 		local userId = base:GetAttribute("OwnerUserId")
@@ -1731,7 +1776,7 @@ function CustomerService.start()
 			for _, shop in shops do
 				local owner = ownerOf(shop.base)
 				local profile = owner and BoatService.getProfile(owner)
-				if profile then
+				if profile and BoatService.isBusinessHost(owner) then
 					for _, role in { "Seller", "Porter" } do
 						if not profile.Angler.Staff[role] and shop.staff[role] then
 							shop.staff[role].active = false
@@ -1760,6 +1805,8 @@ function CustomerService.start()
 							end
 						end
 					end
+				else
+					removeStaff(shop)
 				end
 				local label = freezerLabel(shop, profile)
 				local house = shop.base:FindFirstChild("BaseHouse")

@@ -266,6 +266,10 @@ local function finish(player: Player, id: string)
 end
 
 local function restart(player: Player)
+	-- Café-only companies have no dock to learn about yet; CafeTutorialService replays their tour.
+	if player:GetAttribute("BranchFishing") == false then
+		return
+	end
 	local ok = change(player, function(profile)
 		profile.Angler.TutorialStep, profile.Angler.TutorialDone = 1, false
 	end)

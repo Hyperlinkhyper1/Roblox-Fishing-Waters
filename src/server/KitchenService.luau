@@ -1,8 +1,10 @@
 -- The Supermarket path's kitchen. Two prep benches stand in every unlocked
 -- processing room; grill, smokehouse and sushi stations are bought furniture. The
--- owner carries a fish to a station, picks a recipe (client Kitchen picker) and the
--- dish cooks on a timer. The job is saved on the station the moment cooking starts,
--- so a rejoin never loses the fish; "Collect" moves the dish onto the kitchen pass.
+-- owner carries a fish to a station, picks a recipe (client Kitchen picker) and plays
+-- the hand-cooking minigame; its score grades the dish, which then goes straight into
+-- the backpack (or waits on the station if the backpack is full). Chefs still cook on
+-- a timer. A job is saved on the station the moment cooking starts, so a rejoin never
+-- loses the fish; "Collect" moves a finished dish into the backpack.
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -14,6 +16,7 @@ local CompanyIslandAccess = require(script.Parent.CompanyIslandAccess)
 local CargoService = require(script.Parent.CargoService)
 local Kitchen = require(script.Parent.Map.Kitchen)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
+local Backpacks = require(ReplicatedStorage.Shared.BackpackCatalog)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local Furniture = require(ReplicatedStorage.Shared.FurnitureCatalog)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
@@ -26,6 +29,8 @@ local started = false
 local update: RemoteEvent
 local requests: { [Player]: number } = {}
 local busy: { [Player]: boolean } = {}
+-- The recipe each player is playing the cooking minigame for, and when it began.
+local begun: { [Player]: { Key: string, RecipeId: string, At: number } } = {}
 
 local function ownerOf(base: Model): Player?
 	local userId = base:GetAttribute("OwnerUserId")
@@ -316,63 +321,88 @@ local function options(player: Player, key: string)
 	}
 end
 
-local function cook(player: Player, key: any, recipeId: any): (boolean, string)
+-- Station, carried fish and recipe checks shared by starting the minigame and
+-- serving its result; nil when cooking `recipeId` here could go ahead.
+local function cookProblem(player: Player, key: any, recipeId: any): string?
 	if not stationNear(player, key) then
-		return false, "Walk up to the station to cook."
+		return "Walk up to the station to cook."
 	end
 	local profile = BoatService.getProfile(player)
 	if not profile then
-		return false, "Your progress is still loading. Try again in a moment."
+		return "Your progress is still loading. Try again in a moment."
 	elseif not CargoService.isCarrying(player, profile.Angler.Hand) then
-		return false, "Equip a fish from your hotbar and carry it to the station."
+		return "Equip a fish from your hotbar and carry it to the station."
 	end
-	local now = os.time()
-	local _, reason = AnglerData.startCooking(profile.Angler, key, recipeId, Catalog.Fish, now)
+	local _, reason = AnglerData.startCooking(profile.Angler, key, recipeId, Catalog.Fish, os.time(), 1)
+	return reason
+end
+
+-- Opens the minigame; the dish is only made when its result comes back in time.
+local function begin(player: Player, key: any, recipeId: any): (boolean, string)
+	local problem = cookProblem(player, key, recipeId)
+	if problem then
+		return false, problem
+	end
+	begun[player] = { Key = key, RecipeId = recipeId, At = os.clock() }
+	return true, ""
+end
+
+local function collect(player: Player, key: any): (boolean, string?)
+	if not stationNear(player, key) then
+		return false, nil
+	end
+	local profile = BoatService.getProfile(player)
+	if not profile then
+		return false, nil
+	end
+	local _, reason = AnglerData.collectDish(profile.Angler, key, os.time(), Backpacks.layoutFor(player, profile.Angler.BackpackId), Catalog.Fish)
 	if reason then
 		return false, reason
 	end
+	local job = profile.Angler.Kitchen[key]
 	local ok, message = transact(player, function(current)
-		assert(CargoService.isCarrying(player, current.Angler.Hand), "Carry the fish to the station.")
-		local data, failure = AnglerData.startCooking(current.Angler, key, recipeId, Catalog.Fish, now)
+		local data, failure = AnglerData.collectDish(current.Angler, key, os.time(), Backpacks.layoutFor(player, current.Angler.BackpackId), Catalog.Fish)
 		assert(data, failure)
 		current.Angler = data
 	end)
 	if ok then
-		local recipe = Recipes.Items[recipeId]
-		message = string.format("Cooking %s. It's ready in %s.", string.lower(recipe.Name), formatSeconds(recipe.Seconds))
+		return true, string.format("%s is in your backpack ($%d).", Recipes.Items[job.Dish.RecipeId].Name, job.Dish.Value)
 	end
-	return ok, message
+	return false, message
 end
 
-local function collect(player: Player, key: any)
-	if not stationNear(player, key) then
-		return
+local function cook(player: Player, key: any, recipeId: any, quality: any): (boolean, string)
+	local session = begun[player]
+	begun[player] = nil
+	if not session or session.Key ~= key or session.RecipeId ~= recipeId then
+		return false, "Start cooking at the station first."
+	elseif os.clock() - session.At < Recipes.minigameSeconds(recipeId) then
+		return false, "That was too quick. Cook it step by step."
+	elseif type(quality) ~= "number" or quality ~= quality then
+		return false, "That cooking result isn't valid."
 	end
-	local profile = BoatService.getProfile(player)
-	if not profile then
-		return
+	quality = math.clamp(quality, 0, 1)
+	local problem = cookProblem(player, key, recipeId)
+	if problem then
+		return false, problem
 	end
-	local _, reason = AnglerData.collectDish(profile.Angler, key, os.time())
-	if reason then
-		notify(player, reason)
-		return
-	end
-	local job = profile.Angler.Kitchen[key]
+	local now = os.time()
 	local ok, message = transact(player, function(current)
-		local data, failure = AnglerData.collectDish(current.Angler, key, os.time())
+		assert(CargoService.isCarrying(player, current.Angler.Hand), "Carry the fish to the station.")
+		local data, failure = AnglerData.startCooking(current.Angler, key, recipeId, Catalog.Fish, now, quality)
 		assert(data, failure)
 		current.Angler = data
 	end)
-	notify(
-		player,
-		if ok
-			then string.format(
-				"%s is on the kitchen pass ($%d). Customers can buy it now.",
-				Recipes.Items[job.Dish.RecipeId].Name,
-				job.Dish.Value
-			)
-			else message
-	)
+	if not ok then
+		return false, message
+	end
+	local grade = Recipes.grade(quality)
+	local name = string.lower(Recipes.Items[recipeId].Name)
+	local collected, collectMessage = collect(player, key)
+	if collected then
+		return true, string.format("%s %s! %s", grade.Name, name, collectMessage)
+	end
+	return true, string.format("%s %s! It's waiting on the station. %s", grade.Name, name, collectMessage or "")
 end
 
 function KitchenService.start()
@@ -387,7 +417,7 @@ function KitchenService.start()
 	update = Instance.new("RemoteEvent")
 	update.Name, update.Parent = "Update", remotes
 	remotes.Parent = ReplicatedStorage
-	request.OnServerInvoke = function(player, action, key, recipeId)
+	request.OnServerInvoke = function(player, action, key, recipeId, quality)
 		if os.clock() - (requests[player] or -math.huge) < 0.25 then
 			return { Ok = false, Message = "Please wait a moment and try again." }
 		end
@@ -396,15 +426,23 @@ function KitchenService.start()
 			return { Ok = false, Message = "That isn't a kitchen station." }
 		elseif action == "Options" then
 			return { Ok = true, Message = "", Options = options(player, key) }
+		elseif action == "Begin" then
+			local ok, message = begin(player, key, recipeId)
+			return { Ok = ok, Message = message, Options = if ok then nil else options(player, key) }
 		elseif action == "Cook" then
-			local ok, message = cook(player, key, recipeId)
+			local ok, message = cook(player, key, recipeId, quality)
 			return { Ok = ok, Message = message, Options = options(player, key) }
 		end
 		return { Ok = false, Message = "That kitchen action is unavailable." }
 	end
 	ProximityPromptService.PromptTriggered:Connect(function(triggered, player)
 		if triggered.Name == "CollectDishPrompt" then
-			task.spawn(collect, player, triggered:GetAttribute("StationKey"))
+			task.spawn(function()
+				local _, message = collect(player, triggered:GetAttribute("StationKey"))
+				if message then
+					notify(player, message)
+				end
+			end)
 		end
 	end)
 	local function watchPlayer(player: Player)
@@ -421,7 +459,7 @@ function KitchenService.start()
 		watchPlayer(player)
 	end
 	Players.PlayerRemoving:Connect(function(player)
-		requests[player], busy[player] = nil, nil
+		requests[player], busy[player], begun[player] = nil, nil, nil
 	end)
 	-- Countdowns tick once a second.
 	task.spawn(function()

@@ -47,6 +47,21 @@ for _, spot in { { 0, 52 }, { 0, 62.4 }, { -22.5, 62 }, { 22.5, 62 }, { -24, 82.
  assert(Grid.localToExtendedCell(spot[1], spot[2]) ~= nil, 'Grid must cover the road and the shop across it')
 end
 assert(Furniture.Rooms.Shop[2] > Grid.SHOP_FRONT and Furniture.Rooms.Shop[4] < Grid.SHOP_BACK, 'Shop room is inside the shop walls')
+for _, entry in {
+ { ItemId = 'Freezer', X = 22.5, Z = 72, R = 3 },
+ { ItemId = 'Freezer', X = -22.5, Z = 72, R = 1 },
+ { ItemId = 'Freezer', X = 9, Z = 81, R = 0 },
+ { ItemId = 'Freezer', X = 9, Z = 67.5, R = 2 },
+} do
+ assert(not Furniture.clearOfShopWalls(entry), 'A freezer touching a shop wall must be rejected')
+ assert(Furniture.check({}, entry.ItemId, entry.X, entry.Z, entry.R) ~= nil, 'Wall-clipping placement was accepted')
+end
+local fresh = Data.decode({})
+for _, entry in fresh.Furniture do
+ if entry.ItemId == 'Freezer' or entry.ItemId == 'Register' then
+  assert(Furniture.clearOfShopWalls(entry), 'Starting shop fixture clips into a wall')
+ end
+end
 assert(Grid.localToExtendedCell(0, -110) == nil, 'Distant water is outside the base grid')
 for _, id in Furniture.Order do
  for _, roomId in Furniture.allowedRooms(id) do
@@ -74,7 +89,7 @@ local legacy = Data.decode({ ShopBuildingVersion = 1, Furniture = { { ItemId = '
 assert(legacy.Furniture[1].X == -10 and legacy.Furniture[1].Z == -4.5, 'Legacy coordinates changed')
 assert(Furniture.check({}, 'PottedPlant', -10, -4.5, 0) ~= nil, 'Off-grid new placement was accepted')
 local picked = assert(Data.pickUpFurniture(legacy, 1))
-assert(#picked.Furniture == #Data.FIXTURES and picked.FurnitureStock.PottedPlant == 1, 'Legacy item could not be picked up')
+assert(#picked.Furniture == #Data.FIXTURES + 1 and picked.FurnitureStock.PottedPlant == 1, 'Legacy item could not be picked up')
 local placed = assert(Data.placeFurniture(picked, 'PottedPlant', -9, -4.5, 0))
 local plant = placed.Furniture[#placed.Furniture]
 assert(plant.X == -9 and plant.Z == -4.5, 'Grid placement failed')
@@ -91,12 +106,15 @@ local oldShop = {
  { ItemId = 'StorageRack', X = 13.5, Z = -9, R = 0 },
 }
 local moved = Data.decode({ Furniture = oldShop })
-assert(moved.ShopBuildingVersion == 1 and #moved.Furniture == #oldShop + #Data.FIXTURES, 'Shop migration lost furniture')
+assert(moved.ShopBuildingVersion == 1 and #moved.Furniture == #oldShop + #Data.FIXTURES + 1, 'Shop migration lost furniture')
 for index, before in oldShop do
  local entry = moved.Furniture[index]
  if before.Z > 2.25 then
   assert(entry.R == (before.R + 2) % 4, before.ItemId .. ' did not turn into the shop')
-  assert(Furniture.check(moved.Furniture, entry.ItemId, entry.X, entry.Z, entry.R, index) == nil, before.ItemId .. ' no longer fits in the shop')
+  local others = table.clone(moved.Furniture)
+  table.remove(others, index)
+  assert(Furniture.checkRelocation(others, entry.ItemId, entry.X, entry.Z, entry.R) == nil, before.ItemId .. ' no longer fits in the shop')
+  assert(Furniture.clearOfShopWalls(entry), before.ItemId .. ' still clips into the shop wall')
  else
   assert(entry.X == before.X and entry.Z == before.Z and entry.R == before.R, before.ItemId .. ' moved out of the house')
  end

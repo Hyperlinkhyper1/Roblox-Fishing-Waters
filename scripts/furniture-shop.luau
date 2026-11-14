@@ -186,7 +186,8 @@ local FIXTURES = #profile.Angler.Furniture
 for _, id in { "StorageRack", "Freezer", "Register" } do
 	profile.Angler = AnglerData.buyFurniture(profile.Angler, id)
 end
-check(place(player, "StorageRack", 13.5, -13.5, 0), "Server must place an owned rack inside storage")
+-- The decorative workbench already occupies the rear storage-room corner.
+check(place(player, "StorageRack", 22.5, -13.5, 0), "Server must place an owned rack inside storage")
 check(
 	#profile.Angler.Furniture == FIXTURES + 1 and profile.Angler.FurnitureStock.StorageRack == nil,
 	"Successful server placement must save furniture and consume stock"
@@ -244,6 +245,24 @@ house.Parent = nil
 check(not atHome(player), "Missing house must fail safely")
 bases = {}
 check(not atHome(player), "Unclaimed players must fail safely")
+
+-- The authoritative transaction chooses room size from saved entitlement,
+-- rather than trusting a client-provided position or expansion claim.
+house.Parent, bases = base, { base }
+root.CFrame = homeFrame * CFrame.new(0, 3, 0)
+profile = { Cash = 0, Angler = AnglerData.decode(nil) }
+profile.Angler.FurnitureStock.StorageRack = 2
+local beforeExpanded = saves
+check(not place(player, "StorageRack", 40.5, -13.5, 0) and saves == beforeExpanded,
+	"An ordinary save cannot authorize the enlarged furniture room")
+profile.SaveInfo = { Multiplayer = true, PlotExpanded = true }
+check(place(player, "StorageRack", 40.5, -13.5, 0)
+	and profile.Angler.Furniture[#profile.Angler.Furniture].X == 40.5,
+	"The server must use committed multiplayer entitlement for expanded placement")
+profile.SaveInfo.Multiplayer = false
+check(place(player, "StorageRack", 45, -13.5, 0)
+	and profile.Angler.Furniture[#profile.Angler.Furniture].X == 45,
+	"Turning multiplayer off retains previously expanded furniture space")
 print(
 	string.format(
 		"Furniture: %d showroom, home authorization, purchase and placement checks passed (recording mocks; no Roblox runtime).",

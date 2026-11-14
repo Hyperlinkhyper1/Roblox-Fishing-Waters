@@ -108,6 +108,87 @@ Recipes.Items = {
 	},
 }
 
+-- Hand cooking is a short run of minigame steps (client CookingMinigame); chefs
+-- still cook on the recipe's Seconds timer. Step kinds:
+--   Mash   click/tap `Clicks` times within `Time` seconds
+--   Timing click `Hits` times while the sweeping marker is inside the zone
+--          (`Speed` bar-widths per second, zone `Zone` wide)
+--   Hold   hold until the gauge (full after `Fill` seconds) reaches `Target`,
+--          then release inside the `Zone`-wide band around it
+Recipes.Steps = {
+	FishFillet = {
+		{ Kind = "Mash", Text = "Scale the fish", Clicks = 10, Time = 4 },
+		{ Kind = "Timing", Text = "Fillet along the bone", Hits = 1, Speed = 1.1, Zone = 0.22 },
+	},
+	FishAndChips = {
+		{ Kind = "Mash", Text = "Chop the potatoes", Clicks = 14, Time = 5 },
+		{ Kind = "Hold", Text = "Dip in batter", Fill = 2.2, Target = 0.6, Zone = 0.22 },
+		{ Kind = "Timing", Text = "Lift it out of the fryer", Hits = 1, Speed = 1.3, Zone = 0.2 },
+	},
+	GrilledFish = {
+		{ Kind = "Mash", Text = "Season the fish", Clicks = 10, Time = 4 },
+		{ Kind = "Hold", Text = "Sear until golden", Fill = 2.4, Target = 0.72, Zone = 0.2 },
+		{ Kind = "Timing", Text = "Flip it", Hits = 2, Speed = 1.3, Zone = 0.2 },
+	},
+	FishSkewers = {
+		{ Kind = "Mash", Text = "Cube the fish", Clicks = 14, Time = 5 },
+		{ Kind = "Timing", Text = "Thread the skewers", Hits = 3, Speed = 1.4, Zone = 0.18 },
+		{ Kind = "Hold", Text = "Grill the skewers", Fill = 2.4, Target = 0.7, Zone = 0.18 },
+	},
+	SmokedFish = {
+		{ Kind = "Mash", Text = "Rub in the brine", Clicks = 14, Time = 5 },
+		{ Kind = "Hold", Text = "Stoke the fire", Fill = 2.6, Target = 0.55, Zone = 0.18 },
+		{ Kind = "Hold", Text = "Let the smoke roll", Fill = 3, Target = 0.8, Zone = 0.16 },
+		{ Kind = "Timing", Text = "Pull it from the smoker", Hits = 1, Speed = 1.5, Zone = 0.16 },
+	},
+	SushiPlatter = {
+		{ Kind = "Timing", Text = "Slice the fish", Hits = 3, Speed = 1.5, Zone = 0.17 },
+		{ Kind = "Mash", Text = "Roll the rice", Clicks = 16, Time = 5 },
+		{ Kind = "Timing", Text = "Plate each piece", Hits = 2, Speed = 1.6, Zone = 0.16 },
+	},
+	GoldenSashimi = {
+		{ Kind = "Timing", Text = "Slice paper-thin", Hits = 4, Speed = 1.7, Zone = 0.15 },
+		{ Kind = "Hold", Text = "Lay on the gold leaf", Fill = 2.6, Target = 0.66, Zone = 0.14 },
+		{ Kind = "Mash", Text = "Garnish the plate", Clicks = 16, Time = 5 },
+		{ Kind = "Timing", Text = "Serve it", Hits = 1, Speed = 1.8, Zone = 0.14 },
+	},
+}
+-- Each step's intro and result screens take this long on the client.
+Recipes.STEP_PAUSE = 1.6
+-- Average step score (0..1) to grade; the grade scales the dish's value.
+Recipes.Grades = {
+	{ Name = "Perfect", Min = 0.9, Multiplier = 1.25 },
+	{ Name = "Great", Min = 0.7, Multiplier = 1.1 },
+	{ Name = "Good", Min = 0.45, Multiplier = 1 },
+	{ Name = "Sloppy", Min = 0, Multiplier = 0.85 },
+}
+
+function Recipes.grade(quality: number)
+	for _, grade in Recipes.Grades do
+		if quality >= grade.Min then
+			return grade
+		end
+	end
+	return Recipes.Grades[#Recipes.Grades]
+end
+
+-- The quickest a person can finish a recipe's steps. The server refuses a cook
+-- result sooner than this after it began, so the minigame can't be skipped.
+function Recipes.minigameSeconds(recipeId: string): number
+	local total = 0
+	for _, step in Recipes.Steps[recipeId] or {} do
+		total += Recipes.STEP_PAUSE * 0.75
+		if step.Kind == "Mash" then
+			total += step.Clicks / 20
+		elseif step.Kind == "Timing" then
+			total += step.Hits * 0.15
+		elseif step.Kind == "Hold" then
+			total += step.Fill * step.Target * 0.8
+		end
+	end
+	return total
+end
+
 -- The station type behind a station key: a built-in bench key or a furniture item id.
 function Recipes.stationOf(key: string): string?
 	local builtIn = Recipes.BuiltIn[key] or Recipes.CompanyBuiltIn[key]

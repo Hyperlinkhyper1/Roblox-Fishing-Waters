@@ -33,6 +33,19 @@ Building.Bounds = {
 	Home = { {-24.75,-33.75,24.75,15.75}, {-24.75,65.25,24.75,83.25} },
 	Company = { {-54,-31.5,54,31.5} },
 }
+local multiplayerPlots
+-- Each profile selects its own footprint; changing one company never changes
+-- the bounds of another player's original plot in the same server.
+function Building.bounds(site, expanded)
+	local where = site or "Home"
+	if expanded == true and where == "Home" then
+		if not multiplayerPlots then
+			multiplayerPlots = if script then require(script.Parent.MultiplayerPlots) else require("./MultiplayerPlots")
+		end
+		return multiplayerPlots.Bounds.Home
+	end
+	return Building.Bounds[where] or {}
+end
 -- Catalogues show actual shapes; R controls orientation independently of style.
 Building.Variants = {
 	Wall = {{Id="Solid",Name="Wall",Style="Solid",Price=12}},
@@ -160,7 +173,7 @@ local function stairConflict(stair,other)
 	end
 	return false
 end
-function Building.check(pieces,entry,site,builtins,skipId)
+function Building.check(pieces,entry,site,builtins,skipId,expanded)
 	local clean,reason=Building.normalize(entry)
 	if not clean then return reason end
 	entry=clean
@@ -190,7 +203,7 @@ function Building.check(pieces,entry,site,builtins,skipId)
 		if width<3.5 or run<8 then return "Stairs need at least 3.5 studs of width and 8 studs of run in their climb direction." end
 	elseif dx<1.125 or dz<1.125 then return "Draw an area at least one grid square wide." end
 	local inside=false
-	for _,area in Building.Bounds[site or "Home"] or {} do
+	for _,area in Building.bounds(site,expanded) do
 		if entry.X1>=area[1]-0.01 and entry.Z1>=area[2]-0.01 and entry.X2<=area[3]+0.01 and entry.Z2<=area[4]+0.01 then inside=true break end
 	end
 	if not inside then return "Keep the whole piece on your house, yard, shop, or company plot. Roads stay clear." end

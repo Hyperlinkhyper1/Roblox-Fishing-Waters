@@ -10,7 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local City = require(script.ModernCity)
+local CityDetail = require(script.CityDetail)
 local CompanyIslands = require(script.CompanyIslands)
+local FerryDocks = require(script.FerryDocks)
 local Lod = require(script.Lod)
 local Med = require(script.Mediterranean)
 local MetroStations = require(script.MetroStations)
@@ -19,6 +21,7 @@ local Props = require(script.Props)
 local Regions = require(script.Regions)
 local Seabed = require(script.Seabed)
 local SeabedDetails = require(script.SeabedDetails)
+local SmallCities = require(script.SmallCities)
 
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Map = {}
@@ -28,6 +31,10 @@ local TILE = 1024
 
 function Map.ensureCompanyIslands(root: Instance)
 	CompanyIslands.ensure(root)
+end
+
+function Map.ensureSmallCities(root: Instance)
+	SmallCities.ensure(root)
 end
 
 -- Extend the existing ocean only toward the distant southeast city. The
@@ -67,6 +74,12 @@ function Map.ensureCity(root: Instance)
 		City.build(root)
 	end
 	MetroStations.ensureCity(root:FindFirstChild("Modern City"))
+	local city = root:FindFirstChild("Modern City")
+	if city then
+		FerryDocks.ensureCity(root)
+		City.trimRendering(city)
+		CityDetail.prepare(city)
+	end
 	-- The metro station sits below sea level, in a pocket cleared of water
 	for _, pocket in Biomes.DryPockets do
 		Terrain:FillBlock(CFrame.new((pocket.min + pocket.max) / 2), pocket.max - pocket.min, Enum.Material.Air)
@@ -176,6 +189,7 @@ function Map.build(
 	end
 
 	local placed = {}
+	SmallCities.reserve(placed)
 	local function context(biome: Biomes.Biome, index: number): Regions.Context
 		local folder = Instance.new("Folder")
 		folder.Name = biome.name
@@ -231,6 +245,9 @@ function Map.build(
 	run("City", function()
 		Map.ensureCity(root)
 	end)
+	run("Island cities", function()
+		Map.ensureSmallCities(root)
+	end)
 	run("Seabed details", function()
 		SeabedDetails.ensure(root)
 	end)
@@ -260,6 +277,7 @@ end
 -- Every pass walks the whole map (city and company islands included); together they ran past the
 -- ~10 s script timeout and failed startup, so each yields a frame whenever 50 ms have gone by.
 function Map.prepareStreaming(root: Instance)
+	FerryDocks.ensureMain(root)
 	local resumed = os.clock()
 	local function pause()
 		if os.clock() - resumed > 0.05 then

@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 const root=resolve(import.meta.dirname,'..');
-const [catalog,furniture,source,furnitureService,angler]=await Promise.all(['src/shared/BuildingCatalog.luau','src/shared/FurnitureCatalog.luau','src/server/BuildingService.luau','src/server/FurnitureService.luau','src/server/AnglerData.luau'].map(p=>readFile(join(root,p),'utf8')));
+const [catalog,furniture,source,furnitureService,angler,plots]=await Promise.all(['src/shared/BuildingCatalog.luau','src/shared/FurnitureCatalog.luau','src/server/BuildingService.luau','src/server/FurnitureService.luau','src/server/AnglerData.luau','src/shared/MultiplayerPlots.luau'].map(p=>readFile(join(root,p),'utf8')));
 const service=source.replace(/^local (\w+) = require\(.*$/gm,'local $1 = dependencies.$1');
 const placement=furnitureService.slice(furnitureService.indexOf('local function place(player:'),furnitureService.indexOf('\nlocal function pickUp(',furnitureService.indexOf('local function place(player:')))
  .replace('require(script.Parent.BuildingService)','Service');
@@ -66,7 +66,8 @@ function methods:FireClient(player,...) table.insert(sent,{Player=player,Args={.
 local clock=0
 local os={clock=function() return clock end}
 local task={defer=function(callback) callback() end}
-local Building=(function() ${catalog} end)()
+local MultiplayerPlots=(function() ${plots} end)()
+local Building=(function() ${catalog.replace('require("./MultiplayerPlots")', 'MultiplayerPlots')} end)()
 local Furniture=(function() ${furniture} end)()
 local player=Instance.new("Player");player.UserId=1;player.Parent=Players
 player.Character=Instance.new("Model")
@@ -366,6 +367,49 @@ profile.Angler.Building.Company={NextId=1,Pieces={},Overrides={}}
 saveCount=saves
 result=invoke("PaintAllWalls",{Material="Brick",Color={1,2,3}},"Company")
 check(not result.Ok and saves==saveCount,"A property without walls must reject bulk paint without saving")
+-- Only persisted save settings grant the larger footprint. Preview attributes
+-- and client payloads never expand server-owned construction bounds.
+profile.Cash=2000
+profile.Angler.Furniture={}
+profile.Angler.CompanyFurniture={}
+profile.Angler.Building={Home={NextId=1,Pieces={},Overrides={}},Company={NextId=1,Pieces={},Overrides={}}}
+profile.SaveInfo={Multiplayer=false,PlotExpanded=false}
+player:SetAttribute("MultiplayerPlot",true)
+local extension=wall(36,-27,45,-27)
+saveCount=saves
+result=invoke("Place",{Entries={extension},PlotExpanded=true})
+check(not result.Ok and saves==saveCount and profile.Cash==2000,"Client attributes and payloads cannot grant expanded building rights to a solo save")
+profile.SaveInfo.Multiplayer=true
+player:SetAttribute("MultiplayerPlot",false)
+result=invoke("Place",{Entries={extension}})
+check(result.Ok and #profile.Angler.Building.Home.Pieces==1,"Persisted multiplayer setting permits construction inside the expanded footprint")
+local extensionId=result.State.Pieces[1].Id
+local expansionCash=profile.Cash
+check(expansionCash<2000 and result.State.Pieces[1].X1==36,"An extension wall uses normal authoritative pricing and unchanged plot-local coordinates")
+profile.SaveInfo.Multiplayer=false
+profile.SaveInfo.PlotExpanded=true
+result=invoke("Paint",{Id=extensionId,Material="Wood",Color={20,30,40}})
+check(result.Ok and result.State.Pieces[1].Material=="Wood" and profile.Cash==expansionCash,"Sticky expanded entitlement keeps existing extension buildings editable after multiplayer is disabled")
+local reloaded=Building.decode(copy(profile.Angler.Building))
+check(reloaded.Home.Pieces[1].X1==36 and reloaded.Home.Pieces[1].Color[2]==30,"Saved expanded construction retains geometry and finishes on reload")
+saveCount=saves
+result=invoke("Place",{Entries={wall(36,-27,45,-27)}})
+check(not result.Ok and saves==saveCount,"Expanded construction still rejects overlapping duplicate walls")
+result=invoke("Place",{Entries={wall(45,-27,54,-27)}})
+check(not result.Ok and saves==saveCount,"Server rejects construction crossing the wider property edge")
+result=invoke("Place",{Entries={{Kind="Floor",X1=36,Z1=9,X2=45,Z2=72,Level=0,Material="WoodPlanks",Color={1,2,3}}}})
+check(not result.Ok and saves==saveCount,"Expanded homes and shops remain separated by an unbuildable road")
+result=invoke("Place",{Entries={{Kind="Floor",X1=-49.5,Z1=67.5,X2=-27,Z2=81,Level=0,Material="WoodPlanks",Color={1,2,3}}}})
+check(not result.Ok and saves==saveCount,"The larger home cannot extend the shop into the curved road or public back lane")
+result=invoke("Place",{Entries={wall(54,-27,63,-27)}},"Company")
+check(not result.Ok and saves==saveCount,"Multiplayer never expands the offshore company's separate property footprint")
+profile.Angler.Building.Home={NextId=1,Pieces={},Overrides={}}
+profile.SaveInfo.Multiplayer=true
+profile.SaveInfo.PlotExpanded=false
+race=function(current) current.SaveInfo.Multiplayer=false end
+local beforeRace=profile.Cash
+result=invoke("Place",{Entries={wall(-45,-27,-36,-27)}})
+check(not result.Ok and profile.Cash==beforeRace and #profile.Angler.Building.Home.Pieces==0,"The atomic transaction rechecks expansion rights when the saved settings change during a request")
 print("Building service: "..checks.." ownership, transaction, persistence, price, history and collision checks passed (no Studio/DataStore).")
 `;
 const folder=await mkdtemp(join(tmpdir(),'building-service-'));

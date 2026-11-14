@@ -31,10 +31,21 @@ try {
     .replace(/local Bait = if script[\s\S]*?"\.\.\/shared\/Bait"\)/, () => `local Bait = (function()\n${baitSource}\nend)()`)
     .replace(/local BoatCatalog = if script[\s\S]*?(?=\r?\n\r?\nBoatData\.PRICE)/, `local BoatCatalog = (function()\n${catalog}\nend)()`);
   let service = await readFile(join(root, 'src/server/BoatService.luau'), 'utf8');
+  const saveData = await readFile(join(root, 'src/server/SaveData.luau'), 'utf8');
+  const companyProfile = (await readFile(join(root, 'src/server/CompanyProfile.luau'), 'utf8'))
+    .replace('if script then require(script.Parent.BoatData) else require("./BoatData")', 'dependencies.BoatData');
   service = service.replace('require(script.Parent.AnglerData)', `(function()\n${anglerData}\nend)()`);
   const rodSerialSource = (await readFile(join(root, 'src/server/RodSerials.luau'), 'utf8'))
     .replace('if script then require(script.Parent.BoatData) else require("./BoatData")', 'dependencies.BoatData');
   let harness = await readFile(join(root, 'scripts/boat-service.luau'), 'utf8');
+  if (process.argv.includes('--company-wallet-only')) {
+    const setupEnd = harness.indexOf('local function makePrompt');
+    const casesStart = harness.indexOf('-- COMPANY_WALLET_CHECKS --');
+    const casesEnd = harness.indexOf('-- END_COMPANY_WALLET_CHECKS --', casesStart);
+    if (setupEnd < 0 || casesStart < 0 || casesEnd < 0) throw new Error('Missing company wallet test hooks');
+    harness = harness.slice(0, setupEnd) + harness.slice(casesStart, casesEnd)
+      + '\nprint("Shared company wallet: " .. checks .. " checks passed (recording mocks).")';
+  }
   if (process.argv.includes('--mussel-nets-only')) {
     const setupEnd = harness.indexOf('local function makePrompt');
     const netService = await readFile(join(root, 'src/server/MusselNetService.luau'), 'utf8');
@@ -44,6 +55,7 @@ try {
     harness = harness.slice(0, setupEnd).replace('self.updates += 1', `self.updates += 1
         if self.emptyResult then return nil end`)
       + (await readFile(join(root, 'scripts/mussel-nets.luau'), 'utf8'))
+        .replaceAll('Service.loadPlayer(player)', 'selectSave(player)')
         .replace('-- GRID_SOURCE --', await readFile(join(root, 'src/shared/Cargo.luau'), 'utf8'))
         .replace('-- CATALOG_SOURCE --', inlineFishSpecies(await readFile(join(root, 'src/shared/AnglerCatalog.luau'), 'utf8'), root))
         .replace('-- BACKPACK_SOURCE --', await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8'))
@@ -51,7 +63,7 @@ try {
         .replace('-- NET_RULES_SOURCE --', await readFile(join(root, 'src/shared/MusselNets.luau'), 'utf8'))
         .replace('-- FISH_CATCH_SOURCE --', await readFile(join(root, 'src/shared/FishCatch.luau'), 'utf8'))
         .replace('-- MUTATION_SOURCE --', await readFile(join(root, 'src/shared/FishMutations.luau'), 'utf8'))
-        .replace('-- COLLECT_SOURCE --', netService.slice(first, last));
+        .replace('-- COLLECT_SOURCE --', 'local MutationContext = { at = function() return nil end }\nlocal GamepassService = { ownsDoubleXP = function() return false end }\n' + netService.slice(first, last));
   }
   if (process.argv.includes('--crab-cages-only')) {
     const setupEnd = harness.indexOf('local function makePrompt');
@@ -64,13 +76,14 @@ try {
       .replace('self.updates += 1', `self.updates += 1
         if self.emptyResult then return nil end`)
       + (await readFile(join(root, 'scripts/crab-cage-persistence.luau'), 'utf8'))
+        .replaceAll('Service.loadPlayer(player)', 'selectSave(player)')
         .replace('-- GRID_SOURCE --', await readFile(join(root, 'src/shared/Cargo.luau'), 'utf8'))
         .replace('-- CATALOG_SOURCE --', inlineFishSpecies(await readFile(join(root, 'src/shared/AnglerCatalog.luau'), 'utf8'), root))
         .replace('-- BACKPACK_SOURCE --', await readFile(join(root, 'src/shared/BackpackCatalog.luau'), 'utf8'))
         .replace('-- ANGLER_SOURCE --', anglerData.replace(/local Cargo\r?\n/, 'local Cargo = Grid\n'))
         .replace('-- CRAB_RULES_SOURCE --', await readFile(join(root, 'src/shared/CrabCages.luau'), 'utf8'))
         .replace('-- MUTATION_SOURCE --', await readFile(join(root, 'src/shared/FishMutations.luau'), 'utf8'))
-        .replace('-- COLLECT_SOURCE --', cageService.slice(first, last));
+        .replace('-- COLLECT_SOURCE --', 'local MutationContext = { at = function() return nil end }\nlocal GamepassService = { ownsDoubleXP = function() return false end }\n' + cageService.slice(first, last));
   }
   if (process.argv.includes('--inventory-only')) {
     const setupEnd = harness.indexOf('local function makePrompt');
@@ -82,6 +95,11 @@ try {
       + '\nprint("Skin persistence: " .. checks .. " wallet, retry and reload checks passed (recording mocks).")';
   }
   service = service
+    .replace('require(script.Parent.SaveData)', 'SaveData')
+    .replace('require(script.Parent.CompanyWorth)', '{ calculate = function(profile) return profile.Cash end }')
+    .replace('require(script.Parent.CompanyProfile)', () => `(function()\n${companyProfile}\nend)()`)
+    .replace('require(script.Parent.SaveService)', 'dependencies.SaveService')
+    .replace('require(script.Parent.CompanyLeaderboardService)', 'dependencies.CompanyLeaderboardService')
     .replace('require(script.Parent.RodSerials)', () => `(function()\n${rodSerialSource}\nend)()`)
     .replace(/require\(script.Parent.AdminCommands\)/, '{ start = function() end }')
     .replace(/local BoatData = require\(script.Parent.BoatData\)/, 'local BoatData = dependencies.BoatData')
@@ -93,6 +111,7 @@ try {
     .replace(/local Trawler = require\(script.Parent.Trawler\)/, 'local Trawler = dependencies.Trawler')
     .replace(/local Tugboat = require\(script.Parent.Tugboat\)/, 'local Tugboat = dependencies.Tugboat')
     .replace(/local Hovercraft = require\(script.Parent.Hovercraft\)/, 'local Hovercraft = dependencies.Hovercraft')
+    .replace(/local SmallFerry = require\(script.Parent.SmallFerry\)/, 'local SmallFerry = dependencies.SmallFerry')
     .replace(/local DrydockLaunch = require\(script.Parent.DrydockLaunch\)/, 'local DrydockLaunch = dependencies.DrydockLaunch')
     .replace(/local BoatLaunchCollision = require\(script.Parent.BoatLaunchCollision\)/, 'local BoatLaunchCollision = dependencies.BoatLaunchCollision')
     .replace(/local BoatCatalog = require\(ReplicatedStorage.Shared.BoatCatalog\)/, 'local BoatCatalog = dependencies.BoatCatalog')
@@ -114,9 +133,11 @@ try {
   }
   if (!/return BoatService\s*$/.test(service)) throw new Error('BoatService return hook changed');
   service = service.replace(/return BoatService\s*$/, `return {
-    start = BoatService.start, loadPlayer = loadPlayer, nearPrompt = nearPrompt,
+    start = BoatService.start, loadPlayer = loadPlayer, activatePlayer = activatePlayer, applySave = applySave,
+    migrateProfile = function(key, profile) return RodSerials.migrate(store, key, profile) end, nearPrompt = nearPrompt,
     shopPrompt = shopPrompt, purchase = purchase, spawnBoat = spawnBoat,
     getProfile = BoatService.getProfile, updateProgress = BoatService.updateProgress,
+    isBusinessHost = BoatService.isBusinessHost,
     damageBoat = BoatService.damageBoat,
     profiles = profiles, active = active, BoatDrive = BoatDrive, BoatMotion = BoatMotion,
   }`);
@@ -124,10 +145,11 @@ try {
     .replace('-- BOAT_LAUNCH_COLLISION_SOURCE --', await readFile(join(root, 'src/server/BoatLaunchCollision.luau'), 'utf8'))
     .replace('-- BOAT_CATALOG_SOURCE --', await readFile(join(root, 'src/shared/BoatCatalog.luau'), 'utf8'))
     .replace('-- BOAT_DATA_SOURCE --', data)
+    .replace('-- SAVE_DATA_SOURCE --', saveData)
     .replace('-- BOAT_SERVICE_SOURCE --', service);
   const target = join(temporary, 'boat-service.luau');
   await writeFile(target, patchHarnessRequires(program, temporary));
-  const checks = (process.argv.includes('--crab-cages-only') || process.argv.includes('--mussel-nets-only')) ? [['run', target]] : process.argv.includes('--inventory-only')
+  const checks = (process.argv.includes('--crab-cages-only') || process.argv.includes('--mussel-nets-only') || process.argv.includes('--company-wallet-only')) ? [['run', target]] : process.argv.includes('--inventory-only')
     ? [['run', 'scripts/boat-data.luau'], ['run', target]]
     : [['run', 'scripts/boat-data.luau'], ['run', 'scripts/boat-motion.luau'], ['run', target]];
   for (const args of checks) {

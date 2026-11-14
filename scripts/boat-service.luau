@@ -251,6 +251,9 @@ end
 function methods:GetAttribute(key)
 	return self.attributes[key]
 end
+function methods:Kick(message)
+	self.kicked = message
+end
 function methods:GetPropertyChangedSignal(key)
 	if not self.signals[key] then
 		self.signals[key] = signal()
@@ -386,13 +389,16 @@ local task = {
 	delay = function(seconds, callback)
 		table.insert(delayed, { at = now + seconds, callback = callback })
 	end,
-	wait = function()
-		if yieldOnWait then
+	wait = function(seconds)
+		if yieldOnWait or seconds == 15 then
 			coroutine.yield()
 		end
 	end,
 	spawn = function(callback, ...)
-		callback(...)
+		local thread = coroutine.create(callback)
+		local ok, message = coroutine.resume(thread, ...)
+		assert(ok, message)
+		return thread
 	end,
 	defer = function(callback)
 		callback()
@@ -422,6 +428,9 @@ local RaycastParams = {
 }
 local BoatData = (function()
 	-- BOAT_DATA_SOURCE --
+end)()
+local SaveData = (function()
+	-- SAVE_DATA_SOURCE --
 end)()
 local builtBoats = {}
 local Rowboat = {
@@ -577,6 +586,8 @@ local BoatLaunchCollision = (function()
 end)()
 local dependencies = {
 	BoatData = BoatData,
+	SaveService = { start = function() end },
+	CompanyLeaderboardService = { configure = function() end },
 	Rowboat = Rowboat,
 	FishingBoat = FishingBoat,
 	Speedboat = Speedboat,
@@ -585,6 +596,7 @@ local dependencies = {
 	Trawler = Trawler,
 	Tugboat = Tugboat,
 	Hovercraft = Hovercraft,
+	SmallFerry = FishingBoat,
 	DrydockLaunch = DrydockLaunch,
 	BoatLaunchCollision = BoatLaunchCollision,
 	BoatCatalog = BoatCatalog,
@@ -630,6 +642,29 @@ local function check(condition, message)
 	assert(condition, message)
 end
 check(BoatData.PRICE == BoatCatalog.Rowboat.Price, "Displayed price and saved purchase price must agree")
+-- Existing boat tests begin after a player explicitly chose a persisted slot.
+-- SaveService's real loading/discovery/authorisation flow has its own harness.
+local function selectSave(player, owner, slot)
+	owner, slot = owner or player.UserId, slot or 1
+	Service.loadPlayer(player)
+	local key = SaveData.key(owner, slot)
+	local ok, profile = pcall(function()
+		local loaded = BoatData.decode(store:GetAsync(key))
+		loaded.SaveInfo = SaveData.info(loaded, owner, slot)
+		return loaded
+	end)
+	if not ok then return false end
+	-- Default creation and legacy serial migration belong to selection. Fixtures
+	-- persist them before activatePlayer; gameplay cannot implicitly create saves.
+	if not store.data[key] then store.data[key] = BoatData.decode(profile) end
+	if profile.RodSerialScope ~= "GlobalV1" then
+		profile = Service.migrateProfile(key, profile)
+	end
+	profile.SaveInfo = SaveData.info(profile, owner, slot)
+	store.data[key] = BoatData.decode(profile)
+	Service.activatePlayer(player, key, profile, owner, slot)
+	return true
+end
 local function makePlayer(id, cash, owned)
 	local player = Instance.new("Player")
 	player.UserId, player.Parent = id, Players
@@ -644,7 +679,7 @@ local function makePlayer(id, cash, owned)
 		store.data["Player_" .. id] =
 			{ Version = 1, Cash = cash, OwnedBoats = { Rowboat = owned == true }, RodSerialScope = "GlobalV1" }
 	end
-	Service.loadPlayer(player)
+	selectSave(player)
 	return player, root, humanoid
 end
 local function makePrompt(parent, name, position)
@@ -800,9 +835,9 @@ local cashBefore = fresh:GetAttribute("Cash")
 request.OnServerEvent:Fire(fresh, "SetCash", 1000000)
 check(fresh:GetAttribute("Cash") == cashBefore and store.updates == before + 1, "Remote cannot grant currency")
 
-store.getFailures = 3
+store.getFailures = 1
 local unavailable = makePlayer(3, 1000)
-check(unavailable:GetAttribute("BoatDataStatus") == "Unavailable", "Failed load must disable trading")
+check(unavailable:GetAttribute("BoatDataStatus") == "Selecting", "Failed selection leaves player in selector with trading disabled")
 check(unavailable:GetAttribute("BestiaryPercent") == nil, "Unavailable progress does not look like an empty bestiary")
 before = store.updates
 Service.purchase(unavailable)
@@ -2011,7 +2046,7 @@ check(
 	"Committed serial and count publish to the client"
 )
 Service.profiles[skinBuyer] = nil
-Service.loadPlayer(skinBuyer)
+selectSave(skinBuyer)
 skinProfile = Service.getProfile(skinBuyer)
 check(
 	#skinProfile.RodSkinCopies == 2
@@ -2213,6 +2248,195 @@ check(not Service.updateProgress(bestiaryPlayer, function(profile)
 	profile.Angler.Catches.TestFishC = { Count = 1, BiggestKg = 1, Mutations = {} }
 end), "A failed discovery save reports failure")
 check(bestiaryPlayer:GetAttribute("BestiaryPercent") == 67, "An uncommitted discovery does not change the percentage")
+
+-- COMPANY_WALLET_CHECKS --
+do
+local function companyWalletChecks()
+-- These exercise the real per-save queue, latest-record transforms, access
+-- checks and publication to every member, independently of save-list mocks.
+local companyOwnerId, companyFriendId = 8801, 8802
+local companyKey = SaveData.key(companyOwnerId, 2)
+local companyProfile = BoatData.decode(nil)
+companyProfile.Cash = 1000
+companyProfile.SaveInfo = SaveData.createInfo(companyOwnerId, 2, "Shared Tide", true, os.time(), "company-8801")
+SaveData.join(companyProfile.SaveInfo, companyFriendId, true, "Friend")
+store.data[companyKey] = companyProfile
+store.data.Player_8801 = BoatData.decode(nil)
+store.data.Player_8801.Cash = 17
+store.data.Player_8801_Slot_3 = BoatData.decode(nil)
+store.data.Player_8801_Slot_3.Cash = 33
+store.data.Player_8802 = BoatData.decode(nil)
+store.data.Player_8802.Cash = 555
+local function companyMember(userId)
+	local player = Instance.new("Player")
+	player.UserId, player.Parent = userId, Players
+	table.insert(playerList, player)
+	check(selectSave(player, companyOwnerId, 2), "Member explicitly selects creator's company save")
+	return player
+end
+local companyFriend = companyMember(companyFriendId)
+check(Service.isBusinessHost(companyFriend), "Online guest hosts company workers while original creator is offline")
+local companyOwner = companyMember(companyOwnerId)
+check(Service.isBusinessHost(companyOwner) and not Service.isBusinessHost(companyFriend),
+	"Original creator takes worker host role when joining their company")
+companyOwner.Parent = nil
+check(Service.isBusinessHost(companyFriend) and not Service.isBusinessHost(companyOwner),
+	"Worker host role transfers to an online guest immediately after creator disconnects")
+companyOwner.Parent = Players
+check(Service.isBusinessHost(companyOwner) and not Service.isBusinessHost(companyFriend),
+	"Returning creator regains sole worker host role")
+local otherBusiness = makePlayer(8803, 22, true)
+check(Service.isBusinessHost(otherBusiness) and Service.isBusinessHost(companyOwner),
+	"Unrelated personal save hosts its own business independently")
+check(Service.profiles[companyOwner].key == companyKey and Service.profiles[companyFriend].key == companyKey,
+	"Two simultaneous members target the creator's one save record")
+check(companyOwner:GetAttribute("Cash") == 1000 and companyFriend:GetAttribute("Cash") == 1000,
+	"Members initially see one shared balance")
+check(companyFriend:GetAttribute("CompanyName") == "Shared Tide" and companyFriend:GetAttribute("ActiveSaveOwnerId") == companyOwnerId,
+	"Published company identity names the original creator's save")
+local function companyFish(id)
+	return { FishId = id, Mutation = "Normal", Kg = 1, Value = 20, Rarity = 10, Relative = 1, CaughtAt = os.time() }
+end
+check(Service.updateProgress(companyOwner, function(profile)
+	profile.Angler.Hand = companyFish("OwnerFish")
+	profile.Angler.Backpack = { { Fish = companyFish("OwnerBagFish"), X = 1, Y = 1, R = 0 } }
+end), "Creator saves carried catch and backpack fish")
+check(Service.getProfile(companyFriend).Angler.Hand == nil and #Service.getProfile(companyFriend).Angler.Backpack == 0,
+	"Another member's hand and backpack begin independently")
+check(Service.updateProgress(companyFriend, function(profile)
+	profile.Angler.Hand = companyFish("FriendFish")
+	profile.Angler.Backpack = { { Fish = companyFish("FriendBagFish"), X = 1, Y = 1, R = 0 } }
+end), "Guest can catch and carry fish while creator already carries another catch")
+check(Service.getProfile(companyOwner).Angler.Hand.FishId == "OwnerFish"
+	and Service.getProfile(companyFriend).Angler.Hand.FishId == "FriendFish",
+	"Simultaneous anglers retain distinct fish in their hands")
+check(store.data[companyKey].Angler.Backpack[1].Fish.FishId == "OwnerBagFish"
+	and store.data[companyKey].CompanyCrew[tostring(companyFriendId)].Backpack[1].Fish.FishId == "FriendBagFish",
+	"Creator's legacy backpack and guest's saved backpack remain separate")
+check(Service.updateProgress(companyOwner, function(profile) profile.Cash += 200 end), "Owner earnings commit")
+check(store.data[companyKey].Cash == 1200 and companyFriend:GetAttribute("Cash") == 1200,
+	"Owner earnings immediately publish to online company member")
+check(Service.updateProgress(companyFriend, function(profile)
+	assert(profile.Cash >= 150)
+	profile.Cash -= 150
+end), "Company friend spends shared money")
+check(store.data[companyKey].Cash == 1050 and companyOwner:GetAttribute("Cash") == 1050
+	and companyFriend:FindFirstChild("leaderstats"):FindFirstChild("Money").Value == 1050,
+	"Member purchases update the owner's wallet and all displayed balances")
+check(store.data.Player_8801.Cash == 17 and store.data.Player_8801_Slot_3.Cash == 33 and store.data.Player_8802.Cash == 555,
+	"Shared transactions leave other owner slots and member's personal save untouched")
+local beforeRevision = store.data[companyKey].SaveInfo.Revision
+store.retryTransform = true
+check(Service.updateProgress(companyFriend, function(profile) profile.Cash -= 50 end), "Retried shared spend commits")
+store.retryTransform = false
+check(store.data[companyKey].Cash == 1000 and store.data[companyKey].SaveInfo.Revision == beforeRevision + 1,
+	"DataStore callback retry spends once and increments revision once")
+
+local snapshot = Service.getProfile(companyOwner)
+check(Service.updateProgress(companyFriend, function(profile) profile.Cash += 70 end), "Newer shared balance commits")
+Service.applySave(companyKey, snapshot)
+check(companyOwner:GetAttribute("Cash") == 1070 and companyFriend:GetAttribute("Cash") == 1070,
+	"A slow older snapshot cannot roll company balances back")
+local beforeFriendJoined = BoatData.decode(snapshot)
+beforeFriendJoined.SaveInfo = SaveData.info(beforeFriendJoined, companyOwnerId, 2)
+beforeFriendJoined.SaveInfo.Revision = 0
+beforeFriendJoined.SaveInfo.Members[tostring(companyFriendId)] = nil
+beforeFriendJoined.SaveInfo.MemberNames[tostring(companyFriendId)] = nil
+Service.applySave(companyKey, beforeFriendJoined)
+check(companyFriend.kicked == nil and Service.getProfile(companyFriend) ~= nil,
+	"An old roster snapshot from before membership cannot revoke a newer authorised session")
+
+-- A transaction may yield while both a different member and the same member
+-- send more work. One company queue must preserve order across both cases.
+yieldOnWait = true
+local commitOrder = {}
+store.beforeUpdate = function(key)
+	if key == companyKey then
+		store.beforeUpdate = nil
+		coroutine.yield()
+	end
+end
+local companyFirst = coroutine.create(function()
+	check(Service.updateProgress(companyOwner, function(profile)
+		table.insert(commitOrder, "owner first")
+		profile.Cash += 10
+		profile.Angler.Hand.Kg = 2
+	end), "First company queued earning commits")
+end)
+local companySecond = coroutine.create(function()
+	check(Service.updateProgress(companyFriend, function(profile)
+		table.insert(commitOrder, "friend second")
+		profile.Cash -= 20
+		profile.Angler.Hand.Kg = 3
+	end), "Other member's queued purchase commits")
+end)
+local companyThird = coroutine.create(function()
+	check(Service.updateProgress(companyOwner, function(profile)
+		table.insert(commitOrder, "owner third")
+		profile.Cash += 30
+		profile.Angler.Backpack[1].Fish.Kg = 4
+	end), "Same member's later queued earning commits")
+end)
+check(coroutine.resume(companyFirst) and coroutine.resume(companySecond) and coroutine.resume(companyThird),
+	"Overlapping company actions reach shared queue")
+check(coroutine.resume(companyThird) and coroutine.status(companyThird) == "suspended" and #commitOrder == 0,
+	"Later company request cannot bypass another member's earlier ticket")
+check(coroutine.resume(companyFirst) and coroutine.resume(companySecond) and coroutine.resume(companyThird),
+	"Shared queue drains across different and same players")
+yieldOnWait = false
+check(table.concat(commitOrder, ",") == "owner first,friend second,owner third", "Company transaction order follows arrival order")
+check(store.data[companyKey].Cash == 1090 and companyOwner:GetAttribute("Cash") == 1090 and companyFriend:GetAttribute("Cash") == 1090,
+	"Concurrent company earnings and spending retain every change for both members")
+check(Service.getProfile(companyOwner).Angler.Hand.Kg == 2 and Service.getProfile(companyFriend).Angler.Hand.Kg == 3
+	and Service.getProfile(companyOwner).Angler.Backpack[1].Fish.Kg == 4,
+	"Overlapping updates merge individual carried fish without replacing another angler's inventory")
+check(Service.updateProgress(companyFriend, function(profile) profile.Angler.Hand = nil end), "Guest can unload their own carried catch")
+check(Service.getProfile(companyOwner).Angler.Hand.FishId == "OwnerFish" and Service.getProfile(companyFriend).Angler.Hand == nil,
+	"Unloading a guest's fish preserves creator's carried catch")
+
+-- Authorisation is evaluated from the latest persisted roster during every
+-- commit, even if a removed member still has a Ready in-memory profile.
+local revoked = SaveData.info(store.data[companyKey], companyOwnerId, 2)
+SaveData.edit(revoked, companyOwnerId, nil, nil, companyFriendId)
+SaveData.touch(revoked, os.time())
+store.data[companyKey].SaveInfo = revoked
+local changedAfterRevoke = false
+check(not Service.updateProgress(companyFriend, function(profile)
+	changedAfterRevoke = true
+	profile.Cash += 99999
+end), "Removed member cannot commit using stale loaded membership")
+check(not changedAfterRevoke and store.data[companyKey].Cash == 1090,
+	"Revoked member's transform never runs or changes shared money")
+Service.applySave(companyKey, store.data[companyKey])
+check(companyFriend.kicked ~= nil and Service.getProfile(companyFriend) == nil,
+	"Roster refresh revokes online member access and requests rejoin")
+check(Service.getProfile(companyOwner).Cash == 1090, "Revocation preserves creator's active company")
+
+-- A retried transaction must re-read the latest wallet rather than trusting the
+-- balance from its discarded first callback or from the player's profile.
+local retryStarted = false
+store.retryTransform = true
+local spendRetryCalls = 0
+check(not Service.updateProgress(companyOwner, function(profile)
+	spendRetryCalls += 1
+	if spendRetryCalls == 1 then
+		retryStarted = true
+		store.data[companyKey] = BoatData.decode(store.data[companyKey])
+		store.data[companyKey].Cash = 5
+		SaveData.touch(store.data[companyKey].SaveInfo, os.time())
+	end
+	assert(profile.Cash >= 100, "Insufficient company money")
+	profile.Cash -= 100
+end), "Retry rejects spending after a competing commit consumes the funds")
+store.retryTransform = false
+check(retryStarted and spendRetryCalls == 2 and store.data[companyKey].Cash == 5,
+	"Shared wallet retry cannot spend a stale balance or overdraw company")
+Service.applySave(companyKey, store.data[companyKey])
+check(companyOwner:GetAttribute("Cash") == 5, "Latest external commit reconciles after rejected spend")
+end
+companyWalletChecks()
+end
+-- END_COMPANY_WALLET_CHECKS --
 
 print(
 	`Boat service recording-mock checks passed: {checks}. No Roblox runtime, DataStore network, or live physics were exercised.`

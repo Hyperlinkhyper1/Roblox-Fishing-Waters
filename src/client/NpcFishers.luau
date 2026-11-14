@@ -219,7 +219,10 @@ local function buildBoat(fisher: Fisher)
 		end
 	end
 	fisher.rootOffset = root.CFrame -- the template was built at the origin
-	root.CFrame = PARKED
+	-- Move every part, not just the root: outside workspace the welds do not carry the hull
+	-- along, and each WeldConstraint keeps whatever offset it finds once parented, so moving
+	-- the root alone left the hull 25000 studs below its root (an angler with no boat).
+	boat:PivotTo(PARKED)
 	boat.Parent = container
 	fisher.boat, fisher.root, fisher.boatParts = boat, root, parts
 

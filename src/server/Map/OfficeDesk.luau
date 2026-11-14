@@ -976,6 +976,86 @@ function OfficeDesk.moveChair(root: Instance, seated: boolean)
 	root:SetAttribute("ChairAt", target)
 end
 
+-- Dresses the desk in its company's PC (TechStoreService builds `look` from Shared.TechCatalog):
+-- the system unit and monitor are rebuilt by Shared.PcModel (passed in, so this module keeps no
+-- dependencies) from the parts list. A desktop case sits under its monitor; a tower or showcase
+-- stands to the right of a monitor on its own stand. While the PC is away (carried, or on the
+-- workbench: PcWorkshopService) only the monitor stays, showing NO SIGNAL, and the desk is
+-- marked PcAway so nobody can sit down at it.
+export type Look = {
+	Key: string,
+	Parts: { [string]: string },
+	Form: string,
+	Away: boolean?,
+}
+
+-- Where the system unit stands on the desk, desk-local.
+function OfficeDesk.caseFrame(deskFrame: CFrame, form: string): CFrame
+	if form == "Desktop" then
+		return deskFrame * CFrame.new(-0.6, DESK_H, -0.5)
+	end
+	return deskFrame * CFrame.new(if form == "Showcase" then 1.62 else 1.45, DESK_H, -0.5)
+end
+
+function OfficeDesk.dress(root: Instance, look: Look, PcModel: any)
+	local key = look.Key .. (if look.Away then "|away" else "")
+	if root:GetAttribute("TechLook") == key then
+		return
+	end
+	local computer = root:FindFirstChild("Computer")
+	local frame = root:GetAttribute("DeskFrame")
+	if not computer or typeof(frame) ~= "CFrame" then
+		return
+	end
+	root:SetAttribute("TechLook", key)
+	root:SetAttribute("PcAway", look.Away == true)
+	for _, name in { "SystemUnit", "Monitor", "Cables", "Rig" } do
+		local old = computer:FindFirstChild(name)
+		if old then
+			old:Destroy()
+		end
+	end
+	local rig = group(computer, "Rig")
+	local desktop = look.Form == "Desktop"
+	local caseFrame = OfficeDesk.caseFrame(frame, look.Form)
+	local monitorFrame
+	if desktop and not look.Away then
+		monitorFrame = caseFrame * CFrame.new(0, PcModel.size(look.Parts.Case).Y, 0.8)
+	elseif desktop then
+		monitorFrame = caseFrame * CFrame.new(0, 0, 0.8)
+	else
+		monitorFrame = frame * CFrame.new(-0.75, DESK_H, 0.2)
+	end
+	if not look.Away then
+		PcModel.build(rig, caseFrame, look.Parts, { Name = "SystemUnit" })
+	end
+	PcModel.buildMonitor(rig, monitorFrame, look.Parts.Monitor, { Name = "Monitor", Away = look.Away })
+
+	-- Keyboard and mouse leads to the back of the desk; monitor and mains leads to the PC.
+	local cables = group(rig, "Cables")
+	local y = DESK_H + 0.045
+	local lead = rgb(150, 144, 128)
+	cable(cables, frame, { { -1.5, y, 0.56 }, { -1.75, y, 0.5 }, { -1.98, y, 0.25 }, { -2.0, y, -0.9 }, { -1.6, y, -1.48 } }, 0.05, lead)
+	cable(cables, frame, { { 1.88, y, 0.72 }, { 1.75, y, 0.35 }, { 1.35, y, -0.05 }, { 0.95, y, -0.55 }, { 0.75, y, -1.0 }, { 0.66, y, -1.2 } }, 0.04, lead)
+	if look.Away then
+		return
+	end
+	if desktop then
+		cable(cables, caseFrame, { { -0.2, 1.35, -0.46 }, { -0.2, 1.2, -0.55 }, { -0.2, 0.69, -0.55 }, { -0.2, 0.69, -0.99 }, { -0.2, 0.2, -0.99 } }, 0.05, CABLE)
+		cable(cables, caseFrame, { { 0.5, 0.18, -1.0 }, { 0.5, 0.1, -1.065 }, { 0.5, -2.88, -1.065 } }, 0.04, CABLE)
+	else
+		local monitorBack = frame:PointToObjectSpace((monitorFrame * CFrame.new(0, 0.5, -0.6)).Position)
+		local caseBack = frame:PointToObjectSpace((caseFrame * CFrame.new(0, 1.6, -1.0)).Position)
+		cable(cables, frame, {
+			{ monitorBack.X, monitorBack.Y, monitorBack.Z },
+			{ monitorBack.X, y, -1.3 },
+			{ caseBack.X, y, -1.3 },
+			{ caseBack.X, caseBack.Y, caseBack.Z },
+		}, 0.05, CABLE)
+		cable(cables, caseFrame, { { 0, 0.32, -1.0 }, { 0, 0.2, -1.04 }, { 0, -2.88, -1.04 } }, 0.04, CABLE)
+	end
+end
+
 OfficeDesk.WIDTH = DESK_W
 OfficeDesk.DEPTH = DESK_D
 OfficeDesk.HEIGHT = DESK_H

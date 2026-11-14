@@ -1,6 +1,6 @@
--- Six compact harbour noticeboards, arranged in pairs around the plaza.
+-- Compact harbour noticeboards, with a separate company net-worth ranking.
 local Boards = {}
-local LAYOUT_VERSION = 3
+local LAYOUT_VERSION = 4
 Boards.Definitions = {
 	{ Id = "Level", Title = "HIGHEST LEVEL", Unit = "LEVEL", Weekly = false },
 	{ Id = "WeeklyXP", Title = "MOST XP THIS WEEK", Unit = "XP", Weekly = true },
@@ -9,6 +9,8 @@ Boards.Definitions = {
 	{ Id = "Earned", Title = "MOST MONEY EARNED", Unit = "$", Weekly = false },
 	{ Id = "WeeklyEarned", Title = "MONEY THIS WEEK", Unit = "$", Weekly = true },
 }
+-- Company IDs are save IDs, not Roblox user IDs. Their service owns this index.
+Boards.CompanyDefinition = { Id = "Companies", Title = "COMPANIES", Unit = "$", Weekly = false }
 
 local cream = Color3.fromRGB(244, 234, 208)
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
@@ -26,7 +28,7 @@ local function styleBoard(gui)
 		if item:IsA("TextLabel") then
 			Theme.text(
 				item,
-				if (money == "Earned" or money == "WeeklyEarned") and string.match(item.Name, "^Score")
+				if (money == "Earned" or money == "WeeklyEarned" or money == "Companies") and string.match(item.Name, "^Score")
 					then Theme.Colors.Green
 					else nil
 			)
@@ -65,7 +67,8 @@ function Boards.build(plaza: Model, pavingFrame: CFrame)
 	model.Name, model.Parent = "Leaderboards", plaza
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 	model:SetAttribute("LayoutVersion", LAYOUT_VERSION)
-	-- Three separated pairs face into the square. All six panels stand at the
+	-- Three separated pairs face into the square. The company panel extends
+	-- the east pair with the same walking gap. All panels stand at the
 	-- same readable height, with paths between pairs and no stacked displays.
 	local placements = {
 		{ 22, -28, math.pi },
@@ -76,8 +79,11 @@ function Boards.build(plaza: Model, pavingFrame: CFrame)
 		-- entrance, with room for the central path and southern promenade.
 		{ 10, 40, 0 },
 		{ 22, 40, 0 },
+		{ 29, 18, math.pi / 2 },
 	}
-	for index, definition in Boards.Definitions do
+	local definitions = table.clone(Boards.Definitions)
+	table.insert(definitions, Boards.CompanyDefinition)
+	for index, definition in definitions do
 		local placement = placements[index]
 		local frame = pavingFrame * CFrame.new(placement[1], 0, placement[2]) * CFrame.Angles(0, placement[3], 0)
 		local function part(name, size, offset, color, material)
@@ -117,14 +123,15 @@ function Boards.build(plaza: Model, pavingFrame: CFrame)
 		label(
 			gui,
 			"Period",
-			if definition.Weekly then "WEEKLY  /  MONDAY 00:00 UTC" else "ALL TIME  /  GLOBAL TOP 10",
+			if definition.Id == "Companies" then "CURRENT NET WORTH  /  GLOBAL TOP 10"
+				elseif definition.Weekly then "WEEKLY  /  MONDAY 00:00 UTC" else "ALL TIME  /  GLOBAL TOP 10",
 			22,
 			50,
 			576,
 			25,
 			17
 		)
-		label(gui, "Columns", "#    ANGLER", 22, 88, 410, 26, 18, gold)
+		label(gui, "Columns", if definition.Id == "Companies" then "#    COMPANY" else "#    ANGLER", 22, 88, 410, 26, 18, gold)
 		local unit = label(gui, "Unit", definition.Unit, 432, 88, 166, 26, 18, gold)
 		unit.TextXAlignment = Enum.TextXAlignment.Right
 		local rows = Instance.new("Frame")
@@ -171,6 +178,31 @@ function Boards.ensure(root: Instance)
 	end
 end
 
+-- Company rows split the rank from the name to fit the company icon between
+-- them. Added on first render, so boards on baked maps need no layout bump.
+local function companyRow(rows, rank)
+	local name = rows["Name" .. rank]
+	local icon = rows:FindFirstChild("Icon" .. rank)
+	if icon then
+		return name, icon
+	end
+	local y = (rank - 1) * 34
+	local rankLabel = label(rows, "Rank" .. rank, string.format("%02d", rank), 0, y, 34, 32, 22)
+	Theme.text(rankLabel)
+	icon = Instance.new("ImageLabel")
+	icon.Name = "Icon" .. rank
+	icon.Position, icon.Size = UDim2.fromOffset(42, y + 2), UDim2.fromOffset(28, 28)
+	icon.BackgroundColor3 = Color3.fromRGB(20, 34, 48)
+	icon.BorderSizePixel = 0
+	icon.ScaleType = Enum.ScaleType.Crop
+	Theme.corner(icon, 6)
+	local initial = label(icon, "Initial", "", 0, 0, 28, 28, 15)
+	initial.TextXAlignment = Enum.TextXAlignment.Center
+	icon.Parent = rows
+	name.Position, name.Size = UDim2.fromOffset(80, y), UDim2.fromOffset(322, 32)
+	return name, icon
+end
+
 function Boards.render(root: Instance, id, entries, status)
 	for _, panel in root:GetDescendants() do
 		if panel:IsA("BasePart") and panel:GetAttribute("LeaderboardId") == id then
@@ -180,9 +212,18 @@ function Boards.render(root: Instance, id, entries, status)
 			end
 			for rank = 1, 10 do
 				local entry = entries[rank]
-				gui.Rows["Name" .. rank].Text = string.format("%02d   %s", rank, if entry then entry.Name else "—")
+				if id == "Companies" then
+					local name, icon = companyRow(gui.Rows, rank)
+					name.Text = if entry then entry.Name else "—"
+					local iconId = entry and entry.Icon
+					icon.Image = if iconId then "rbxthumb://type=Asset&id=" .. tostring(iconId) .. "&w=150&h=150" else ""
+					icon.BackgroundTransparency = if entry then 0 else 1
+					icon.Initial.Text = if entry and not iconId then string.upper(string.match(entry.Name, "%w") or "?") else ""
+				else
+					gui.Rows["Name" .. rank].Text = string.format("%02d   %s", rank, if entry then entry.Name else "—")
+				end
 				gui.Rows["Score" .. rank].Text = if entry
-					then (if id == "Earned" or id == "WeeklyEarned" then "$" else "") .. tostring(entry.Score)
+					then (if id == "Earned" or id == "WeeklyEarned" or id == "Companies" then "$" else "") .. tostring(entry.Score)
 					else "—"
 			end
 			gui.Status.Text = status

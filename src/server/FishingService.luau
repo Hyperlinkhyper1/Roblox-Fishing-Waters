@@ -1139,7 +1139,11 @@ function FishingService.start()
 				local _, message = buyCrabCage(player)
 				notify(player, message)
 			end)
-		elseif prompt.Name == "RodStoreDoorPrompt" or prompt.Name == "FurnitureStoreDoorPrompt" then
+		elseif
+			prompt.Name == "RodStoreDoorPrompt"
+			or prompt.Name == "FurnitureStoreDoorPrompt"
+			or prompt.Name == "PetShopDoorPrompt"
+		then
 			walkThroughDoor(player, prompt)
 		end
 	end)

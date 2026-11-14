@@ -20,7 +20,7 @@ local WINDOW = 1 -- seconds per report window
 local REPORT_AT = 100 -- parts removed in one window before it's worth printing
 local TOP = 10 -- groups listed per report
 local DEPTH = 3 -- path levels below workspace a group is named by
-local MIN_RADIUS = 128 -- StreamingMinRadius in default.project.json; streaming never evicts closer
+local MIN_RADIUS = 64 -- StreamingMinRadius in default.project.json; streaming never evicts closer
 local PIECE_TAG = "LodPiece"
 
 -- Parent -> group name, so a burst of thousands of parts costs one walk per container

@@ -44,6 +44,7 @@ local function simulate(options)
 	local attrs, warnings = {}, 0
 	local actualVisit, engineSell, currentCustomer, inVisit
 	local paid, entered, firstVisitAt = 0, 0, nil
+	local visitTimes = {}
 	local layoutFrames
 	local function object(name, children, part)
 		local obj = part or {}
@@ -206,8 +207,9 @@ local function simulate(options)
 		local frame=if layoutFrames then layoutFrames[index] elseif index==2 then CFrame.new(-352,0,0,math.pi/2) else CFrame.new(if index==3 then 220 else -220,0,128)
 		Streets.register(base,frame,"Shop",Vector3.new(0,0,62.4),function(guest)
 			visits+=1
+			table.insert(visitTimes, now)
 			firstVisitAt=firstVisitAt or now
-			check(now>=2 and guest.valid(),"Only a live existing walker can shop")
+			check((options.scheduled or now>=2) and guest.valid(),"Only a live pedestrian can shop")
 			local config
 			for _,at in configs do if at.Name==guest.id then config=at end end
 			check(config and config.Parent==shared and not config.destroyed,"Buyer was already walking on the public network")
@@ -223,7 +225,7 @@ local function simulate(options)
 			guest.finishAt,guest.ownerId=now+(options.stay or 10),ownerId
 			table.insert(guests,guest)
 			return true
-		end,function() return options.interest or 0 end)
+		end,function() return options.interest or 0 end, if options.scheduled then 20 else nil)
 	end
 	Streets.start(shared)
 	check(#loops==1,"The whole island shares one scheduler")
@@ -233,7 +235,7 @@ local function simulate(options)
 	for _,config in configs do if config.Parent==shared and not config:GetAttribute("InShop") then outside+=1 end end
 	check(shared:GetAttribute("Ready") and shared:GetAttribute("WalkableCells")>1000,"The real road geometry builds an island-wide network")
 	for _,base in bases do check(base.attributes.PedestrianShopReachable,"An actual forecourt connects each shop to the roads") end
-	return {outside=outside,visits=visits,peak=peak,warnings=warnings,maxSpan=maxSpan,scans=scans,paid=paid,entered=entered,firstVisitAt=firstVisitAt,components=shared:GetAttribute("RouteComponents")}
+	return {outside=outside,visits=visits,visitTimes=visitTimes,peak=peak,warnings=warnings,maxSpan=maxSpan,scans=scans,paid=paid,entered=entered,firstVisitAt=firstVisitAt,components=shared:GetAttribute("RouteComponents")}
 end
 
 local day=simulate({interest=0})
@@ -249,6 +251,11 @@ local shopping=simulate({interest=1,changeOwnerAt=65})
 check(shopping.visits>2 and shopping.peak>0 and shopping.maxSpan>400,"The same island travellers visit shops and continue their journeys")
 local ordinary=simulate({interest=0.35,duration=100})
 check(ordinary.visits>0 and ordinary.firstVisitAt<60,"Normal purchase probability provides early traffic without needing a guaranteed shop roll")
+local scheduled=simulate({interest=1,scheduled=true,duration=100})
+check(scheduled.visits>=5,"A ready shop receives scheduled customers")
+for i=2,#scheduled.visitTimes do
+	check(scheduled.visitTimes[i]-scheduled.visitTimes[i-1]<=20.25,"Scheduled customers arrive every 20 seconds")
+end
 local missing=simulate({interest=1,noAvatars=true})
 check(missing.visits==0 and missing.outside==68,"Pending appearances never create random replacement shoppers")
 local rejected=simulate({interest=1,reject=true})

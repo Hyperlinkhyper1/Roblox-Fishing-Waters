@@ -406,16 +406,37 @@ function CityPort.build(parent: Instance, origin: Vector3, top: number): { { num
 	local carPark = pieceModel(port, "CruiseCarPark", rgb(80, 82, 82))
 	local parkX0, parkX1 = basin.x1 + 18, ex - 8
 	part(carPark, "CarPark", Vector3.new(parkX1 - parkX0, 0.3, bz1 - bz0 - 12), Vector3.new((parkX0 + parkX1) / 2, deck + 0.05, (bz0 + bz1) / 2), rgb(70, 72, 72), M.Asphalt, false)
-	local spaces = 0
+	local spaces, parked = 0, 0
+	local carGroup: Model = carPark
 	for z = bz0 + 16, bz1 - 16, 9 do
 		for _, x in { parkX0 + 10, parkX1 - 10 } do
 			spaces += 1
 			if (spaces * 7) % 5 == 0 then
 				continue
 			end
+			if parked % 12 == 0 then
+				carGroup = pieceModel(port, "CruiseParkedCars", rgb(80, 82, 82))
+			end
+			parked += 1
 			local color = CONTAINERS[(spaces * 3) % #CONTAINERS + 1]:Lerp(white, 0.2)
-			part(carPark, "ParkedCar", Vector3.new(13, 2.8, 6), Vector3.new(x, deck + 1.7, z), color, M.SmoothPlastic)
-			part(carPark, "CarCabin", Vector3.new(7, 2.2, 5.4), Vector3.new(x, deck + 4.2, z), rgb(38, 44, 50), M.Glass, false)
+			local body = part(carGroup, "ParkedCar", Vector3.new(13, 2.8, 6), Vector3.new(x, deck + 1.7, z), color, M.SmoothPlastic)
+			body.CanTouch = false
+			local function detail(name: string, size: Vector3, offset: Vector3, tint: Color3, material: Enum.Material): Part
+				local p = part(carGroup, name, size, offset, tint, material, false)
+				p.CanTouch = false
+				p.CastShadow = false
+				return p
+			end
+			detail("CarCabin", Vector3.new(7, 2.2, 5.4), Vector3.new(x, deck + 4.2, z), rgb(38, 44, 50), M.Glass)
+			detail("ParkedCarRoof", Vector3.new(7, 0.25, 5.4), Vector3.new(x, deck + 5.35, z), color, M.SmoothPlastic)
+			for _, dx in { -4.2, 4.2 } do
+				local wheels = detail("CarWheels", Vector3.new(2.2, 2.2, 6.3), Vector3.new(x + dx, deck + 0.9, z), rgb(26, 26, 28), M.SmoothPlastic)
+				wheels.CFrame *= CFrame.Angles(0, math.pi / 2, 0)
+				wheels.Size = Vector3.new(6.3, 2.2, 2.2)
+				wheels.Shape = Enum.PartType.Cylinder
+			end
+			detail("CarHeadlights", Vector3.new(0.15, 0.45, 4.8), Vector3.new(x - 6.55, deck + 1.95, z), rgb(214, 214, 206), M.SmoothPlastic)
+			detail("CarTaillights", Vector3.new(0.15, 0.45, 4.8), Vector3.new(x + 6.55, deck + 1.95, z), rgb(145, 32, 28), M.SmoothPlastic)
 		end
 	end
 	-- Coaches wait along the south quay for the next sailing's tours

@@ -59,6 +59,19 @@ local function newMesh(fixed)
 	function mesh:SetFaceNormals(id, normals)
 		assert(self.faces[id] and #normals == 3)
 	end
+	function mesh:GetFaces()
+		local ids = {}
+		for id in self.faces do table.insert(ids, id) end
+		return ids
+	end
+	function mesh:RemoveFace(id)
+		assert(not self.FixedSize, "Only the scratch mesh is cleared")
+		self.faces[id] = nil
+	end
+	function mesh:RemoveUnused()
+		assert(next(self.faces) == nil, "Scratch must be emptied of faces first")
+		self.points, self.normals, self.faces = {}, {}, {}
+	end
 	function mesh:Destroy()
 		assert(not self.destroyed, "Mesh must be released exactly once")
 		self.destroyed = true
@@ -177,7 +190,8 @@ for _, id in { "round", "flat", "other", "round", "flat", "other" } do
 end
 flush()
 assert(peakDynamic == 1 and liveDynamic == 0, "Simultaneous species must share one temporary dynamic mesh")
-assert(#templates == 16 and allocations == 16 and copies == 16, "Species templates must be cached, including flatfish")
+assert(#templates == 16 and copies == 16, "Species templates must be cached, including flatfish")
+assert(allocations == 3, "Each species must build every band in one reused scratch mesh")
 for _, mesh in created do
 	assert(mesh.FixedSize ~= (mesh.destroyed == true), "Only fixed-size skins stay alive")
 end
@@ -209,7 +223,7 @@ for _, reason in { "budget", "access", "copy-budget", "copy-error" } do
 end
 print("PASS budget/API failures stop further engine allocations across species and water")
 
-for _, reason in { "geometry", "part", "budget", "copy-budget" } do
+for _, reason in { "geometry", "part", "copy-budget" } do
 	client = reset()
 	failure, failAt = reason, 3
 	local fallback = fish("round")
@@ -225,7 +239,7 @@ for _, reason in { "geometry", "part", "budget", "copy-budget" } do
 	if reason == "geometry" or reason == "part" then
 		assert(not visibleFallback(nextFish), "Non-budget failure must release the species build lock")
 	else
-		assert(visibleFallback(nextFish) and allocations == 3, "Budget failure must stay latched")
+		assert(visibleFallback(nextFish) and allocations == 1, "Budget failure must stay latched")
 	end
 end
 print("PASS partial-build, geometry and mesh-part failures release resources and keep fallbacks visible")
@@ -235,7 +249,7 @@ local completed = fish("round")
 task.spawn(client.hydrate, completed)
 flush()
 local completedMeshes = table.clone(created)
-failure, failAt = "budget", allocations + 3
+failure, failAt = "copy-budget", copies + 3
 task.spawn(client.hydrate, fish("other"))
 flush()
 local attempts = allocations
@@ -272,9 +286,46 @@ local evictedFish = fish("round")
 task.spawn(client.hydrate, evictedFish)
 flush()
 assert(releasedWater == 1, "A starved fish skin must release the cosmetic water mesh")
-assert(not visibleFallback(evictedFish) and allocations == 8, "The skin must build after the water mesh is released")
+assert(not visibleFallback(evictedFish) and allocations == 2, "The skin must build after the water mesh is released")
 assert(dependencies.EditableMeshBudget.status():find("Released for fish: SwellSurface", 1, true))
 print("PASS fish skins evict the swell sheet when the device budget is full")
+
+-- The reported failure: the last band's fixed copy doesn't fit. Skins of
+-- species no fish is wearing give their meshes back and the build continues.
+client = reset()
+local idle = fish("round")
+task.spawn(client.hydrate, idle)
+flush()
+local idleMeshes = {}
+for _, mesh in created do
+	if mesh.FixedSize then table.insert(idleMeshes, mesh) end
+end
+assert(#idleMeshes == 7)
+local worn = fish("flat")
+task.spawn(client.hydrate, worn)
+flush()
+idle.Parent = nil
+failure, failAt = "copy-budget", copies + 7
+local starved = fish("other")
+task.spawn(client.hydrate, starved)
+flush()
+assert(not visibleFallback(starved), "A starved species must build after idle skins are reclaimed")
+for _, mesh in idleMeshes do assert(mesh.destroyed, "Idle species skins must be reclaimed") end
+assert(not visibleFallback(worn), "Skins still worn by a fish must survive")
+for _, part in worn:GetChildren() do
+	if part.Name == "LoftSkin" then assert(not part.mesh.destroyed, "Worn skins keep their meshes") end
+end
+assert(liveDynamic == 0)
+assert(dependencies.EditableMeshBudget.status():find("IdleFishSkins", 1, true))
+idle.Parent = world
+local idleSkinned = false
+task.spawn(client.hydrate, idle)
+flush()
+for _, part in idle:GetChildren() do
+	if part.Name == "LoftSkin" and not part.mesh.destroyed then idleSkinned = true end
+end
+assert(idleSkinned, "A returning fish of a reclaimed species must be re-skinned")
+print("PASS a full budget reclaims idle species skins and keeps worn ones")
 
 client = reset()
 failure = "budget"

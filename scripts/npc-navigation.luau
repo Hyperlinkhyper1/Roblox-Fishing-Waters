@@ -179,6 +179,14 @@ end
 -- The built-in shop's front wall is at z=15 with a seven-stud opening.
 -- Exercise the actual customer wrapper through the same approach points used
 -- by the visit, including the return trip after the customer starts leaving.
+-- A clear local trip should avoid building the grid, while retaining its body
+-- sweep and fine floor-support checks.
+reset({ ground = true, noPath = true })
+npc.gridFrame = gridFrame
+check(Navigation.walk(npc, ground(9), nil, true), "Clear local trip reaches its destination")
+check(#paths == 0 and boxes == 1 and casts == 1, "Clear local trip avoids grid and navmesh search")
+check(rays >= 54, "Direct trip still checks the whole floor at half-stud spacing")
+
 reset({ ground = true, walls = {
 	{ min = ground(-23, 14.675), max = ground(-3.5, 15.325) },
 	{ min = ground(3.5, 14.675), max = ground(23, 15.325) },
@@ -713,6 +721,25 @@ npc.gridFrame = gridFrame
 positionAt(ground(-9, 0))
 check(not Navigation.walk(npc, ground(13.5, 0), nil, true), "Grid never treats a tall tabletop as walkable floor")
 check(npc.root.Position.X < 2, "NPC does not climb onto the tabletop")
+clean()
+
+check(BaseGrid.localToExtendedCell(45, 0) == nil and BaseGrid.localToExtendedCell(45, 0, true) ~= nil,
+	"Only expanded plot grids include the wider side wings")
+reset({ ground = true, noPath = true })
+npc.gridFrame, npc.gridExpanded = gridFrame, true
+positionAt(ground(0, 0))
+check(Navigation.walk(npc, ground(45, 0), nil, true), "Company staff can reach equipment in the expanded side wing")
+check(#paths == 0 and npc.root.Position.X > 43, "Expanded side-wing equipment uses the supported base grid")
+clean()
+
+reset({ noPath = true, onRay = function(origin, direction)
+	if origin.X > 20 and origin.X < 25 then return nil end
+	return floorAt(origin, false)
+end })
+npc.gridFrame, npc.gridExpanded = gridFrame, true
+positionAt(ground(0, 0))
+check(not Navigation.walk(npc, ground(45, 0), nil, true), "Wider navigation cannot route across an unsupported gap")
+check(npc.root.Position.X < 20, "Staff remain on supported ground when an expanded wing is blocked")
 clean()
 
 print("NPC navigation: " .. checks .. " route, recovery, cancellation and cleanup checks passed (simulated world).")

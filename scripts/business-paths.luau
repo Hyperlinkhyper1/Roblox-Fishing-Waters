@@ -103,18 +103,42 @@ check(job.Dish.Value == Recipes.value("FishFillet", 50) and job.Dish.Value == 70
 check(cook.Hand ~= nil, "Starting a job never mutates the previous profile")
 check(select(2, Data.startCooking(Data.decode(cooking), "Prep1", "FishFillet", species, 101)) ~= nil, "One job per station")
 check(select(2, Data.collectDish(cooking, "Prep1", 103)) ~= nil, "Dishes can't be collected early")
-local cooked = Data.collectDish(cooking, "Prep1", 200)
-check(cooked and #cooked.Pantry == 1 and cooked.Kitchen.Prep1 == nil, "Collecting moves the dish onto the pass")
+-- Hand cooking: the minigame score grades the dish, which is ready at once.
+local perfect = assert(Data.startCooking(cook, "Prep1", "FishFillet", species, 100, 0.95))
+check(perfect.Kitchen.Prep1.ReadyAt == 100, "A hand-cooked dish is ready straight away")
+check(perfect.Kitchen.Prep1.Dish.Value == math.floor(70 * 1.25), "A perfect dish sells for more")
+local sloppy = assert(Data.startCooking(cook, "Prep1", "FishFillet", species, 100, 0.1))
+check(sloppy.Kitchen.Prep1.Dish.Value == math.floor(70 * 0.85), "A sloppy dish sells for less")
+check(select(2, Data.startCooking(cook, "Prep1", "FishFillet", species, 100, 2)) ~= nil, "Out-of-range scores are refused")
+check(select(2, Data.startCooking(cook, "Prep1", "FishFillet", species, 100, 0 / 0)) ~= nil, "NaN scores are refused")
+check(Recipes.grade(0.9).Name == "Perfect" and Recipes.grade(0.7).Name == "Great" and Recipes.grade(0).Name == "Sloppy", "Grades follow the score")
+for _, id in Recipes.Order do
+	local steps = Recipes.Steps[id]
+	check(steps and #steps >= 2, id .. " has minigame steps")
+	for _, step in steps do
+		check(step.Kind == "Mash" or step.Kind == "Timing" or step.Kind == "Hold", id .. " step kind")
+	end
+	check(Recipes.minigameSeconds(id) > 2, id .. " can't be skipped instantly")
+end
+local pack = { Hold = { "####" } }
+local fullPack = { Hold = {} }
+check(Data.collectDish(cooking, "Prep1", 200, fullPack, species) == nil and cooking.Kitchen.Prep1 ~= nil, "A full backpack leaves the dish on the station")
+local cooked = Data.collectDish(cooking, "Prep1", 200, pack, species)
+check(cooked and #cooked.Backpack == 1 and #cooked.Pantry == 0 and cooked.Kitchen.Prep1 == nil, "Collecting moves the dish into the backpack")
+local heldDish = cooked.Backpack[1].Dish
+local stocked = assert(Data.moveInventory(cooked, "Backpack", 1, "Pantry", heldDish, nil, nil, pack, species,
+	function(item, expected) return item.Dish == expected or Data.sameDish(item.Dish, expected) end))
+check(#stocked.Backpack == 0 and #stocked.Pantry == 1, "Stocking explicitly moves the dish to the pass")
 check(cooked.Stats.FoodCooked == 1, "Collected dishes count as cooked")
 check(Data.pantryCapacity(cooked) == Data.PANTRY_CAPACITY * 2, "The pass plus one placed case")
 check(select(2, Data.pickUpFurniture(cooking, 1)) == nil, "A case can be picked up while its dishes still fit")
 
 -- Selling a dish: shop price in the supermarket, the markup in the restaurant.
-local dish = cooked.Pantry[1]
-local sold, price = Data.sellDish(cooked, dish, 1, "FoodSold")
+local dish = stocked.Pantry[1]
+local sold, price = Data.sellDish(stocked, dish, 1, "FoodSold")
 check(sold and price == 70 and #sold.Pantry == 0 and sold.Stats.FoodSold == 1, "Shop customers pay the dish value")
 check(sold.Stats.CoinsEarned == cooked.Stats.CoinsEarned + 70, "Dish sales count as earnings")
-local served, markup = Data.sellDish(cooked, dish, Recipes.RESTAURANT_MARKUP, "DinersServed")
+local served, markup = Data.sellDish(stocked, dish, Recipes.RESTAURANT_MARKUP, "DinersServed")
 check(served and markup == 105 and served.Stats.DinersServed == 1, "Diners pay the restaurant markup")
 check(select(1, Data.sellDish(sold, dish, 1, "FoodSold")) == nil, "A dish can't be sold twice")
 

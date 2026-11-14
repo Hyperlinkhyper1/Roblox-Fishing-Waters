@@ -176,6 +176,7 @@ do
   end
   local FishFreezer, ShopDesk, StorageRack = builder("Freezer"), builder("Register"), builder("StorageRack")
   local OfficeDesk = builder("OfficeDesk")
+  local Workbench = builder("Workbench")
   local Kitchen = {
     BUILT_IN_WIDTH = 6,
     buildCase = builder("FoodCase").build,

@@ -185,8 +185,10 @@ local function validate(profile, site, data, builtins): string?
 	for _ in data.Overrides do count += 1 end
 	if count > Building.MAX_OVERRIDES then return "This plot has reached its surface editing limit." end
 	local hosts = availableBuiltins(builtins, data)
+	local info = profile.SaveInfo
+	local expanded = info ~= nil and (info.PlotExpanded == true or info.Multiplayer == true)
 	for _, entry in data.Pieces do
-		local problem = Building.check(data.Pieces, entry, site, hosts, entry.Id)
+		local problem = Building.check(data.Pieces, entry, site, hosts, entry.Id, expanded)
 		if problem then return problem end
 		if entry.Kind == "Wall" then
 			for _, original in hosts do

@@ -81,7 +81,7 @@ local function ensureWorker(base, state, owner, role, position)
 				return
 			end
 			local profile = BoatService.getProfile(owner)
-			if not profile or not profile.Angler.Staff[role] or not Paths.unlocked(profile, rolePaths[role]) then
+			if not BoatService.isBusinessHost(owner) or not profile or not profile.Angler.Staff[role] or not Paths.unlocked(profile, rolePaths[role]) then
 				model:Destroy()
 				return
 			end
@@ -123,7 +123,7 @@ end
 
 local function processRole(base, state, owner, role, houseFrame, available)
 	local profile = BoatService.getProfile(owner)
-	if not profile or not profile.Angler.Staff[role] or not Paths.unlocked(profile, rolePaths[role]) then
+	if not BoatService.isBusinessHost(owner) or not profile or not profile.Angler.Staff[role] or not Paths.unlocked(profile, rolePaths[role]) then
 		removeWorker(state, role)
 		return
 	end
@@ -155,7 +155,7 @@ local function processRole(base, state, owner, role, houseFrame, available)
 		local _, reason = AnglerData.collectChefDish(profile.Angler, role, activeKey, now)
 		if not reason then
 			BoatService.updateProgress(owner, function(current)
-				assert(ownerOf(base) == owner and base.Parent, "Kitchen owner changed")
+				assert(ownerOf(base) == owner and base.Parent and BoatService.isBusinessHost(owner), "Kitchen owner changed")
 				local data, failure = AnglerData.collectChefDish(current.Angler, role, activeKey, os.time())
 				assert(data, failure)
 				current.Angler = data
@@ -183,7 +183,7 @@ local function processRole(base, state, owner, role, houseFrame, available)
 		local _, reason = AnglerData.startChefCooking(profile.Angler, role, key, Catalog.Fish, now)
 		if not reason then
 			local ok = BoatService.updateProgress(owner, function(current)
-				assert(ownerOf(base) == owner and base.Parent, "Kitchen owner changed")
+				assert(ownerOf(base) == owner and base.Parent and BoatService.isBusinessHost(owner), "Kitchen owner changed")
 				local data, failure = AnglerData.startChefCooking(current.Angler, role, key, Catalog.Fish, os.time())
 				assert(data, failure)
 				current.Angler = data
