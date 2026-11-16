@@ -741,6 +741,17 @@ check(
 	contains("3.25 kg") and contains('<font color="#5B626D">Albino</font> ×1'),
 	"Bestiary details render actual weight and mutations in their own (paper-dark) colour"
 )
+local detail = content:FindFirstChild("BestiaryDetail", true)
+local artPage, notesPage = detail:FindFirstChild("DetailLeftPage"), detail:FindFirstChild("DetailRightPage")
+check(artPage and notesPage, "Bestiary details use separate left and right pages")
+check(
+	artPage:FindFirstChild("Plate", true) ~= nil and notesPage:FindFirstChild("Plate", true) == nil,
+	"The bestiary picture stays on the left page"
+)
+check(
+	notesPage.Position.X.Offset - (artPage.Position.X.Offset + artPage.Size.X.Offset) >= 16,
+	"Bestiary notes start after the center binding instead of overlapping it"
+)
 content:FindFirstChild("BestiaryBack", true).Activated:Fire()
 check(contains("×1") and not contains("3.25 kg"), "Back returns to the dense bestiary index")
 for _, item in content:GetChildren() do
@@ -918,6 +929,16 @@ check(
 open("Journal")
 check(content:FindFirstChild("JournalFindingsPage", true).Position.Y.Offset == 618, "Narrow journal pages stack")
 check(not card.BookChrome.CenterBinding.Visible, "Narrow books hide the center binding when pages stack")
+open("Bestiary")
+content:FindFirstChild("BestiaryArt_Trout", true).Activated:Fire()
+local narrowDetail = content:FindFirstChild("BestiaryDetail", true)
+local narrowArt, narrowNotes = narrowDetail:FindFirstChild("DetailLeftPage", true), narrowDetail:FindFirstChild("DetailRightPage", true)
+check(
+	narrowArt and narrowNotes
+		and narrowNotes.Position.Y.Offset > narrowArt.Position.Y.Offset
+		and narrowNotes.Size.Y.Offset > 0,
+	"Narrow bestiary stacks the picture above the notes and keeps the notes scrollable"
+)
 open("Shop")
 check(contains("Auto Store") and contains("aboard your own ship"), "Shop explains Auto Store")
 content:FindFirstChild("BuyAutoStore", true).Activated:Fire()

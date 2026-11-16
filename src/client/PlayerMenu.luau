@@ -1116,30 +1116,40 @@ function Menu.start()
 			local entry = profile.Angler.Catches[id]
 			local known = entry ~= nil and (entry.Count or 0) > 0
 			local rarity = Catalog.Rarities[species.Rarity]
-			local panelWidth = math.max(contentWidth - 36, 260)
-			local panelHeight = math.max(contentHeight - 10, 320)
-			local tight = panelWidth < 520
+			local tight = narrow
 
-			local shadow = decoration(content, "BestiaryDetailShadow", Color3.new(), UDim2.fromScale(0.5, 0.5), UDim2.new(1, -30, 1, -4))
-			shadow.AnchorPoint, shadow.BackgroundTransparency = Vector2.new(0.5, 0.5), 0.72
-			Theme.corner(shadow, 4)
-
+			-- The detail is an open spread: the plate stays on the left page and
+			-- every word stays on the right page, clear of the center binding.
 			local panel = make("Frame", content, {
 				Name = "BestiaryDetail",
 				BackgroundTransparency = 1,
 				Active = true,
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.fromOffset(panelWidth, panelHeight),
+				Size = UDim2.new(1, 0, 1, 0),
 				ZIndex = 20,
 			})
-			paperFinish(panel, false)
-			Theme.corner(panel, 3)
-			local edge = Instance.new("UIStroke")
-			edge.Color, edge.Transparency, edge.Thickness = Book.Edge, 0.2, 1
-			edge.Parent = panel
+			-- Narrow screens stack the art above the notes and scroll the whole
+			-- spread, the same way the journal fits two pages on a phone.
+			local book = if narrow then scroll(panel) else panel
+			local leftWidth = pageWidth
+			local leftHeight = if narrow then 300 else pageHeight
+			local rightHeight = if narrow then 280 else pageHeight
 
-			local back = make("TextButton", panel, {
+			local leftPage = make("Frame", book, {
+				Name = "DetailLeftPage",
+				BackgroundTransparency = 1,
+				Position = if narrow then UDim2.fromOffset(12, 0) else UDim2.fromOffset(14, 50),
+				Size = if narrow then UDim2.new(1, -24, 0, leftHeight) else UDim2.fromOffset(pageWidth, leftHeight),
+			})
+			local rightPage = make("Frame", book, {
+				Name = "DetailRightPage",
+				BackgroundTransparency = 1,
+				Position = if narrow
+					then UDim2.fromOffset(12, leftHeight + 16)
+					else UDim2.fromOffset(math.floor(contentWidth * 0.5 + 34), 50),
+				Size = if narrow then UDim2.new(1, -24, 0, rightHeight) else UDim2.fromOffset(pageWidth, rightHeight),
+			})
+
+			local back = make("TextButton", leftPage, {
 				Name = "BestiaryBack",
 				BackgroundTransparency = 1,
 				AutoButtonColor = false,
@@ -1148,7 +1158,7 @@ function Menu.start()
 				TextSize = 17,
 				TextColor3 = Book.Leather,
 				TextXAlignment = Enum.TextXAlignment.Left,
-				Position = UDim2.fromOffset(18, 8),
+				Position = UDim2.fromOffset(0, 0),
 				Size = UDim2.fromOffset(150, 30),
 				ZIndex = 21,
 			})
@@ -1163,25 +1173,11 @@ function Menu.start()
 				fill()
 			end)
 
-			local tag = label(
-				panel,
-				string.format("No. %02d", number[id])
-					.. (if known then "   ·   " .. string.upper(rarity and rarity.Name or species.Rarity) else ""),
-				13,
-				{
-					Position = UDim2.new(0, 0, 0, 10),
-					Size = UDim2.new(1, 0, 0, 22),
-					TextXAlignment = Enum.TextXAlignment.Center,
-				},
-				0.15
-			)
-			tag.TextColor3 = Book.Leather
-
-			-- A double-ruled plate, like an engraving tipped into a field guide.
-			local plateTop = 42
-			local plateHeight = math.clamp(panelHeight * 0.34, 130, 190)
-			local plateWidth = math.clamp(panelWidth * 0.55, 210, 430)
-			local plate = make("Frame", panel, {
+			-- A double-ruled plate on the left page, like an engraving tipped into a field guide.
+			local plateTop = 38
+			local plateHeight = math.clamp(leftHeight - plateTop - 12, 110, 300)
+			local plateWidth = math.clamp(math.min(leftWidth - 48, plateHeight * 1.5), 150, 430)
+			local plate = make("Frame", leftPage, {
 				Name = "Plate",
 				BackgroundTransparency = 1,
 				AnchorPoint = Vector2.new(0.5, 0),
@@ -1211,20 +1207,32 @@ function Menu.start()
 				artEdge.Enabled = false
 			end
 
-			local nameTop = plateTop + plateHeight + 6
-			label(panel, if known then species.Name else "Undiscovered", if tight then 23 else 30, {
-				Position = UDim2.new(0, 0, 0, nameTop),
-				Size = UDim2.new(1, 0, 0, 36),
+			local tag = label(
+				rightPage,
+				string.format("No. %02d", number[id])
+					.. (if known then "   ·   " .. string.upper(rarity and rarity.Name or species.Rarity) else ""),
+				13,
+				{
+					Position = UDim2.new(0, 0, 0, 0),
+					Size = UDim2.new(1, 0, 0, if tight then 18 else 20),
+					TextXAlignment = Enum.TextXAlignment.Center,
+				},
+				0.15
+			)
+			tag.TextColor3 = Book.Leather
+			label(rightPage, if known then species.Name else "Undiscovered", if tight then 22 else 28, {
+				Position = UDim2.new(0, 0, 0, if tight then 22 else 26),
+				Size = UDim2.new(1, 0, 0, if tight then 30 else 34),
 				TextXAlignment = Enum.TextXAlignment.Center,
 			}, if known then 0 else 0.45)
-			local ornamentY = nameTop + 38
-			rule(panel, UDim2.new(0.5, -44, 0, ornamentY), 70)
-			rule(panel, UDim2.new(0.5, 44, 0, ornamentY), 70)
+			local ornamentY = if tight then 56 else 66
+			rule(rightPage, UDim2.new(0.5, -40, 0, ornamentY), 60)
+			rule(rightPage, UDim2.new(0.5, 40, 0, ornamentY), 60)
 			local diamond =
-				decoration(panel, "Ornament", Book.Leather, UDim2.new(0.5, 0, 0, ornamentY), UDim2.fromOffset(6, 6))
+				decoration(rightPage, "Ornament", Book.Leather, UDim2.new(0.5, 0, 0, ornamentY), UDim2.fromOffset(6, 6))
 			diamond.AnchorPoint, diamond.Rotation = Vector2.new(0.5, 0.5), 45
 
-			local statsTop = ornamentY + 10
+			local statsTop = ornamentY + if tight then 10 else 12
 			local stats = {
 				{ "CAUGHT", if known then tostring(entry.Count) else "—" },
 				{ "BIGGEST", if known then string.format("%.2f kg", entry.BiggestKg) else "—" },
@@ -1232,30 +1240,33 @@ function Menu.start()
 				-- Shown before discovery so anglers know when to look for it.
 				{ "SEASON", FishCatch.seasonLabel(species) },
 			}
-			for column, stat in stats do
-				local x = (column - 1) / #stats
-				label(panel, stat[1], if tight then 10 else 12, {
-					Position = UDim2.new(x, 0, 0, statsTop),
-					Size = UDim2.new(1 / #stats, 0, 0, 16),
+			for index, stat in stats do
+				local column = (index - 1) % 2
+				local row = (index - 1) // 2
+				local x = column * 0.5
+				local y = statsTop + row * (if tight then 44 else 50)
+				label(rightPage, stat[1], if tight then 9 else 10, {
+					Position = UDim2.new(x, 0, 0, y),
+					Size = UDim2.new(0.5, 0, 0, 14),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				}, 0.4)
-				label(panel, stat[2], if tight then 15 else 20, {
-					Position = UDim2.new(x, 0, 0, statsTop + 16),
-					Size = UDim2.new(1 / #stats, 0, 0, 26),
+				label(rightPage, stat[2], if tight then 14 else 18, {
+					Position = UDim2.new(x, 0, 0, y + 14),
+					Size = UDim2.new(0.5, 0, 0, 24),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				})
-				if column > 1 then
+				if column == 1 then
 					local divider =
-						decoration(panel, "StatDivider", Book.Edge, UDim2.new(x, 0, 0, statsTop + 4), UDim2.fromOffset(1, 34))
+						decoration(rightPage, "StatDivider", Book.Edge, UDim2.new(x, 0, 0, y + 2), UDim2.fromOffset(1, 38))
 					divider.BackgroundTransparency = 0.6
 				end
 			end
 
-			local notesTop = statsTop + 62
+			local notesTop = statsTop + (if tight then 88 else 104)
 			if not known then
-				label(panel, "Land one of these to fill in this page.", 15, {
-					Position = UDim2.new(0.1, 0, 0, notesTop),
-					Size = UDim2.new(0.8, 0, 0, 44),
+				label(rightPage, "Land one of these to fill in this page.", 15, {
+					Position = UDim2.new(0.04, 0, 0, notesTop),
+					Size = UDim2.new(0.92, 0, 0, 44),
 					TextXAlignment = Enum.TextXAlignment.Center,
 					TextYAlignment = Enum.TextYAlignment.Top,
 				}, 0.4)
@@ -1275,14 +1286,14 @@ function Menu.start()
 				local rich = FishMutations.richLabel(item.Key, nil, true)
 				table.insert(mutationNames, (if rich ~= "" then rich else item.Plain) .. " ×" .. item.Count)
 			end
-			label(panel, "MUTATIONS", if tight then 10 else 12, {
+			label(rightPage, "MUTATIONS", if tight then 9 else 10, {
 				Position = UDim2.new(0, 0, 0, notesTop),
-				Size = UDim2.new(1, 0, 0, 16),
+				Size = UDim2.new(1, 0, 0, 14),
 				TextXAlignment = Enum.TextXAlignment.Center,
 			}, 0.4)
-			local notes = scroll(panel, {
-				Position = UDim2.new(0.08, 0, 0, notesTop + 20),
-				Size = UDim2.new(0.84, 0, 1, -(notesTop + 32)),
+			local notes = scroll(rightPage, {
+				Position = UDim2.new(0.04, 0, 0, notesTop + (if tight then 16 else 18)),
+				Size = UDim2.new(0.92, 0, 1, -(notesTop + (if tight then 26 else 30))),
 			})
 			label(
 				notes,
@@ -1408,9 +1419,9 @@ function Menu.start()
 			end
 		end
 		fill = function()
-			-- Details live over the whole spread, so clear the previous panel
+			-- Details live over the whole spread, so clear the previous pages
 			-- before rebuilding the index (or another species' notes).
-			for _, name in { "BestiaryDetail", "BestiaryDetailShadow" } do
+			for _, name in { "BestiaryDetail" } do
 				local layer = content:FindFirstChild(name)
 				if layer then
 					layer:Destroy()
