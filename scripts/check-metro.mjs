@@ -296,7 +296,7 @@ local function passenger(name,stop)
   local h=Instance.new('Humanoid'); h.Health=100; h.AutoRotate=true; h.Parent=c
   local r=Instance.new('Part'); r.Name='HumanoidRootPart'; r.Parent=c; r.Anchored=false
   c.WorldPivot=CFrame.identity; c:PivotTo(stop.Boarding.CFrame)
-  function p:RequestStreamAroundAsync() if self.streamHook then self.streamHook() end end
+  function p:RequestStreamAroundAsync(position) self.requests = self.requests or {}; table.insert(self.requests, position); if self.streamHook then self.streamHook() end end
   return p,c,h,r
 end
 for _, stop in {harbour,town} do stop.Boarding.MetroBoardPrompt.Triggered=signal() end
@@ -318,6 +318,11 @@ harbour.Boarding.MetroBoardPrompt.Triggered:Fire(p)
 check(Schedule.inside(harbour.TrainDock.CFrame:PointToObjectSpace(r.Position)) and not p:GetAttribute('MetroRiding'),'Prompt enters the train and waits for departure')
 qc:PivotTo(town.TrainDock.CFrame*CFrame.new(11,3.5,-2))
 lc:PivotTo(harbour.TrainDock.CFrame*CFrame.new(-11,3.5,-2)); lc:PivotTo(harbour.Arrival.CFrame)
+tick(20); flush()
+check(#p.requests == 1 and (p.requests[1] - town.Arrival.Position).Magnitude < 0.01, 'Boarding prefetches the destination before departure')
+check(#q.requests == 1 and (q.requests[1] - harbour.Arrival.Position).Magnitude < 0.01, 'Walking aboard also prefetches in the opposite direction')
+tick(21); flush()
+check(#p.requests == 1 and #q.requests == 1, 'Boarding does not repeatedly prefetch each heartbeat')
 tick(24)
 check(not leave:GetAttribute('MetroRiding') and not lr.Anchored,'Walking out before door closure cancels boarding')
 check(p:GetAttribute('MetroRiding') and q:GetAttribute('MetroRiding') and r.Anchored and qr.Anchored,'Walking and prompt riders depart together in opposite directions')

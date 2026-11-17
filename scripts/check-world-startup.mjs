@@ -212,6 +212,17 @@ function methods:AddPersistentPlayer(player)
   self._persistent = self._persistent or {}
   table.insert(self._persistent, player)
 end
+function methods:GetBoundingBox()
+  local part = self:FindFirstChildOfClass("BasePart")
+  return {Position=if part then part.Position else Vector3.new(0, 0, 0)}
+end
+function methods:FindFirstAncestor(name)
+  local ancestor = self.Parent
+  while ancestor do
+    if ancestor.Name == name then return ancestor end
+    ancestor = ancestor.Parent
+  end
+end
 local newInstance = Instance.new
 Instance.new = function(class)
   local item = newInstance(class)
@@ -341,7 +352,9 @@ Lod.serve()
 local served = 0
 for _, child in ReplicatedStorage:GetChildren() do if child.Name == "LodPin" then served += 1 end end
 check(served == 1, "Serving twice must not add a second remote")
-local player = {Name="Sailor"}
+local player = {Name="Sailor", Parent=Players}
+local sailorRoot = {Position=Vector3.new(0, 0, 0), IsA=function(_, class) return class == "BasePart" end}
+player.Character = {FindFirstChild=function(_, name) return if name == "HumanoidRootPart" then sailorRoot else nil end}
 remote.handler(player, {pineId, pineId, 999999, "pine"})
 check(#pine._persistent == 1 and pine._persistent[1] == player, "A reported piece must be pinned once")
 remote.handler(player, {pineId})
@@ -357,8 +370,12 @@ flood[501] = base:GetAttribute("PieceId")
 remote.handler(player, flood)
 check(base._persistent == nil, "One request must not pin more than a batch")
 removing(player)
+player.Parent = nil
 remote.handler(player, {pineId})
-check(#pine._persistent == 2, "A player who left must start over")
+check(#pine._persistent == 1, "A disconnected player's stale reports must not pin scenery")
+player.Parent = Players
+remote.handler(player, {pineId})
+check(#pine._persistent == 2, "A returning player starts a fresh pin set")
 print("Baked streaming policy: " .. checks .. " checks passed")
 `);
 
@@ -375,7 +392,7 @@ local modules = {Biomes=Biomes}
 local script = {ServerUpdates="ServerUpdates", ServerHealth="ServerHealth", Map={moduleName="Map", Harbour="Harbour", Mediterranean="Mediterranean"}, BaseService="BaseService",
   BoatService="BoatService", FerryService="FerryService", FishingService="FishingService", WeatherService="WeatherService",
   AnglerService="AnglerService", LeaderboardService="LeaderboardService", CompanyLeaderboardService="CompanyLeaderboardService"}
-for _, name in {"NpcCollision", "NpcFisherService", "SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "BoatFurnitureService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "BuildingService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "PedestrianService", "OfficeComputerService", "StockMarketService", "ElectionService", "CafeService", "CafeTutorialService", "BranchService", "WebShopService", "TechStoreService", "OxygenService", "DashboardService"} do
+for _, name in {"GlobalTimeService", "NpcCollision", "NpcFisherService", "SharkService", "SharkLootService", "CatchService", "CargoService", "BoatRefitService", "BoatFurnitureService", "TrawlerNetService", "BackpackService", "CustomerService", "KitchenService", "ChefService", "CrabCageService", "MusselNetService", "FurnitureService", "BuildingService", "RestaurantService", "CompanyService", "CompanyIslandService", "CompanyIslandPorter", "TutorialService", "PirateCoveService", "MetroService", "HalloweenService", "PedestrianService", "OfficeComputerService", "StockMarketService", "ElectionService", "CafeService", "CafeTutorialService", "BranchService", "WebShopService", "TechStoreService", "OxygenService", "DashboardService"} do
   script[name] = name
   modules[name] = {start=function() record(name) end}
 end

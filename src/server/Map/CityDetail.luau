@@ -4,16 +4,32 @@ local HttpService = game:GetService("HttpService")
 local CityDetail = {}
 
 local function building(model: Instance): boolean
+	-- Named building shells, plus authored decoration groups that opt in explicitly.
+	-- The opt-in is only safe for models whose dressing is direct Part children.
 	return model:IsA("Model") and (string.match(model.Name, "^CityBlock%d+$") ~= nil
 		or string.match(model.Name, "^CityBuilding%d+$") ~= nil
-		or string.match(model.Name, "^DockWarehouse%d+$") ~= nil)
+		or string.match(model.Name, "^DockWarehouse%d+$") ~= nil
+		or model:GetAttribute("CityDetailSource") == true)
 end
 
 local function prepareModel(model: Instance)
 	if model:GetAttribute("CityDetailData") then return end
 	local detail, originals = {}, {}
 	local anchor: Vector3? = nil
-	for _, part in model:GetChildren() do
+	local candidates: { Instance } = {}
+	local function collect(container: Instance)
+		for _, child in container:GetChildren() do
+			if child:IsA("Model") and child.Name == "GroundChunk" then
+				-- Baked cities were already split before this migration was added.
+				-- Only unwrap generated streaming containers, never authored child models.
+				collect(child)
+			else
+				table.insert(candidates, child)
+			end
+		end
+	end
+	collect(model)
+	for _, part in candidates do
 		-- Leave interactive, collidable and complicated descendants exactly as they are.
 		if not part:IsA("Part") or part.CanCollide or part.CanQuery or #part:GetChildren() > 0 then continue end
 		anchor = anchor or part.Position

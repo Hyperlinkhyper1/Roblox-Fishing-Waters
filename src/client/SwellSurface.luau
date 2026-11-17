@@ -78,6 +78,28 @@ function SwellSurface.start()
 			)
 			return
 		end
+		-- Register before CreateMeshPartAsync yields. Fish may claim the budget
+		-- while that call is still running; its late result must not revive water.
+		local stepped: RBXScriptConnection? = nil
+		local surface: MeshPart? = nil
+		local released = false
+		local function release()
+			if released then
+				return
+			end
+			released = true
+			if stepped then
+				stepped:Disconnect()
+			end
+			if surface then
+				surface:Destroy()
+			end
+			mesh:Destroy()
+		end
+		local unregister = EditableMeshBudget.onRelease("SwellSurface", function()
+			release()
+			warn("[SwellSurface] Water surface released to free EditableMesh memory for fish skins.")
+		end)
 		local vertices, normals, colors =
 			table.create(size * size), table.create(size * size), table.create(size * size)
 		local color = terrain.WaterColor
@@ -125,11 +147,19 @@ function SwellSurface.start()
 				{ CollisionFidelity = Enum.CollisionFidelity.Box }
 			)
 		end)
+		if released then
+			if partOk and part then
+				part:Destroy()
+			end
+			return
+		end
 		if not partOk or not part then
-			mesh:Destroy()
+			unregister()
+			release()
 			warn("[SwellSurface] Water surface unavailable: could not create its mesh part: " .. tostring(part))
 			return
 		end
+		surface = part
 		part.Name = "WeatherSwellSurface"
 		part.Anchored = true
 		part.CanCollide, part.CanTouch, part.CanQuery = false, false, false
@@ -141,20 +171,6 @@ function SwellSurface.start()
 		part.Transparency = 0.55
 		part.LocalTransparencyModifier = 1
 		part.Parent = workspace
-
-		-- The sheet is a dynamic mesh, which Roblox budgets as if maxed out. On a
-		-- tight device it gives way to fish skins (Terrain water stays).
-		local stepped: RBXScriptConnection? = nil
-		local released = false
-		EditableMeshBudget.onRelease("SwellSurface", function()
-			released = true
-			if stepped then
-				stepped:Disconnect()
-			end
-			part:Destroy()
-			mesh:Destroy()
-			warn("[SwellSurface] Water surface released to free EditableMesh memory for fish skins.")
-		end)
 
 		local parameters = RaycastParams.new()
 		parameters.FilterType = Enum.RaycastFilterType.Exclude

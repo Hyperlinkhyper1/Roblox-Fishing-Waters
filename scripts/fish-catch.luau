@@ -59,26 +59,26 @@ local pool = Catalog.Pools[Catalog.DefaultPool]
 for _, id in { "Trout", "Stingray", "Pike", "Sunfish", "MidnightCarp", "Crimsonfish", "Glacierfish" } do
 	check(table.find(pool.Fish, id), "Main lake lists " .. id)
 end
+local expectedJunk = { "WoodenBranch", "LeatherBoot", "Seaweed", "RustyCan", "GlassBottle", "PlasticBag", "RustyBucket" }
 for _, catchPool in Catalog.Pools do
-	check(#catchPool.Junk == 3, "All three junk catches are available in " .. catchPool.Name)
-	for _, sample in
-		{
-			{ 0, "WoodenBranch" },
-			{ 0.019999, "WoodenBranch" },
-			{ 0.02, "LeatherBoot" },
-			{ 0.039999, "LeatherBoot" },
-			{ 0.04, "Seaweed" },
-			{ 0.059999, "Seaweed" },
-		}
-	do
-		local roll = FishCatch.roll(catchPool, Catalog.Fish, Catalog.Rarities, function()
-			return sample[1]
-		end)
-		check(roll.FishId == sample[2], "Each junk catch occupies exactly 2% of the roll")
-		check(
-			roll.Size == "Normal" and roll.Value == 1 and roll.Difficulty == 0.05,
-			"Junk stays cheap, normal-sized and easy to reel"
-		)
+	check(#catchPool.Junk == #expectedJunk, "All seven junk catches are available in " .. catchPool.Name)
+	for _, id in expectedJunk do
+		check(table.find(catchPool.Junk, id) ~= nil, catchPool.Name .. " lists junk catch " .. id)
+	end
+	for index, id in catchPool.Junk do
+		check(Catalog.Fish[id].Rarity == "Junk", id .. " uses the junk catch rules")
+		local lower = if index == 1 then 0 else (index - 1 + 1e-7) * FishCatch.JUNK_CHANCE / #catchPool.Junk
+		local upper = (index - 1e-7) * FishCatch.JUNK_CHANCE / #catchPool.Junk
+		for _, sample in { lower, upper } do
+			local roll = FishCatch.roll(catchPool, Catalog.Fish, Catalog.Rarities, function()
+				return sample
+			end)
+			check(roll.FishId == id, "Each junk catch has an equal share of the junk chance: " .. id)
+			check(
+				roll.Size == "Normal" and roll.Value == 1 and roll.Difficulty == 0.05,
+				"Junk stays cheap, normal-sized and easy to reel"
+			)
+		end
 	end
 	for _, boundary in { FishCatch.JUNK_CHANCE, 0.999999 } do
 		local id = FishCatch.pickSpecies(catchPool, Catalog.Fish, function()
@@ -131,7 +131,8 @@ do
 	check(admins >= 2, "The Nescio Fih and its hairy variant are Admin fish")
 end
 for _, id in pool.Junk do
-	check(math.abs((counts[id] or 0) / rolls - 0.02) < 0.002, "Junk appears in about 2% of catches: " .. id)
+	local expectedChance = FishCatch.JUNK_CHANCE / #pool.Junk
+	check(math.abs((counts[id] or 0) / rolls - expectedChance) < 0.002, "Junk catches share the base chance equally: " .. id)
 end
 check(tiers.Common > tiers.Uncommon and tiers.Uncommon > tiers.Rare, "Commoner tiers appear more often")
 check(tiers.Rare > tiers.Epic and tiers.Epic > tiers.Legendary, "Rarer tiers appear less often")

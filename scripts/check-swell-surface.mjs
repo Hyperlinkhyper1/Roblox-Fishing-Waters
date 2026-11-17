@@ -21,7 +21,7 @@ const source = read('src/client/SwellSurface.luau')
   .replace(/local TerrainProbe = require\(script\.Parent\.TerrainProbe\)/, () => `local TerrainProbe = (function()\n${read('src/client/TerrainProbe.luau')
     .replace(/require\(ReplicatedStorage\.Shared\.Biomes\)/, 'dependencies.Biomes')}\nend)()`);
 const client = source.replace(/local EditableMeshBudget = require\(script.Parent.EditableMeshBudget\)/,
-  () => `local EditableMeshBudget = (function()\n${read('src/client/EditableMeshBudget.luau')}\nend)()`);
+  () => `local EditableMeshBudget = (function()\n${read('src/client/EditableMeshBudget.luau')}\nend)()\ndependencies.surfaceBudget = EditableMeshBudget`);
 const program = read('scripts/swell-surface.luau')
   .replace('-- MOCKS --', () => `${mocks}\n${quality}`)
   .replace('-- BIOMES --', () => read('src/shared/Biomes.luau'))

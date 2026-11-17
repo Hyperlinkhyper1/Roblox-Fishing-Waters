@@ -21,6 +21,8 @@ local ShoreWaves = {}
 local TAG = "ShoreWaveSource"
 local PERIOD = 9.2
 local DISTANCE = 550
+local CLEANUP_PER_FRAME = 8 -- waves (each contains a beam and two attachments)
+local CLEANUP_BUDGET = 0.002
 local started = false
 
 local function smoothstep(x: number): number
@@ -49,18 +51,38 @@ function ShoreWaves.start()
 	end
 	started = true
 	local sources = {}
+	local cleanup, cleanupHead, cleanupTail = {}, 1, 0
 
 	local function remove(source: Instance)
 		local state = sources[source]
 		if state then
-			for _, wave in state.waves do
-				wave.beam:Destroy()
-				wave.a:Destroy()
-				wave.b:Destroy()
-			end
 			sources[source] = nil
+			for _, wave in state.waves do
+				wave.beam.Enabled = false
+				cleanupTail += 1
+				cleanup[cleanupTail] = wave
+			end
 		end
 	end
+
+	-- Many sources can stream out together after a teleport. Destroying every
+	-- beam and attachment inside the removal signals blocks that frame.
+	RunService.Heartbeat:Connect(function()
+		local began, removed = os.clock(), 0
+		while cleanupHead <= cleanupTail and removed < CLEANUP_PER_FRAME do
+			local wave = cleanup[cleanupHead]
+			cleanup[cleanupHead] = nil
+			cleanupHead += 1
+			wave.beam:Destroy()
+			wave.a:Destroy()
+			wave.b:Destroy()
+			removed += 1
+			if os.clock() - began >= CLEANUP_BUDGET then break end
+		end
+		if cleanupHead > cleanupTail then
+			cleanupHead, cleanupTail = 1, 0
+		end
+	end)
 
 	local function add(source: Instance)
 		if sources[source] or not source:IsA("BasePart") then

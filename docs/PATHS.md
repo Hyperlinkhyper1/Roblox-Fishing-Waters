@@ -130,6 +130,20 @@ other changes. Run `lute run scripts/business-paths.luau` afterwards.
   Chefs still cook on each recipe's `Seconds` timer. Select the dish in Inventory and
   choose **Stock dish** to put it on the kitchen pass (6 dishes, plus 6 per food
   display case or supermarket shelf). Shop customers buy stocked dishes.
+- **Cooking menu**: 19 dishes use the same carried-fish ingredient system; bread,
+  rice, vegetables and garnishes are included in the recipe. Each dish has its own
+  model and minigame steps, and can be assigned to either chef once hired.
+
+  | Station | Dishes (minimum fish rarity) |
+  | --- | --- |
+  | Prep bench | Fish fillet, fish sandwich, fish soup (Common); fish salad, fish & chips, fish tacos (Uncommon) |
+  | Grill station | Fish burger, grilled fish (Uncommon); fish steak, fish skewers (Rare); teriyaki fish (Epic) |
+  | Smokehouse | Smoked fish bagel (Uncommon); smoked fish chowder, smoked fish (Rare); honey-smoked fish (Epic) |
+  | Sushi bar | Fish rice bowl (Uncommon); sushi platter (Epic); golden sashimi (Legendary); dragon roll (Mythical) |
+
+  Run `node scripts/check-cooking-recipes.mjs` with `lute` on PATH (or set `LUTE`
+  to its executable) to check every recipe's cooking, saving, sale and dish model.
+
 - **The Restaurant**: a dining room is built behind the processing room. Place
   dining tables there. Diners sit down and order one specific dish. Serve it to
   earn 1.5x the dish value (`Recipes.RESTAURANT_MARKUP`).

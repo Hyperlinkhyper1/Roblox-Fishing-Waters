@@ -52,6 +52,35 @@ check(enter and enter:IsA("ProximityPrompt") and enter.ActionText == "Enter", "S
 local interiors = workspace:FindFirstChild("Interiors")
 local hall = interiors and interiors:FindFirstChild("RodStoreInterior")
 check(hall and CollectionService:HasTag(hall, "FishingRodShop"), "Rod store interior is missing or untagged")
+-- New and baked rooms must stream incrementally without rebuilding or reparenting
+-- their controls, floors, or the child assemblies used by animation controllers.
+for name, builder in {
+	RodStoreInterior = dependencies.RodShop,
+	FurnitureStoreInterior = dependencies.FurnitureShop,
+	PetShopInterior = dependencies.PetShop,
+} do
+	local room = interiors:FindFirstChild(name)
+	check(room and room.ModelStreamingMode == Enum.ModelStreamingMode.Default, name .. " must stream in parts")
+	local descendants = room:GetDescendants()
+	local parents, modes = {}, {}
+	local nested = room:FindFirstChildOfClass("Model")
+	if nested then nested.ModelStreamingMode = Enum.ModelStreamingMode.Atomic end
+	for _, item in descendants do
+		parents[item] = item.Parent
+		if item:IsA("Model") then modes[item] = item.ModelStreamingMode end
+	end
+	room.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	builder.ensure(root)
+	check(interiors:FindFirstChild(name) == room, name .. " streaming migration must preserve the baked room")
+	check(room.ModelStreamingMode == Enum.ModelStreamingMode.Default, name .. " must repair baked atomic roots")
+	check(#room:GetDescendants() == #descendants, name .. " streaming migration must retain its contents")
+	for _, item in descendants do
+		check(item.Parent == parents[item], name .. " streaming migration must preserve the hierarchy")
+		if item:IsA("Model") then
+			check(item.ModelStreamingMode == modes[item], name .. " must preserve child streaming modes")
+		end
+	end
+end
 local crateDisplay = hall:FindFirstChild("RodCrateDisplay")
 check(crateDisplay ~= nil, "Rod stand needs its animated crate model")
 local crateFrame = crateDisplay:GetAttribute("CrateFrame")
@@ -249,7 +278,7 @@ local furnitureEnter = furnitureDoor and furnitureDoor:FindFirstChild("Furniture
 check(furnitureEnter and furnitureEnter.ActionText == "Enter", "Furniture street door lacks Enter prompt")
 local showroom = interiors:FindFirstChild("FurnitureStoreInterior")
 check(showroom and CollectionService:HasTag(showroom, "FurnitureShowroom"), "Furniture showroom is missing or untagged")
-check(showroom.ModelStreamingMode == Enum.ModelStreamingMode.Atomic, "Showroom must stream as one model")
+check(showroom.ModelStreamingMode == Enum.ModelStreamingMode.Default, "Showroom must stream in parts")
 local showroomFrame = showroom:GetAttribute("InteriorFrame") * CFrame.new(0, -9, 0)
 local showroomSize = showroom:GetAttribute("InteriorSize")
 check(showroomSize.X >= 64 and showroomSize.Z >= 60, "Furniture showroom should have room for broad aisles")

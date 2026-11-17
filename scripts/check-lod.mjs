@@ -40,7 +40,7 @@ end, wait=coroutine.yield, spawn=function(callback)
   local ok, err = coroutine.resume(coroutine.create(callback))
   assert(ok, err)
 end}
-local clock = 0
+local clock, writeCost = 0, 0
 local os = {clock=function() return clock end}
 local RunService = {Heartbeat=signal()}
 local pinRequests = {}
@@ -56,11 +56,12 @@ local game = {GetService=function(_, name)
   if name == "CollectionService" then return CollectionService end
   return {LocalPlayer={}}
 end}
-local function flush()
+local function flush(render)
   while #queue > 0 do
     local callbacks = queue; queue = {}
     for _, callback in callbacks do callback() end
   end
+  if render ~= false then RunService.Heartbeat:Fire() end
 end
 -- Hidden shells fade out over a few frames; run them to the end.
 local function settle()
@@ -82,7 +83,9 @@ local function object(class, name, parent)
       return methods[key]
     end,
     __newindex=function(self, key, value)
-      if key == "LocalTransparencyModifier" then writes += 1; rawset(self, "modifier", value)
+      if key == "LocalTransparencyModifier" then
+        assert(type(value) == "number" and value >= 0 and value <= 1, "Renderer modifiers must be numeric fractions")
+        writes += 1; clock += writeCost; rawset(self, "modifier", value)
       else rawset(self, key, value) end
     end,
   })
@@ -173,6 +176,7 @@ settle()
 check(wedge.LocalTransparencyModifier == 1 and shell.Parent == shells, "Real stream-in must hide the same shell")
 local late = object("BasePart", "LateWedge", shell)
 shell.DescendantAdded:Fire(late)
+flush()
 check(late.LocalTransparencyModifier == 1, "Late shell geometry must inherit current visibility")
 shell.DescendantRemoving:Fire(late)
 table.remove(shell.children, assert(table.find(shell.children, late)))
@@ -373,75 +377,334 @@ CollectionService.removed:Fire(transient)
 transient.Parent = nil
 flush()
 check(#pinRequests == 7, "A piece removed before its deferred report must never be forced back in")
-print("LOD: " .. checks .. " checks passed; 3000 arrivals without refresh/render churn")
 
--- Run the production server pin lifecycle independently of the geometry builder.
+-- Several islands finishing together must share one render-write budget, including
+-- initial visibility, fades, reversal and geometry arriving after a shell was hidden.
+local bursts = {}
+for id = 20, 22 do
+  local model = object("Model", tostring(id), shells)
+  local parts = {}
+  for i = 1, 700 do parts[i] = object("BasePart", "Shell", model) end
+  shells.ChildAdded:Fire(model)
+  local island = object("Model", "BurstIsland", biome)
+  island.attributes.LodId = id
+  local ground = object("Model", "Ground", island)
+  object("BasePart", "Ground", ground)
+  biome.ChildAdded:Fire(island)
+  table.insert(bursts, {model=model, parts=parts, island=island})
+end
+flush(false)
+local arrivingBeforeFrame = object("BasePart", "ArrivingBeforeFrame", bursts[1].model)
+table.insert(bursts[1].parts, arrivingBeforeFrame)
+bursts[1].model.DescendantAdded:Fire(arrivingBeforeFrame)
+local function frame()
+  local before = writes
+  clock += 1 / 60
+  flush()
+  check(writes - before <= 128, "Simultaneous shell transitions share at most 128 part writes per frame")
+  return writes - before
+end
+for i = 1, 30 do frame() end
+for _, burst in bursts do for _, part in burst.parts do
+  check(part.LocalTransparencyModifier == 1, "Large initial shell handovers eventually finish")
+end end
+for _, burst in bursts do burst.island.Parent = nil; burst.island.AncestryChanged:Fire() end
+frame()
+-- Reverse while the reveal cursor is still suspended, then remove a part before it.
+for _, burst in bursts do burst.island.Parent = biome; burst.island.AncestryChanged:Fire() end
+local removed = table.remove(bursts[1].parts, 1)
+bursts[1].model.DescendantRemoving:Fire(removed)
+table.remove(bursts[1].model.children, assert(table.find(bursts[1].model.children, removed)))
+removed.Parent = nil
+for i = 1, 100 do frame() end
+for _, burst in bursts do for _, part in burst.parts do
+  check(part.LocalTransparencyModifier == 1, "A reversed fade converges without skipping shifted parts")
+end end
+beforeWrites = writes
+for i = 1, 800 do
+  local part = object("BasePart", "LateShell", bursts[1].model)
+  table.insert(bursts[1].parts, part)
+  bursts[1].model.DescendantAdded:Fire(part)
+end
+check(writes == beforeWrites, "Late replication bursts queue visibility without synchronous render writes")
+writeCost = 0.0004
+local expensiveWrites = frame()
+check(expensiveWrites <= 3, "Slow renderer writes yield at the shared one-millisecond budget")
+writeCost = 0
+for i = 1, 20 do frame() end
+for _, part in bursts[1].parts do
+  check(part.LocalTransparencyModifier == 1, "Late geometry finishes within the paced handover")
+end
+-- Forgetting a shell cancels queued work even if it has not reached the cursor yet.
+for i = 1, 300 do
+  local part = object("BasePart", "RemovedShell", bursts[2].model)
+  bursts[2].model.DescendantAdded:Fire(part)
+end
+shells.ChildRemoved:Fire(bursts[2].model)
+beforeWrites = writes
+for i = 1, 5 do frame() end
+check(writes == beforeWrites, "Removed shells never receive queued visibility writes")
+print("LOD: " .. checks .. " checks passed; 3000 arrivals without refresh churn; globally paced shell handovers")
+
+-- Run the production server pin lifecycle against a deterministic yielding scheduler.
 do
   local checks = 0
   local function check(value, message) checks += 1; assert(value, message) end
-  local sweep
-  local task = {wait=coroutine.yield, spawn=function(callback)
-    sweep = coroutine.create(callback)
-    local ok, err = coroutine.resume(sweep)
-    assert(ok, err)
-  end}
-  local player = {Parent=true}
-  local position = {X=0, Y=0, Z=0}
-  local root = {Position=position, IsA=function(_, class) return class == "BasePart" end}
-  player.Character = {FindFirstChild=function() return root end}
-  local Players = {PlayerRemoving=signal(), GetPlayers=function() return {player} end}
-  local remote
-  local ReplicatedStorage = {FindFirstChild=function() return remote and remote.Parent and remote end}
-  local requests = {}
-  local Instance = {new=function(class)
-    assert(class == "RemoteEvent")
-    remote = {OnServerEvent=signal(), FireClient=function(_, target, ids)
-      check(target == player, "Revisit requests must target their player")
-      check(#ids <= 500, "Revisit confirmations must respect the batch limit")
-      table.insert(requests, ids)
+  local function harness()
+    local now, jobs, requests, removals, players, warnings = 0, {}, {}, {}, {}, {}
+    local warn = function(message) table.insert(warnings, message) end
+    local function resume(job)
+      local ok, delay = coroutine.resume(job.thread)
+      assert(ok, delay)
+      job.wake = if coroutine.status(job.thread) == "dead" then math.huge else now + (delay or 1 / 60)
+    end
+    local task = {wait=coroutine.yield, spawn=function(callback)
+      local job = {thread=coroutine.create(callback), wake=now}
+      table.insert(jobs, job)
+      resume(job)
     end}
-    return remote
-  end}
-  local Enum = {ModelStreamingMode={PersistentPerPlayer="PersistentPerPlayer"}}
-  local game = {GetService=function(_, name)
-    return if name == "Players" then Players else ReplicatedStorage
-  end}
-  local Lod, pieces, pieceIds = {}, {}, {}
-  local PIN_BATCH = 500
-  local function piece(id)
-    local item = {Parent=true, ModelStreamingMode="PersistentPerPlayer", pins=0, releases=0}
-    function item:GetBoundingBox() return {Position={X=0, Y=0, Z=0}} end
-    function item:AddPersistentPlayer(target) assert(target == player); self.pins += 1 end
-    function item:RemovePersistentPlayer(target) assert(target == player); self.releases += 1 end
-    pieces[id], pieceIds[item] = item, id
-    return item
+    local os = {clock=function() return now end}
+    local Players = {PlayerRemoving=signal(), GetPlayers=function() return table.clone(players) end}
+    local remote
+    local ReplicatedStorage = {FindFirstChild=function() return remote and remote.Parent and remote end}
+    local Instance = {new=function(class)
+      assert(class == "RemoteEvent")
+      remote = {OnServerEvent=signal(), FireClient=function(_, target, ids)
+        check(target.Parent and table.find(players, target), "Revisit requests target connected players")
+        check(#ids <= 500, "Revisit confirmations respect the batch limit")
+        table.insert(requests, {player=target, ids=table.clone(ids), time=now})
+      end}
+      return remote
+    end}
+    local Enum = {ModelStreamingMode={PersistentPerPlayer="PersistentPerPlayer"}}
+    local game = {GetService=function(_, name)
+      return if name == "Players" then Players else ReplicatedStorage
+    end}
+    local Lod, pieces, pieceIds = {}, {}, {}
+    local PIN_BATCH = 500
+    ${serverSource.slice(pinStart, pinEnd)}
+    Lod.serve()
+    local api = {requests=requests, removals=removals, warnings=warnings}
+    function api:advance(target)
+      local iterations = 0
+      while true do
+        local nextJob
+        for _, job in jobs do
+          if job.wake <= target + 1e-9 and (not nextJob or job.wake < nextJob.wake) then nextJob = job end
+        end
+        if not nextJob then break end
+        now = math.max(now, nextJob.wake)
+        resume(nextJob)
+        iterations += 1
+        assert(iterations < 10000, "Scheduler failed to make progress")
+      end
+      now = math.max(now, target)
+    end
+    function api:player(x)
+      local player = {Parent=Players}
+      self:respawn(player, x or 0)
+      table.insert(players, player)
+      return player
+    end
+    function api:respawn(player, x)
+      player.root = {Position={X=x, Y=0, Z=0}, IsA=function(_, class) return class == "BasePart" end}
+      local root = player.root
+      player.Character = {FindFirstChild=function(_, name) return if name == "HumanoidRootPart" then root else nil end}
+    end
+    function api:move(player, x) player.root.Position = {X=x, Y=0, Z=0} end
+    function api:disconnect(player)
+      player.Parent = nil
+      local index = table.find(players, player)
+      if index then table.remove(players, index) end
+      Players.PlayerRemoving:Fire(player)
+    end
+    function api:piece(id, weight, x, city)
+      local item = {Parent=true, ModelStreamingMode="PersistentPerPlayer", pins=0, releases=0,
+        weight=weight or 1, position={X=x or 0, Y=0, Z=0}, city=city}
+      function item:GetBoundingBox() return {Position=self.position} end
+      function item:GetDescendants()
+        if self.fail then self.fail = false; error("mock piece inspection failure") end
+        return table.create(self.weight - 1, true)
+      end
+      function item:FindFirstAncestor(name) return if self.city and name == "Modern City" then self.city else nil end
+      function item:AddPersistentPlayer(target)
+        check(target.Parent ~= nil, "Disconnected players cannot add pins")
+        self.pins += 1
+      end
+      function item:RemovePersistentPlayer(target)
+        self.releases += 1
+        table.insert(removals, {player=target, piece=self, time=now, weight=self.weight})
+        now += self.cost or 0
+      end
+      pieces[id], pieceIds[item] = item, id
+      return item
+    end
+    function api:report(player, ids) remote.OnServerEvent:Fire(player, ids) end
+    function api:clearRequests() table.clear(requests) end
+    function api:budget(player)
+      local groups = {}
+      for _, removal in removals do
+        if removal.player == player then
+          local key = math.round(removal.time * 1000000)
+          local group = groups[key] or {time=removal.time, count=0, weight=0}
+          groups[key] = group
+          group.count += 1; group.weight += removal.weight
+        end
+      end
+      local previous
+      local order = {}
+      for _, group in groups do table.insert(order, group) end
+      table.sort(order, function(a, b) return a.time < b.time end)
+      for _, group in order do
+        check(group.count <= 8, "A release batch removes at most eight models")
+        check(group.weight <= 256 or group.count == 1, "A release batch fits 256 descendants plus roots, except one oversized piece")
+        if previous then check(group.time - previous >= 0.1 - 1e-8, "Release batches wait at least 0.1 seconds") end
+        previous = group.time
+      end
+    end
+    return api
   end
-  local first, retained = piece(1), piece(2)
-  ${serverSource.slice(pinStart, pinEnd)}
-  Lod.serve()
-  remote.OnServerEvent:Fire(player, {1, 2, 1})
-  check(first.pins == 1 and retained.pins == 1, "Initial arrivals must pin once")
-  root.Position = {X=1500, Y=0, Z=0}
-  local ok, err = coroutine.resume(sweep); assert(ok, err)
-  check(first.releases == 1 and retained.releases == 1, "Far scenery must release its memory pins")
-  root.Position = position
-  ok, err = coroutine.resume(sweep); assert(ok, err)
-  check(first.pins == 1 and retained.pins == 1,
-    "Returning to an island must never eagerly repin unloaded atomic models")
-  check(#requests == 1 and #requests[1] == 2, "Revisits must ask which pieces remain loaded")
-  remote.OnServerEvent:Fire(player, {2})
-  check(retained.pins == 2 and first.pins == 1,
-    "Only the piece confirmed present by its client may repin")
-  requests = {}
-  ok, err = coroutine.resume(sweep); assert(ok, err)
-  check(#requests == 1 and #requests[1] == 1 and requests[1][1] == 1,
-    "Missing scenery must remain unpinned until it streams in")
-  remote.OnServerEvent:Fire(player, {1})
-  check(first.pins == 2, "A normally streamed returning piece must pin again")
-  requests = {}
-  ok, err = coroutine.resume(sweep); assert(ok, err)
-  check(#requests == 0, "Confirmed pieces must leave the revisit request set")
-  print("LOD pin lifecycle: " .. checks .. " checks passed; revisit waits for streamed arrivals")
+
+  local h = harness()
+  local player = h:player()
+  local first, retained = h:piece(1), h:piece(2)
+  h:report(player, {1, 2, 1})
+  check(first.pins == 1 and retained.pins == 1, "Initial arrivals pin once")
+  h:move(player, 1500); h:advance(4)
+  check(first.releases == 1 and retained.releases == 1, "Far scenery releases its memory pins")
+  h:report(player, {1, 2})
+  check(first.pins == 1 and retained.pins == 1, "Late reports from the old teleport origin cannot repin distant scenery")
+  h:move(player, 0); h:advance(8)
+  check(first.pins == 1 and retained.pins == 1, "Returning never eagerly repins unloaded atomic models")
+  check(#h.requests == 1 and #h.requests[1].ids == 2, "Revisits ask which pieces remain loaded")
+  h:report(player, {2})
+  check(retained.pins == 2 and first.pins == 1, "Only a piece confirmed present by its client repins")
+  h:clearRequests(); h:advance(12)
+  check(#h.requests == 1 and #h.requests[1].ids == 1 and h.requests[1].ids[1] == 1,
+    "Missing scenery remains unpinned until it streams in")
+  h:report(player, {1}); h:clearRequests(); h:advance(16)
+  check(first.pins == 2 and #h.requests == 0, "Normally streamed returning pieces leave the confirmation set")
+  local cityPiece = h:piece(3, 1, 0, true)
+  h:report(player, {3})
+  check(cityPiece.pins == 1, "A nearby city piece initially pins")
+  h:move(player, 500); h:advance(20)
+  check(cityPiece.releases == 0 and first.releases == 1, "Near city and island pieces retain their pins")
+  h:move(player, 600); h:advance(24)
+  check(cityPiece.releases == 1 and first.releases == 1, "Only city pieces use the shorter retention range")
+  h:clearRequests(); h:move(player, 350); h:advance(28)
+  check(#h.requests == 0, "City pieces keep a buffer before confirmation")
+  h:move(player, 300); h:advance(32)
+  check(#h.requests == 1 and h.requests[1].ids[1] == 3 and cityPiece.pins == 1,
+    "Returning near the city asks the client before repinning")
+  h:report(player, {3})
+  check(cityPiece.pins == 2, "Confirmed city pieces can be retained again")
+
+  h = harness(); player = h:player()
+  local destination = h:piece(1, 1, 2000)
+  h:report(player, {1}); h:advance(4)
+  check(destination.pins == 0 and #h.requests == 0, "Far destination prefetches are remembered without pinning or confirming")
+  h:move(player, 2000); h:advance(8)
+  check(destination.pins == 0 and #h.requests == 1 and h.requests[1].ids[1] == 1,
+    "Arrival rechecks prefetched scenery rather than requiring a second tag-added event")
+  h:report(player, {1})
+  check(destination.pins == 1, "Already loaded prefetched scenery pins after arrival confirmation")
+  local beforeSpawn = h:piece(2, 1, 2000)
+  player.Character = nil; h:report(player, {2})
+  check(beforeSpawn.pins == 0, "A report without a live root cannot pin scenery")
+  h:respawn(player, 2000); h:clearRequests(); h:advance(12)
+  check(#h.requests == 1 and h.requests[1].ids[1] == 2, "A report received during respawn remains eligible for later confirmation")
+
+  -- More than eight cheap calls must still yield even when measured script time is zero.
+  h = harness(); player = h:player()
+  local ids, tiny = {}, {}
+  for id = 1, 25 do ids[id] = id; tiny[id] = h:piece(id) end
+  h:report(player, ids); h:move(player, 2000); h:advance(4)
+  check(#h.removals == 8, "The first teleport cleanup frame removes only eight tiny models")
+  h:advance(4.099)
+  check(#h.removals == 8, "Cleanup cannot resume before its pacing interval")
+  h:advance(4.101)
+  check(#h.removals == 16, "Cleanup resumes with another bounded model batch")
+  h:advance(5)
+  check(#h.removals == 25, "Paced cleanup eventually releases every distant model")
+  h:budget(player)
+
+  h = harness(); player = h:player(); ids = {}
+  for id, weight in {120, 120, 120, 120, 300, 20, 20, 20} do ids[id] = id; h:piece(id, weight) end
+  h:report(player, ids); h:move(player, 2000); h:advance(5)
+  check(#h.removals == #ids, "Mixed and individually oversized pieces all finish cleanup")
+  h:budget(player)
+
+  -- Movement and lifecycle changes happen while the cleanup coroutine is suspended.
+  for _, mode in {"return", "respawn", "missing", "disconnect"} do
+    h = harness(); player = h:player(); ids = {}
+    for id = 1, 25 do ids[id] = id; h:piece(id) end
+    h:report(player, ids); h:move(player, 2000); h:advance(4)
+    check(#h.removals == 8, "Lifecycle scenario reaches its first bounded wait: " .. mode)
+    if mode == "return" then h:move(player, 0)
+    elseif mode == "respawn" then h:respawn(player, 0)
+    elseif mode == "missing" then player.Character = nil
+    else h:disconnect(player) end
+    h:advance(5)
+    check(#h.removals == 8, "Cleanup rechecks current position, character and connection after waiting: " .. mode)
+    if mode == "disconnect" then
+      h:report(player, {1})
+      check(#h.requests == 0, "Disconnected cleanup emits no confirmation requests")
+    end
+  end
+
+  -- The script-time yield path must also reread movement before processing another id.
+  h = harness(); player = h:player(); ids = {}
+  for id = 1, 4 do
+    ids[id] = id
+    local item = h:piece(id); item.cost = 0.005
+  end
+  h:report(player, ids); h:move(player, 2000); h:advance(4)
+  check(#h.removals == 1, "Expensive individual release yields to the server frame budget")
+  h:move(player, 0); h:advance(5)
+  check(#h.removals == 1, "Frame-budget waits also discard stale teleport positions")
+
+  -- A sweep that spans the next four-second poll cannot overlap itself or block another player.
+  h = harness(); player = h:player(); ids = {}
+  for id = 1, 500 do ids[id] = id; h:piece(id) end
+  h:report(player, ids); h:move(player, 2000)
+  local other = h:player()
+  h:report(other, {1, 2, 3}); h:move(other, 2000); h:advance(4)
+  local otherRemoved = 0
+  for _, removal in h.removals do if removal.player == other then otherRemoved += 1 end end
+  check(otherRemoved == 3, "One player's long cleanup does not delay another player's sweep")
+  h:advance(11)
+  local primaryRemoved = 0
+  for _, removal in h.removals do if removal.player == player then primaryRemoved += 1 end end
+  check(primaryRemoved == 500, "A long sweep eventually releases every piece across later polls")
+  h:budget(player); h:budget(other)
+
+  -- A completed cleanup can finish just before the next poll, after costly engine calls.
+  h = harness(); player = h:player(); ids = {}
+  for id = 1, 40 do
+    ids[id] = id
+    local item = h:piece(id, 256); item.cost = 0.0005
+  end
+  h:report(player, ids); h:move(player, 2000); h:advance(7.95)
+  check(#h.removals == 40, "The boundary fixture finishes one sweep just before the next poll")
+  local lastRelease = h.removals[#h.removals].time
+  check(lastRelease > 7.9 and lastRelease < 8, "The final release leaves less than 0.1 seconds before the next sweep")
+  h:piece(41)
+  h:move(player, 0); h:report(player, {41}); h:move(player, 2000); h:advance(8)
+  check(#h.removals == 40, "A new sweep respects the preceding sweep's final release cooldown")
+  h:advance(8.1)
+  check(#h.removals == 41 and h.removals[41].time - lastRelease >= 0.1,
+    "The next sweep resumes only after the cross-sweep cooldown")
+  h:budget(player)
+
+  h = harness(); player = h:player()
+  local faulty = h:piece(1); faulty.fail = true
+  h:report(player, {1}); h:move(player, 2000); h:advance(4)
+  check(#h.warnings == 1 and string.find(h.warnings[1], "mock piece inspection failure", 1, true),
+    "A failed cleanup reports its cause")
+  check(faulty.releases == 0, "A failed inspection cannot release an uncounted model")
+  h:advance(8)
+  check(faulty.releases == 1 and #h.warnings == 1, "Worker failure clears its guard so later sweeps recover")
+  print("LOD pin lifecycle: " .. checks .. " checks passed; paced cleanup, live movement, stale reports and independent travelers")
 end
 `;
 

@@ -2,6 +2,7 @@
 -- (src/shared/Fish/<Id>.luau), so species can be added or edited one file at a
 -- time; AnglerCatalog turns the data into Catalog.Fish and the pools, and
 -- FishModels registers each Build. A module returns:
+--   ScientificName? real biological identity (varieties share their species' name)
 --
 --   Name, Rarity (an AnglerCatalog.Rarities key), RarityDenominator (1 in N
 --   encounter odds), MinKg, AverageKg, MaxKg (the rare HUGE record), BaseValue

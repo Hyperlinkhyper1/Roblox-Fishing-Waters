@@ -81,32 +81,32 @@ local function skins()
 		return templates
 	end
 	building = true
-	-- One dynamic mesh for all eighteen skins; see EditableMeshBudget.
-	local scratch = EditableMeshBudget.create(ALLOCATE)
-	if not scratch then
+	local built = {}
+	-- The same scratch slot is shared with fish skins, including yielding APIs.
+	local ok, result = pcall(EditableMeshBudget.withScratch, ALLOCATE, function(scratch)
+		for _, spec in SharkShape.build() do
+			local part, center, mesh = buildSkin(scratch, spec)
+			if not part or not center or not mesh then
+				return nil
+			end
+			table.insert(built, { part = part, mesh = mesh, offset = CFrame.new(center), segment = spec.segment, band = spec.band, jaw = spec.jaw == true })
+			task.wait()
+		end
+		return built
+	end)
+	building = false
+	if not ok or not result then
+		for _, skin in built do
+			skin.part:Destroy()
+			skin.mesh:Destroy()
+		end
 		failedAt = os.clock()
-		building = false
+		if not ok then
+			warn("[SharkMeshes] Could not build shark skins: " .. tostring(result))
+		end
 		return nil
 	end
-	local built = {}
-	for _, spec in SharkShape.build() do
-		local part, center, mesh = buildSkin(scratch, spec)
-		if not part or not center or not mesh then
-			scratch:Destroy()
-			for _, skin in built do
-				skin.part:Destroy()
-				skin.mesh:Destroy()
-			end
-			failedAt = os.clock()
-			building = false
-			return nil
-		end
-		table.insert(built, { part = part, mesh = mesh, offset = CFrame.new(center), segment = spec.segment, band = spec.band, jaw = spec.jaw == true })
-		task.wait()
-	end
-	scratch:Destroy()
-	templates = built
-	building = false
+	templates = result
 	return templates
 end
 

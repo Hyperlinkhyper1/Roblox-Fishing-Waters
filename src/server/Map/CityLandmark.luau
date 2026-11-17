@@ -107,11 +107,11 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 			local y = floor * storey
 			local north = if Layout.senateFloor(side, floor) and floor == 2 then Layout.Senate.Gallery else inN
 			slab(shell, "WingFloor", side * wingIn, side * outer, y - 1, y, north, Layout.StairZ + wall / 2, SLAB, M.Marble, true)
-			slab(shell, "StairHallFloor", side * wingIn, side * Layout.Stair.Spine[2], y - 1, y, Layout.StairZ + wall / 2, inS, SLAB, M.Marble, true)
-			slab(shell, "StairTopFloor", side * Layout.Stair.Spine[2], side * outer, y - 1, y, Layout.StairZ + wall / 2, Layout.Stair.Low, SLAB, M.Marble, true)
+			slab(shell, "StairHallFloor", side * wingIn, side * Layout.Stair.Spine[1], y - 1, y, Layout.StairZ + wall / 2, inS, SLAB, M.Marble, true)
+			slab(shell, "StairTopFloor", side * Layout.Stair.Spine[1], side * outer, y - 1, y, Layout.StairZ + wall / 2, Layout.Stair.Low, SLAB, M.Marble, true)
 		end
 		slab(shell, "WingRoof", side * wingIn, side * outer, roof, roof + 1.5, inN, inS, rgb(176, 170, 156), M.Concrete, true)
-		local tribune = slab(shell, "TribuneBridge", side * 63, side * (Layout.WingInner - wall / 2), storey - 1, storey, Layout.SideDoorZ - 4.5, Layout.SideDoorZ + 7.5, SLAB, M.Marble, true)
+		local tribune = slab(shell, "TribuneBridge", side * Layout.DrumOuter, side * (Layout.WingInner - wall / 2), storey - 1, storey, Layout.SideDoorZ - 4.5, Layout.SideDoorZ + 7.5, SLAB, M.Marble, true)
 		tribune.Name = "TribuneBridge"
 	end
 	for floor = 1, 2 do
@@ -122,15 +122,17 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 	-- The roof between the wings: strips that stop at the chamber's wall and the hall's glass.
 	-- North of the chamber the strips are glass, lighting the palm courts.
 	local roofs = group("ParliamentRoof")
-	slab(roofs, "RearRoof", -wingIn, wingIn, roof, roof + 1.5, inN, Layout.RearZ, rgb(176, 170, 156), M.Concrete, true)
+	slab(roofs, "RearRoof", -(Layout.WingInner - wall / 2), Layout.WingInner - wall / 2, roof, roof + 1.5, inN, Layout.RearZ, rgb(176, 170, 156), M.Concrete, true)
 	local drum, glassRoof = Layout.DrumOuter, Layout.HallRadius
 	local edges, at = { 0 }, 0
+	-- The last strip ends just past the chamber's wall, so its end never meets the wall's face.
 	while at < drum do
-		at = math.min(math.sqrt(at * at + 240), at + 12, drum)
+		at = math.min(math.sqrt(at * at + 240), at + 12, drum + 0.2)
 		table.insert(edges, at)
 	end
-	table.insert(edges, (drum + wingIn) / 2)
-	table.insert(edges, wingIn)
+	local wallFace = Layout.WingInner - wall / 2
+	table.insert(edges, (drum + wallFace) / 2)
+	table.insert(edges, wallFace)
 	for index = 1, #edges - 1 do
 		local xa, xb = edges[index], edges[index + 1]
 		local c = if xb < drum then math.sqrt(drum * drum - xb * xb) else 0
@@ -185,7 +187,7 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 		local angle = -Layout.HallSpan + (index - 0.5) * step
 		local chord = 2 * Layout.HallRadius * math.sin(rad(step / 2)) + 0.1
 		local entrance = math.abs(angle) < step * 1.6
-		local bottom = if entrance then 16 else 0
+		local bottom = if entrance then 16 + (if index % 2 == 0 then Layout.RING_LIFT else 0) else 0
 		glaze(part(portico, if entrance then "EntranceUpperGlass" else "HallGlass", V(chord, roof - bottom, 0.5),
 			Layout.facing(angle, Layout.HallRadius, (roof + bottom) / 2), GLASS, M.Glass, true), 0.5)
 	end
@@ -198,7 +200,7 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 		local column = part(portico, "PorticoColumn", V(roof, 3.2, 3.2), Layout.facing(angle, Layout.ColumnRadius, roof / 2) * A(0, 0, math.pi / 2), PIER, M.Marble, true)
 		column.Shape = Enum.PartType.Cylinder
 	end
-	part(portico, "EntranceCanopy", V(30, 0.8, 8), F(0, 16.4, Layout.Front + 4.2), DARK, M.Metal, true)
+	part(portico, "EntranceCanopy", V(30, 0.8, 8), F(0, 16.4, Layout.Front + 4.4), DARK, M.Metal, true)
 	sign(portico, "PARLIAMENT", F(0, roof + 2.45, fz + Layout.ColumnRadius + 3.1), 40, 3.2, CORNICE)
 
 	-------------------------------------------------------------------------------------------
@@ -207,7 +209,9 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 	local wallRadius, tangent = (Layout.DrumRadius + Layout.DrumOuter) / 2, math.tan(rad(7.5))
 	local width = 2 * Layout.DrumOuter * tangent + 0.05
 	local thick = Layout.DrumOuter - Layout.DrumRadius
-	local top = Layout.Ceiling + 1
+	-- The wall stands just above the ceiling; every other segment a little higher, so the
+	-- overlapping corners of neighbouring segments never share a face.
+	local top = Layout.Ceiling + 1.25
 	local function drumPanel(angle, y0, y1, offset, size, name, color, material)
 		return part(drumWalls, name or "DrumWall", V(size or width, y1 - y0, thick),
 			Layout.facing(angle, wallRadius, (y0 + y1) / 2) * F(offset or 0, 0, 0), color or WALL, material or M.Limestone, true)
@@ -219,23 +223,26 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 	for index = 0, 23 do
 		local angle = if index > 12 then index * 15 - 360 else index * 15
 		local opening = doors[angle]
+		local wallTop = top + (if index % 2 == 0 then 0 else Layout.RING_LIFT)
 		if opening then
 			local jamb = (width - DOOR) / 2
 			for _, side in { -1, 1 } do
-				drumPanel(angle, 0, top, side * (DOOR / 2 + jamb / 2), jamb + 0.02)
+				drumPanel(angle, 0, wallTop, side * (DOOR / 2 + jamb / 2), jamb + 0.02)
 			end
 			if opening[2] then
-				drumPanel(angle, opening[1], storey, 0, DOOR)
-				drumPanel(angle, opening[2], top, 0, DOOR)
+				-- The threshold of the gallery door stands just above the gallery floor.
+				drumPanel(angle, opening[1], storey + 0.2, 0, DOOR)
+				drumPanel(angle, opening[2], wallTop, 0, DOOR)
 			else
-				drumPanel(angle, opening[1], top, 0, DOOR)
+				drumPanel(angle, opening[1], wallTop, 0, DOOR)
 			end
 		else
-			drumPanel(angle, 0, top, 0)
+			drumPanel(angle, 0, wallTop, 0)
 		end
-		glaze(drumPanel(angle, top, Layout.ClerestoryTop, 0, nil, "ClerestoryGlass", GLASS, M.Glass), 0.5)
+		glaze(drumPanel(angle, wallTop, Layout.ClerestoryTop, 0, nil, "ClerestoryGlass", GLASS, M.Glass), 0.5)
 	end
-	ring(drumWalls, "DrumRing", 0, 360, 24, Layout.DrumRadius - 0.6, Layout.DrumOuter + 0.6, Layout.ClerestoryTop, Layout.DrumTop, STONE, M.Limestone, true)
+	-- Starts a little below the glass tops, so it covers them even where it is lifted.
+	ring(drumWalls, "DrumRing", 0, 360, 24, Layout.DrumRadius - 0.6, Layout.DrumOuter + 0.6, Layout.ClerestoryTop - 0.3, Layout.DrumTop - Layout.RING_LIFT, STONE, M.Limestone, true)
 	local ceiling = group("ChamberCeiling")
 	for _, band in { { Layout.Oculus, 28 }, { 28, 46 }, { 46, Layout.DrumRadius } } do
 		ring(ceiling, "ChamberCeiling", 0, 360, 24, band[1], band[2], Layout.Ceiling, Layout.Ceiling + 1, rgb(84, 62, 44), M.Wood, true)
@@ -304,13 +311,15 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 		end
 		for floor = 0, 2 do
 			local y = floor * storey
+			-- The top floor's wall rises through the roof, which meets it from both sides.
+			local wallTop = if floor == 2 then roof + 1.5 else y + storey
 			local from = inN
 			for _, opening in innerOpenings(side, floor) do
-				alongZ(walls, "InnerWall", innerX, wall / 2, from, opening[1], y, y + storey)
-				alongZ(walls, "InnerWallLintel", innerX, wall / 2, opening[1], opening[2], y + opening[3], y + storey)
+				alongZ(walls, "InnerWall", innerX, wall / 2, from, opening[1], y, wallTop)
+				alongZ(walls, "InnerWallLintel", innerX, wall / 2, opening[1], opening[2], y + opening[3], wallTop)
 				from = opening[2]
 			end
-			alongZ(walls, "InnerWall", innerX, wall / 2, from, inS, y, y + storey)
+			alongZ(walls, "InnerWall", innerX, wall / 2, from, inS, y, wallTop)
 			if floor > 0 then
 				glaze(slab(walls, "HallBalustrade", innerX - 0.15, innerX + 0.15, y, y + 3.5, Layout.HallOpening[1], Layout.HallOpening[2], GLASS, M.Glass, true), 0.6)
 			end
@@ -392,7 +401,6 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 		for floor = 1, 2 do
 			glaze(slab(stairs, "StairRail", side * st.Spine[2], side * (st.Spine[2] + 0.3), floor * storey, floor * storey + 3.5, st.High, inS, GLASS, M.Glass, true), 0.6)
 		end
-		glaze(slab(stairs, "StairRail", side * st.Spine[2], side * outer, 2 * storey, 2 * storey + 3.5, st.Low, st.Low + 0.3, GLASS, M.Glass, true), 0.6)
 	end
 
 	-------------------------------------------------------------------------------------------
@@ -428,7 +436,7 @@ function Landmark.build(parent: Instance, base: CFrame): Model
 		glaze(p, 0.6)
 	end
 	for _, degrees in { ringSpec.From, ringSpec.To } do
-		local cap = part(tribune, "TribuneBalustrade", V(0.3, 3.5, Layout.DrumRadius - ringSpec.Inner), Layout.facing(degrees, (Layout.DrumRadius + ringSpec.Inner) / 2, ringSpec.Y + 1.75), GLASS, M.Glass, true)
+		local cap = part(tribune, "TribuneBalustrade", V(0.3, 3.8, Layout.DrumRadius - ringSpec.Inner), Layout.facing(degrees, (Layout.DrumRadius + ringSpec.Inner) / 2, ringSpec.Y + 1.4), GLASS, M.Glass, true)
 		glaze(cap, 0.6)
 	end
 

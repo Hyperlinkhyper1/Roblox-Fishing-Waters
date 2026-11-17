@@ -48,6 +48,16 @@ for _, spot in { { 0, 52 }, { 0, 62.4 }, { -22.5, 62 }, { 22.5, 62 }, { -24, 82.
 end
 assert(Furniture.Rooms.Shop[2] > Grid.SHOP_FRONT and Furniture.Rooms.Shop[4] < Grid.SHOP_BACK, 'Shop room is inside the shop walls')
 for _, entry in {
+ { ItemId = 'Freezer', X = 9, Z = 68.5, R = 0 },
+ { ItemId = 'Freezer', X = 13.5, Z = 80, R = 2 },
+ { ItemId = 'Freezer', X = -21.5, Z = 76.5, R = 1 },
+ { ItemId = 'Freezer', X = 21.5, Z = 72, R = 3 },
+} do
+ assert(Furniture.check({}, entry.ItemId, entry.X, entry.Z, entry.R) == nil, 'Freezer must fit near each shop wall')
+end
+assert(Furniture.check({}, 'Freezer', 9.1, 72, 0) ~= nil, 'Shop placement must still snap to its finer grid')
+assert(Furniture.check({}, 'StorageRack', 18.5, -13.5, 0) ~= nil, 'House furniture must keep its original grid')
+for _, entry in {
  { ItemId = 'Freezer', X = 22.5, Z = 72, R = 3 },
  { ItemId = 'Freezer', X = -22.5, Z = 72, R = 1 },
  { ItemId = 'Freezer', X = 9, Z = 81, R = 0 },

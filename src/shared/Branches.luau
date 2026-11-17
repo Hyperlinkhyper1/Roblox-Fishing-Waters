@@ -4,7 +4,7 @@
 -- fishing companies, so every existing player stays on the fishing branch.
 local Branches = {}
 
-Branches.ORDER = { "Fishing", "Cafe" }
+Branches.ORDER = { "Fishing" }
 Branches.DEFAULT = "Fishing"
 
 Branches.Info = {
@@ -14,13 +14,6 @@ Branches.Info = {
 		-- Paid by a café company that wants to fish as well.
 		Price = 5000,
 		Blurb = "A dock and fish shop at Gullhaven harbour. Catch fish and sell them.",
-	},
-	Cafe = {
-		Name = "Café",
-		Title = "Café branch",
-		-- Paid by a fishing company that wants to open a café as well.
-		Price = 7500,
-		Blurb = "A one-floor café in the city. Brew coffee for customers for cash and XP.",
 	},
 }
 
@@ -50,7 +43,7 @@ function Branches.normalize(raw: any): { [string]: boolean }
 end
 
 function Branches.starting(kind: any): { [string]: boolean }
-	assert(kind == nil or Branches.valid(kind), "Choose a fishing company or a café.")
+	assert(kind == nil or Branches.valid(kind), "Choose a fishing company.")
 	return { [kind or Branches.DEFAULT] = true }
 end
 

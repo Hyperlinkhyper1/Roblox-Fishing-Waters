@@ -1,6 +1,6 @@
 -- Kitchen fixtures for the Supermarket path: the processing room's cooking stations,
--- the shop's food display case and the cooked dishes themselves. Local +Z is the
--- side the cook (or a customer at the case) stands on; the floor is y=0.
+-- the shop's supermarket shelves and the cooked dishes themselves. Local +Z is the
+-- side the cook (or a customer at the shelves) stands on; the floor is y=0.
 --
 -- Placed kitchen furniture fills two grid cells end to end (FurnitureCatalog),
 -- so a run of counters meets in one continuous worktop. The two built-in prep
@@ -28,24 +28,25 @@ Kitchen.DEPTH = 2.4
 Kitchen.TOP = 3.1
 Kitchen.CASE_WIDTH = 9
 Kitchen.CASE_DEPTH = 2.6
-Kitchen.CASE_SHELF = 2.5
+Kitchen.CASE_SHELF = 0.55
 -- Where a cooking fish or finished dish sits, in station-local studs.
 Kitchen.WORK_SPOT = CFrame.new(0.6, Kitchen.TOP + 0.02, 0.15)
--- Six dish spots under the glass of a food display case: three across, two deep.
-local CASE_COLUMNS = { -2.9, 0, 2.9 }
-Kitchen.CASE_SPOTS = {}
-for _, z in { -0.5, 0.55 } do
-	for _, x in CASE_COLUMNS do
-		table.insert(Kitchen.CASE_SPOTS, CFrame.new(x, Kitchen.CASE_SHELF + 0.14, z))
-	end
-end
--- A plain supermarket gondola shelf: one grid cell wide, three shelves of two dishes.
+-- Both supermarket gondolas have three open shelves with two dishes per tier.
+-- FoodCase keeps its original two-cell footprint and inventory identity for saves.
 Kitchen.SHELF_WIDTH = 4.4
 Kitchen.SHELF_DEPTH = 2.2
 Kitchen.SHELF_HEIGHT = 5.4
 local SHELF_LEVELS = { 0.55, 1.85, 3.15 }
+local CASE_LEVELS = { Kitchen.CASE_SHELF, 2.15, 3.75 }
+local CASE_COLUMNS = { -2.25, 2.25 }
 local SHELF_COLUMNS = { -1.05, 1.05 }
+Kitchen.CASE_SPOTS = {}
 Kitchen.SHELF_SPOTS = {}
+for _, y in CASE_LEVELS do
+	for _, x in CASE_COLUMNS do
+		table.insert(Kitchen.CASE_SPOTS, CFrame.new(x, y + 0.1, 0.25))
+	end
+end
 for _, y in SHELF_LEVELS do
 	for _, x in SHELF_COLUMNS do
 		table.insert(Kitchen.SHELF_SPOTS, CFrame.new(x, y + 0.1, 0.25))
@@ -392,73 +393,19 @@ function Kitchen.buildStorage(parent: Instance, frame: CFrame): Model
 	return model
 end
 
--- A refrigerated shop counter. Dishes are added separately at CASE_SPOTS.
-function Kitchen.buildCase(parent: Instance, frame: CFrame): Model
-	local model, piece = builder(parent, "FoodCase", frame)
-	local w, d, shelf = Kitchen.CASE_WIDTH, Kitchen.CASE_DEPTH, Kitchen.CASE_SHELF
-	local body = rgb(45, 78, 88)
-	local inset = rgb(33, 59, 68)
-	local glassColor = rgb(205, 232, 235)
-
-	-- The cabinet remains the solid footprint used by furniture placement.
-	-- Offset front details from the cabinet and each other to avoid coplanar faces.
-	piece("CaseBase", Vector3.new(w - 0.04, shelf - 0.1, d), CFrame.new(0, (shelf - 0.1) / 2, 0), body, M.SmoothPlastic, true)
-	piece("Kickplate", Vector3.new(w - 0.12, 0.25, 0.04), CFrame.new(0, 0.16, d / 2 + 0.005), DARK_STEEL, M.Metal)
-	piece("FrontPanel", Vector3.new(w - 0.22, 1.58, 0.04), CFrame.new(0, 1.35, d / 2 + 0.005), inset, M.SmoothPlastic)
-	for _, x in CASE_COLUMNS do
-		piece("PanelInset", Vector3.new(2.6, 1.35, 0.035), CFrame.new(x, 1.35, d / 2 + 0.03), body, M.SmoothPlastic)
-		-- A shallow ventilation grille in each panel makes the lower front read as a chiller.
-		for row = 0, 3 do
-			piece("VentSlat", Vector3.new(1.8, 0.035, 0.025), CFrame.new(x, 0.75 + row * 0.09, d / 2 + 0.065), DARK_STEEL, M.Metal)
-		end
-	end
-	piece("CaseTrim", Vector3.new(w, 0.12, d), CFrame.new(0, shelf - 0.04, 0), STEEL, M.Metal, true)
-	piece("Shelf", Vector3.new(w - 0.2, 0.08, d - 0.2), CFrame.new(0, shelf + 0.06, 0), rgb(236, 242, 238), M.SmoothPlastic)
-	piece("ShelfBackLip", Vector3.new(w - 0.25, 0.1, 0.06), CFrame.new(0, shelf + 0.14, -d / 2 + 0.1), STEEL, M.Metal)
-	-- A glass divider between each pair of dish columns.
-	for _, x in { (CASE_COLUMNS[1] + CASE_COLUMNS[2]) / 2, (CASE_COLUMNS[2] + CASE_COLUMNS[3]) / 2 } do
-		local divider = piece("Divider", Vector3.new(0.04, 1.08, d - 0.3), CFrame.new(x, shelf + 0.65, -0.05), glassColor, M.Glass)
-		divider.Transparency = 0.8
-	end
-
-	-- Sloped customer-facing glass, framed at the edges, with a clear top.
-	for _, x in { -w / 2 + 0.05, w / 2 - 0.05 } do
-		local side = piece("SideGlass", Vector3.new(0.06, 1.12, d - 0.12), CFrame.new(x, shelf + 0.68, 0), glassColor, M.Glass, true)
-		side.Transparency = 0.72
-		piece("SideTopRail", Vector3.new(0.1, 0.1, d - 0.1), CFrame.new(x, shelf + 1.25, 0), STEEL, M.Metal)
-		piece("FrontUpright", Vector3.new(0.1, 1.16, 0.1), CFrame.new(x, shelf + 0.68, 1.04) * CFrame.Angles(math.rad(-12), 0, 0), STEEL, M.Metal)
-		piece("RearUpright", Vector3.new(0.1, 1.12, 0.1), CFrame.new(x, shelf + 0.68, -d / 2 + 0.06), STEEL, M.Metal)
-	end
-	local front = piece("FrontGlass", Vector3.new(w - 0.2, 1.16, 0.06), CFrame.new(0, shelf + 0.68, 1.04) * CFrame.Angles(math.rad(-12), 0, 0), glassColor, M.Glass, true)
-	front.Transparency = 0.72
-	local top = piece("TopGlass", Vector3.new(w - 0.2, 0.06, 2.2), CFrame.new(0, shelf + 1.25, -0.18), glassColor, M.Glass, true)
-	top.Transparency = 0.72
-	piece("FrontTopRail", Vector3.new(w - 0.2, 0.1, 0.1), CFrame.new(0, shelf + 1.25, 0.92), STEEL, M.Metal)
-	piece("RearTopRail", Vector3.new(w - 0.2, 0.1, 0.1), CFrame.new(0, shelf + 1.25, -1.25), STEEL, M.Metal)
-	piece("FrontLowerRail", Vector3.new(w - 0.2, 0.1, 0.1), CFrame.new(0, shelf + 0.11, 1.16), STEEL, M.Metal)
-
-	-- The rear stays open for the shop's service side. Label cards are decorative;
-	-- actual dish inventory remains managed by the display service.
-	piece("PriceRail", Vector3.new(w - 0.15, 0.23, 0.04), CFrame.new(0, shelf - 0.2, d / 2 - 0.01), rgb(218, 180, 89), M.SmoothPlastic)
-	for _, x in CASE_COLUMNS do
-		piece("PriceCard", Vector3.new(0.72, 0.14, 0.025), CFrame.new(x, shelf - 0.2, d / 2 + 0.02), rgb(250, 247, 229), M.SmoothPlastic)
-	end
-	local lamp = piece("DisplayLamp", Vector3.new(w - 0.5, 0.04, 0.12), CFrame.new(0, shelf + 1.2, -0.94), rgb(255, 241, 205), M.Neon)
-	local light = Instance.new("SurfaceLight")
-	light.Face, light.Brightness, light.Range, light.Angle = Enum.NormalId.Bottom, 0.6, 3, 120
-	light.Color = rgb(255, 246, 228)
-	light.Parent = lamp
-	-- A small sign on the top glass names the case.
-	piece("CaseSign", Vector3.new(2.2, 0.45, 0.06), CFrame.new(0, shelf + 1.52, -1.2), rgb(218, 180, 89), M.SmoothPlastic)
-	piece("CaseSignFace", Vector3.new(2, 0.3, 0.02), CFrame.new(0, shelf + 1.52, -1.16), rgb(45, 78, 88), M.SmoothPlastic)
-	return model
-end
-
--- An ordinary supermarket shelf unit for cooked dishes. Dishes are added separately
--- at SHELF_SPOTS; the open front (+Z) faces the shoppers.
-function Kitchen.buildShelf(parent: Instance, frame: CFrame): Model
-	local model, piece = builder(parent, "FoodShelf", frame)
-	local w, d, h = Kitchen.SHELF_WIDTH, Kitchen.SHELF_DEPTH, Kitchen.SHELF_HEIGHT
+-- Ordinary open supermarket shelving, shared by the wide and single-cell units.
+-- Dishes are added separately; the open front (+Z) faces the shoppers.
+local function supermarketShelf(
+	parent: Instance,
+	frame: CFrame,
+	name: string,
+	w: number,
+	d: number,
+	levels: { number },
+	columns: { number }
+): Model
+	local model, piece = builder(parent, name, frame)
+	local h = Kitchen.SHELF_HEIGHT
 	local white = rgb(236, 238, 236)
 	local grey = rgb(196, 200, 200)
 	local strip = rgb(214, 74, 58)
@@ -466,7 +413,7 @@ function Kitchen.buildShelf(parent: Instance, frame: CFrame): Model
 
 	-- The base plinth is the solid footprint; the kickplate covers its front.
 	piece("Base", Vector3.new(w - 0.04, 0.4, d - 0.1), CFrame.new(0, 0.2, 0.03), grey, M.SmoothPlastic, true)
-	piece("Kickplate", Vector3.new(w - 0.1, 0.34, 0.04), CFrame.new(0, 0.2, d / 2 - 0.005), DARK_STEEL, M.Metal)
+	piece("Kickplate", Vector3.new(w - 0.1, 0.34, 0.04), CFrame.new(0, 0.2, d / 2 - 0.025), DARK_STEEL, M.Metal)
 	-- Two end uprights and a pegboard back panel.
 	for _, x in { -w / 2 + 0.06, w / 2 - 0.06 } do
 		piece("Upright", Vector3.new(0.12, h, 0.2), CFrame.new(x, h / 2, back + 0.14), white, M.Metal, true)
@@ -475,15 +422,15 @@ function Kitchen.buildShelf(parent: Instance, frame: CFrame): Model
 	piece("BackPanel", Vector3.new(w - 0.2, h - 0.5, 0.08), CFrame.new(0, (h - 0.5) / 2 + 0.4, back + 0.08), white, M.SmoothPlastic, true)
 	for row = 1, 9 do
 		for column = -3, 3 do
-			piece("PegHole", Vector3.new(0.06, 0.06, 0.02), CFrame.new(column * 0.55, 0.4 + row * 0.5, back + 0.13), grey, M.SmoothPlastic)
+			piece("PegHole", Vector3.new(0.06, 0.06, 0.02), CFrame.new(column * (w - 1.1) / 6, 0.4 + row * 0.5, back + 0.13), grey, M.SmoothPlastic)
 		end
 	end
 	-- Shelves with a red price strip along each front edge.
-	for _, y in SHELF_LEVELS do
+	for _, y in levels do
 		piece("Shelf", Vector3.new(w - 0.28, 0.08, d - 0.3), CFrame.new(0, y + 0.06, 0.08), white, M.Metal)
 		piece("ShelfBracket", Vector3.new(w - 0.28, 0.16, 0.06), CFrame.new(0, y - 0.04, back + 0.17), grey, M.Metal)
 		piece("PriceStrip", Vector3.new(w - 0.3, 0.2, 0.04), CFrame.new(0, y + 0.02, d / 2 - 0.04), strip, M.SmoothPlastic)
-		for _, x in SHELF_COLUMNS do
+		for _, x in columns do
 			piece("PriceTag", Vector3.new(0.6, 0.13, 0.02), CFrame.new(x, y + 0.02, d / 2 - 0.01), rgb(252, 250, 236), M.SmoothPlastic)
 		end
 	end
@@ -492,6 +439,15 @@ function Kitchen.buildShelf(parent: Instance, frame: CFrame): Model
 	piece("HeaderBoard", Vector3.new(w - 0.6, 0.6, 0.08), CFrame.new(0, h + 0.4, back + 0.2), strip, M.SmoothPlastic)
 	piece("HeaderFace", Vector3.new(w - 0.9, 0.36, 0.02), CFrame.new(0, h + 0.4, back + 0.25), rgb(252, 250, 236), M.SmoothPlastic)
 	return model
+end
+
+-- Keep the saved FoodCase item and its two-cell footprint, now as open shelving.
+function Kitchen.buildCase(parent: Instance, frame: CFrame): Model
+	return supermarketShelf(parent, frame, "FoodCase", Kitchen.CASE_WIDTH, Kitchen.CASE_DEPTH, CASE_LEVELS, CASE_COLUMNS)
+end
+
+function Kitchen.buildShelf(parent: Instance, frame: CFrame): Model
+	return supermarketShelf(parent, frame, "FoodShelf", Kitchen.SHELF_WIDTH, Kitchen.SHELF_DEPTH, SHELF_LEVELS, SHELF_COLUMNS)
 end
 
 -- One cooked dish, resting with its base on `frame`'s origin. Purely decorative.
@@ -504,11 +460,16 @@ function Kitchen.buildDish(recipeId: string, look: string, frame: CFrame): Model
 		part.CanCollide, part.CanQuery = false, false
 		return part
 	end
-	if look == "Sushi" or look == "Sashimi" then
+	if look == "Sushi" or look == "Sashimi" or look == "DragonRoll" then
 		piece("ServingBoard", Vector3.new(1.5, 0.12, 0.8), CFrame.new(0, 0.06, 0), WOOD, M.Wood)
 	else
 		round("Plate", 0.04, 0.08, 1.35, PLATE, M.SmoothPlastic)
 		round("PlateRim", 0.09, 0.03, 1.1, rgb(226, 226, 220), M.SmoothPlastic)
+	end
+	local function bowl(color: Color3, filling: Color3)
+		round("Bowl", 0.26, 0.3, 1.05, color, M.SmoothPlastic)
+		round("BowlLip", 0.41, 0.06, 1.1, color, M.SmoothPlastic)
+		round("BowlFilling", 0.445, 0.01, 0.92, filling, M.SmoothPlastic)
 	end
 	if look == "Fillet" then
 		piece("Fillet", Vector3.new(0.85, 0.14, 0.42), CFrame.new(-0.05, 0.18, 0) * CFrame.Angles(0, 0.3, 0), rgb(240, 160, 130), M.SmoothPlastic)
@@ -550,6 +511,112 @@ function Kitchen.buildDish(recipeId: string, look: string, frame: CFrame): Model
 			piece("GoldenSlice", Vector3.new(0.3, 0.1, 0.5), CFrame.new(-0.45 + index * 0.3, 0.18, 0) * CFrame.Angles(0, 0, math.rad(-20)), rgb(244, 190, 70), M.Foil)
 		end
 		piece("Shiso", Vector3.new(0.35, 0.03, 0.4), CFrame.new(0.55, 0.13, 0), rgb(60, 150, 70), M.Grass)
+	elseif look == "Sandwich" then
+		for _, y in { 0.18, 0.42 } do
+			piece("BreadCrust", Vector3.new(0.88, 0.12, 0.65), CFrame.new(0, y, 0), rgb(178, 117, 55), M.SmoothPlastic)
+			piece("Bread", Vector3.new(0.77, 0.025, 0.54), CFrame.new(0, y + 0.065, 0), rgb(245, 222, 170), M.SmoothPlastic)
+		end
+		piece("Lettuce", Vector3.new(0.94, 0.04, 0.7), CFrame.new(0, 0.27, 0) * CFrame.Angles(0, 0.12, 0), rgb(84, 159, 61), M.Grass)
+		piece("FishFilling", Vector3.new(0.82, 0.11, 0.52), CFrame.new(0, 0.34, 0), SALMON, M.SmoothPlastic)
+	elseif look == "Soup" or look == "Chowder" then
+		local chowder = look == "Chowder"
+		bowl(if chowder then rgb(119, 63, 42) else rgb(74, 130, 157), if chowder then rgb(239, 217, 170) else rgb(214, 139, 59))
+		for index = 0, 3 do
+			local angle = index * math.pi / 2 + 0.3
+			piece("FishChunk", Vector3.new(0.19, 0.07, 0.13), CFrame.new(math.cos(angle) * 0.24, 0.47, math.sin(angle) * 0.24) * CFrame.Angles(0, angle, 0), if chowder then rgb(181, 105, 58) else rgb(244, 194, 155), M.SmoothPlastic)
+		end
+		for index = -1, 1 do
+			piece(if chowder then "Potato" else "Carrot", Vector3.new(0.1, 0.05, 0.1), CFrame.new(index * 0.23, 0.47, 0.05), if chowder then rgb(248, 230, 184) else rgb(235, 103, 38), M.SmoothPlastic)
+		end
+		piece("Herb", Vector3.new(0.25, 0.025, 0.08), CFrame.new(0.07, 0.51, -0.12) * CFrame.Angles(0, 0.5, 0), rgb(66, 141, 62), M.Grass)
+	elseif look == "Tacos" then
+		for _, z in { -0.25, 0.25 } do
+			piece("TortillaBase", Vector3.new(0.85, 0.04, 0.2), CFrame.new(0, 0.15, z), rgb(237, 199, 106), M.SmoothPlastic)
+			for _, side in { -1, 1 } do
+				piece("TortillaSide", Vector3.new(0.85, 0.3, 0.045), CFrame.new(0, 0.26, z + side * 0.14) * CFrame.Angles(side * math.rad(25), 0, 0), rgb(237, 199, 106), M.SmoothPlastic)
+			end
+			piece("Lettuce", Vector3.new(0.74, 0.08, 0.19), CFrame.new(0, 0.29, z), rgb(76, 151, 54), M.Grass)
+			for index = -1, 1 do
+				piece("FishBite", Vector3.new(0.2, 0.12, 0.16), CFrame.new(index * 0.24, 0.37, z), rgb(215, 157, 77), M.SmoothPlastic)
+			end
+			piece("Salsa", Vector3.new(0.1, 0.06, 0.12), CFrame.new(0.12, 0.43, z), rgb(213, 63, 43), M.SmoothPlastic)
+		end
+	elseif look == "Salad" then
+		bowl(PLATE, rgb(80, 147, 58))
+		for index = 0, 4 do
+			local angle = index * math.pi * 2 / 5
+			piece("SaladLeaf", Vector3.new(0.33, 0.05, 0.18), CFrame.new(math.cos(angle) * 0.26, 0.48, math.sin(angle) * 0.26) * CFrame.Angles(0, angle, 0), rgb(111, 178, 67), M.Grass)
+		end
+		for index = -1, 1 do
+			piece("FishStrip", Vector3.new(0.5, 0.08, 0.12), CFrame.new(0, 0.54, index * 0.17) * CFrame.Angles(0, -0.35, 0), SALMON, M.SmoothPlastic)
+		end
+		round("Tomato", 0.53, 0.1, 0.17, rgb(218, 68, 43), M.SmoothPlastic, 0.29, 0.04)
+	elseif look == "Burger" then
+		round("BottomBun", 0.2, 0.17, 0.85, rgb(207, 150, 77), M.SmoothPlastic)
+		piece("Lettuce", Vector3.new(0.88, 0.05, 0.75), CFrame.new(0, 0.31, 0) * CFrame.Angles(0, 0.15, 0), rgb(86, 157, 58), M.Grass)
+		round("FishPatty", 0.41, 0.16, 0.77, rgb(192, 131, 58), M.Sand)
+		round("Tomato", 0.51, 0.04, 0.7, rgb(209, 64, 43), M.SmoothPlastic)
+		local bun = piece("TopBun", Vector3.new(0.88, 0.32, 0.88), CFrame.new(0, 0.64, 0), rgb(222, 168, 89), M.SmoothPlastic)
+		bun.Shape = Enum.PartType.Ball
+		for index = -1, 1 do
+			piece("Sesame", Vector3.new(0.07, 0.025, 0.035), CFrame.new(index * 0.16, 0.79 - math.abs(index) * 0.02, 0), PLATE, M.SmoothPlastic)
+		end
+	elseif look == "Steak" then
+		round("FishSteak", 0.25, 0.28, 0.75, rgb(210, 147, 109), M.SmoothPlastic, -0.12)
+		round("SteakCenter", 0.4, 0.025, 0.15, PLATE, M.SmoothPlastic, -0.12)
+		for _, z in { -0.16, 0.16 } do
+			piece("SearMark", Vector3.new(0.52, 0.025, 0.04), CFrame.new(-0.12, 0.405, z), CHARRED, M.SmoothPlastic)
+		end
+		for index = -1, 1 do
+			piece("Asparagus", Vector3.new(0.08, 0.07, 0.62), CFrame.new(0.39 + index * 0.08, 0.15, 0), rgb(79, 130, 44), M.Grass)
+		end
+	elseif look == "Teriyaki" then
+		round("RiceMound", 0.21, 0.2, 0.67, PLATE, M.SmoothPlastic, 0.25)
+		piece("GlazedFish", Vector3.new(0.47, 0.2, 0.78), CFrame.new(-0.22, 0.27, 0), rgb(139, 70, 32), M.SmoothPlastic)
+		for index = -1, 1 do
+			piece("GlazeStripe", Vector3.new(0.49, 0.025, 0.045), CFrame.new(-0.22, 0.38, index * 0.2), rgb(86, 42, 24), M.SmoothPlastic)
+			piece("Scallion", Vector3.new(0.14, 0.035, 0.045), CFrame.new(-0.23, 0.41, index * 0.18) * CFrame.Angles(0, 0.5, 0), rgb(91, 164, 65), M.Grass)
+		end
+	elseif look == "Bagel" then
+		-- Eight rounded bread segments leave the bagel's centre visibly open.
+		for index = 0, 7 do
+			local angle = index * math.pi / 4
+			local bread = piece("BagelBread", Vector3.new(0.31, 0.25, 0.31), CFrame.new(math.cos(angle) * 0.28, 0.25, math.sin(angle) * 0.28), rgb(205, 147, 78), M.SmoothPlastic)
+			bread.Shape = Enum.PartType.Ball
+		end
+		for _, z in { -0.25, 0.25 } do
+			piece("CreamCheese", Vector3.new(0.51, 0.05, 0.16), CFrame.new(0, 0.36, z), PLATE, M.SmoothPlastic)
+			piece("SmokedSalmon", Vector3.new(0.53, 0.07, 0.16), CFrame.new(0, 0.42, z) * CFrame.Angles(0, -0.2, 0), rgb(220, 119, 75), M.SmoothPlastic)
+		end
+		piece("Dill", Vector3.new(0.3, 0.03, 0.07), CFrame.new(0.05, 0.47, -0.25), rgb(64, 130, 59), M.Grass)
+	elseif look == "HoneySmoked" then
+		piece("SmokedFillet", Vector3.new(0.95, 0.19, 0.45), CFrame.new(-0.05, 0.22, 0), rgb(177, 91, 37), M.SmoothPlastic)
+		for index = -1, 1 do
+			piece("HoneyGlaze", Vector3.new(0.12, 0.03, 0.47), CFrame.new(-0.05 + index * 0.27, 0.33, 0) * CFrame.Angles(0, -0.2, 0), rgb(242, 177, 43), M.SmoothPlastic)
+		end
+		for _, z in { -0.33, 0.33 } do
+			round("Carrot", 0.15, 0.08, 0.18, rgb(234, 122, 36), M.SmoothPlastic, 0.18, z)
+		end
+		piece("Rosemary", Vector3.new(0.64, 0.035, 0.07), CFrame.new(-0.1, 0.37, 0.03) * CFrame.Angles(0, 0.25, 0), rgb(67, 122, 53), M.Grass)
+	elseif look == "RiceBowl" then
+		bowl(rgb(49, 64, 82), PLATE)
+		for index = -1, 1 do
+			piece("FishSlice", Vector3.new(0.57, 0.08, 0.16), CFrame.new(-0.12, 0.49 + (index + 1) * 0.015, index * 0.18) * CFrame.Angles(0, -0.3, 0), SALMON, M.SmoothPlastic)
+		end
+		for index = -1, 1 do
+			round("Cucumber", 0.48, 0.06, 0.17, rgb(95, 166, 70), M.SmoothPlastic, 0.28, index * 0.17)
+		end
+		piece("NoriStrip", Vector3.new(0.08, 0.025, 0.42), CFrame.new(-0.1, 0.57, 0), rgb(29, 53, 35), M.SmoothPlastic)
+	elseif look == "DragonRoll" then
+		for index = 0, 4 do
+			local x = -0.5 + index * 0.25
+			local z = math.sin(index * 0.8) * 0.13
+			round("Nori", 0.23, 0.22, 0.29, rgb(28, 46, 31), M.SmoothPlastic, x, z)
+			round("Rice", 0.345, 0.02, 0.24, PLATE, M.SmoothPlastic, x, z)
+			round("FishCenter", 0.36, 0.02, 0.11, SALMON, M.SmoothPlastic, x, z)
+			piece("Avocado", Vector3.new(0.21, 0.07, 0.17), CFrame.new(x, 0.4, z - 0.06) * CFrame.Angles(0, -0.25, 0), rgb(141, 182, 63), M.SmoothPlastic)
+		end
+		piece("DragonTail", Vector3.new(0.31, 0.07, 0.15), CFrame.new(0.66, 0.24, -0.06) * CFrame.Angles(0, 0.45, 0), rgb(232, 142, 72), M.SmoothPlastic)
 	end
 	return model
 end

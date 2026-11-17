@@ -89,7 +89,7 @@ Data.FIXTURES = {
 	{ ItemId = "OfficeDesk", X = -18, Z = 4.5, R = 0 }, -- against the office's back wall
 }
 -- Granted separately so adding the workbench never re-grants the older fixtures.
-Data.WORKBENCH = { ItemId = "Workbench", X = 4.5, Z = -13.5, R = 0 }
+Data.WORKBENCH = { ItemId = "Workbench", X = 4.5, Z = -9, R = 0 }
 -- Bench keys handed to placed PrepBench benches in the house, in order
 -- (Recipes.BuiltIn), and where the Supermarket puts each one: against the
 -- kitchen's left wall, where the built-in benches stood.

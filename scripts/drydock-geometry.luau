@@ -112,6 +112,7 @@ function Instance.new(class)
 	return setmetatable({
 		_props = {
 			MouseClick = { Connect = function() end },
+			AncestryChanged = { Connect = function() return { Disconnect = function() end } end },
 			ClassName = class,
 			Name = class,
 			Size = Vector3.new(1, 1, 1),

@@ -38,7 +38,7 @@ local HEIGHTS = {
 	Freezer = 4,
 	Register = 3,
 	StorageRack = 6.6,
-	FoodCase = 4.3,
+	FoodCase = 6.1,
 	FoodShelf = 6.1,
 	GrillStation = 7.6,
 	Smoker = 8.1,
@@ -812,7 +812,10 @@ function BuildMode.start()
 			-- Snap the middle of the item's cells to the pointer, so a 1x2 item
 			-- covers the two cells nearest it rather than hanging off one end.
 			local area = Furniture.footprint(held.ItemId, 0, 0, held.R) :: { number }
-			return BaseGrid.snap(point.X - (area[1] + area[3]) / 2), BaseGrid.snap(point.Z - (area[2] + area[4]) / 2)
+			local shop = Furniture.Rooms.Shop
+			local inShop = site ~= "Company" and point.Z >= shop[2] and point.Z <= shop[4]
+			return Furniture.snapPlacement(point.X - (area[1] + area[3]) / 2, inShop),
+				Furniture.snapPlacement(point.Z - (area[2] + area[4]) / 2, inShop)
 		end
 		return BaseGrid.snap(point.X), BaseGrid.snap(point.Z)
 	end

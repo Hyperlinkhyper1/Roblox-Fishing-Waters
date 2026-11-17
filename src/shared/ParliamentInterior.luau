@@ -95,7 +95,7 @@ function Interior.context(base: CFrame, checkpoint: (() -> ())?, lite: boolean?)
 			local width = 2 * outer * math.tan(rad(math.abs(step) / 2)) + 0.05
 			local radius = (inner + outer) / 2 + (if radial then lift else 0)
 			local a = rad(angle)
-			local frame = F(origin.X + math.sin(a) * radius, (y0 + y1) / 2 + (if radial then 0 else lift), origin.Z + math.cos(a) * radius) * A(0, a, 0)
+			local frame = F(origin.X + math.sin(a) * radius, (y0 + y1) / 2 + lift, origin.Z + math.cos(a) * radius) * A(0, a, 0)
 			table.insert(made, ctx.part(folder, name, V(width, y1 - y0, outer - inner), frame, color, material))
 		end
 		return made
@@ -135,14 +135,14 @@ local function kit(ctx)
 			return block(folder, "StoolBlock", V(1.4, 2.4, 1.4), frame, color, M.Fabric)
 		end
 		P(folder, "StoolSeat", V(0.35, 1.5, 1.5), frame * F(0, 2.2, 0) * UP, color, M.Fabric, Enum.PartType.Cylinder)
-		P(folder, "StoolPost", V(1.9, 0.25, 0.25), frame * F(0, 1.05, 0) * UP, STEEL, M.Metal, Enum.PartType.Cylinder)
-		P(folder, "StoolFoot", V(0.12, 1.3, 1.3), frame * F(0, 0.06, 0) * UP, STEEL, M.Metal, Enum.PartType.Cylinder)
+		P(folder, "StoolPost", V(1.75, 0.25, 0.25), frame * F(0, 1.12, 0) * UP, STEEL, M.Metal, Enum.PartType.Cylinder)
+		P(folder, "StoolFoot", V(0.12, 1.3, 1.3), frame * F(0, 0.15, 0) * UP, STEEL, M.Metal, Enum.PartType.Cylinder)
 	end
 	function K.microphone(folder, frame)
 		if lite then
 			return
 		end
-		P(folder, "MicrophoneBase", V(0.38, 0.1, 0.3), frame * F(0, 0.05, 0), DARK, M.Metal)
+		P(folder, "MicrophoneBase", V(0.38, 0.26, 0.3), frame * F(0, 0.13, 0), DARK, M.Metal)
 		P(folder, "MicrophoneStem", V(0.07, 0.75, 0.07), frame * F(0, 0.42, 0) * A(-0.3, 0, 0), DARK, M.Metal)
 		P(folder, "MicrophoneHead", V(0.19, 0.2, 0.32), frame * F(0, 0.8, -0.12), DARK)
 	end
@@ -153,10 +153,14 @@ local function kit(ctx)
 		end
 		P(folder, "TableTop", V(length, 0.3, width), frame * F(0, 2.85, 0), color or OAK, M.Wood)
 		if inlay then
-			P(folder, "TableInlay", V(length - 1.2, 0.06, width * 0.42), frame * F(0, 3.03, 0), inlay, M.Fabric)
+			P(folder, "TableInlay", V(length - 1.2, 0.08, width * 0.42), frame * F(0, 3.04, 0), inlay, M.Fabric)
 		end
-		for _, side in { -1, 1 } do
-			P(folder, "TableBase", V(1.5, 2.7, width * 0.5), frame * F(side * (length / 2 - 1.7), 1.35, 0), DARKWOOD, M.Wood)
+		if length < 5 then
+			P(folder, "TableBase", V(1.2, 2.7, width * 0.5), frame * F(0, 1.35, 0), DARKWOOD, M.Wood)
+		else
+			for _, side in { -1, 1 } do
+				P(folder, "TableBase", V(1.5, 2.7, width * 0.5), frame * F(side * (length / 2 - 1.7), 1.35, 0), DARKWOOD, M.Wood)
+			end
 		end
 	end
 	function K.round(folder, frame, diameter, color)
@@ -172,7 +176,7 @@ local function kit(ctx)
 		if lite then
 			return
 		end
-		P(folder, "Papers", V(0.75, 0.06, 0.95), frame * F(0, top + 0.03, 0) * A(0, 0.2, 0), CREAM)
+		P(folder, "Papers", V(0.75, 0.06, 0.95), frame * F(0, top + 0.13, 0) * A(0, 0.2, 0), CREAM)
 	end
 	function K.glass(folder, frame, top)
 		if lite then
@@ -202,9 +206,9 @@ local function kit(ctx)
 		end
 		P(folder, "SofaBase", V(width, 1.1, 2.3), frame * F(0, 0.75, 0.2), color, M.Fabric)
 		P(folder, "SofaCushion", V(width - 1, 0.4, 1.9), frame * F(0, 1.5, 0.05), color:Lerp(WHITE, 0.15), M.Fabric)
-		P(folder, "SofaBack", V(width, 2, 0.6), frame * F(0, 2, 1.15), color, M.Fabric)
+		P(folder, "SofaBack", V(width - 0.4, 2, 0.6), frame * F(0, 2, 1.15), color, M.Fabric)
 		for _, side in { -1, 1 } do
-			P(folder, "SofaArm", V(0.5, 1.7, 2.3), frame * F(side * (width / 2 - 0.25), 1.35, 0.2), color, M.Fabric)
+			P(folder, "SofaArm", V(0.6, 1.7, 2.3), frame * F(side * (width / 2 - 0.2), 1.35, 0.1), color, M.Fabric)
 		end
 	end
 	function K.plant(folder, frame, height)
@@ -213,7 +217,7 @@ local function kit(ctx)
 		end
 		P(folder, "PlanterPot", V(1.6, 1.8, 1.8), frame * F(0, 0.8, 0) * UP, BRONZE, M.Metal, Enum.PartType.Cylinder)
 		P(folder, "PlanterSoil", V(0.1, 1.6, 1.6), frame * F(0, 1.62, 0) * UP, SOIL, M.Ground, Enum.PartType.Cylinder)
-		P(folder, "PlantStem", V(0.22, height * 0.55, 0.22), frame * F(0, 1.6 + height * 0.27, 0), WALNUT, M.Wood)
+		P(folder, "PlantStem", V(0.22, height * 0.55, 0.22), frame * F(0, 1.64 + height * 0.275, 0), WALNUT, M.Wood)
 		P(folder, "PlantCrown", V(height * 0.6, height * 0.6, height * 0.6), frame * F(0, 1.6 + height * 0.7, 0), LEAF, M.Grass, Enum.PartType.Ball)
 		P(folder, "PlantCrown", V(height * 0.4, height * 0.4, height * 0.4), frame * F(0.3, 1.6 + height * 0.98, 0.2), LEAF:Lerp(WHITE, 0.1), M.Grass, Enum.PartType.Ball)
 	end
@@ -222,9 +226,9 @@ local function kit(ctx)
 		if lite then
 			return block(folder, "ShelfBlock", V(width, height, 1.2), frame * F(0, 0, 0.7), WALNUT, M.Wood)
 		end
-		P(folder, "ShelfBack", V(width, height, 0.15), frame * F(0, height / 2, 0.175), DARKWOOD, M.Wood)
+		P(folder, "ShelfBack", V(width - 0.1, height - 0.1, 0.15), frame * F(0, height / 2 - 0.05, 0.175), DARKWOOD, M.Wood)
 		for _, side in { -1, 1 } do
-			P(folder, "ShelfSide", V(0.2, height, 1.25), frame * F(side * (width / 2 - 0.1), height / 2, 0.725), WALNUT, M.Wood)
+			P(folder, "ShelfSide", V(0.2, height, 1.25), frame * F(side * (width / 2 - 0.1), height / 2, 0.775), WALNUT, M.Wood)
 		end
 		local rows = math.max(1, math.floor(height / 1.8))
 		for row = 1, rows do
@@ -415,7 +419,7 @@ local function meetingRoom(ctx, K, room, folder, color, inlay)
 			K.papers(folder, top * F(-0.4, 0, 0), 3)
 			K.glass(folder, top * F(0.7, 0, 0.2), 3)
 			if entry.Role == "Chair" then
-				K.microphone(folder, top * F(0, 3, -0.2))
+				K.microphone(folder, top * F(0.7, 3, -0.4))
 			end
 		end
 	end
@@ -480,9 +484,9 @@ function rooms.Voting(ctx, K, room, folder)
 		if ctx.lite then
 			P(folder, "BoothBlock", V(2.8, 6.6, 3.2), booth * F(0.2, 3.3, 0), CREAM)
 		else
-			P(folder, "BoothBack", V(0.15, 6.6, 3.4), booth * F(1.4, 3.3, 0), CREAM, M.Wood)
+			P(folder, "BoothBack", V(0.15, 6.6, 3.4), booth * F(1.375, 3.3, 0), CREAM, M.Wood)
 			for _, side in { -1, 1 } do
-				P(folder, "BoothSide", V(2.8, 6.6, 0.15), booth * F(0.1, 3.3, side * 1.62), CREAM, M.Wood)
+				P(folder, "BoothSide", V(2.6, 6.6, 0.15), booth * F(0, 3.3, side * 1.62), CREAM, M.Wood)
 			end
 			P(folder, "BoothShelf", V(1.2, 0.15, 3.05), booth * F(0.7, 3.4, 0), OAK, M.Wood)
 			P(folder, "BoothBallot", V(0.7, 0.06, 1), booth * F(0.6, 3.51, -0.2), CREAM)
@@ -531,15 +535,16 @@ function rooms.Exhibition(ctx, K, room, folder)
 		else
 			P(folder, "DisplayPlinth", V(2.6, 3, 2.6), frame * F(0, 1.5, 0), MARBLE_LIGHT, M.Marble)
 			local case = P(folder, "DisplayGlass", V(2.4, 2.4, 2.4), frame * F(0, 4.26, 0), GLASS, M.Glass)
+			-- Every exhibit stands at least 0.1 above the case's floor.
 			case.Transparency = 0.75
 			if index == 1 then
 				P(folder, "ExhibitGavel", V(0.4, 0.4, 1.4), frame * F(0, 3.35, 0) * A(0, 0.6, 0), WALNUT, M.Wood)
 			elseif index == 2 then
-				P(folder, "ExhibitCrown", V(0.7, 1.1, 1.1), frame * F(0, 3.45, 0) * UP, GOLD, M.Metal, Enum.PartType.Cylinder)
+				P(folder, "ExhibitCrown", V(0.7, 1.1, 1.1), frame * F(0, 3.55, 0) * UP, GOLD, M.Metal, Enum.PartType.Cylinder)
 			elseif index == 3 then
-				P(folder, "ExhibitCharter", V(1.6, 0.06, 1.2), frame * F(0, 3.1, 0) * A(0, 0.3, 0), CREAM)
+				P(folder, "ExhibitCharter", V(1.6, 0.06, 1.2), frame * F(0, 3.16, 0) * A(0, 0.3, 0), CREAM)
 			else
-				P(folder, "ExhibitBell", V(0.9, 1, 1), frame * F(0, 3.55, 0) * UP, GOLD, M.Metal, Enum.PartType.Cylinder)
+				P(folder, "ExhibitBell", V(0.9, 1, 1), frame * F(0, 3.65, 0) * UP, GOLD, M.Metal, Enum.PartType.Cylinder)
 			end
 		end
 	end
@@ -622,7 +627,7 @@ function rooms.Kitchen(ctx, K, room, folder)
 		P(folder, "Hob", V(0.06, 1.1, 1.1), hob * UP, BLACK, M.Metal, Enum.PartType.Cylinder)
 		P(folder, "CookingPot", V(0.8, 1, 1), hob * F(0, 0.45, 0) * UP, STEEL, M.Metal, Enum.PartType.Cylinder)
 	end
-	P(folder, "ExtractorHood", V(8, 1.4, 2.4), at(room, -1.5, 9.6, w.WLo + 1.4), STEEL, M.Metal)
+	P(folder, "ExtractorHood", V(8, 1.4, 2.4), at(room, -1.5, 10.1, w.WLo + 1.4), STEEL, M.Metal)
 	P(folder, "Sink", V(2.4, 0.2, 1.4), at(room, 5, 3.45, w.WHi - 1.4), rgb(100, 106, 110), M.Metal)
 	for index = 0, 4 do
 		P(folder, "ChoppingBoard", V(1.2, 0.12, 0.8), at(room, -5.5 + index * 2, 3.41, w.WHi - 1.4), OAK, M.Wood)
@@ -643,9 +648,9 @@ function rooms.Mail(ctx, K, room, folder)
 	end
 	for rack = 0, 1 do
 		local wz = if rack == 0 then -6.5 else 6.5
-		P(folder, "CoatRail", V(0.14, 0.14, 7), at(room, 9.4, 6.4, wz), STEEL, M.Metal)
+		P(folder, "CoatRail", V(0.14, 0.14, 7.4), at(room, 9.4, 6.4, wz), STEEL, M.Metal)
 		for _, dz in { -3.4, 3.4 } do
-			P(folder, "CoatRailPost", V(0.14, 6.4, 0.14), at(room, 9.4, 3.2, wz + dz), STEEL, M.Metal)
+			P(folder, "CoatRailPost", V(0.2, 6.4, 0.2), at(room, 9.4, 3.2, wz + dz), STEEL, M.Metal)
 		end
 		for index = 0, 5 do
 			P(folder, "Coat", V(0.9, 3.2, 0.7), at(room, 9.4, 4.6, wz - 2.6 + index * 1.04), ({ DARK, BLACK, rgb(82, 68, 52), rgb(38, 48, 76) })[(index + rack) % 4 + 1], M.Fabric)
@@ -896,7 +901,7 @@ local function memberStation(ctx, K, entry, color, trim, spacing)
 		return
 	end
 	P(station, "OakMemberDesk", V(width, 0.22, 1.3), desk * F(0, lift, 0), OAK, M.Wood)
-	P(station, "DeskFront", V(width - 0.04, 2.6, 0.12), desk * F(0, -1.42, -0.55), WALNUT, M.Wood)
+	P(station, "DeskFront", V(width - 0.04, 2.6, 0.12), desk * F(0, -1.42 + lift, -0.55), WALNUT, M.Wood)
 	P(station, "DeskScreen", V(0.95, 0.55, 0.08), desk * F(-0.5, 0.45 + lift, -0.3) * A(-0.3, 0, 0), SCREEN, M.Glass)
 	ctx.dynamic.VoteLights[entry.Id] = P(station, "VoteLight", V(0.6, 0.06, 0.15), desk * F(-0.45, 0.14 + lift, 0.42), DARK)
 	K.microphone(station, desk * F(0.68, 0.11 + lift, -0.3))
@@ -1005,7 +1010,7 @@ local function plenary(ctx, K)
 		ctx.dynamic.Labels[if side < 0 then "VoteBoardWest" else "VoteBoardEast"] = board
 	end
 	-- The great blue wall behind the Speaker, with the national arms.
-	ctx.ring(walls_, "SpeakerBlueWall", 156, 204, 6, Layout.DrumRadius - 0.45, Layout.DrumRadius - 0.15, 0, Layout.Ceiling - 0.4, rgb(30, 60, 118), M.Fabric, nil, true)
+	ctx.ring(walls_, "SpeakerBlueWall", 156, 204, 6, Layout.DrumRadius - 0.45, Layout.DrumRadius - 0.15, 0, Layout.Ceiling + 0.05 - Layout.RING_LIFT, rgb(30, 60, 118), M.Fabric, nil, true)
 	if not ctx.lite then
 		P(walls_, "NationalArms", V(0.3, 9, 9), Layout.facing(180, Layout.DrumRadius - 0.75, 30) * A(0, pi / 2, 0), GOLD, M.Metal, Enum.PartType.Cylinder)
 		P(walls_, "NationalArmsShield", V(4.4, 5.4, 0.3), Layout.facing(180, Layout.DrumRadius - 1.1, 30), rgb(30, 60, 118), M.SmoothPlastic)
@@ -1042,7 +1047,7 @@ local function plenary(ctx, K)
 		local trim = ctx.group("PlenaryCeilingTrim")
 		ctx.ring(trim, "CeilingCoffer", 0, 360, 24, Layout.Oculus + 1, 28, Layout.Ceiling - 0.35, Layout.Ceiling - 0.15, DARKWOOD, M.Wood)
 		ctx.ring(trim, "CeilingCoffer", 0, 360, 24, 28, 46, Layout.Ceiling - 0.35, Layout.Ceiling - 0.15, CEILING, M.Wood)
-		ctx.ring(trim, "CeilingCoffer", 0, 360, 24, 46, Layout.DrumRadius - 0.6, Layout.Ceiling - 0.35, Layout.Ceiling - 0.15, DARKWOOD, M.Wood)
+		ctx.ring(trim, "CeilingCoffer", 0, 360, 24, 46, Layout.DrumRadius - 1.2, Layout.Ceiling - 0.35, Layout.Ceiling - 0.15, DARKWOOD, M.Wood)
 		ctx.ring(trim, "OculusRim", 0, 360, 24, Layout.Oculus - 0.4, Layout.Oculus + 1, Layout.Ceiling - 0.9, Layout.Ceiling + 0.5, GOLD, M.Metal)
 		for index = 0, 23 do
 			local degrees = index * 15 + 7.5
@@ -1055,7 +1060,7 @@ local function plenary(ctx, K)
 		P(well, "CompassBar", V(12, 0.08, 0.6), F(focus + V(0, 0.23, 0)), GOLD, M.Metal)
 		for _, degrees in Layout.Aisles do
 			for row = 2, #Layout.Rows do
-				P(well, "AisleStepEdge", V(5, 0.06, 0.2), Layout.facing(degrees, Layout.rowRadius(row) - 2.4, Layout.rowRise(row) + 0.06), GOLD, M.Metal)
+				P(well, "AisleStepEdge", V(5, 0.06, 0.2), Layout.facing(degrees, Layout.rowRadius(row) - 2.4, Layout.rowRise(row) + Layout.RING_LIFT + 0.08), GOLD, M.Metal)
 			end
 		end
 	end
@@ -1081,7 +1086,7 @@ local function tribune(ctx, K)
 				P(seats, "SeatBlock", V(2.1, 3.4, 1.8), entry.Frame * F(0, 1.7, 0), upholstery, M.Fabric)
 			else
 				P(seats, "SeatCushion", V(2.15, 0.45, 2.1), entry.Frame * F(0, 1.65, 0), upholstery, M.Fabric)
-				P(seats, "TribuneSeatBack", V(2.15, 2.2, 0.3), entry.Frame * F(0, 2.95, 0.9), upholstery, M.Fabric)
+				P(seats, "TribuneSeatBack", V(2.05, 2.2, 0.3), entry.Frame * F(0, 2.95, 0.95), upholstery, M.Fabric)
 				P(seats, "TribuneSeatBase", V(1.9, 1.4, 1.6), entry.Frame * F(0, 0.7, 0.1), DARKWOOD, M.Wood)
 			end
 		end
@@ -1094,7 +1099,7 @@ local function tribune(ctx, K)
 	local detail = ctx.group("TribuneDetails")
 	ctx.ring(detail, "TribuneHandrail", ringSpec.From, ringSpec.To, spans, ringSpec.Inner - 0.1, ringSpec.Inner + 0.4, ringSpec.Y + 3.5, ringSpec.Y + 3.75, GOLD, M.Metal)
 	ctx.ring(detail, "TribuneFascia", ringSpec.From, ringSpec.To, spans, ringSpec.Inner - 0.3, ringSpec.Inner - 0.1, ringSpec.Y - 2.6, ringSpec.Y - 0.2, DARKWOOD, M.Wood, nil, true)
-	ctx.ring(detail, "TribuneCarpet", ringSpec.From, ringSpec.To, spans, ringSpec.Inner + 0.4, Layout.DrumRadius - 0.3, ringSpec.Y + 0.02, ringSpec.Y + 0.08, rgb(84, 40, 40), M.Carpet)
+	ctx.ring(detail, "TribuneCarpet", ringSpec.From, ringSpec.To, spans, ringSpec.Inner + 0.4, Layout.DrumRadius - 1, ringSpec.Y + 0.12, ringSpec.Y + 0.18, rgb(84, 40, 40), M.Carpet)
 	for _, degrees in { 126, 138, -126, -138 } do
 		local frame = Layout.facing(degrees, 58.5, ringSpec.Y)
 		K.chair(detail, frame, rgb(70, 72, 78))
@@ -1249,11 +1254,11 @@ local function statenhal(ctx, K)
 	P(hall, "ReceptionTop", V(13.6, 0.25, 3.5), Layout.Reception * F(0, 3.325, 0), MARBLE_LIGHT, M.Marble)
 	-- Brass bands following the curve of the hall, and a star at the door.
 	local floor = ctx.group("StatenhalFloor")
-	ctx.ring(floor, "BrassInlay", -42, 42, 14, 71.6, 72.2, 0.03, 0.09, GOLD, M.Metal)
-	ctx.ring(floor, "MarbleBand", -42, 42, 14, 92, 95.4, 0.03, 0.09, MARBLE_LIGHT, M.Marble)
-	P(floor, "EntranceRunner", V(6, 0.06, 18), F(0, 0.05, 63), RED, M.Carpet)
-	P(floor, "EntranceStar", V(0.8, 0.06, 9), F(0, 0.05, 77) * A(0, pi / 4, 0), GOLD, M.Metal)
-	P(floor, "EntranceStar", V(0.8, 0.06, 9), F(0, 0.12, 77) * A(0, -pi / 4, 0), GOLD, M.Metal)
+	ctx.ring(floor, "BrassInlay", -42, 42, 14, 71.6, 72.2, 0.1, 0.16, GOLD, M.Metal)
+	ctx.ring(floor, "MarbleBand", -42, 42, 14, 92, 95.4, 0.1, 0.16, MARBLE_LIGHT, M.Marble)
+	P(floor, "EntranceRunner", V(6, 0.06, 16), F(0, 0.05, 58), RED, M.Carpet)
+	P(floor, "EntranceStar", V(0.8, 0.06, 9), F(0, 0.05, 72) * A(0, pi / 4, 0), GOLD, M.Metal)
+	P(floor, "EntranceStar", V(0.8, 0.06, 9), F(0, 0.12, 72) * A(0, -pi / 4, 0), GOLD, M.Metal)
 	local gates = ctx.group("StatenhalSecurity")
 	for _, x in { -8.4, -4.2, 4.2, 8.4 } do
 		P(gates, "SecurityGateArch", V(0.4, 7.4, 1.4), F(x - 0.9, 3.7, 70), STEEL, M.Metal)
@@ -1286,7 +1291,7 @@ local function statenhal(ctx, K)
 		for _, side in { -1, 1 } do
 			P(decor, "PortalJamb", V(1, 14, 0.7), door * F(side * 4.6, 7, 0), BRONZE, M.Metal)
 		end
-		P(decor, "PortalHead", V(10.2, 1.4, 0.7), door * F(0, 14.4, 0), BRONZE, M.Metal)
+		P(decor, "PortalHead", V(10.6, 1.4, 0.9), door * F(0, 14.4, 0), BRONZE, M.Metal)
 	end
 	local ceiling = ctx.group("StatenhalCeiling")
 	ctx.ring(ceiling, "HallCoffer", -44, 44, 12, Layout.DrumOuter + 1, 80, Layout.Roof - 0.35, Layout.Roof - 0.15, CEILING, M.Wood)
@@ -1340,7 +1345,7 @@ local function wandelgang(ctx, K)
 			P(court, "PalmTub", V(1.8, 2.8, 2.8), frame * F(0, 0.9, 0) * UP, BRONZE, M.Metal, Enum.PartType.Cylinder)
 			P(court, "PalmTrunk", V(14 + index * 3, 0.7, 0.7), frame * F(0, 8.8 + index * 1.5, 0) * UP, WALNUT, M.Wood, Enum.PartType.Cylinder)
 			for leaf = 0, 5 do
-				P(court, "PalmFrond", V(1, 0.15, 6), frame * F(0, 16 + index * 3, 0) * A(0, leaf * pi / 3, 0) * A(-0.5, 0, 0) * F(0, 0, 2.7), LEAF, M.Grass)
+				P(court, "PalmFrond", V(1, 0.15, 6), frame * F(0, 16 + index * 3 + (leaf % 2) * 0.12, 0) * A(0, leaf * pi / 3, 0) * A(-0.5, 0, 0) * F(0, 0, 3.1), LEAF, M.Grass)
 			end
 		end
 	end
@@ -1391,7 +1396,7 @@ local function corridorZone(ctx, K, side, floor)
 			for _, z in room.Doors do
 				table.insert(doors, { z - Layout.Door / 2 - 0.6, z + Layout.Door / 2 + 0.6 })
 				for _, dz in { -1, 1 } do
-					P(group, "DoorJamb", V(0.4, Layout.DoorHeight + 0.4, 0.6), F(side * (wallX - 0.2), y + Layout.DoorHeight / 2 + 0.2, z + dz * (Layout.Door / 2 + 0.3)), DARKWOOD, M.Wood)
+					P(group, "DoorJamb", V(0.4, Layout.DoorHeight, 0.6), F(side * (wallX - 0.2), y + Layout.DoorHeight / 2, z + dz * (Layout.Door / 2 + 0.3)), DARKWOOD, M.Wood)
 				end
 				P(group, "DoorHead", V(0.4, 0.8, Layout.Door + 1.2), F(side * (wallX - 0.2), y + Layout.DoorHeight + 0.4, z), DARKWOOD, M.Wood)
 			end

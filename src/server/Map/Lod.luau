@@ -20,6 +20,17 @@ local UNDERWATER = -4 -- coast vertices sink to here so shores slope into the wa
 local TILE = 192
 local TILE_STEP = 48
 local REMOVALS_PER_FRAME = 32 -- avoid sending a baked shell's old parts to clients all at once
+local WORK_BUDGET = 0.004
+
+local function pacer(): () -> ()
+	local resumed = os.clock()
+	return function()
+		if os.clock() - resumed >= WORK_BUDGET then
+			task.wait()
+			resumed = os.clock()
+		end
+	end
+end
 
 type Sample = { position: Vector3, color: Color3?, material: Enum.Material? }
 
@@ -64,10 +75,12 @@ end
 
 -- Ground parts under each tile of a tiled shell, so the client can tell when a tile's real ground is in
 local function countTiles(model: Instance, island: Model)
+	local pause = pacer()
 	local originX, originZ = model:GetAttribute("TileOriginX") or 0, model:GetAttribute("TileOriginZ") or 0
 	local counts: { [string]: number } = {}
 	local ground = island:FindFirstChild("Ground")
 	for _, d in if ground then ground:GetDescendants() else {} do
+		pause()
 		if d:IsA("BasePart") then
 			tileKeys(d, originX, originZ, function(key)
 				counts[key] = (counts[key] or 0) + 1
@@ -84,7 +97,9 @@ end
 
 local function opaqueParts(model: Model): { BasePart }
 	local parts = {}
+	local pause = pacer()
 	for _, d in model:GetDescendants() do
+		pause()
 		if d:IsA("BasePart") and d.Transparency < 0.5 and d.Material ~= Enum.Material.Neon then
 			if d.Position.Y + halfExtent(d).Y > UNDERWATER then
 				table.insert(parts, d)
@@ -135,7 +150,9 @@ end
 
 local function bounds(parts: { BasePart }): (number, number, number, number)
 	local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+	local pause = pacer()
 	for _, part in parts do
+		pause()
 		local half = halfExtent(part)
 		minX, maxX = math.min(minX, part.Position.X - half.X), math.max(maxX, part.Position.X + half.X)
 		minZ, maxZ = math.min(minZ, part.Position.Z - half.Z), math.max(maxZ, part.Position.Z + half.Z)
@@ -202,6 +219,7 @@ end
 -- A square lattice cut into tiles. Each tile records how many ground parts lie under it,
 -- so the client can tell when enough of the real ground has streamed in to replace it.
 local function tiledShell(model: Model, island: Model, parts: { BasePart })
+	local pause = pacer()
 	local minX, maxX, minZ, maxZ = bounds(parts)
 	local originX, originZ = math.floor(minX / TILE) * TILE, math.floor(minZ / TILE) * TILE
 	model:SetAttribute("TileSize", TILE)
@@ -210,26 +228,55 @@ local function tiledShell(model: Model, island: Model, parts: { BasePart })
 
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = parts
 	local radius = math.clamp(TILE_STEP * 0.35, 2, 16)
+	-- Passing every island part to every Spherecast makes each sample expensive on
+	-- large maps. Index the exact same eligible parts by their expanded X/Z bounds,
+	-- so each cast only considers parts its swept sphere could possibly hit.
+	local bins: { [string]: { BasePart } } = {}
+	for _, part in parts do
+		local p, h = part.Position, halfExtent(part)
+		for x = math.floor((p.X - h.X - radius) / TILE), math.floor((p.X + h.X + radius) / TILE) do
+			for z = math.floor((p.Z - h.Z - radius) / TILE), math.floor((p.Z + h.Z + radius) / TILE) do
+				local key = x .. "," .. z
+				local bin = bins[key]
+				if not bin then
+					bin = {}
+					bins[key] = bin
+				end
+				table.insert(bin, part)
+				pause()
+			end
+		end
+	end
 
 	local cols, rows = math.ceil((maxX - originX) / TILE_STEP), math.ceil((maxZ - originZ) / TILE_STEP)
 	local lattice: { { Sample } } = {}
+	local previousBin: string? = nil
 	for i = 0, cols do
 		local column = {}
 		for k = 0, rows do
-			column[k] = sample(params, originX + i * TILE_STEP, originZ + k * TILE_STEP, radius)
+			local x, z = originX + i * TILE_STEP, originZ + k * TILE_STEP
+			local key = math.floor(x / TILE) .. "," .. math.floor(z / TILE)
+			local bin = bins[key]
+			if bin then
+				if previousBin ~= key then
+					params.FilterDescendantsInstances = bin
+					previousBin = key
+				end
+				column[k] = sample(params, x, z, radius)
+			else
+				column[k] = { position = Vector3.new(x, UNDERWATER, z) }
+			end
+			pause()
 		end
 		lattice[i] = column
-		if i % 8 == 0 then
-			task.wait()
-		end
 	end
 
 	local per = TILE // TILE_STEP
 	local tiles: { [string]: Model } = {}
 	for i = 0, cols - 1 do
 		for k = 0, rows - 1 do
+			pause()
 			local key = (i // per) .. "," .. (k // per)
 			local tile = tiles[key]
 			if not tile then
@@ -478,6 +525,14 @@ local function addPiece(model: Model)
 	model:AddTag(PIECE_TAG)
 end
 
+local function clearPiece(model: Model)
+	local id = pieceIds[model]
+	if id then pieces[id], pieceIds[model] = nil, nil end
+	model:RemoveTag(PIECE_TAG)
+	model:SetAttribute("PieceId", nil)
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Default
+end
+
 -- BaseParts under a model, or nil when it holds a model that streams by rules of its own
 local function plainParts(model: Model, pause: (() -> ())?): number?
 	local count = 0
@@ -494,10 +549,46 @@ local function plainParts(model: Model, pause: (() -> ())?): number?
 	return count
 end
 
+-- The facade's metadata and remaining collision core need one streaming lifetime,
+-- so the client removes its local dressing when that core leaves. Older baked cities
+-- have generated chunks inside the building already; remove only those boundaries.
+local function detailPiece(model: Model, pause: (() -> ())?): boolean
+	if not model:HasTag("CityDetail") then return false end
+	local descendants = model:GetDescendants()
+	local count = 0
+	for _, d in descendants do
+		if pause then pause() end
+		if d:IsA("BasePart") then
+			count += 1
+			if count > PIECE_PARTS then return false end
+		elseif d:IsA("Model") and d.ModelStreamingMode ~= Enum.ModelStreamingMode.Default
+			and not (d.Name == "GroundChunk" and d:HasTag(PIECE_TAG)) then
+			return false -- authored interiors retain their independent streaming rules
+		end
+	end
+	if count == 0 then
+		-- All of this model's dressing was deferred. Older baked cities can still hold
+		-- generated chunks inside it; release those stale streaming boundaries.
+		for _, d in descendants do
+			if d:IsA("Model") and d.Name == "GroundChunk" and d:HasTag(PIECE_TAG) then clearPiece(d) end
+		end
+		return true
+	end
+	for _, d in descendants do
+		if d:IsA("Model") and d.Name == "GroundChunk" and d:HasTag(PIECE_TAG) then clearPiece(d) end
+	end
+	addPiece(model)
+	return true
+end
+
 -- Ground is thousands of anonymous wedges loose in one model (and its seabed slope), so it
--- is regrouped by position. Nothing looks ground wedges up by name.
+-- is regrouped by position. Nothing looks ground wedges up by name. A spatial bin alone
+-- does not bound an atomic arrival: dense buildings and island centres can put hundreds
+-- of parts in the same bin, so each bin is also split at the piece part budget.
 local function chunkGround(container: Instance, pause: (() -> ())?)
 	local chunks: { [string]: Model } = {}
+	local counts: { [string]: number } = {}
+	local created: { Model } = {}
 	for _, child in container:GetChildren() do
 		if pause then
 			pause()
@@ -505,22 +596,34 @@ local function chunkGround(container: Instance, pause: (() -> ())?)
 		if child:IsA("BasePart") then
 			local key = math.floor(child.Position.X / CHUNK) .. "," .. math.floor(child.Position.Z / CHUNK)
 			local chunk = chunks[key]
-			if not chunk then
+			if not chunk or counts[key] >= PIECE_PARTS then
 				chunk = Instance.new("Model")
 				chunk.Name = "GroundChunk"
 				addPiece(chunk)
 				chunks[key] = chunk
+				counts[key] = 0
+				table.insert(created, chunk)
 			end
 			child.Parent = chunk
+			counts[key] += 1
 		elseif child:IsA("Model") then
-			if child:HasTag(PIECE_TAG) then
-				addPiece(child)
+			if detailPiece(child, pause) then
+				continue
+			elseif child:HasTag(PIECE_TAG) then
+				if child.Name == "GroundChunk" and (plainParts(child, pause) or math.huge) > PIECE_PARTS then
+					-- Older baked chunks used only position and can be much larger than
+					-- the budget. Keep their container but remove its atomic boundary.
+					clearPiece(child)
+					chunkGround(child, pause)
+				else
+					addPiece(child)
+				end
 			else
 				chunkGround(child, pause)
 			end
 		end
 	end
-	for _, chunk in chunks do
+	for _, chunk in created do
 		chunk.Parent = container
 	end
 end
@@ -627,6 +730,7 @@ end
 -- pieces the same way. Call it while `model` is still unparented, so its pieces never
 -- replicate under another streaming mode first.
 function Lod.pin(model: Model)
+	if detailPiece(model) then return end
 	local parts = plainParts(model)
 	if parts and parts <= PIECE_PARTS then
 		addPiece(model)
@@ -698,8 +802,19 @@ end
 -- player comes back within REPIN_DISTANCE, after the client confirms the piece is still loaded.
 local UNPIN_DISTANCE = 1100
 local REPIN_DISTANCE = 450
+-- The dense city contains far more parts per stud than the islands. Retaining
+-- its pieces for 1100 studs can leave thousands of unnecessary parts pinned,
+-- putting the client under memory pressure and causing repeated stream-outs.
+-- Both distances remain outside the 256-stud target streaming radius.
+local CITY_UNPIN_DISTANCE = 512
+local CITY_REPIN_DISTANCE = 320
 local SWEEP_SECONDS = 4
 local SWEEP_BUDGET = 0.004 -- seconds of server time one sweep step may take before yielding
+-- A script-time budget doesn't bound the engine work caused by removing pins:
+-- hundreds of cheap calls can make thousands of client parts eligible for GC at once.
+local UNPIN_INTERVAL = 0.1
+local UNPIN_MODELS = 8
+local UNPIN_INSTANCES = 256
 
 function Lod.serve()
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -708,6 +823,8 @@ function Lod.serve()
 	end
 	local Players = game:GetService("Players")
 	local pinned: { [Player]: { [number]: boolean } } = {}
+	local sweeping: { [Player]: boolean } = {}
+	local releaseAfter: { [Player]: number } = {}
 	-- Pieces released for being far away; ask the client about them when the player returns.
 	-- Pinning an unloaded piece here would force its whole atomic model to arrive at once,
 	-- bypassing the engine's normal streaming budget on every return to an island.
@@ -717,6 +834,8 @@ function Lod.serve()
 	Players.PlayerRemoving:Connect(function(player)
 		pinned[player] = nil
 		released[player] = nil
+		sweeping[player] = nil
+		releaseAfter[player] = nil
 	end)
 
 	local function centerOf(id: number, piece: Model): Vector3
@@ -731,12 +850,30 @@ function Lod.serve()
 		local dx, dz = a.X - b.X, a.Z - b.Z
 		return math.sqrt(dx * dx + dz * dz)
 	end
+	local function isCityPiece(piece: Model): boolean
+		return piece:FindFirstAncestor("Modern City") ~= nil
+	end
+	local function positionOf(player: Player): Vector3?
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		return if root and root:IsA("BasePart") then root.Position else nil
+	end
+	local function tooFar(piece: Model, id: number, position: Vector3): boolean
+		return flatDistance(centerOf(id, piece), position)
+			> (if isCityPiece(piece) then CITY_UNPIN_DISTANCE else UNPIN_DISTANCE)
+	end
+	local function rememberReleased(player: Player, id: number)
+		local away = released[player]
+		if not away then
+			away = {}
+			released[player] = away
+		end
+		away[id] = true
+	end
 
-	-- The sweep yields between players and pieces, while pin requests keep arriving, so it
-	-- walks a snapshot of the ids rather than the live tables.
-	local snapshot: { number } = {}
+	-- Pin requests keep arriving while sweeps yield; each worker needs its own snapshot.
 	local function idsOf(set: { [number]: boolean }): { number }
-		table.clear(snapshot)
+		local snapshot: { number } = {}
 		for id in set do
 			table.insert(snapshot, id)
 		end
@@ -745,90 +882,120 @@ function Lod.serve()
 	local remote = Instance.new("RemoteEvent")
 	remote.Name = "LodPin"
 
+	local function sweepPlayer(player: Player)
+		-- Keep the final batch of one sweep apart from the first batch of the next.
+		local delay = (releaseAfter[player] or 0) - os.clock()
+		if delay > 0 then task.wait(delay) end
+		local resumed = os.clock()
+		local position = positionOf(player)
+		if not player.Parent or not position then
+			return
+		end
+		local held, away = pinned[player], released[player]
+		local modelsRemoved, instancesRemoved = 0, 0
+		if held then
+			for _, id in idsOf(held) do
+				if not held[id] then
+					continue
+				end
+				local piece = pieces[id]
+				if not piece or not piece.Parent then
+					held[id] = nil
+					centers[id] = nil
+				elseif tooFar(piece, id, position) then
+					local weight = #piece:GetDescendants() + 1
+					if modelsRemoved > 0 and (modelsRemoved >= UNPIN_MODELS or instancesRemoved + weight > UNPIN_INSTANCES) then
+						task.wait(UNPIN_INTERVAL)
+						resumed = os.clock()
+						modelsRemoved, instancesRemoved = 0, 0
+						-- Teleporting back, respawning or leaving during cleanup must not
+						-- evict the new neighbourhood using a captured old position.
+						position = positionOf(player)
+					end
+					if not player.Parent or not position then break end
+					if held[id] and piece.Parent and tooFar(piece, id, position) then
+						held[id] = nil
+						piece:RemovePersistentPlayer(player)
+						releaseAfter[player] = os.clock() + UNPIN_INTERVAL
+						modelsRemoved += 1
+						instancesRemoved += weight
+						rememberReleased(player, id)
+						away = released[player]
+					end
+				end
+				if os.clock() - resumed > SWEEP_BUDGET then
+					task.wait()
+					resumed = os.clock()
+					position = positionOf(player)
+					if not player.Parent or not position then
+						break
+					end
+				end
+			end
+		end
+		if away and player.Parent and position then
+			local confirm: { number } = {}
+			for _, id in idsOf(away) do
+				if not away[id] then
+					continue
+				end
+				local piece = pieces[id]
+				if not piece or not piece.Parent then
+					away[id] = nil
+				elseif flatDistance(centerOf(id, piece), position) < (if isCityPiece(piece) then CITY_REPIN_DISTANCE else REPIN_DISTANCE) then
+					-- Only already-streamed models may be repinned. Missing models arrive
+					-- at the engine's pace and report themselves through the usual path.
+					table.insert(confirm, id)
+					if #confirm >= PIN_BATCH then
+						remote:FireClient(player, confirm)
+						confirm = {}
+					end
+				end
+				if os.clock() - resumed > SWEEP_BUDGET then
+					task.wait()
+					resumed = os.clock()
+					position = positionOf(player)
+					if not player.Parent or not position then
+						break
+					end
+				end
+			end
+			if #confirm > 0 and player.Parent then
+				remote:FireClient(player, confirm)
+			end
+		end
+	end
+
+	-- Each traveler has an independent paced sweep. A large old neighbourhood must
+	-- not hold up pin cleanup for every other player, or start overlapping sweeps.
 	task.spawn(function()
 		while true do
 			task.wait(SWEEP_SECONDS)
-			local resumed = os.clock()
 			for _, player in Players:GetPlayers() do
-				local character = player.Character
-				local root = character and character:FindFirstChild("HumanoidRootPart")
-				if not root or not root:IsA("BasePart") then
-					continue
-				end
-				local position = root.Position
-				local held, away = pinned[player], released[player]
-				if held then
-					for _, id in idsOf(held) do
-						if not held[id] then
-							continue
-						end
-						local piece = pieces[id]
-						if not piece or not piece.Parent then
-							held[id] = nil
-							centers[id] = nil
-						elseif flatDistance(centerOf(id, piece), position) > UNPIN_DISTANCE then
-							held[id] = nil
-							piece:RemovePersistentPlayer(player)
-							if not away then
-								away = {}
-								released[player] = away
-							end
-							away[id] = true
-						end
-						if os.clock() - resumed > SWEEP_BUDGET then
-							task.wait()
-							resumed = os.clock()
-							if not player.Parent then
-								break
-							end
-						end
-					end
-				end
-				if away and player.Parent then
-					local confirm: { number } = {}
-					for _, id in idsOf(away) do
-						if not away[id] then
-							continue
-						end
-						local piece = pieces[id]
-						if not piece or not piece.Parent then
-							away[id] = nil
-						elseif flatDistance(centerOf(id, piece), position) < REPIN_DISTANCE then
-							-- Only already-streamed models may be repinned. Missing models arrive
-							-- at the engine's pace and report themselves through the usual path.
-							table.insert(confirm, id)
-							if #confirm >= PIN_BATCH then
-								remote:FireClient(player, confirm)
-								confirm = {}
-							end
-						end
-						if os.clock() - resumed > SWEEP_BUDGET then
-							task.wait()
-							resumed = os.clock()
-							if not player.Parent then
-								break
-							end
-						end
-					end
-					if #confirm > 0 and player.Parent then
-						remote:FireClient(player, confirm)
-					end
+				if not sweeping[player] then
+					sweeping[player] = true
+					task.spawn(function()
+						local ok, problem = pcall(sweepPlayer, player)
+						sweeping[player] = nil
+						if not ok then warn("[Lod] Pin cleanup failed: " .. tostring(problem)) end
+					end)
 				end
 			end
 		end
 	end)
 
 	remote.OnServerEvent:Connect(function(player, ids)
-		if typeof(ids) ~= "table" then
+		if typeof(ids) ~= "table" or not player.Parent then
 			return
 		end
+		local position = positionOf(player)
 		local held = pinned[player]
 		if not held then
 			held = {}
 			pinned[player] = held
 		end
-		for i, id in ids do
-			if typeof(i) ~= "number" or i > PIN_BATCH then
+		for i, id in ipairs(ids) do
+			if i > PIN_BATCH then
 				break
 			end
 			local piece = if typeof(id) == "number" then pieces[id] else nil
@@ -836,6 +1003,12 @@ function Lod.serve()
 				if not piece.Parent then
 					pieces[id], pieceIds[piece] = nil, nil
 				elseif piece.ModelStreamingMode == Enum.ModelStreamingMode.PersistentPerPlayer then
+					-- Reports from the old area (or destination prefetches) can arrive
+					-- after a teleport. Don't force that remote atomic scenery back in.
+					if not position or tooFar(piece, id, position) then
+						rememberReleased(player, id)
+						continue
+					end
 					held[id] = true
 					local away = released[player]
 					if away then

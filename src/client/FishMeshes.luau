@@ -50,6 +50,30 @@ local FORCED = { evict = true, force = true }
 -- temporary dynamic mesh at a time, even when many tagged fish arrive together.
 local building = false
 local hydrated: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+local connections: { [Model]: { RBXScriptConnection } } = setmetatable({}, { __mode = "k" }) :: any
+
+-- A client-skinned fish can be cloned, parked outside the data model or have
+-- its shared skin reclaimed. Restore its original body before any yielding
+-- allocation, so a failed rebuild cannot leave the copied body invisible.
+local function restoreBody(model: Model)
+	for _, connection in connections[model] or {} do
+		connection:Disconnect()
+	end
+	connections[model] = nil
+	for _, item in model:GetDescendants() do
+		if item.Name == "LoftSkin" then
+			item:Destroy()
+		elseif item:GetAttribute("LoftFallback") then
+			local mesh = item:FindFirstChildOfClass("SpecialMesh")
+			if mesh then
+				local scale = mesh:GetAttribute("LoftFallbackScale")
+				if typeof(scale) == "Vector3" then
+					mesh.Scale = scale
+				end
+			end
+		end
+	end
+end
 
 -- Skins of species no fish in the game is wearing (caught fish sold, menus
 -- closed) are rebuilt on demand, so they give their meshes back when another
@@ -65,17 +89,18 @@ local function releaseIdleSkins(): number
 	local freed = 0
 	for fishId, bands in skins do
 		if bands and not inUse[fishId] then
+			for model in hydrated do
+				if model:GetAttribute("LoftFish") == fishId then
+					restoreBody(model)
+					hydrated[model] = nil
+				end
+			end
 			for _, built in bands do
 				built.part:Destroy()
 				built.mesh:Destroy()
 				freed += 1
 			end
 			skins[fishId] = nil
-			for model in hydrated do
-				if model:GetAttribute("LoftFish") == fishId then
-					hydrated[model] = nil
-				end
-			end
 		end
 	end
 	return freed
@@ -213,34 +238,32 @@ local function skin(fishId: string, force: boolean?)
 	end
 	building = true
 	local options = if force then FORCED else ALLOCATE
-	-- One dynamic mesh for the whole species: every band is built in it and
-	-- copied out at fixed size, so the device budget never holds more than one.
-	local scratch = EditableMeshBudget.create(options)
-	if not scratch then
+	local bands = {}
+	local buildError: string? = nil
+	-- Fish and sharks share the scratch lock; neither can consume a second
+	-- maximum-sized dynamic allocation while the other is making fixed skins.
+	local ok, complete = pcall(EditableMeshBudget.withScratch, options, function(scratch)
+		for _, band in bandsFor(spec) do
+			local part, center, mesh, reason = buildBand(scratch, spec.rings, band, options)
+			if not part or not center or not mesh then
+				buildError = band.name .. " band: " .. tostring(reason or "unknown mesh creation failure")
+				return false
+			end
+			bands[band.name] = { part = part, mesh = mesh, size = part.Size, offset = center - spec.anchorPosition }
+		end
+		return true
+	end)
+	if not ok or not complete then
+		for _, built in bands do
+			built.part:Destroy()
+			built.mesh:Destroy()
+		end
 		skins[fishId] = false
 		skinFailedAt[fishId] = os.clock()
-		skinErrors[fishId] = "Scratch mesh: " .. (EditableMeshBudget.failureReason() or "EditableMesh allocation failed")
+		skinErrors[fishId] = if not ok then tostring(complete) else (buildError or "Scratch mesh: " .. (EditableMeshBudget.failureReason() or "EditableMesh allocation failed"))
 		building = false
 		return false
 	end
-	local bands = {}
-	for _, band in bandsFor(spec) do
-		local ok, part, center, mesh, reason = pcall(buildBand, scratch, spec.rings, band, options)
-		if not ok or not part or not center or not mesh then
-			scratch:Destroy()
-			for _, built in bands do
-				built.part:Destroy()
-				built.mesh:Destroy()
-			end
-			skins[fishId] = false
-			skinFailedAt[fishId] = os.clock()
-			skinErrors[fishId] = band.name .. " band: " .. (if not ok then tostring(part) else tostring(reason or "unknown mesh creation failure"))
-			building = false
-			return false
-		end
-		bands[band.name] = { part = part, mesh = mesh, size = part.Size, offset = center - spec.anchorPosition }
-	end
-	scratch:Destroy()
 	skins[fishId] = bands
 	skinErrors[fishId] = nil
 	building = false
@@ -252,7 +275,7 @@ end
 -- Tagged fish still wearing the sphere body whose species failed to build.
 local function retryUnskinned(force: boolean?)
 	for _, model in CollectionService:GetTagged(FishModels.LOFT_TAG) do
-		if model:IsA("Model") and model.Parent and not hydrated[model] and not model:FindFirstChild("LoftSkin", true) then
+		if model:IsA("Model") and model.Parent and not hydrated[model] then
 			task.spawn(FishMeshes.hydrate, model, force)
 		end
 	end
@@ -307,14 +330,13 @@ function FishMeshes.hydrate(model: Instance, force: boolean?)
 	if type(fishId) ~= "string" then
 		return
 	end
+	restoreBody(model)
 	hydrated[model] = true
 	local bands = skin(fishId, force)
 	local spec = FishModels.loft(fishId)
 	if not bands or not spec or not model.Parent then
-		if not bands then
-			-- Left as a sphere; retryUnskinned() may try again once the budget frees.
-			hydrated[model] = nil
-		end
+		-- Left as a sphere; retryUnskinned() may try again once the budget frees.
+		hydrated[model] = nil
 		return
 	end
 	local swatches: { [string]: BasePart } = {}
@@ -322,15 +344,13 @@ function FishMeshes.hydrate(model: Instance, force: boolean?)
 		local swatch = item:GetAttribute("LoftSwatch")
 		if type(swatch) == "string" and item:IsA("BasePart") and not swatches[swatch] then
 			swatches[swatch] = item
-		elseif item.Name == "LoftSkin" then
-			-- A clone of a fish this client already skinned.
-			item:Destroy()
 		end
 	end
 	local anchor = swatches.Side
 	swatches.Back = swatches.Back or anchor
 	swatches.Belly = swatches.Belly or anchor
 	if not anchor then
+		hydrated[model] = nil
 		return
 	end
 	local parts = {}
@@ -378,18 +398,21 @@ function FishMeshes.hydrate(model: Instance, force: boolean?)
 		table.insert(welds, weld)
 		part.Parent = anchor.Parent
 	end
+	local bound = {}
+	connections[model] = bound
 	for _, swatch in swatches do
 		for _, property in PAINTED do
-			swatch:GetPropertyChangedSignal(property):Connect(paint)
+			table.insert(bound, swatch:GetPropertyChangedSignal(property):Connect(paint))
 		end
 	end
-	anchor:GetPropertyChangedSignal("Size"):Connect(place)
+	table.insert(bound, anchor:GetPropertyChangedSignal("Size"):Connect(place))
 	-- Hide the sphere body visually only; its parts keep carrying particles,
 	-- lights and the colours the skin copies.
 	for _, item in model:GetDescendants() do
 		if item:GetAttribute("LoftFallback") then
 			local mesh = item:FindFirstChildOfClass("SpecialMesh")
 			if mesh then
+				mesh:SetAttribute("LoftFallbackScale", mesh.Scale)
 				mesh.Scale = Vector3.zero
 			end
 		end

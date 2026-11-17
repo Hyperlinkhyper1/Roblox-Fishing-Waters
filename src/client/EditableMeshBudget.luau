@@ -1,6 +1,6 @@
 -- Shared by optional client visuals. A failed allocation means this device has
 -- no room (or API access); don't ask Roblox again for every new fish species
--- until RETRY_AFTER has passed (or a caller forces a fresh attempt).
+-- until meshes have actually been reclaimed (or a diagnostic forces a retry).
 --
 -- Roblox counts a live dynamic EditableMesh against the device budget as if it
 -- were maxed out, and a destroyed one doesn't always hand that budget back on
@@ -15,8 +15,8 @@
 local AssetService = game:GetService("AssetService")
 
 local EditableMeshBudget = {}
-local RETRY_AFTER = 30
-local failedAt = -math.huge
+local failed = false
+local scratchBusy = false
 local failureReason: string? = nil
 local evicted: { string } = {}
 local releasers: { [string]: () -> () } = {}
@@ -80,17 +80,23 @@ local function attempt(label: string, allocate: () -> EditableMesh?): (EditableM
 end
 
 -- Frees every releasable holder and reclaimable cache; true if anything went.
-local function evict(): boolean
+local function releaseCosmetics(): boolean
 	local freed = false
 	for name, release in releasers do
 		releasers[name] = nil
-		noteEvicted(name)
-		freed = true
 		local ok, message = pcall(release)
 		if not ok then
 			warn("[EditableMeshBudget] Releasing " .. name .. " failed: " .. tostring(message))
+		else
+			noteEvicted(name)
+			freed = true
 		end
 	end
+	return freed
+end
+
+local function evict(): boolean
+	local freed = releaseCosmetics()
 	for name, reclaim in reclaimers do
 		local ok, count = pcall(reclaim)
 		if not ok then
@@ -103,31 +109,85 @@ local function evict(): boolean
 	return freed
 end
 
+local function awaitReclamation()
+	-- Roblox can return a destroyed mesh's budget a few frames later.
+	for _ = 1, 3 do
+		task.wait()
+	end
+end
+
 local function allocate(label: string, options: Options?, create: () -> EditableMesh?): EditableMesh?
 	local force = options and options.force
-	if not force and os.clock() - failedAt < RETRY_AFTER then
+	-- A new fish may make a previously used cache idle during a failed budget.
+	-- Check reclaimers before the latch, so it can recover without polling Roblox.
+	if failed and options and options.evict and evict() then
+		awaitReclamation()
+		failed = false
+	end
+	if failed and not force then
 		return nil
 	end
 	local mesh, reason = attempt(label, create)
 	if not mesh and options and options.evict and evict() then
-		-- A destroyed mesh doesn't always hand its budget back on the same frame.
-		for _ = 1, 3 do
-			task.wait()
-		end
+		awaitReclamation()
 		mesh, reason = attempt(label, create)
 	end
 	if not mesh then
-		failedAt = os.clock()
+		failed = true
 		failureReason = reason
 		return nil
 	end
+	failed = false
+	failureReason = nil
 	return mesh
 end
 
-function EditableMeshBudget.create(options: Options?): EditableMesh?
+local function createDynamic(options: Options?, ownsScratchSlot: boolean?): EditableMesh?
+	-- Optional water must not compete with an in-progress skin build. Its
+	-- release hook is installed immediately after this synchronous allocation.
+	if scratchBusy and not ownsScratchSlot then
+		return nil
+	end
+	-- Give the large dynamic scratch mesh room before asking Roblox. Waiting
+	-- for the first failed allocation produces an avoidable engine warning.
+	if options and options.evict and releaseCosmetics() then
+		awaitReclamation()
+		failed = false
+	end
 	return allocate("CreateEditableMesh", options, function()
 		return AssetService:CreateEditableMesh()
 	end)
+end
+
+function EditableMeshBudget.create(options: Options?): EditableMesh?
+	return createDynamic(options, false)
+end
+
+-- Fish and sharks share one temporary dynamic mesh slot, including every
+-- yielding fixed-copy and MeshPart operation. The callback owns fixed copies;
+-- this scope always releases its scratch mesh, even when construction errors.
+function EditableMeshBudget.withScratch(options: Options?, build)
+	while scratchBusy do
+		task.wait()
+	end
+	scratchBusy = true
+	local scratch: EditableMesh? = nil
+	local results = table.pack(pcall(function()
+		scratch = createDynamic(options, true)
+		if not scratch then
+			return nil
+		end
+		return build(scratch)
+	end))
+	if scratch then
+		scratch:Destroy()
+		awaitReclamation()
+	end
+	scratchBusy = false
+	if not results[1] then
+		error(results[2], 0)
+	end
+	return table.unpack(results, 2, results.n)
 end
 
 -- Empties a scratch dynamic mesh so the next piece can be built in it without
@@ -152,7 +212,7 @@ function EditableMeshBudget.fixed(mesh: EditableMesh, options: Options?, keepSou
 		mesh:Destroy()
 	end
 	if not ok then
-		failedAt = os.clock()
+		failed = true
 		failureReason = "CreateEditableMeshAsync (fixed-size copy): " .. tostring(fixed)
 		return nil
 	end

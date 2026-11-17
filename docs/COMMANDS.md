@@ -33,7 +33,7 @@ Arguments are not case-sensitive.
 
 | Command | What it does |
 |---|---|
-| `/tutorial` | Restart your company's tutorial from the beginning: the island tour for fishing companies, the cafe tour for cafe companies (both for a company with both branches). |
+| `/tutorial` | Restart your company's fishing tutorial from the beginning. |
 
 ## Admin
 
@@ -95,4 +95,4 @@ Events: `halloween`.
 
 - [AdminCommands.luau](../src/server/AdminCommands.luau): `/commands`, `/mutation`, `/event`, `/health`, `/fly`, `/tp`, `/gamepass`
 - [BoatService.luau](../src/server/BoatService.luau): `/set` (cash, weight, weather, season, date)
-- [TutorialService.luau](../src/server/TutorialService.luau): `/tutorial` (cafe tour: [CafeTutorialService.luau](../src/server/CafeTutorialService.luau))
+- [TutorialService.luau](../src/server/TutorialService.luau): `/tutorial`

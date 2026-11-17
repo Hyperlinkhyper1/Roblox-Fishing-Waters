@@ -1,0 +1,13 @@
+AUDIT furniture	1	Freezer	nil
+AUDIT furniture	2	Register	nil
+AUDIT furniture	3	OfficeDesk	nil
+AUDIT furniture	4	Workbench	nil
+AUDIT furniture	5	PrepBench	Prep1
+AUDIT furniture	6	PrepBench	Prep2
+AUDIT furniture	7	FoodCase	nil
+AUDIT pickup	false	Your shop needs at least one freezer. Move it instead.
+./.tmp/cooking-baseline-audit-1794702382551/business-paths-diagnostic.luau:10: A case can be picked up while its dishes still fit
+stacktrace:
+[C] function assert
+./.tmp/cooking-baseline-audit-1794702382551/business-paths-diagnostic.luau:10
+

@@ -9,6 +9,7 @@ local Train = require(ReplicatedStorage.Shared.MetroTrain)
 local Service = {}
 local started = false
 local stops, rides, cooldown, pins = {}, {}, {}, {}
+local warmups = {}
 local transit, remote
 
 local function ready(stop)
@@ -27,6 +28,26 @@ local function body(player)
 	if character and character.Parent and humanoid and humanoid.Health > 0 and root and root:IsA("BasePart") then
 		return character, humanoid, root
 	end
+end
+
+-- Start streaming while the player is already in the carriage, rather than waiting
+-- for the doors to close. This is only a temporary request, not a permanent pin.
+local function warmDestination(player, source, state)
+	local character, humanoid, root = body(player)
+	local destination = stops[Schedule.OTHER[source:GetAttribute("MetroStopId")]]
+	if not character or humanoid.SeatPart or root.Anchored or not destination then return end
+	if not Schedule.inside(source.TrainDock.CFrame:ToObjectSpace(root.CFrame).Position) then return end
+	local old = warmups[player]
+	if old and old.cycle == state.cycle and old.source == source then return end
+	if old and old.pending then return end
+	local warmup = { cycle = state.cycle, source = source, destination = destination.model, pending = true }
+	warmups[player] = warmup
+	task.spawn(function()
+		warmup.ok = pcall(function()
+			player:RequestStreamAroundAsync(warmup.destination.Arrival.Position, 8)
+		end)
+		warmup.pending = false
+	end)
 end
 
 local function releasePin(player, stop)
@@ -67,6 +88,11 @@ local function beginRide(player, source, state)
 		cycle = state.cycle, anchored = root.Anchored, autoRotate = humanoid.AutoRotate,
 		transferred = false, pinned = false,
 	}
+	local warmup = warmups[player]
+	if warmup and (warmup.cycle ~= state.cycle or warmup.source ~= source or warmup.destination ~= destination.model) then
+		warmup = nil
+	end
+	warmups[player] = nil
 	rides[player] = ride
 	root.Anchored, humanoid.AutoRotate = true, false
 	character:SetAttribute("MetroRiding", true)
@@ -81,7 +107,14 @@ local function beginRide(player, source, state)
 		local ok = pcall(function()
 			ride.destination:AddPersistentPlayer(player)
 			ride.pinned = true
-			player:RequestStreamAroundAsync(ride.destination.Arrival.Position, 8)
+			if warmup and warmup.pending then
+				while warmup.pending and rides[player] == ride do task.wait() end
+				if rides[player] ~= ride then return end
+				if not warmup.ok then player:RequestStreamAroundAsync(ride.destination.Arrival.Position, 8) end
+			else
+				-- Refresh a completed temporary request at departure, in case it expired.
+				player:RequestStreamAroundAsync(ride.destination.Arrival.Position, 8)
+			end
 		end)
 		if rides[player] ~= ride then
 			if ride.destination ~= pins[player] then releasePin(player, ride.destination) end
@@ -161,7 +194,7 @@ function Service.start()
 		local ride = rides[player]
 		if ride then finish(player, ride, nil, true) end
 		releasePin(player, pins[player])
-		pins[player], cooldown[player] = nil, nil
+		pins[player], cooldown[player], warmups[player] = nil, nil, nil
 	end)
 	local elapsed, lastBoarding, lastCycle = 0, false, nil
 	RunService.Heartbeat:Connect(function(dt)
@@ -171,6 +204,11 @@ function Service.start()
 		local now = workspace:GetServerTimeNow()
 		local state, active = Schedule.state(now), running() and true or false
 		transit:SetAttribute("Ready", active)
+		if active and state.boarding then
+			for _, stop in stops do
+				for _, player in Players:GetPlayers() do warmDestination(player, stop.model, state) end
+			end
+		end
 		-- Snapshot passengers before disabling the walkable hull at door closure.
 		if active and lastBoarding and (not state.boarding or state.cycle ~= lastCycle) then
 			for _, stop in stops do

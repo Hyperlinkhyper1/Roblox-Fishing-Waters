@@ -152,8 +152,15 @@ workspace.CurrentCamera, camera.CFrame = camera, source.CFrame
 added:Fire(source)
 assert(#beams() == 2, "Duplicate streaming notification must not duplicate waves")
 removed:Fire(source)
-assert(#source:GetChildren() == 0, "Streaming removal must clean up beams and attachments")
+assert(not wave.Enabled, "Streaming removal hides the old beam immediately")
 added:Fire(source)
 heartbeat:Fire(1 / 30)
 assert(#beams() == 2 and beams()[1].Enabled, "Surf must recover after streaming back in")
+for _, item in sources do removed:Fire(item) end
+heartbeat:Fire(1 / 30)
+local remaining = 0
+for _, item in sources do remaining += #item:GetChildren() end
+assert(remaining > 0, "A streaming burst must spread wave cleanup across frames")
+for _ = 1, #sources do heartbeat:Fire(1 / 30) end
+for _, item in sources do assert(#item:GetChildren() == 0, "Queued cleanup must eventually remove every wave") end
 print("PASS actual client movement, flat crests, distance culling and streaming cleanup/reload")

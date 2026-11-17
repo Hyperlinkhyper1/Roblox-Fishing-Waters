@@ -1,0 +1,1 @@
+Geometry previews from real FishModels builders, loft rings and color bands. Software rendering approximates smooth skins; Studio lighting and mesh behavior are not shown. Species PNG panels: top-left side, top-right top, bottom-left front, bottom-right three-quarter.

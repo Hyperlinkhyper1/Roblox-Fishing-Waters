@@ -180,7 +180,7 @@ end
 
 Parties.BELL_HOURS = { 11, 15.5, 20 }
 -- In-game seconds: the bell itself, the walk to the benches, the vote and its result.
-Parties.BELL = { Ring = 12, Vote = 40, Result = 55, End = 85 }
+Parties.BELL = { Ring = 12, Vote = 55, Result = 70, End = 100 }
 Parties.BELL_COOLDOWN = 180
 
 -- The division in progress at `elapsed`, if any: when it began and its number.

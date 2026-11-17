@@ -109,23 +109,7 @@ local function publishOne(player: Player, state)
 	player:SetAttribute("CompanyMultiplayer", if info then info.Multiplayer else false)
 	player:SetAttribute("CompanyNetWorth", if info then state.netWorth or CompanyWorth.calculate(state.profile) else nil)
 	player:SetAttribute("Cash", state.profile.Cash)
-	-- Company branches (Shared.Branches; mirrored here because test harnesses
-	-- inline this file). Saves without any, or with only unknown ones, fish.
-	local ready = state.status == "Ready"
-	local branches = state.profile.Branches
-	local hasCafe = type(branches) == "table" and branches.Cafe == true
-	local hasFishing = type(branches) ~= "table" or branches.Fishing == true or not hasCafe
-	player:SetAttribute("BranchFishing", ready and hasFishing)
-	player:SetAttribute("BranchCafe", ready and hasCafe)
-	player:SetAttribute("CafeServed", if ready and state.profile.Cafe then state.profile.Cafe.Served else 0)
-	-- Café tour progress (Shared.CafeTutorial.state, mirrored for the same reason). A company
-	-- without the café branch, or one that has not loaded, has no tour to show.
-	local cafe = state.profile.Cafe
-	local cafeStep = if cafe and cafe.TutorialStep then cafe.TutorialStep else 1
-	local cafeDone = if cafe and cafe.TutorialStep then cafe.TutorialDone == true else (cafe ~= nil and cafe.Served > 0)
-	player:SetAttribute("CafeTutorialStep", cafeStep)
-	player:SetAttribute("CafeTutorialCount", if cafe and cafe.TutorialCount then cafe.TutorialCount else 0)
-	player:SetAttribute("CafeTutorialDone", not (ready and hasCafe) or cafeDone)
+	player:SetAttribute("BranchFishing", state.status == "Ready")
 	for id in BoatCatalog do
 		player:SetAttribute("Owns" .. id, state.status == "Ready" and state.profile.OwnedBoats[id] == true)
 		player:SetAttribute("BoatLocked" .. id, BoatData.pathLocked(state.profile, id))

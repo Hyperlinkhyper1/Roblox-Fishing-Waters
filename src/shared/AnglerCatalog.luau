@@ -32,6 +32,7 @@ for id, fish in FishSpecies do
 	local requires = fish.Requires
 	Catalog.Fish[id] = {
 		Name = fish.Name,
+		ScientificName = fish.ScientificName,
 		Image = fish.Image or "",
 		Rarity = fish.Rarity,
 		CatchXP = Catalog.Rarities[fish.Rarity].XP,
@@ -53,7 +54,7 @@ end
 -- casts use the pool for the biome under the bobber. Biome pools
 -- inherit every Open Sea species, so a biome with few or no species of its own
 -- still fishes like the open sea. Species join pools through their Pools list.
-local JUNK = { "WoodenBranch", "LeatherBoot", "Seaweed" }
+local JUNK = { "WoodenBranch", "LeatherBoot", "Seaweed", "RustyCan", "GlassBottle", "PlasticBag", "RustyBucket" }
 Catalog.Pools = {
 	MainLake = { Name = "Gullhaven Sound", Area = "lake", Inherits = "OpenSea", Junk = JUNK },
 	OpenSea = { Name = "Open Sea", Area = "open", Junk = JUNK },

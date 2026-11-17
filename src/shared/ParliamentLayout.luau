@@ -75,8 +75,9 @@ end
 function Layout.rowRadius(row: number): number
 	return Layout.FirstRow + (row - 1) * Layout.RowPitch
 end
+-- The front row stands a little proud of the floor, so its carpet never meets the marble.
 function Layout.rowRise(row: number): number
-	return (row - 1) * Layout.RowRise
+	return 0.12 + (row - 1) * Layout.RowRise
 end
 -- Tangent segments of a ring overlap a little at their outer edge. Every other one is lifted
 -- this far, so no two of them ever share a visible face.
@@ -195,9 +196,9 @@ do
 	})
 end
 -- The Cabinet Room: exactly nine seats, four per side and one distinctive chair at the head.
-Layout.Council = { Table = V(-92.5, Layout.Storey, 20), Length = 16, Width = 4.4, Head = -103.4 }
+Layout.Council = { Table = V(-95, Layout.Storey, 20), Length = 13, Width = 4.4, Head = -103.4 }
 for index = 1, 4 do
-	local x = -98.5 + (index - 1) * 4
+	local x = -99.5 + (index - 1) * 3
 	seat({ Id = "Council" .. tostring(index), Room = "Council", Role = "Councillor", Yaw = pi, Frame = F(x, Layout.Storey, 16.4) * A(0, pi, 0) })
 	seat({ Id = "Council" .. tostring(index + 4), Room = "Council", Role = "Councillor", Yaw = 0, Frame = F(x, Layout.Storey, 23.6) })
 end
@@ -294,7 +295,7 @@ end
 local function committee(id: string, name: string, side: number, floor: number, bay)
 	local entry = room(id, name, "Committee", side, floor, bay[1], bay[2])
 	entry.Horseshoe = { BaseU = 6, ArmW = 6.8, ArmFrom = -5.5, Depth = 2.2 }
-	for _, w in { -4.8, -2.4, 2.4, 4.8 } do
+	for _, w in { -5.4, -2.8, 2.8, 5.4 } do
 		spot(entry, 8.6, w, 90)
 	end
 	for _, armSide in { -1, 1 } do
@@ -334,13 +335,13 @@ do
 	table.insert(restaurant.Doors, -58)
 	restaurant.Tables = {}
 	for _, u in { -5, 5 } do
-		for row = 1, 7 do
-			local w = -16 + (row - 1) * 6.33
+		for row = 1, 6 do
+			local w = -15 + (row - 1) * 7.4
 			table.insert(restaurant.Tables, { U = u, W = w })
-			spot(restaurant, u - 1.9, w, -90)
-			spot(restaurant, u + 1.9, w, 90)
-			spot(restaurant, u, w - 1.9, 180)
-			spot(restaurant, u, w + 1.9, 0)
+			spot(restaurant, u - 2.4, w, -90)
+			spot(restaurant, u + 2.4, w, 90)
+			spot(restaurant, u, w - 2.4, 180)
+			spot(restaurant, u, w + 2.4, 0)
 		end
 	end
 	for _, u in { -6, -2, 2, 6 } do
@@ -373,7 +374,7 @@ do
 	local library = room("W0C", "Library", "Library", -1, 0, BAY.C[1], BAY.C[2])
 	library.Tables = { { U = -1, W = -5.2 }, { U = -1, W = 5.2 } }
 	for _, desk in library.Tables do
-		for _, u in { -2.4, 0, 2.4 } do
+		for _, u in { -2.6, 0, 2.6 } do
 			spot(library, desk.U + u, desk.W - 1.9, 180)
 			spot(library, desk.U + u, desk.W + 1.9, 0)
 		end
@@ -389,8 +390,8 @@ do
 	end
 	cafe.Tables = { { U = -5, W = -8 }, { U = -5, W = 0 }, { U = -5, W = 8 } }
 	for _, desk in cafe.Tables do
-		spot(cafe, desk.U - 1.9, desk.W, -90)
-		spot(cafe, desk.U + 1.9, desk.W, 90)
+		spot(cafe, desk.U - 2.2, desk.W, -90)
+		spot(cafe, desk.U + 2.2, desk.W, 90)
 	end
 
 	local security = room("W0E", "Security Office", "Security", -1, 0, BAY.E[1], BAY.E[2])
@@ -618,7 +619,6 @@ do
 				table.insert(ids, corridor(wing, floor, z))
 			end
 			chain(ids)
-			node("L" .. wing .. floor, V(side * cx, y, 35))
 			if not senate then
 				link(corridor(wing, floor, Layout.RearDoorZ), "R" .. floor .. "_" .. tostring(side * 56))
 			end
@@ -647,7 +647,8 @@ do
 	end
 	-- The gallery horseshoe, entered from both first-floor corridors.
 	local ring = {}
-	for degrees = Layout.Tribune.From, Layout.Tribune.To, 15 do
+	-- The ends stop one step short of the balustrade that closes the horseshoe.
+	for degrees = Layout.Tribune.From + 15, Layout.Tribune.To - 15, 15 do
 		node("Trib" .. degrees, Layout.polar(degrees, Layout.Tribune.Walk, Layout.Tribune.Y))
 		table.insert(ring, "Trib" .. degrees)
 	end

@@ -1,0 +1,1 @@
+Fallback part geometry previews rendered from real FishModels builders and recording mocks. These images do not show client EditableMesh skins or Studio rendering. Species PNG panels: top-left side, top-right top, bottom-left front, bottom-right three-quarter.

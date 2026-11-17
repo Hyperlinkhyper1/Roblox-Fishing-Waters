@@ -19,7 +19,7 @@ local Lod = require(script.Parent.Lod)
 local Props = require(script.Parent.Props)
 
 local City = {}
-City.VERSION = 19 -- 19: larger parliament on a nine-block square; 18: domed parliament with wings, chambers and working rooms; 17: enterable modern parliament; 16: longer detailed circuit; 15: industrial megastore campus
+City.VERSION = 20 -- 19: larger parliament on a nine-block square; 18: domed parliament with wings, chambers and working rooms; 17: enterable modern parliament; 16: longer detailed circuit; 15: industrial megastore campus
 local CENTER = Vector3.new(7000, 0, 7000)
 local TOP = 8 -- walkable land height
 local CURB = TOP + 0.9 -- pavement and building floor height
@@ -341,9 +341,6 @@ function City.techStoreSite(): { cframe: CFrame, w: number, d: number }
 end
 
 local function blockKind(i: number, j: number, cx: number, cz: number, w: number, d: number, coast): string?
-	if cafeBlock(i, j) then
-		return "cafe"
-	end
 	if cx > STATION.x0 and cx < STATION.x1 and cz > STATION.z0 and cz < STATION.z1 then
 		return "station"
 	end
@@ -678,8 +675,6 @@ local function buildDistrict(ground: Instance, coast): ({ { number } }, any)
 		local seed = b.i * 31 + b.j * 17
 		if b.kind == "station" or b.kind == "civic" then
 			-- Plazas are paved once, as a whole, below
-		elseif b.kind == "cafe" then
-			-- Map/CafePlots paves and builds these blocks
 		else
 			local shade = 0.85 + hash(b.i, b.j, 2) * 0.2
 			part(block, "Pavement", Vector3.new(b.w, 0.9, b.d), Vector3.new(b.cx, TOP + 0.45, b.cz), Color3.new(0.6 * shade, 0.59 * shade, 0.56 * shade), M.Concrete)

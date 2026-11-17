@@ -203,13 +203,15 @@ local function ensureInterior(): Model
 	local folder = interiors()
 	local existing = folder:FindFirstChild("PetShopInterior")
 	if existing and existing:IsA("Model") and existing:GetAttribute("LayoutVersion") == INTERIOR_VERSION then
+		existing.ModelStreamingMode = Enum.ModelStreamingMode.Default
 		return existing
 	elseif existing then
 		existing:Destroy()
 	end
 	local hall = Instance.new("Model")
 	hall.Name = "PetShopInterior"
-	hall.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	-- Door travel preloads the destination; stream scenery within the engine's budget.
+	hall.ModelStreamingMode = Enum.ModelStreamingMode.Default
 	hall:SetAttribute("LayoutVersion", INTERIOR_VERSION)
 	hall:SetAttribute("InteriorFrame", ORIGIN * CFrame.new(0, H / 2, 0))
 	hall:SetAttribute("InteriorSize", Vector3.new(W, H, D))

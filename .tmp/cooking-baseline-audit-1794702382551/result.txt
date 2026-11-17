@@ -1,0 +1,7 @@
+HEAD Recipes with unchanged working-tree AnglerData/FurnitureCatalog and existing business-paths harness
+Exit: 1
+C:/Users/ayden/Downloads/Roblox-Fishing-Waters/.tmp/cooking-baseline-audit-1794702382551/business-paths-baseline.luau:10: A case can be picked up while its dishes still fit
+stacktrace:
+[C] function assert
+C:/Users/ayden/Downloads/Roblox-Fishing-Waters/.tmp/cooking-baseline-audit-1794702382551/business-paths-baseline.luau:10
+

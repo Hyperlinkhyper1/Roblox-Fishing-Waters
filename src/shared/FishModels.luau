@@ -1747,16 +1747,19 @@ local function windswept(model: Model)
 	gusts.Parent = core
 end
 
--- A rippling lens around a completely black fish. Attachments follow its body
--- through tools, freezer models and scaling without adding physical fish parts.
+-- A rippling lens around a blackened fish. Native black-hole species retain
+-- their intrinsic neon organs; other fish and added corruptions turn black.
+-- Attachments follow tools, freezer models and scaling without physical parts.
 local function voidAura(model: Model)
 	local core: BasePart? = nil
 	for _, item in model:GetDescendants() do
 		if item:IsA("BasePart") then
-			item.Color = Color3.new(0, 0, 0)
-			item.Material = Enum.Material.SmoothPlastic
+			if item:GetAttribute("BlackHoleAccent") ~= true then
+				item.Color = Color3.new(0, 0, 0)
+				item.Material = Enum.Material.SmoothPlastic
+				item.Transparency = 0
+			end
 			item.Reflectance = 0
-			item.Transparency = 0
 			item:SetAttribute("RainbowHue", nil)
 			if not core or item.Size.Magnitude > core.Size.Magnitude then
 				core = item
@@ -1857,8 +1860,8 @@ function FishModels.mutate(model: Model, traits)
 		end
 	end
 	if set.VoidTouched then
-		-- Colour mutations still contribute to value, but the void consumes their
-		-- appearance, including eyes, bones and every added corruption.
+		-- Colour mutations still contribute to value. Only intrinsic black-hole
+		-- accents survive the void; eyes, bones and added corruptions turn black.
 		measure(model)
 		voidAura(model)
 		return

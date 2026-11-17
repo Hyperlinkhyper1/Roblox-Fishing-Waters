@@ -31,6 +31,7 @@ local function token(name)
   return setmetatable({__module=name}, {__index=function(_, key) return token(key) end})
 end
 local storage, sounds, player = Instance.new('Folder'), Instance.new('Folder'), Instance.new('Player')
+local lighting = { ExposureCompensation = 0 }
 storage.Shared = token('Shared')
 local clock = 1767225600 + 5 * 1440 + 13 * 60
 workspace.GetServerTimeNow = function() return clock end
@@ -44,6 +45,7 @@ local oldService = game.GetService
 game.GetService = function(self, name)
   if name == 'ReplicatedStorage' then return storage end
   if name == 'SoundService' then return sounds end
+  if name == 'Lighting' then return lighting end
   if name == 'Players' then return {LocalPlayer=player} end
   if name == 'RunService' then return {Heartbeat=heartbeat} end
   if name == 'CollectionService' then return {
@@ -103,7 +105,7 @@ for _, model in building:GetChildren() do
   for _, p in model:GetDescendants() do if p:IsA('BasePart') then n += 1 end end
   check(model:HasTag('LodPiece') and n <= 200, 'Parliament streaming pieces remain small: '..model.Name..' '..n)
 end
-check(permanentParts < 1100, 'The shell stays light: '..permanentParts)
+check(permanentParts < 1600, 'The shell stays light: '..permanentParts)
 local vak = Layout.VakK
 for _, entry in Layout.Seats do
   if entry.Role == 'Minister' then
@@ -151,7 +153,7 @@ for a, list in Layout.Links do
   end
 end
 -- From the square through the entrance, up both stairs and into both chambers.
-for _, goal in {'Well', 'EKAisleN', 'EKGallery', 'Trib0', 'CE2_-55', 'CW2_14', 'In:E0A', 'R2_0'} do
+for _, goal in {'Well', 'EKAisleN', 'EKGallery', 'Trib0', 'In:E2E', 'In:W2A', 'In:E0A', 'In:W1A', 'R2_0'} do
   check(Layout.route('Out', goal), 'A visitor can walk to '..goal)
 end
 local wingRooms, kinds, partyRooms = 0, {}, {}
@@ -181,7 +183,7 @@ for _, entry in Layout.Seats do
 end
 -- Both radial aisles, across every tier, without jumping over a desk.
 for _, angle in Layout.Aisles do
-  for radius = 11, 40.5, 0.5 do
+  for radius = 17, Layout.rowRadius(#Layout.Rows) + 2, 0.5 do
     local position = Layout.polar(angle, radius)
     local floor = 0
     for _, p in building:GetDescendants() do
@@ -205,7 +207,7 @@ local rotated = base * CFrame.Angles(0, 0.73, 0)
 for _, p in { Vector3.new(0,3,58), Vector3.new(0,3,-20), Vector3.new(60,27,-50), Vector3.new(-60,15,-40), Vector3.new(30,3,45) } do
   check(Layout.inside(rotated, rotated * p), 'Entry detection uses building coordinates')
 end
-for _, p in { Vector3.new(0,3,63), Vector3.new(73,3,0), Vector3.new(60,3,48), Vector3.new(0,50,0), Vector3.new(0,-5,0), Vector3.new(0,3,-66) } do
+for _, p in { Vector3.new(0,3,90), Vector3.new(110,3,0), Vector3.new(80,3,70), Vector3.new(0,75,0), Vector3.new(0,-5,0), Vector3.new(0,3,-100) } do
   check(not Layout.inside(rotated, rotated*p), 'Street, forecourt, dome and underground never load furniture')
 end
 
@@ -247,9 +249,9 @@ for _, model in detail:GetDescendants() do
     check(model.Name == 'Aura', 'The Aura is named as such')
   end
 end
-check(auraNames['Tweede Kamer'] and auraNames['Eerste Kamer'], 'The Aura belongs to the Tweede and the Eerste Kamer')
-check(detailParts > 7000 and detailParts < 10500, 'The building is richly detailed within a bounded part count: '..detailParts)
-check(detailed.dynamic.Labels.ElectionBoard and detailed.dynamic.Labels.VoteBoardWest and detailed.dynamic.Labels.BallotBoard, 'Boards the client keeps current exist')
+check(auraNames['House of Representatives'] and auraNames['Senate'], 'The Aura belongs to the Tweede Kamer (House) and the Eerste Kamer (Senate)')
+check(detailParts > 8000 and detailParts < 12000, 'The building is richly detailed within a bounded part count: '..detailParts)
+check(detailed.dynamic.SeatBoard and detailed.dynamic.Labels.VoteBoardWest and detailed.dynamic.Labels.VoteBoardEast, 'Boards the client keeps current exist')
 check(#detailed.dynamic.BellLamps >= 10, 'Bell lamps hang in every corridor')
 local simple = Instance.new('Folder')
 local performance = Geometry.build(simple, base, nil, { Performance = true })
@@ -257,6 +259,137 @@ local simpleParts, simpleAuras, simpleBeams, simpleDust, _, simpleStations = cen
 check(simpleAuras == 0 and simpleBeams == 0 and simpleDust == 0, 'Performance mode has no Aura')
 check(simpleStations == stations, 'Performance mode keeps every seat station')
 check(simpleParts < 1200 and simpleParts * 7 < detailParts, 'Performance mode removes most detail: '..simpleParts)
+
+-- Z-fighting: two faces in the same plane, facing the same way and overlapping, where neither
+-- is hidden inside an opaque part. Faces closer than SEPARATION count as the same plane.
+local SEPARATION = 0.05
+local function zFights(parts)
+  local faces, buckets = {}, {}
+  local opaque, cells = {}, {}
+  local CELL = 8
+  local function cellKey(x, y, z) return math.floor(x / CELL)..','..math.floor(y / CELL)..','..math.floor(z / CELL) end
+  for _, p in parts do
+    if p.Transparency < 0.5 and p.Shape ~= Enum.PartType.Ball and p.Shape ~= Enum.PartType.Cylinder then
+      table.insert(opaque, p)
+      local c, s = p.CFrame, p.Size / 2
+      local ex = math.abs(c.RightVector.X) * s.X + math.abs(c.UpVector.X) * s.Y + math.abs(c.ZVector.X) * s.Z
+      local ey = math.abs(c.RightVector.Y) * s.X + math.abs(c.UpVector.Y) * s.Y + math.abs(c.ZVector.Y) * s.Z
+      local ez = math.abs(c.RightVector.Z) * s.X + math.abs(c.UpVector.Z) * s.Y + math.abs(c.ZVector.Z) * s.Z
+      local pos = c.Position
+      for x = math.floor((pos.X - ex) / CELL), math.floor((pos.X + ex) / CELL) do
+        for y = math.floor((pos.Y - ey) / CELL), math.floor((pos.Y + ey) / CELL) do
+          for z = math.floor((pos.Z - ez) / CELL), math.floor((pos.Z + ez) / CELL) do
+            local key = x..','..y..','..z
+            cells[key] = cells[key] or {}
+            table.insert(cells[key], p)
+          end
+        end
+      end
+    end
+  end
+  local function within(p, point)
+    local q = p.CFrame:PointToObjectSpace(point)
+    return math.abs(q.X) < p.Size.X / 2 - 0.004 and math.abs(q.Y) < p.Size.Y / 2 - 0.004 and math.abs(q.Z) < p.Size.Z / 2 - 0.004
+  end
+  -- Whether a face's point lies strictly inside some other opaque part.
+  local function embedded(point, own)
+    for _, p in cells[cellKey(point.X, point.Y, point.Z)] or {} do
+      if p ~= own and within(p, point) then return true end
+    end
+    return false
+  end
+  local function buried(point, a, b)
+    for _, p in cells[cellKey(point.X, point.Y, point.Z)] or {} do
+      if p ~= a and p ~= b then
+        local q = p.CFrame:PointToObjectSpace(point)
+        if math.abs(q.X) <= p.Size.X / 2 + 0.01 and math.abs(q.Y) <= p.Size.Y / 2 + 0.01 and math.abs(q.Z) <= p.Size.Z / 2 + 0.01 then return true end
+      end
+    end
+    return false
+  end
+  local function add(p, centre, normal, u, v, hu, hv)
+    local d = normal:Dot(centre)
+    local key = string.format('%d,%d,%d', math.floor(normal.X * 200 + 0.5), math.floor(normal.Y * 200 + 0.5), math.floor(normal.Z * 200 + 0.5))
+    local face = { part = p, c = centre, n = normal, u = u, v = v, hu = hu, hv = hv, d = d, key = key }
+    table.insert(faces, face)
+    local slot = key..':'..math.floor(d / 0.1)
+    buckets[slot] = buckets[slot] or {}
+    table.insert(buckets[slot], face)
+  end
+  for _, p in parts do
+    if p.Transparency >= 0.95 or p.Shape == Enum.PartType.Ball then continue end
+    local c, s = p.CFrame, p.Size / 2
+    local axes = { { c.RightVector, s.X, c.UpVector, s.Y, c.ZVector, s.Z }, { c.UpVector, s.Y, c.ZVector, s.Z, c.RightVector, s.X }, { c.ZVector, s.Z, c.RightVector, s.X, c.UpVector, s.Y } }
+    if p.Shape == Enum.PartType.Cylinder then
+      local side = math.min(s.Y, s.Z) * 0.7
+      for _, sign in { -1, 1 } do add(p, c.Position + c.RightVector * (sign * s.X), c.RightVector * sign, c.UpVector, c.ZVector, side, side) end
+    else
+      for _, axis in axes do
+        for _, sign in { -1, 1 } do add(p, c.Position + axis[1] * (sign * axis[2]), axis[1] * sign, axis[3], axis[5], axis[4], axis[6]) end
+      end
+    end
+  end
+  local found, seen = {}, {}
+  local function project(face, axis)
+    return face.c:Dot(axis), face.hu * math.abs(face.u:Dot(axis)) + face.hv * math.abs(face.v:Dot(axis))
+  end
+  for _, a in faces do
+    for offset = -1, 1 do
+      for _, b in buckets[a.key..':'..(math.floor(a.d / 0.1) + offset)] or {} do
+        if a.part == b.part or math.abs(a.d - b.d) >= SEPARATION then continue end
+        local id = if a.part._id < b.part._id then a.part._id..':'..b.part._id else b.part._id..':'..a.part._id
+        if seen[id] then continue end
+        local overlapping = true
+        for _, axis in { a.u, a.v, b.u, b.v } do
+          local ca, ra = project(a, axis)
+          local cb, rb = project(b, axis)
+          if ra + rb - math.abs(ca - cb) <= 0.02 then overlapping = false; break end
+        end
+        if not overlapping then continue end
+        -- The middle of the overlap, measured in face a's plane.
+        local cu, ru = project(b, a.u)
+        local cv, rv = project(b, a.v)
+        local au, av = a.c:Dot(a.u), a.c:Dot(a.v)
+        local mu = (math.max(au - a.hu, cu - ru) + math.min(au + a.hu, cu + ru)) / 2
+        local mv = (math.max(av - a.hv, cv - rv) + math.min(av + a.hv, cv + rv)) / 2
+        local point = a.c + a.u * (mu - au) + a.v * (mv - av)
+        local onB = point + b.n * (b.d - point:Dot(b.n))
+        if buried(point + a.n * 0.08, a.part, b.part) or embedded(point, a.part) or embedded(onB, b.part) then continue end
+        seen[id] = true
+        table.insert(found, { a.part, b.part, point })
+      end
+    end
+  end
+  return found
+end
+local function reportFights(label, parts)
+  local found = zFights(parts)
+  local kinds, order = {}, {}
+  for _, entry in found do
+    local a, b = entry[1].Name, entry[2].Name
+    local key = if a < b then a..' / '..b else b..' / '..a
+    if not kinds[key] then kinds[key] = { count = 0, at = base:PointToObjectSpace(entry[3]) }; table.insert(order, key) end
+    kinds[key].count += 1
+  end
+  for index, key in order do
+    if index > 60 then break end
+    local q = kinds[key].at
+    output(string.format('ZFIGHT %s: %dx %s, e.g. at %.1f, %.1f, %.1f', label, kinds[key].count, key, q.X, q.Y, q.Z))
+  end
+  check(#found == 0, label .. ': ' .. #found .. ' pairs of parts share a visible face')
+  return #found
+end
+local shellParts = {}
+for _, p in building:GetDescendants() do if p:IsA('BasePart') then table.insert(shellParts, p) end end
+local function withShell(folder)
+  local list = table.clone(shellParts)
+  for _, p in folder:GetDescendants() do if p:IsA('BasePart') then table.insert(list, p) end end
+  return list
+end
+reportFights('Shell', shellParts)
+reportFights('Detailed', withShell(detail))
+reportFights('Performance', withShell(simple))
+
 for _, model in simple:GetDescendants() do
   if model:IsA('Model') and model:GetAttribute('SeatId') then
     local n = 0
@@ -371,7 +504,7 @@ while walking > 0 and seconds < 120 do
   for _, person in roster do
     if person.Points then
       local p = person.Position
-      check(math.abs(p.X) < Layout.HalfWidth and p.Z > Layout.North and p.Z < 80 and p.Y > -0.1 and p.Y < 26, 'Walkers stay in the building')
+      check(math.abs(p.X) < Layout.HalfWidth and p.Z > Layout.North and p.Z < Layout.Front + 15 and p.Y > -0.1 and p.Y < 2 * Layout.Storey + 6, 'Walkers stay in the building')
     end
   end
 end
@@ -434,13 +567,12 @@ check(outside and outside:FindFirstChild('Exterior') and outside:FindFirstChild(
 check(not building:FindFirstChild('LocalParliamentInterior') and not building:FindFirstChild('LocalParliamentPeople'), 'No rooms or people are built outside, even at the entrance')
 local outsideParts = count(outside)
 tick(); check(newPartCount == 0, 'Finished ornament does not rebuild')
-check(string.find(detailed.dynamic.Labels.ElectionBoard.Text, 'ZETELVERDELING') ~= nil, 'The seat board has a default text')
 rootPart.Position = base * Vector3.new(0,3,58)
 tick()
 local first = building:FindFirstChild('LocalParliamentInterior')
 check(first and newPartCount > 0, 'Rooms start building after crossing the threshold')
 check(renderer.isInside(), 'The controller knows the player is inside')
-rootPart.Position = base * Vector3.new(0,3,73)
+rootPart.Position = base * Vector3.new(0,3,110)
 tick()
 check(first.Parent == nil and not building:FindFirstChild('LocalParliamentInterior'), 'Leaving immediately hides and cancels a partly built interior')
 check(not building:FindFirstChild('LocalParliamentPeople'), 'The people leave with the interior')
@@ -484,12 +616,12 @@ for _ = 1, 40 do
   end
 end
 check(sawLamp, 'Corridor lamps flash while the bell rings')
-for _ = 1, 560 do tick(0.1) end
+for _ = 1, 700 do tick(0.1) end
 local board
 for _, item in second:GetDescendants() do
-  if item:IsA('TextLabel') and string.find(item.Text or '', 'VOOR %d+') then board = item.Text end
+  if item:IsA('TextLabel') and string.find(item.Text or '', 'AYES %d+') then board = item.Text end
 end
-check(board and (string.find(board, 'AANGENOMEN') or string.find(board, 'VERWORPEN')), 'The chamber boards show the result')
+check(board and (string.find(board, 'CARRIED') or string.find(board, 'REJECTED')), 'The chamber boards show the result')
 local green = 0
 for _, item in second:GetDescendants() do
   if item.Name == 'VoteLight' and item.Material == Enum.Material.Neon then green += 1 end

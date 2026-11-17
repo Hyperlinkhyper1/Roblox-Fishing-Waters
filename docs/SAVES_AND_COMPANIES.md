@@ -103,76 +103,11 @@ Global scores can decrease and refresh every two minutes from saved profiles.
 The on-screen company tab groups the current server's crew members and shared
 wallet instead of summing the same money once per player.
 
-## Company types and branches
+## Fishing companies
 
-Creating a save asks for a company type: a **Fishing company** (the harbour
-dock and fish shop) or a **Café** in the city. The choice is saved as
-`Branches` on the profile (`{ Fishing = true }` or `{ Cafe = true }`). Saves
-from before branches have no `Branches` field and are fishing companies, so
-every existing player stays on the fishing branch. Save cards show the type.
-
-The office PC has a **BRANCHES** app (`client/BranchApp`, `server/BranchService`)
-that buys the missing branch from the company wallet while sitting at your own
-PC: the café branch costs $7,500 and the fishing branch $5,000
-(`Shared.Branches`). A company with both branches fishes and runs a café.
-Café-only companies have no harbour dock, cannot cast until they buy the
-fishing branch, and spawn in their café. Buying the fishing branch claims a
-dock right away; buying the café branch claims a café.
-
-### Cafés
-
-The city's café quarter is fifteen blocks (one per harbour plot) on both sides
-of the avenue just south of the metro station (`ModernCity.cafeSites`,
-`Map/CafePlots`). The blocks are built like the rest of the city: a mixed-use
-building on the avenue with flats above, and a lower building behind it on the
-back street. Each café is the avenue building's ground-floor unit: an empty
-customer floor on the fishing house's 11 x 7 build lattice, a counter with a
-till and a coffee machine, and a staff room with one storage rack and the same
-office PC as the fishing bases. Members of a company share one café per server.
-
-A café only exists while a company runs it. An unclaimed unit is an ordinary
-closed shopfront; the café's frontage, furniture and lights wait in
-`ServerStorage.CafeStash` and move into the building when the plot is claimed
-(`CafePlots.setOpen`). When the last member leaves, the shopfront closes again
-and anyone still inside is moved out onto the pavement.
-
-Customers (`server/CafeService`) walk in off the avenue, queue at the till and
-order a coffee. Hold the coffee machine's prompt to brew a cup, then serve the
-customer at the front of the queue: $20 goes into the company wallet and the
-barista earns 25 XP (`Shared.CafeCatalog`). Customers leave after two minutes
-without coffee. Up to four are inside at a time.
-
-### Café tutorial
-
-A new café company gets a hands-on tour (`Shared.CafeTutorial`,
-`server/CafeTutorialService`, shown by `client/Tutorial`). Bea, the café
-mentor, stands on every claimed café's floor beside the open end of the
-counter. The tracker, gold marker and floor arrow lead through seven steps:
-
-1. Talk to Bea: what the café is, $20 and 25 XP per coffee.
-2. Brew a coffee at the machine (`Brew` from `CafeService`).
-3. Serve the customer at the front of the queue (`Serve`). While the player
-   has no cup, the arrow points back to the coffee machine; with no customer
-   yet, the goal says to wait.
-4. Talk to Bea: one cup at a time, two-minute patience, four customers.
-5. Serve three more customers (counted).
-6. Sit at the office PC in the staff room (`OfficeComputerService.onSit`).
-7. Talk to Bea: the BRANCHES app ($5,000 fishing branch), the STOCKS app and
-   its trading license from Micro Harbour, multiplayer, the Companies board.
-   Finishing pays $250 once per company.
-
-Progress is saved on the company profile as `Cafe.TutorialStep`,
-`TutorialDone`, `TutorialCount` and `TutorialRewarded`, so any member's brew,
-serve or desk visit counts for everyone. A café that served coffee before
-the tour existed starts with it finished. BoatService mirrors the state as
-`CafeTutorialStep` / `CafeTutorialCount` / `CafeTutorialDone` attributes. Only
-members of the café's company see Bea's prompt. The tour can be skipped from
-the tracker, and `/tutorial` restarts it for any company with a café.
-
-The café tour comes before the island tour while it is unfinished.
-Café-only companies never see the island tour; buying the fishing branch
-brings it up, so Captain Wren and the harbour guides then teach fishing.
-A fishing company that buys the café branch gets the café tour too.
+All companies use the harbour dock and fishing business. Existing café-only
+saves retain their company data and can use the fishing business. The retired
+café progress remains in existing profiles for compatibility.
 
 ## Verification
 
@@ -195,8 +130,6 @@ node scripts/check-leaderboards.mjs
 node scripts/check-loading.mjs
 node scripts/check-startup.mjs
 node scripts/check-world-startup.mjs
-node scripts/check-cafe.mjs
-lute run scripts/cafe-tutorial.luau
 ```
 
 These execute production Luau against recording mocks. Published Roblox testing

@@ -34,8 +34,8 @@ local fresh = Data.decode(nil)
 local index = assert(indexOf(fresh))
 local bench = fresh.Furniture[index]
 check(#fresh.Furniture == #Data.FIXTURES + 1 and fresh.WorkbenchVersion == 1, "Fresh bases receive one workbench")
-check(bench.X == 4.5 and bench.Z == -13.5 and bench.R == 0,
-	"Fresh workbench starts in the storage room's rear corner")
+check(bench.X == 4.5 and bench.Z == -9 and bench.R == 0,
+	"Fresh workbench starts one grid step forward from the storage room's rear corner")
 check(Furniture.check(fresh.Furniture, "Workbench", bench.X, bench.Z, bench.R, index) == nil,
 	"Default workbench placement is legal")
 check(Data.storageCapacity(fresh) == 0 and table.find(Furniture.Order, "Workbench") == nil,

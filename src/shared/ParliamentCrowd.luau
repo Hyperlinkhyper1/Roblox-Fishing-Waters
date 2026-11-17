@@ -12,7 +12,7 @@ local Parties = require(script.Parent.Parties)
 local Crowd = {}
 Crowd.BLOCK_SECONDS = 120
 Crowd.WALK_SPEED = 9
-Crowd.BELL_HURRY = 1.4
+Crowd.BELL_HURRY = 1.6
 
 local OUTSIDE = { Id = "Outside", Kind = "Away", Position = Layout.Nodes.Out, Yaw = 0, Node = "Out", Path = {} }
 Crowd.Outside = OUTSIDE

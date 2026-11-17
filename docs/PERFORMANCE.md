@@ -41,6 +41,23 @@ node scripts/check-startup.mjs
 
 `Workspace.StreamingTargetRadius` is 256 studs and `StreamingMinRadius` is 64 in `default.project.json`. The former 512-stud target streamed a much larger area of the dense city at once on metro arrival; halving it cuts the nominal horizontal target area to one quarter. The engine can retain content beyond the target, and island pieces are pinned until the LOD service releases distant pins, so this is not a hard cap on loaded scenery. Distant islands still use persistent LOD shells, and boats keep requesting 400 studs ahead while driving. Full-detail scenery now appears closer throughout the map, so sailing and fast travel need an in-game check for visible gaps.
 
+### Teleport streaming bursts
+
+`StreamOutBehavior` now uses `Opportunistic`, allowing distant unpinned scenery to leave before memory runs low. The former `LowMemory` setting retained visited areas until the device was already under memory pressure. Roblox documents the difference in its [stream-out settings](https://create.roblox.com/docs/reference/engine/enums/StreamOutBehavior). `StreamingIntegrityMode` is `PauseOutsideLoadedArea` to protect characters while their destination floor is still arriving; destination `RequestStreamAroundAsync` calls remain in place. These are place properties: apply `default.project.json` through Rojo/build before comparing sessions, including saved Studio maps.
+
+The LOD sweep previously called `RemovePersistentPlayer` on every distant piece within its script-time budget. Those cheap server calls could make thousands of client instances eligible for removal together after a teleport. Each player now has an independent cleanup worker, releasing at most eight models and 256 descendant instances (including the piece roots) per 0.1-second step. A single larger atomic piece must still be released whole and occupies a step by itself; this is a limit on scheduled unpin work, not a guarantee about Roblox's actual GC timing. Cleanup rechecks the current character position after every yield. Late arrival reports from the old location no longer repin distant scenery; rejected destination prefetches are remembered and confirmed by the client when the player arrives.
+
+The rod, furniture and pet shop interiors also used whole-room `Atomic` streaming: respectively 1,121, 1,153 and 965 BaseParts in the recording builders. Their roots now use `Default` on generated and current-version saved interiors, preserving names, prompts and existing small atomic child models while loose scenery streams at the engine's pace. No geometry rebuild is required for that migration.
+
+```powershell
+node scripts/check-lod.mjs
+node scripts/check-world-startup.mjs
+node scripts/check-rod-shop.mjs
+node scripts/check-furniture-shop.mjs
+```
+
+These checks cover streaming policy and operation counts, not device frame times. In a fresh session on the affected device, compare repeated shop entry/exit, harbour/city metro trips and returning during cleanup. Capture the actual stalled frames in the MicroProfiler: a 0.03 ms slice cannot explain a 10–20 second freeze, and `Replicator GC Job` / `Part/Model Removals` is a lead rather than proof of the full cause. Check destination floors, prompt availability and distant shell recovery as well as maximum frame time and memory.
+
 ## Character mesh rebuilds and low-end devices
 
 Roblox batches each Humanoid model's parts into one mesh (`FastCluster` in the MicroProfiler). Changing a part's transparency, colour or shadow inside a character, or re-parenting the model, rebuilds the whole batch on the render thread. Low-end MicroProfiler captures showed `updateInvalidatedFastClusters` → `FastCluster::update` → `upload` spikes on the main thread.
@@ -71,7 +88,7 @@ A low-end laptop's client log (Intel Iris Xe sharing 8 GB of RAM) showed a low-m
 
 Every island piece used to be pinned for a player (`AddPersistentPlayer`) as soon as it streamed in, for the rest of the session, so a player who explored ended up holding the whole map. Once memory ran out, the engine kept evicting everything that wasn't pinned (NPCs, boats, props) and fetching it again.
 
-`server/Map/Lod` now sweeps every 4 seconds, in small time-budgeted steps. It releases pins on pieces more than 1,100 studs from the player (horizontal distance to the piece's centre). Within 450 studs on a return visit, it asks the client which released pieces are still loaded and repins those. Missing pieces stream normally and report their arrival; eagerly repinning them forced whole atomic models back in at once. Deferred client reports also discard pieces that have already streamed out. Pieces close to the player stay pinned exactly as before, so nearby towns still never stream out and reload.
+`server/Map/Lod` starts independent per-player sweeps every 4 seconds, with count and time budgets. It releases pins on pieces more than 1,100 studs from the player (512 in the dense city; horizontal distance to the piece's centre). Within 450 studs on a return visit (320 in the city), it asks the client which released pieces are still loaded and repins those. Missing pieces stream normally and report their arrival; eagerly repinning them forced whole atomic models back in at once. Deferred client reports also discard pieces that have already streamed out, and the server rejects reports outside the retention distance. Pieces close to the player stay pinned, so nearby towns do not stream out and reload.
 
 `client/Lod` brings a far island's shell back once the island is short of ground again. Within 900 studs a shell that has given way still never returns, so drawn towns don't flicker.
 
@@ -93,6 +110,67 @@ node scripts/check-lod.mjs
 ```
 
 The scenery checks cover sustained travel at 100 studs/second at 30, 60 and 144 FPS, teleport cleanup, and simulated expensive operations. Audio checks cover shoreline mixing, part and terrain roofs, missing terrain, failed reads and recovery. LOD checks cover released, retained and missing pieces on revisit. These verify work limits and behavior, not measured frame-rate gains; compare the same sailing route in Roblox's MicroProfiler to confirm the device-level result.
+
+## Travel arrivals
+
+The four smaller cities now use the main city's `CityDetail` facade descriptions.
+Building collision, lights and interactive parts stream normally; optional facade parts
+are built locally at the existing limit of six per frame, with a 2 ms budget and reduced
+throughput on slow frames. This also migrates current-version saved cities whose facade
+parts are already inside generated ground chunks. Decorative detail appears gradually
+within 350 studs rather than arriving with every full building. The towns now have
+separate layouts and building stocks: fishing terraces and a market quay at Brambleport,
+works and rail at Northwick, hotels and a beach at Westhaven, and a bridged river inlet
+at Riverton. Street furniture and market stalls opt into the same descriptions with a
+`CityDetailSource` attribute, so their loose trim streams as local detail while collision
+and lights stay on the server.
+
+| City | Replicated parts before | Replicated parts now | Facade parts deferred |
+| --- | ---: | ---: | ---: |
+| Brambleport | 2,142 | 503 | 1,639 |
+| Northwick | 2,246 | 604 | 1,642 |
+| Westhaven | 2,604 | 559 | 2,045 |
+| Riverton | 2,805 | 623 | 2,182 |
+| Total | 9,813 | 2,289 | 7,524 |
+
+These are real builder counts (76.7% fewer replicated parts), not frame-time measurements.
+Prepared building roots retain their collision cores and facade metadata as one bounded
+streaming piece, including saved buildings with nested generated chunks.
+
+Island shell handovers now share a client budget of 128 part inspections and 1 ms per
+Heartbeat. Previously, every shell in a stepped fade wrote all its part transparencies
+together; several arriving islands or city tiles could still invalidate thousands of
+renderer parts in one frame. Initial visibility, revealing a streamed-out island and late
+shell geometry use the same queue. Transitions rotate through the queue, skip unchanged
+transparencies, and cancel when the shell is replaced. Large handovers can take longer
+than the usual 0.6-second fade; distant shells may reveal progressively during stream-out.
+
+`SeasonFoliage` also queues arriving island pieces instead of scanning and tinting every
+descendant inside each tag callback. Startup and arrivals share a walker limited to 120
+operations and 1 ms per Heartbeat. Removed pieces cancel their pending scans; seasonal
+tinting appears gradually as queued work finishes. A single child-list read or property
+write remains an indivisible engine operation, so these are scheduled-work budgets.
+
+Ground streaming chunks retain their 96-stud spatial grouping with a 200-part limit per
+atomic piece. Older oversized generated `GroundChunk` models are split on startup while
+keeping their containers and geometry. Real island-builder fixtures previously produced
+one 223-part spatial bin; denser synthetic fixtures verify the hard limit and saved-map
+migration. This bounds individual ground arrivals, not the total number of pieces Roblox
+may stream in one frame.
+
+```powershell
+node scripts/check-lod.mjs
+node scripts/check-foliage-streaming.mjs
+node scripts/check-travel-streaming.mjs
+node scripts/check-city-detail.mjs
+node scripts/check-small-cities.mjs
+```
+
+The checks exercise simultaneous shell handovers, slow writes, reversals and cancellation,
+foliage arrival bursts, real island shapes and all four smaller cities. They verify behavior
+and operation counts, not measured FPS. Compare the same sailing route in Studio's
+MicroProfiler, including return trips, night lighting and seasonal foliage, to assess device
+frame times and the progressive shell transitions.
 
 ## City street life
 
@@ -157,7 +235,7 @@ The city metro stop is persistent per passenger and therefore arrives as one ato
 
 ## Parliament
 
-The parliament's shell is about 900 server parts in streaming pieces of at most 200. Its
+The parliament's shell is about 1,050 server parts in streaming pieces of at most 200. Its
 furniture, ornament and people are local (`client/Parliament`, see `docs/PARLIAMENT.md`):
 the facade and hall build while the square is in view, the rest only once a character is
 inside, nearest zone first, at most 40 parts per frame within 2 ms. Rigs have no Humanoid
@@ -165,5 +243,5 @@ and move through one `BulkMoveTo` call per frame; only walkers are moved.
 
 **Parliament performance mode** (Settings → Performance, on by default on the Performance
 preset and after an automatic step down to it) rebuilds the local half as single blocks:
-about 940 parts instead of 8,900, 87 one-block people instead of 229 seven-part ones, and
+about 980 parts instead of 9,150, 87 one-block people instead of 229 seven-part ones, and
 no ornament, dome ribs or Aura.

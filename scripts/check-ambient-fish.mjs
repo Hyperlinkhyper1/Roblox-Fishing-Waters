@@ -13,6 +13,8 @@ const mocks = read('scripts/drydock-geometry.luau').split('local function loadBo
   .replace('-- SHARED_PRIMITIVES --', () => primitives);
 const terrainProbe = `local TerrainProbe = (function()\n${read('src/client/TerrainProbe.luau')
   .replace(/require\(ReplicatedStorage\.Shared\.Biomes\)/, 'dependencies.Biomes')}\nend)()`;
+const catalog = read('src/shared/AnglerCatalog.luau')
+  .replace('require(script.Parent.FishSpecies)', 'dependencies.FishSpecies');
 const client = read('src/client/AmbientFish.luau')
   .replace('local model = Instance.new("Model")', 'local model = Instance.new("Model"); totalCreated += 1; created[id] = (created[id] or 0) + 1')
   .replace(/require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'dependencies.$1')
@@ -20,6 +22,7 @@ const client = read('src/client/AmbientFish.luau')
   .replace(/local TerrainProbe = require\(script\.Parent\.TerrainProbe\)/, () => terrainProbe);
 const program = 'local METRO_ONLY = ' + process.argv.includes('--metro-only') + '\n' + read('scripts/ambient-fish.luau')
   .replace('-- MOCKS --', () => mocks)
+  .replace('-- CATALOG --', () => catalog)
   .replace('-- CLIENT --', () => client);
 const temporary = mkdtempSync(join(tmpdir(), 'ambient-fish-'));
 try {

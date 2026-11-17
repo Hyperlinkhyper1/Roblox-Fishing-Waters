@@ -1,6 +1,13 @@
 -- MOCKS --
+local primitiveTypeof = typeof
+local function typeof(value)
+	return if type(value) == "table" and getmetatable(value) == getmetatable(Vector3.zero)
+		then "Vector3" else primitiveTypeof(value)
+end
 local Content = { fromObject = function(object) return { object = object } end }
 local warnings = {}
+local clock = 0
+local os = { clock = function() return clock end }
 local function warn(message)
 	table.insert(warnings, message)
 end
@@ -25,12 +32,17 @@ local function flush()
 	error("Fish builders did not finish")
 end
 function instanceMethods:GetPropertyChangedSignal(_property)
-	return { Connect = function() end }
+	return { Connect = function() return { Disconnect = function() end } end }
 end
 function instanceMethods:Clone()
 	local clone = Instance.new(self.ClassName)
 	for key, value in self._props do
 		if key ~= "Parent" then clone[key] = value end
+	end
+	clone._attributes = table.clone(self._attributes)
+	clone._tags = table.clone(self._tags)
+	for _, child in self:GetChildren() do
+		child:Clone().Parent = clone
 	end
 	return clone
 end
@@ -149,6 +161,7 @@ local function reset()
 	created, templates, warnings = {}, {}, {}
 	liveDynamic, peakDynamic, allocations, copies = 0, 0, 0, 0
 	failure, failAt = nil, 1
+	clock = 0
 	dependencies.EditableMeshBudget = loadBudget()
 	return loadClient()
 end
@@ -281,12 +294,15 @@ print("PASS mesh diagnostic reports success and the underlying allocation error"
 client = reset()
 failure, failAt = "budget", 1
 local releasedWater = 0
-dependencies.EditableMeshBudget.onRelease("SwellSurface", function() releasedWater += 1 end)
+dependencies.EditableMeshBudget.onRelease("SwellSurface", function()
+	releasedWater += 1
+	failure = nil -- Destroying the cosmetic holder makes room for the scratch.
+end)
 local evictedFish = fish("round")
 task.spawn(client.hydrate, evictedFish)
 flush()
 assert(releasedWater == 1, "A starved fish skin must release the cosmetic water mesh")
-assert(not visibleFallback(evictedFish) and allocations == 2, "The skin must build after the water mesh is released")
+assert(not visibleFallback(evictedFish) and allocations == 1, "Release water before attempting the skin allocation")
 assert(dependencies.EditableMeshBudget.status():find("Released for fish: SwellSurface", 1, true))
 print("PASS fish skins evict the swell sheet when the device budget is full")
 
@@ -343,4 +359,48 @@ collection.GetTagged = untagged
 assert(report:find("Rainbow Trout skin available", 1, true), "The mesh test must retry a latched budget")
 assert(not visibleFallback(latched), "A successful retry must re-skin fish left as spheres")
 print("PASS mesh test retries a latched failure and re-skins fallback fish")
+
+-- Reclaimed meshes invalidate every MeshPart referencing them. The detached
+-- fish and its clones must have a visible body even if a rebuild cannot fit.
+client = reset()
+local parked = fish("round")
+task.spawn(client.hydrate, parked)
+flush()
+local copied = parked:Clone()
+assert(not visibleFallback(copied), "Cloning must preserve the source's hidden fallback")
+parked.Parent = nil
+failure, failAt = "copy-budget", copies + 1
+task.spawn(client.hydrate, fish("other"))
+flush()
+assert(visibleFallback(parked), "Reclamation must restore the detached fish before destroying its mesh")
+assert(not parked:FindFirstChild("LoftSkin", true), "Reclamation must remove invalid skins")
+failure, failAt = "budget", allocations + 1
+parked.Parent, copied.Parent = world, world
+task.spawn(client.hydrate, parked)
+task.spawn(client.hydrate, copied)
+flush()
+assert(visibleFallback(parked) and visibleFallback(copied), "Rebuild failure must preserve returning and cloned bodies")
+assert(not copied:FindFirstChild("LoftSkin", true), "A cloned stale skin must be removed before allocation")
+local before = allocations
+clock = 3600
+task.spawn(client.hydrate, fish("afterAnHour"))
+flush()
+assert(allocations == before, "Elapsed time alone must not retry an exhausted engine budget")
+print("PASS reclaimed and cloned fish remain visible after rebuild failures; exhausted budgets stay latched")
+
+-- A fish can leave the world during the yielding copy. It must not retain its
+-- in-progress hydration mark and skip rebuilding when it returns.
+client = reset()
+local returning = fish("round")
+task.spawn(client.hydrate, returning)
+local inFlight = table.remove(pending, 1)
+assert(coroutine.resume(inFlight))
+table.insert(pending, inFlight)
+returning.Parent = nil
+flush()
+returning.Parent = world
+task.spawn(client.hydrate, returning)
+flush()
+assert(not visibleFallback(returning), "A fish detached during construction must hydrate when it returns")
+print("PASS detaching a fish during construction does not prevent later hydration")
 print("Recording mocks only; actual device memory and Studio appearance require play testing.")

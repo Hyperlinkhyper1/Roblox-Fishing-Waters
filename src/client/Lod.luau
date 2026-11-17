@@ -41,6 +41,8 @@ local FADE_TIME = 0.6
 -- A shell holds thousands of parts and every transparency write is paid for by the
 -- renderer, so the fade moves in a few steps rather than on every frame.
 local FADE_STEPS = 4
+local VISUAL_PARTS_PER_FRAME = 128
+local VISUAL_BUDGET = 0.001
 local SURFACE_INSET = Vector3.new(0, 0.2, 0)
 local insetParts = setmetatable({}, { __mode = "k" })
 local PREFETCH_INTERVAL = 1
@@ -64,7 +66,7 @@ type Island = {
 	connections: { RBXScriptConnection },
 	groundConnections: { RBXScriptConnection },
 }
-type Visual = { parts: { BasePart }, hidden: boolean?, fadeApplied: number? }
+type Visual = { parts: { BasePart }, hidden: boolean?, fadeApplied: number?, fadeCursor: number? }
 type Tile = Visual & { expected: number, loaded: number, minX: number, minZ: number }
 type Grid = { size: number, x: number, z: number }
 type Shell = Visual & {
@@ -199,6 +201,13 @@ function Lod.start()
 	local islands: { [string]: Island } = {}
 	local pending: { [string]: boolean } = {}
 	local fading: { [Visual]: number } = {}
+	local fadeQueue: { [number]: Visual } = {}
+	local fadeHead, fadeTail = 1, 0
+
+	local function enqueue(visual: Visual)
+		fadeTail += 1
+		fadeQueue[fadeTail] = visual
+	end
 
 	-- Ground parts an island needs before it counts as drawn. Tiled shells decide per tile,
 	-- so for them any ground at all will do.
@@ -273,17 +282,13 @@ function Lod.start()
 		local first = visual.hidden == nil
 		visual.hidden = hidden
 		visual.fadeApplied = nil
-		if hidden and not first then
-			-- The real island is already drawn underneath, so the shell can melt away
-			fading[visual] = os.clock()
-		else
-			-- Nothing else is there, so the shell has to be back this frame. A shell that arrives
-			-- over an island that's already drawn goes straight away rather than flashing up.
-			fading[visual] = nil
-			for _, part in visual.parts do
-				part.LocalTransparencyModifier = if hidden then 1 else 0
-			end
+		visual.fadeCursor = nil
+		if fading[visual] == nil then
+			enqueue(visual)
 		end
+		-- Revealing a missing island and initially hiding a shell skip the fade, but still
+		-- share the write budget. Reversing a transition replaces its target in place.
+		fading[visual] = if hidden and not first then os.clock() else -math.huge
 	end
 
 	-- Coalesce streaming bursts and only touch shell parts when visibility changes.
@@ -330,19 +335,48 @@ function Lod.start()
 
 	RunService.Heartbeat:Connect(profiled("Lod", function()
 		local now = os.clock()
-		for visual, started in fading do
-			local alpha = math.min((now - started) / FADE_TIME, 1)
-			local stepped = math.ceil(alpha * FADE_STEPS) / FADE_STEPS
-			if stepped ~= visual.fadeApplied then
-				visual.fadeApplied = stepped
-				for _, part in visual.parts do
-					part.LocalTransparencyModifier = stepped
+		local stop, processed = fadeTail, 0
+		-- One global budget, including simultaneous city tiles and island arrivals. A
+		-- stepped fade alone still invalidated thousands of renderer parts in one frame.
+		while fadeHead <= stop and processed < VISUAL_PARTS_PER_FRAME do
+			if os.clock() - now >= VISUAL_BUDGET then
+				break
+			end
+			local visual = fadeQueue[fadeHead]
+			fadeQueue[fadeHead] = nil
+			fadeHead += 1
+			local started = fading[visual]
+			if started ~= nil then
+				local alpha = math.min((now - started) / FADE_TIME, 1)
+				local target = if visual.hidden then math.ceil(alpha * FADE_STEPS) / FADE_STEPS else 0
+				if not visual.fadeCursor and target ~= visual.fadeApplied then
+					visual.fadeApplied = target
+					visual.fadeCursor = 1
+				end
+				local cursor = visual.fadeCursor
+				if cursor then
+					while cursor <= #visual.parts and processed < VISUAL_PARTS_PER_FRAME do
+						if os.clock() - now >= VISUAL_BUDGET then
+							break
+						end
+						local part = visual.parts[cursor]
+						if part.LocalTransparencyModifier ~= visual.fadeApplied then
+							part.LocalTransparencyModifier = visual.fadeApplied :: number
+						end
+						cursor += 1
+						processed += 1
+					end
+					visual.fadeCursor = if cursor <= #visual.parts then cursor else nil
+				end
+				if not visual.fadeCursor and visual.fadeApplied == (if visual.hidden then 1 else 0) then
+					fading[visual] = nil
+				else
+					enqueue(visual)
 				end
 			end
-			if alpha >= 1 then
-				visual.fadeApplied = nil
-				fading[visual] = nil
-			end
+		end
+		if fadeHead > fadeTail then
+			fadeHead, fadeTail = 1, 0
 		end
 	end))
 
@@ -496,7 +530,16 @@ function Lod.start()
 				if visual then
 					table.insert(visual.parts, d)
 					if visual.hidden ~= nil then
-						d.LocalTransparencyModifier = if visual.hidden then 1 else 0
+						-- Late shell geometry shares the same budget as the handover. A
+						-- persistent shell may itself arrive in a large replication burst.
+						if fading[visual] == nil then
+							fading[visual] = -math.huge
+							visual.fadeApplied = if visual.hidden then 1 else 0
+							visual.fadeCursor = #visual.parts
+							enqueue(visual)
+						elseif not visual.fadeCursor and visual.fadeApplied ~= nil then
+							visual.fadeCursor = #visual.parts
+						end
 					end
 				end
 			end
@@ -517,6 +560,9 @@ function Lod.start()
 					local index = visual and table.find(visual.parts, d)
 					if visual and index then
 						table.remove(visual.parts, index)
+						if visual.fadeCursor and index < visual.fadeCursor then
+							visual.fadeCursor -= 1
+						end
 					end
 				end
 			end)

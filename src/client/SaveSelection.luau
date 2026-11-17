@@ -366,7 +366,7 @@ function Service.start()
 			text(frame, "SlotNumber", tag, UDim2.fromOffset(88, 11), UDim2.new(1, -100, 0, 18), 12, true)
 			text(frame, "SaveName", if exists then entry.Name or "Untitled save" else "Start a new adventure", UDim2.fromOffset(88, 29), UDim2.new(1, -100, 0, 25), 20)
 			local kind = if exists then Branches.label(entry.Branches) else nil
-			local summary = if not exists then "Fishing company or café · solo or with up to four friends."
+			local summary = if not exists then "Fishing company · solo or with up to four friends."
 				elseif entry.Multiplayer then string.format("%s · %d/5 members · %s net worth", kind, entry.MemberCount or 1, money(entry.NetWorth))
 				else string.format("%s · solo · %s net worth", kind, money(entry.NetWorth))
 			text(frame, "Details", summary, UDim2.fromOffset(88, 55), UDim2.new(1, -100, 0, 20), 13, true)
@@ -486,35 +486,8 @@ function Service.start()
 		iconInput:GetPropertyChangedSignal("Text"):Connect(updatePreview)
 		nameInput:GetPropertyChangedSignal("Text"):Connect(updatePreview)
 
-		-- The company type is picked once, when the save is created. The other
-		-- branch is bought later from the office PC (BRANCHES app).
 		local companyType = "Fishing"
 		local top = 230
-		if creating then
-			text(content, "CompanyTypeLabel", "Company type", UDim2.fromOffset(2, top), UDim2.new(1, -18, 0, 26), 15)
-			local typeButtons = {}
-			local typeHelp
-			local function paintTypes()
-				for kind, item in typeButtons do
-					item:SetAttribute("SaveButtonStyle", if kind == companyType then "Selected" else "Normal")
-					style(item, item:GetAttribute("SaveButtonStyle"))
-				end
-				local other = Branches.Info[if companyType == "Fishing" then "Cafe" else "Fishing"]
-				typeHelp.Text = string.format("%s You can buy the %s later on your office PC.", Branches.Info[companyType].Blurb, string.lower(other.Title))
-			end
-			for index, kind in Branches.ORDER do
-				local label = if kind == "Fishing" then "Fishing company" else "Café (city)"
-				typeButtons[kind] = button(content, "Company" .. kind, label, UDim2.new((index - 1) * 0.5, 2, 0, top + 30), UDim2.new(0.5, -13, 0, 42), function()
-					if busy or entering then return end
-					companyType = kind
-					paintTypes()
-				end)
-			end
-			typeHelp = text(content, "CompanyTypeHelp", "", UDim2.fromOffset(2, top + 80), UDim2.new(1, -18, 0, 48), 13, true)
-			typeHelp.TextWrapped, typeHelp.TextTruncate, typeHelp.TextYAlignment = true, Enum.TextTruncate.None, Enum.TextYAlignment.Top
-			paintTypes()
-			top += 136
-		end
 
 		local multiplayer = entry.Multiplayer == true
 		local toggle

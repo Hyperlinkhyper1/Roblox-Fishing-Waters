@@ -75,8 +75,9 @@ local function buildInterior(): Model
 	hall:SetAttribute("InteriorFrame", o * CFrame.new(0, RIDGE / 2, 0))
 	hall:SetAttribute("InteriorSize", Vector3.new(W, RIDGE, D))
 	hall:SetAttribute("ArrivalFrame", o * CFrame.new(0, 3.2, -D / 2 + 5) * CFrame.Angles(0, math.pi, 0))
-	-- Stream the whole hall in at once so nobody arrives on a half-loaded floor
-	hall.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	-- Let the engine budget the room's thousand parts across streaming frames.
+	-- Door travel preloads the destination before moving the character.
+	hall.ModelStreamingMode = Enum.ModelStreamingMode.Default
 	local rng = Random.new(2811)
 
 	local function part(name: string, size: Vector3, cf: CFrame, color: Color3, material: Enum.Material?): Part
@@ -819,6 +820,8 @@ local function ensureInterior(): Model
 		end
 		hall = buildInterior()
 	end
+	-- Repair baked halls without rebuilding their geometry or changing child models.
+	hall.ModelStreamingMode = Enum.ModelStreamingMode.Default
 	-- Refresh saved interiors too, without rebuilding the shop for a sign change.
 	local cratePrompt = hall:FindFirstChild("OpenRodCratePrompt", true)
 	if cratePrompt and cratePrompt:IsA("ProximityPrompt") then

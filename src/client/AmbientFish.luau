@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local Biomes = require(ReplicatedStorage.Shared.Biomes)
 local FishModels = require(ReplicatedStorage.Shared.FishModels)
 local FishSpecies = require(ReplicatedStorage.Shared.FishSpecies)
@@ -100,12 +101,23 @@ local function swims(species): boolean
 	return true
 end
 
+-- Resolve the same area as a cast, including nested zones and inherited sea fish.
+local function poolAt(position: Vector3)
+	local area = if Weather.inLake(position) then "lake" else Biomes.zoneAt(position).id
+	return Catalog.poolAt(area)
+end
+
+local function inSeason(species, season: string): boolean
+	return species.Seasons == nil or table.find(species.Seasons, season) ~= nil
+end
+
 -- Weighted by encounter odds, so a Legendary swimming past stays a rare sight.
-local function pickSpecies(pool: string, season: string, rng: Random): string?
+local function pickSpecies(pool, season: string, rng: Random): string?
 	local total, choices = 0, {}
-	for id, species in FishSpecies do
-		if swims(species) and table.find(species.Pools, pool) and FishModels.has(id) then
-			if not species.Seasons or table.find(species.Seasons, season) then
+	for _, id in pool.Fish do
+		local species = FishSpecies[id]
+		if species and swims(species) and FishModels.has(id) then
+			if inSeason(species, season) then
 				local weight = 1 / math.max(species.RarityDenominator or 1, 1)
 				total += weight
 				table.insert(choices, { id = id, weight = weight })
@@ -233,8 +245,7 @@ function AmbientFish.start()
 
 	local function spawnAt(origin: Vector3): boolean
 		local now = workspace:GetServerTimeNow()
-		local pool = if Weather.inLake(origin) then "MainLake" else "OpenSea"
-		local id = pickSpecies(pool, (Seasons.current(now)), rng)
+		local id = pickSpecies(poolAt(origin), (Seasons.current(now)), rng)
 		if not id then
 			return false
 		end
@@ -434,6 +445,7 @@ function AmbientFish.start()
 			frame += 1
 		end
 		local now = os.clock()
+		local season = Seasons.current(workspace:GetServerTimeNow())
 		local roots, frames = {}, {}
 		for index = #schools, 1, -1 do
 			local school = schools[index]
@@ -464,6 +476,12 @@ function AmbientFish.start()
 			local speed = if now < school.blockedUntil then SPEED * 0.5 else SPEED
 			forward = Vector3.new(math.cos(school.heading), 0, math.sin(school.heading))
 			school.center += forward * speed * dt
+			-- Retire a school as soon as its season ends or it leaves its habitat.
+			-- Disposal still runs through the one-model-per-Heartbeat recycler.
+			if not inSeason(FishSpecies[school.id], season) or not table.find(poolAt(school.center).Fish, school.id) then
+				despawn(school)
+				continue
+			end
 			local toSchool = school.center - eye
 			local distance = toSchool.Magnitude
 			local shown = moveFrame and distance > 0 and look:Dot(toSchool / distance) > BEHIND_DOT

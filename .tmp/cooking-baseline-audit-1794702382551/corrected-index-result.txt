@@ -1,0 +1,6 @@
+Exit: 1
+./.tmp/cooking-baseline-audit-1794702382551/business-paths-corrected-index.luau:10: Chef finds a fish meeting the recipe rarity
+stacktrace:
+[C] function assert
+./.tmp/cooking-baseline-audit-1794702382551/business-paths-corrected-index.luau:10
+

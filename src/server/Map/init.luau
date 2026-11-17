@@ -66,6 +66,9 @@ function Map.ensurePirateCove(root: Instance)
 end
 
 function Map.ensureCity(root: Instance)
+	-- Remove plots baked by the retired player cafe system.
+	local oldCafePlots = root:FindFirstChild("CafePlots")
+	if oldCafePlots then oldCafePlots:Destroy() end
 	local existing = root:FindFirstChild("Modern City")
 	if not (existing and existing:IsA("Model") and existing:GetAttribute("CityVersion") == City.VERSION) then
 		if not existing then

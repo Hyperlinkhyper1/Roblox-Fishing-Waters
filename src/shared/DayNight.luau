@@ -23,7 +23,10 @@ end
 -- calendar (the admin /set date command), and the clock keeps running from there.
 function DayNight.elapsed(serverTime: number?): number
 	local offset = workspace:GetAttribute("CalendarOffset")
-	return (serverTime or workspace:GetServerTimeNow()) - DayNight.EPOCH + (if type(offset) == "number" then offset else 0)
+	local globalOffset = workspace:GetAttribute("GlobalCalendarOffset")
+	return (serverTime or workspace:GetServerTimeNow()) - DayNight.EPOCH
+		+ (if type(globalOffset) == "number" then globalOffset else 0)
+		+ (if type(offset) == "number" then offset else 0)
 end
 
 -- Clock hour (0-24) after `elapsed` seconds since the epoch, which fell at midnight.

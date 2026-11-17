@@ -45,11 +45,11 @@ end
 
 -- The type of company a new save starts as (Shared.Branches). The other branch
 -- can be bought later; existing saves without a type are fishing companies.
-SaveData.COMPANY_TYPES = { Fishing = true, Cafe = true }
+SaveData.COMPANY_TYPES = { Fishing = true }
 
 function SaveData.cleanCompanyType(kind): string
 	if kind == nil then return "Fishing" end
-	assert(type(kind) == "string" and SaveData.COMPANY_TYPES[kind], "Choose a fishing company or a café.")
+	assert(type(kind) == "string" and SaveData.COMPANY_TYPES[kind], "Choose a fishing company.")
 	return kind
 end
 

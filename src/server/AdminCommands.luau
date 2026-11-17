@@ -28,6 +28,7 @@ local help = table.concat({
 	"/set weather <type> - change the weather",
 	"/set season <spring|summer|autumn|winter|auto> - pin the season or let it follow the clock",
 	"/set date <month-day> [hh:mm] - jump the in-game calendar there (e.g. 10-31 23:50), or auto",
+	"/time set <day|night> - skip forward to noon or midnight in all servers",
 	"/tp city - teleport to the city",
 	"/tp models - teleport to the full-size scale models",
 	"/fly - toggle flight (WASD, Space up, Ctrl down)",
@@ -61,6 +62,24 @@ function Service.start(reply, testMesh)
 
 	register("CommandsCommand", "/commands", function(player)
 		reply(player, help)
+	end)
+	register("TimeCommand", "/time", function(player, message)
+		if player.UserId ~= 2541746813 then return end
+		local target = message:match("^/time%s+set%s+(%a+)%s*$")
+		if target ~= "day" and target ~= "night" then
+			reply(player, "Usage: /time set day or /time set night.")
+			return
+		end
+		local ok, result = require(script.Parent.GlobalTimeService).advance(target)
+		if not ok then
+			reply(player, "Could not change the global time: " .. tostring(result))
+		elseif result == false then
+			reply(player, "Time saved; other servers will catch up when they next sync.")
+		elseif result == "studio" then
+			reply(player, "Time skipped forward to " .. target .. " in this Studio session.")
+		else
+			reply(player, "Time skipped forward to " .. target .. " across servers.")
+		end
 	end)
 	register("DreadbeardTreasureCommand", "/dbtreasure", function(player, message)
 		if player.UserId ~= 2541746813 then return end

@@ -12,7 +12,8 @@ local Biomes = require(ReplicatedStorage.Shared.Biomes)
 
 local SeasonFoliage = {}
 
-local BATCH = 600 -- parts recoloured per frame when the season turns
+local BATCH = 120 -- shared limit for each foliage pass, including streamed arrivals
+local FRAME_BUDGET = 0.001
 local GROUND_AREA = 400 -- a part this wide on top is lawn, not leaves
 local PIECE_TAG = "LodPiece" -- streamed map pieces (server/Map/Lod)
 local rgb = Color3.fromRGB
@@ -113,6 +114,7 @@ function SeasonFoliage.start()
 			table.insert(parts, part)
 		end
 		local count = 0
+		local started = os.clock()
 		for _, part in parts do
 			if mine ~= generation then
 				return
@@ -121,31 +123,63 @@ function SeasonFoliage.start()
 			if entry and part.Parent then
 				apply(part, entry)
 				count += 1
-				if count % BATCH == 0 then
+				if count % BATCH == 0 or os.clock() - started >= FRAME_BUDGET then
 					RunService.Heartbeat:Wait()
+					started = os.clock()
 				end
 			end
 		end
 	end
 
-	-- Map content streams in as LodPiece models that arrive whole (PersistentPerPlayer), so one
-	-- scan per piece picks up its foliage. Watching workspace.DescendantAdded instead resumed a
-	-- script thread for every part, weld and decal streaming in: tens of thousands per island,
-	-- the deferredThreads storms in the MicroProfiler.
+	-- Queue the roots of whole streaming pieces, not one thread per descendant. A burst of
+	-- pieces shares one frame budget; scanning each tag callback synchronously used to tint
+	-- every arriving island in the same frame. Walk child lists incrementally so startup also
+	-- avoids allocating a snapshot of every instance in workspace.
+	local scans, queued, head = {}, {}, 1
 	local function scanPiece(piece: Instance)
-		for _, item in piece:GetDescendants() do
-			consider(item)
-		end
+		if queued[piece] then return end
+		local scan = { root = piece, stack = { { items = { piece }, next = 1 } } }
+		queued[piece] = scan
+		table.insert(scans, scan)
 	end
 	CollectionService:GetInstanceAddedSignal(PIECE_TAG):Connect(scanPiece)
-	task.spawn(function()
-		local count = 0
-		for _, item in workspace:GetDescendants() do
-			consider(item)
-			count += 1
-			if count % 4000 == 0 then
-				RunService.Heartbeat:Wait()
+	CollectionService:GetInstanceRemovedSignal(PIECE_TAG):Connect(function(piece)
+		queued[piece] = nil
+	end)
+	-- Include existing non-piece scenery (including persistent shells). Nested LodPieces
+	-- receive their own jobs and are never traversed twice by the startup scan.
+	scanPiece(workspace)
+	RunService.Heartbeat:Connect(function()
+		local started, count = os.clock(), 0
+		while head <= #scans and count < BATCH and os.clock() - started < FRAME_BUDGET do
+			local scan = scans[head]
+			local root, stack = scan.root, scan.stack
+			if queued[root] ~= scan or (root ~= workspace and not root:IsDescendantOf(workspace)) or #stack == 0 then
+				if queued[root] == scan then queued[root] = nil end
+				scans[head] = false
+				head += 1
+				count += 1
+				continue
 			end
+			local frame = stack[#stack]
+			local item = frame.items[frame.next]
+			frame.next += 1
+			count += 1
+			if not item then
+				table.remove(stack)
+			elseif item == workspace or item:IsDescendantOf(workspace) then
+				if item ~= root and item:HasTag(PIECE_TAG) then
+					scanPiece(item)
+				else
+					consider(item)
+					local children = item:GetChildren()
+					if #children > 0 then table.insert(stack, { items = children, next = 1 }) end
+				end
+			end
+		end
+		if head > #scans then
+			table.clear(scans)
+			head = 1
 		end
 	end)
 	applyTerrain()

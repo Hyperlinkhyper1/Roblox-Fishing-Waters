@@ -1,0 +1,3646 @@
+-- Production Harbour/Drydock/Shipwright/Rowboat/Props builders are inserted by
+-- check-drydock.mjs or drydock-check.ps1. This checks their emitted geometry with matrix-aware
+-- recording mocks; it does not run Roblox physics or replace Studio play.
+-- Run with scripts/check-harbour-geometry.ps1. Production Harbour source is
+-- inserted at the marker, then its real builders run against recording mocks.
+-- This checks surface geometry, not Roblox physics, rendering, or Studio play.
+
+local function vectorType(dimensions)
+	local methods = {}
+	local mt = {}
+	local function new(x, y, z)
+		return setmetatable({ X = x or 0, Y = y or 0, Z = z or 0 }, mt)
+	end
+	function mt.__add(a, b)
+		return new(a.X + b.X, a.Y + b.Y, a.Z + b.Z)
+	end
+	function mt.__sub(a, b)
+		return new(a.X - b.X, a.Y - b.Y, a.Z - b.Z)
+	end
+	function mt.__unm(a)
+		return new(-a.X, -a.Y, -a.Z)
+	end
+	function mt.__mul(a, b)
+		if type(a) == "number" then
+			a, b = b, a
+		end
+		return new(a.X * b, a.Y * b, a.Z * b)
+	end
+	function mt.__div(a, b)
+		return new(a.X / b, a.Y / b, a.Z / b)
+	end
+	function mt.__index(a, key)
+		if key == "Magnitude" then
+			return math.sqrt(a.X * a.X + a.Y * a.Y + a.Z * a.Z)
+		elseif key == "Unit" then
+			return a / a.Magnitude
+		end
+		return methods[key]
+	end
+	function methods:Dot(b)
+		return self.X * b.X + self.Y * b.Y + self.Z * b.Z
+	end
+	function methods:Cross(b)
+		assert(dimensions == 3)
+		return new(self.Y * b.Z - self.Z * b.Y, self.Z * b.X - self.X * b.Z, self.X * b.Y - self.Y * b.X)
+	end
+	function methods:Min(b)
+		return new(math.min(self.X, b.X), math.min(self.Y, b.Y), math.min(self.Z, b.Z))
+	end
+	function methods:Max(b)
+		return new(math.max(self.X, b.X), math.max(self.Y, b.Y), math.max(self.Z, b.Z))
+	end
+	function methods:Lerp(b, t)
+		return self + (b - self) * t
+	end
+	return { new = new, zero = new(0, 0, 0) }
+end
+
+local Vector2 = vectorType(2)
+local Vector3 = vectorType(3)
+local Color3 = {}
+function Color3.new(r, g, b)
+	return {
+		R = r,
+		G = g,
+		B = b,
+		Lerp = function(self, other, t)
+			return Color3.new(
+				self.R + (other.R - self.R) * t,
+				self.G + (other.G - self.G) * t,
+				self.B + (other.B - self.B) * t
+			)
+		end,
+	}
+end
+function Color3.fromRGB(r, g, b)
+	return Color3.new(r / 255, g / 255, b / 255)
+end
+
+local Random = {}
+function Random.new(seed)
+	local state = seed
+	local rng = {}
+	function rng:NextNumber(low, high)
+		state = (state * 16807) % 2147483647
+		local t = state / 2147483647
+		return (low or 0) + ((high or 1) - (low or 0)) * t
+	end
+	function rng:NextInteger(low, high)
+		return math.min(high, math.floor(self:NextNumber(low, high + 1)))
+	end
+	return rng
+end
+
+
+
+Vector3.one = Vector3.new(1, 1, 1)
+Vector3.xAxis = Vector3.new(1, 0, 0)
+Vector3.yAxis = Vector3.new(0, 1, 0)
+Vector3.zAxis = Vector3.new(0, 0, 1)
+
+local CFrame = {}
+local frameMethods = {}
+local frameMt = {}
+local function frame(position, right, up, back)
+	return setmetatable(
+		{ Position = position, RightVector = right, UpVector = up, ZVector = back, _type = "CFrame" },
+		frameMt
+	)
+end
+function CFrame.new(x, y, z)
+	return frame(if type(x) == "table" then x else Vector3.new(x, y, z), Vector3.xAxis, Vector3.yAxis, Vector3.zAxis)
+end
+CFrame.identity = CFrame.new()
+function CFrame.fromMatrix(position, right, up, back)
+	return frame(position, right, up, back or right:Cross(up))
+end
+function frameMethods:VectorToWorldSpace(v)
+	return self.RightVector * v.X + self.UpVector * v.Y + self.ZVector * v.Z
+end
+function frameMethods:PointToWorldSpace(v)
+	return self.Position + self:VectorToWorldSpace(v)
+end
+function frameMethods:VectorToObjectSpace(v)
+	return Vector3.new(v:Dot(self.RightVector), v:Dot(self.UpVector), v:Dot(self.ZVector))
+end
+function frameMethods:PointToObjectSpace(v)
+	return self:VectorToObjectSpace(v - self.Position)
+end
+function frameMethods:ToObjectSpace(other)
+	return frame(
+		self:PointToObjectSpace(other.Position),
+		self:VectorToObjectSpace(other.RightVector),
+		self:VectorToObjectSpace(other.UpVector),
+		self:VectorToObjectSpace(other.ZVector)
+	)
+end
+function frameMt.__index(self, key)
+	return if key == "LookVector" then -self.ZVector else frameMethods[key]
+end
+function frameMt.__mul(a, b)
+	if b._type == "CFrame" then
+		return frame(
+			a:PointToWorldSpace(b.Position),
+			a:VectorToWorldSpace(b.RightVector),
+			a:VectorToWorldSpace(b.UpVector),
+			a:VectorToWorldSpace(b.ZVector)
+		)
+	end
+	return a:PointToWorldSpace(b)
+end
+function frameMt.__add(a, b)
+	return frame(a.Position + b, a.RightVector, a.UpVector, a.ZVector)
+end
+function frameMt.__sub(a, b)
+	return a + -b
+end
+function CFrame.Angles(x, y, z)
+	local sx, cx, sy, cy, sz, cz = math.sin(x), math.cos(x), math.sin(y), math.cos(y), math.sin(z), math.cos(z)
+	local rx = frame(Vector3.zero, Vector3.xAxis, Vector3.new(0, cx, sx), Vector3.new(0, -sx, cx))
+	local ry = frame(Vector3.zero, Vector3.new(cy, 0, -sy), Vector3.yAxis, Vector3.new(sy, 0, cy))
+	local rz = frame(Vector3.zero, Vector3.new(cz, sz, 0), Vector3.new(-sz, cz, 0), Vector3.zAxis)
+	return rx * ry * rz
+end
+function CFrame.lookAt(origin, target, upwards)
+	local look = (target - origin).Unit
+	local right = look:Cross(upwards or Vector3.yAxis).Unit
+	return frame(origin, right, right:Cross(look).Unit, -look)
+end
+local function typeof(value)
+	return if type(value) == "table" and value._type then value._type else type(value)
+end
+
+local Enum = setmetatable({}, {
+	__index = function(self, category)
+		local values = setmetatable({}, {
+			__index = function(_, value)
+				return value
+			end,
+		})
+		rawset(self, category, values)
+		return values
+	end,
+})
+local function valueType()
+	return {
+		new = function(...)
+			return { ... }
+		end,
+		fromScale = function(...)
+			return { ... }
+		end,
+	}
+end
+local UDim2, NumberSequence, NumberSequenceKeypoint, NumberRange, ColorSequence =
+	valueType(), valueType(), valueType(), valueType(), valueType()
+local PhysicalProperties = valueType()
+local instanceMethods = {}
+local instanceMt = {}
+local Instance = {}
+local partTypes = { Part = true, WedgePart = true, Seat = true, VehicleSeat = true, SpawnLocation = true }
+function Instance.new(class)
+	return setmetatable({
+		_props = {
+			MouseClick = { Connect = function() end },
+			AncestryChanged = { Connect = function() return { Disconnect = function() end } end },
+			ClassName = class,
+			Name = class,
+			Size = Vector3.new(1, 1, 1),
+			CFrame = CFrame.new(),
+			CanCollide = true,
+			Transparency = 0,
+		},
+		_children = {},
+		_attributes = {},
+		_tags = {},
+	}, instanceMt)
+end
+function instanceMt.__index(self, key)
+	if key == "Position" then
+		return self.CFrame.Position
+	end
+	return instanceMethods[key] or self._props[key]
+end
+function instanceMt.__newindex(self, key, value)
+	if key == "Parent" then
+		local old = self._props.Parent
+		if old then
+			table.remove(old._children, table.find(old._children, self))
+		end
+		if value then
+			table.insert(value._children, self)
+		end
+	end
+	self._props[key] = value
+end
+function instanceMethods:IsA(class)
+	return self.ClassName == class or (class == "BasePart" and partTypes[self.ClassName] == true)
+end
+function instanceMethods:SetAttribute(key, value)
+	self._attributes[key] = value
+end
+function instanceMethods:GetAttribute(key)
+	return self._attributes[key]
+end
+function instanceMethods:ApplyDescriptionAsync(description)
+	self._appliedDescription = description
+	local character = self.Parent or self
+	local shirt = Instance.new("Shirt")
+	shirt.Name = "Shirt"
+	shirt.ShirtTemplate = "rbxassetid://" .. tostring(description.Shirt)
+	shirt.Parent = character
+	local pants = Instance.new("Pants")
+	pants.Name = "Pants"
+	pants.PantsTemplate = "rbxassetid://" .. tostring(description.Pants)
+	pants.Parent = character
+	for _, id in string.split(description.HatAccessory or "", ",") do
+		local accessory = Instance.new("Accessory")
+		accessory.Name = "HatAccessory"
+		accessory:SetAttribute("AssetId", tonumber(id))
+		accessory.Parent = character
+	end
+	for _, id in string.split(description.WaistAccessory or "", ",") do
+		local accessory = Instance.new("Accessory")
+		accessory.Name = "WaistAccessory"
+		accessory:SetAttribute("AssetId", tonumber(id))
+		accessory.Parent = character
+	end
+end
+function instanceMethods:GetChildren()
+	return table.clone(self._children)
+end
+-- The refit lift moves during construction, before the launch scenarios below.
+-- Model pivots follow Roblox: a bounding pivot when no PrimaryPart is set.
+function instanceMethods:GetBoundingBox()
+	local low, high = Vector3.new(math.huge, math.huge, math.huge), Vector3.new(-math.huge, -math.huge, -math.huge)
+	for _, piece in self:GetDescendants() do
+		if piece:IsA("BasePart") then
+			for _, x in { -0.5, 0.5 } do
+				for _, y in { -0.5, 0.5 } do
+					for _, z in { -0.5, 0.5 } do
+						local p = piece.CFrame * Vector3.new(piece.Size.X * x, piece.Size.Y * y, piece.Size.Z * z)
+						low, high = low:Min(p), high:Max(p)
+					end
+				end
+			end
+		end
+	end
+	return CFrame.new((low + high) / 2), high - low
+end
+function instanceMethods:GetPivot()
+	if self.PrimaryPart then
+		return self.PrimaryPart.CFrame
+	end
+	return self:GetBoundingBox()
+end
+function instanceMethods:PivotTo(target)
+	local previous = self:GetPivot()
+	for _, piece in self:GetDescendants() do
+		if piece:IsA("BasePart") then
+			piece.CFrame = target * previous:ToObjectSpace(piece.CFrame)
+		end
+	end
+end
+function instanceMethods:ScaleTo(scale)
+	local ratio = scale / (self._props.ModelScale or 1)
+	local pivot = self:GetPivot()
+	for _, piece in self:GetDescendants() do
+		if piece:IsA("BasePart") then
+			local relative = pivot:ToObjectSpace(piece.CFrame)
+			piece.Size *= ratio
+			piece.CFrame = pivot
+				* CFrame.fromMatrix(relative.Position * ratio, relative.RightVector, relative.UpVector, relative.ZVector)
+		end
+	end
+	self._props.ModelScale = scale
+end
+function instanceMethods:GetDescendants()
+	local result = {}
+	for _, child in self._children do
+		table.insert(result, child)
+		for _, descendant in child:GetDescendants() do
+			table.insert(result, descendant)
+		end
+	end
+	return result
+end
+function instanceMethods:FindFirstChild(name, recurse)
+	for _, child in (if recurse then self:GetDescendants() else self._children) do
+		if child.Name == name then
+			return child
+		end
+	end
+	return nil
+end
+function instanceMethods:FindFirstChildOfClass(class)
+	for _, item in self:GetChildren() do
+		if item:IsA(class) then return item end
+	end
+	return nil
+end
+function instanceMethods:GetFullName()
+	return if self.Parent then self.Parent:GetFullName() .. "." .. self.Name else self.Name
+end
+function instanceMethods:IsDescendantOf(ancestor)
+	local parent = self.Parent
+	while parent do
+		if parent == ancestor then
+			return true
+		end
+		parent = parent.Parent
+	end
+	return false
+end
+function instanceMethods:FindFirstChildWhichIsA(class)
+	for _, item in self._children do
+		if item:IsA(class) then
+			return item
+		end
+	end
+	return nil
+end
+function instanceMethods:Destroy()
+	self.Parent = nil
+end
+local CollectionService = {}
+function CollectionService:AddTag(item, tag)
+	item._tags[tag] = true
+end
+function CollectionService:RemoveTag(item, tag)
+	item._tags[tag] = nil
+end
+function CollectionService:HasTag(item, tag)
+	return item._tags[tag] == true
+end
+local game = {
+	GetService = function(_, name)
+		if name == "ReplicatedStorage" then
+			return {}
+		end
+		assert(name == "CollectionService")
+		return CollectionService
+	end,
+}
+local workspace = { Terrain = { FillBlock = function() end }, Name = "Workspace", _children = {} }
+workspace.FindFirstChild = instanceMethods.FindFirstChild
+workspace.GetChildren = instanceMethods.GetChildren
+workspace.GetDescendants = instanceMethods.GetDescendants
+function workspace:GetFullName()
+	return "Workspace"
+end
+local task = { wait = function() end }
+local warn = print
+
+local dependencies = {LowPoly={}}
+dependencies.Props = (function()
+-- Set dressing: trees, buildings, harbour clutter, rocks and effects, all using Roblox's textured materials.
+-- Each builder takes a ground position and puts its parts in a new Model under `parent`.
+
+local LowPoly = dependencies.LowPoly
+
+local Props = {}
+
+local HOUSE_COLLISION_VERSION = 1
+local HOUSE_NAMES = {
+	House = true,
+	CubeHouse = true,
+	Townhouse = true,
+	Villa = true,
+	FishingRodShop = true,
+	FurnitureShop = true,
+}
+local BASE_TRIM = {
+	SidePlinth = true,
+	EavesBeam = true,
+	TimberPost = true,
+	DoorJamb = true,
+	DoorHeader = true,
+	RidgeCap = true,
+	CeilingTie = true,
+}
+
+local M_WOOD = Enum.Material.Wood
+
+local function noCollision(piece: BasePart)
+	piece.CanCollide, piece.CanTouch, piece.CanQuery = false, false, false
+end
+
+local DECORATION_COLLISION_VERSION = 2
+-- Trees keep their trunk (and mangrove stilt roots) as the one body you bump into; canopies,
+-- fronds, thin branches and fruit are visual only.
+local TREES = {
+	Tree = true,
+	Palm = true,
+	Pine = true,
+	DeadTree = true,
+	Olive = true,
+	StonePine = true,
+	Mangrove = true,
+}
+local TRUNK_THICKNESS = 0.75
+-- Greenery, coral and hanging lights: nothing a player, diver or boat needs to collide with.
+local NO_HITBOX = {
+	Bush = true,
+	Flowers = true,
+	Reeds = true,
+	LilyPad = true,
+	Coral = true,
+	Seaweed = true,
+	Lavender = true,
+	Bougainvillea = true,
+	StringLights = true,
+	Lantern = true,
+}
+Props.DECORATION_NAMES = table.freeze({
+	Sandcastle = true,
+	BeachBall = true,
+	Pot = true,
+	Tree = true,
+	Palm = true,
+	Pine = true,
+	DeadTree = true,
+	Olive = true,
+	StonePine = true,
+	Mangrove = true,
+	Bush = true,
+	Flowers = true,
+	Reeds = true,
+	LilyPad = true,
+	Coral = true,
+	Seaweed = true,
+	Lavender = true,
+	Bougainvillea = true,
+	StringLights = true,
+	Lantern = true,
+})
+
+-- A solid wooden block at least TRUNK_THICKNESS across its two thinnest sides.
+local function isTrunk(piece: BasePart): boolean
+	if piece.Material ~= M_WOOD or (piece:IsA("Part") and piece.Shape == Enum.PartType.Ball) then
+		return false
+	end
+	local s = piece.Size
+	local thinnest = math.min(s.X, s.Y, s.Z)
+	local middle = s.X + s.Y + s.Z - thinnest - math.max(s.X, s.Y, s.Z)
+	return thinnest >= TRUNK_THICKNESS and middle >= TRUNK_THICKNESS
+end
+
+-- Keep one simple body for small beach props and trees; plants are entirely decorative.
+function Props.simplifyDecorationCollision(model: Model)
+	if (model:GetAttribute("DecorationCollisionVersion") or 0) >= DECORATION_COLLISION_VERSION then
+		return
+	end
+	local name = model.Name
+	for _, piece in model:GetDescendants() do
+		if not piece:IsA("BasePart") then
+			continue
+		end
+		local keep = false
+		if name == "Sandcastle" then
+			keep = piece.Size == Vector3.new(4, 1.2, 4)
+		elseif name == "BeachBall" then
+			keep = piece:IsA("Part") and piece.Shape == Enum.PartType.Ball
+		elseif name == "Pot" then
+			-- The terracotta pot itself; the plant growing out of it is decoration.
+			keep = piece.Material == Enum.Material.Sandstone
+		elseif TREES[name] then
+			keep = isTrunk(piece)
+		elseif not NO_HITBOX[name] then
+			keep = piece.CanCollide
+		end
+		if not keep then
+			noCollision(piece)
+			-- Leaves and blossoms rarely read in the shadow map; trunks and pots still cast.
+			if TREES[name] or NO_HITBOX[name] then
+				if math.max(piece.Size.X, piece.Size.Y, piece.Size.Z) < 1.5 then
+					piece.CastShadow = false
+				end
+			end
+		end
+	end
+	model:SetAttribute("DecorationCollisionVersion", DECORATION_COLLISION_VERSION)
+end
+
+-- Parts smaller than this on every side are trim (bolts, knobs, bulbs, blossoms, pebbles):
+-- too small to stand on or be stopped by, so they get no hitbox and cast no shadow.
+local DETAIL_SIZE = 1
+-- Places where small parts are interactive or player-built (bases, furniture, shops, owned
+-- islands, cages): leave everything under these alone.
+local KEEP_TAGS = {
+	"PlayerBase",
+	"CompanyIsland",
+	"BoatShop",
+	"RefitDock",
+	"FurnitureShowroom",
+	"FurnitureShop",
+	"FishingRodShop",
+	"BackpackShop",
+	"MetroStop",
+	"WeatherRadarScreen",
+	"ShoreWaveSource",
+	"CrabCage",
+	"MusselNet",
+}
+
+local function isDetail(piece: BasePart): boolean
+	local s = piece.Size
+	return s.X < DETAIL_SIZE and s.Y < DETAIL_SIZE and s.Z < DETAIL_SIZE
+end
+
+local function simplifyDetail(piece: BasePart)
+	if not piece.Anchored or piece.Transparency >= 1 then
+		return
+	end
+	if piece:FindFirstChildWhichIsA("ProximityPrompt", true) or piece:FindFirstChildWhichIsA("ClickDetector") then
+		return
+	end
+	if piece.CanCollide or piece.CanQuery or piece.CanTouch then
+		noCollision(piece)
+	end
+	if piece.CastShadow then
+		piece.CastShadow = false
+	end
+end
+
+-- One walk over the whole map: decoration models by name, plus every tiny anchored detail part
+-- outside player-built and interactive areas. Idempotent, so baked maps pick it up on boot.
+function Props.ensureDecorationCollision(root: Instance, pause: (() -> ())?)
+	local CollectionService = game:GetService("CollectionService")
+	local kept: { [Instance]: boolean } = {}
+	for _, tag in KEEP_TAGS do
+		for _, holder in CollectionService:GetTagged(tag) do
+			if holder:IsDescendantOf(root) then
+				kept[holder] = true
+			end
+		end
+	end
+	local function protected(instance: Instance): boolean
+		local at = instance.Parent
+		while at and at ~= root do
+			if kept[at] then
+				return true
+			end
+			at = at.Parent
+		end
+		return false
+	end
+	-- Ancestor lookups are memoised per parent: siblings share the answer.
+	local parentKept: { [Instance]: boolean } = {}
+	local function underKept(piece: Instance): boolean
+		local parent = piece.Parent
+		if not parent then
+			return true
+		end
+		local known = parentKept[parent]
+		if known == nil then
+			known = kept[parent] == true or protected(parent)
+			parentKept[parent] = known
+		end
+		return known
+	end
+
+	for _, d in root:GetDescendants() do
+		if pause then
+			pause()
+		end
+		if d:IsA("Model") then
+			if Props.DECORATION_NAMES[d.Name] and not underKept(d) then
+				Props.simplifyDecorationCollision(d)
+			end
+		elseif d:IsA("BasePart") and isDetail(d) and (d.CanCollide or d.CanQuery or d.CastShadow) then
+			if not underKept(d) then
+				simplifyDetail(d)
+			end
+		end
+	end
+end
+
+-- Keep the existing solid building cores and walking surfaces. Facade details
+-- within 0.65 studs of a core share its collision instead of each adding a body.
+-- Test all eight corners in the core's frame, including on rotated houses.
+local function coveredByCore(piece: BasePart, core: BasePart): boolean
+	local half = core.Size / 2 + Vector3.new(0.65, 0.65, 0.65)
+	for _, x in { -0.5, 0.5 } do
+		for _, y in { -0.5, 0.5 } do
+			for _, z in { -0.5, 0.5 } do
+				local point = core.CFrame:PointToObjectSpace(
+					piece.CFrame * Vector3.new(piece.Size.X * x, piece.Size.Y * y, piece.Size.Z * z)
+				)
+				if math.abs(point.X) > half.X or math.abs(point.Y) > half.Y or math.abs(point.Z) > half.Z then
+					return false
+				end
+			end
+		end
+	end
+	return true
+end
+
+function Props.simplifyHouseCollision(house: Model)
+	if house:GetAttribute("HouseCollisionVersion") == HOUSE_COLLISION_VERSION then
+		return
+	end
+	if house.Name == "BaseHouse" then
+		-- Player homes are hollow: never replace their rooms with a solid box.
+		-- Only shell trim is decorative; furniture retains its own interactions.
+		local shell = house:FindFirstChild("Shell")
+		for _, piece in if shell then shell:GetDescendants() else {} do
+			if piece:IsA("BasePart") and BASE_TRIM[piece.Name] then
+				noCollision(piece)
+			end
+		end
+	else
+		local pieces, cores = {}, {}
+		for _, piece in house:GetDescendants() do
+			if piece:IsA("BasePart") and piece.CanCollide then
+				table.insert(pieces, piece)
+				-- Scenery houses already have solid, rectangular wall blocks.
+				-- Roofs, steps, stilts, balconies and exterior stairs are not cores.
+				if
+					piece:IsA("Part")
+					and piece.Shape == Enum.PartType.Block
+					and piece.Size.X >= 8
+					and piece.Size.Z >= 8
+					and piece.Size.Y >= 6
+				then
+					table.insert(cores, piece)
+				end
+			end
+		end
+		for _, piece in pieces do
+			if table.find(cores, piece) then
+				continue
+			end
+			for _, core in cores do
+				if coveredByCore(piece, core) then
+					noCollision(piece)
+					break
+				end
+			end
+		end
+	end
+	house:SetAttribute("HouseCollisionVersion", HOUSE_COLLISION_VERSION)
+end
+
+-- Baked maps keep their models, positions, ownership and furnishings.
+function Props.ensureHouseCollision(root: Instance, pause: (() -> ())?)
+	for _, house in root:GetDescendants() do
+		if pause then
+			pause()
+		end
+		if
+			house:IsA("Model")
+			and (
+				HOUSE_NAMES[house.Name]
+				or house.Name == "BaseHouse"
+				or house.Name == "PlazaHouse"
+				or string.match(house.Name, "^PlazaHouse%d+$")
+			)
+		then
+			Props.simplifyHouseCollision(house)
+		end
+	end
+end
+
+local TAU = math.pi * 2
+local rgb = Color3.fromRGB
+local M = Enum.Material
+
+local WOOD = rgb(122, 92, 64)
+local WOOD_DARK = rgb(78, 60, 46)
+local TRUNK = rgb(88, 66, 50)
+local WHITE = rgb(232, 228, 218)
+local RED = rgb(170, 52, 44)
+local IRON = rgb(52, 50, 48)
+local ROPE = rgb(176, 150, 106)
+local STONE = rgb(132, 126, 118)
+local LAMP = rgb(255, 210, 140)
+local LAVA = rgb(255, 96, 28)
+
+local function newModel(name: string, parent: Instance): Model
+	local m = Instance.new("Model")
+	m.Name = name
+	m.Parent = parent
+	return m
+end
+
+local function part(parent: Instance, size: Vector3, cframe: CFrame, color: Color3, material: Enum.Material?): Part
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.CanTouch = false
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Material = material or M.SmoothPlastic
+	p.Color = color
+	p.Size = size
+	p.CFrame = cframe
+	p.Parent = parent
+	return p
+end
+
+-- Upright cylinder centered on `center`.
+local function cylinder(
+	parent: Instance,
+	center: Vector3,
+	height: number,
+	diameter: number,
+	color: Color3,
+	material: Enum.Material?
+): Part
+	local p = part(
+		parent,
+		Vector3.new(height, diameter, diameter),
+		CFrame.new(center) * CFrame.Angles(0, 0, math.pi / 2),
+		color,
+		material
+	)
+	p.Shape = Enum.PartType.Cylinder
+	return p
+end
+
+-- A block stretched between two points; trunks, roots, posts, branches, ropes and fronds.
+local function beam(
+	parent: Instance,
+	a: Vector3,
+	b: Vector3,
+	width: number,
+	color: Color3,
+	thickness: number?,
+	material: Enum.Material?
+): Part
+	if math.abs((b - a).Unit.Y) > 0.999 then
+		b += Vector3.new(0.01, 0, 0)
+	end
+	return part(
+		parent,
+		Vector3.new(width, thickness or width, (b - a).Magnitude),
+		CFrame.lookAt((a + b) / 2, b),
+		color,
+		material
+	)
+end
+
+-- Randomly rotated block; reads as a chunky clump (canopies, rocks, coral).
+local function blob(
+	parent: Instance,
+	center: Vector3,
+	size: Vector3,
+	rng: Random,
+	color: Color3,
+	material: Enum.Material?
+): Part
+	local spin = CFrame.Angles(rng:NextNumber(0, TAU), rng:NextNumber(0, TAU), rng:NextNumber(0, TAU))
+	return part(parent, size, CFrame.new(center) * spin, color, material)
+end
+
+local function ball(parent: Instance, center: Vector3, size: number, color: Color3, material: Enum.Material?): Part
+	local p = part(parent, Vector3.new(size, size, size), CFrame.new(center), color, material)
+	p.Shape = Enum.PartType.Ball
+	return p
+end
+
+local function light(parent: BasePart, color: Color3, range: number, brightness: number)
+	local l = Instance.new("PointLight")
+	l.Color = color
+	l.Range = range
+	l.Brightness = brightness
+	l.Shadows = false
+	l.Parent = parent
+end
+
+local function shade(color: Color3, rng: Random, amount: number): Color3
+	local s = 1 + rng:NextNumber(-amount, amount)
+	return Color3.new(math.min(color.R * s, 1), math.min(color.G * s, 1), math.min(color.B * s, 1))
+end
+
+function Props.pick<T>(rng: Random, list: { T }): T
+	return list[rng:NextInteger(1, #list)]
+end
+
+Props.part = part
+Props.cylinder = cylinder
+Props.beam = beam
+Props.blob = blob
+Props.ball = ball
+Props.light = light
+Props.shade = shade
+
+----------------------------------------------------------------------------------------------------
+-- Trees
+
+-- Tiered conifer; `snow` frosts the tiers for the ice biome.
+function Props.pine(parent: Instance, ground: Vector3, rng: Random, leaves: Color3, snow: Color3?): Model
+	local m = newModel("Pine", parent)
+	local h = rng:NextNumber(14, 30)
+	local width = h * rng:NextNumber(0.2, 0.26)
+	part(m, Vector3.new(1.2, h * 0.3, 1.2), CFrame.new(ground + Vector3.new(0, h * 0.15 - 1, 0)), TRUNK, M.Wood)
+
+	local tiers = if h > 21 then 3 else 2
+	local spin = rng:NextNumber(0, TAU)
+	for i = 1, tiers do
+		local k = (i - 1) / tiers
+		local baseY = h * (0.16 + k * 0.6)
+		local apexY = if i == tiers then h else baseY + h * 0.5
+		local r = width * (1 - k * 0.55)
+		local base = {}
+		for s = 0, 3 do
+			local a = spin + i * 0.7 + s * TAU / 4 + rng:NextNumber(-0.2, 0.2)
+			base[s + 1] = ground + Vector3.new(math.cos(a) * r, baseY, math.sin(a) * r)
+		end
+		local apex = ground + Vector3.new(rng:NextNumber(-0.4, 0.4), apexY, rng:NextNumber(-0.4, 0.4))
+		local color = shade(leaves, rng, 0.08)
+		local material = M.Grass
+		if snow then
+			color = color:Lerp(snow, if i == tiers then 0.85 else 0.45)
+			material = if i == tiers then M.Snow else M.Grass
+		end
+		LowPoly.pyramid(base, apex, color, m, material)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+-- Round-canopied tree (the orange/brown autumn trees around the Sound).
+function Props.broadleaf(parent: Instance, ground: Vector3, rng: Random, colors: { Color3 }): Model
+	local m = newModel("Tree", parent)
+	local h = rng:NextNumber(10, 16)
+	local top = ground + Vector3.new(rng:NextNumber(-1, 1), h * 0.65, rng:NextNumber(-1, 1))
+	beam(m, ground - Vector3.new(0, 1, 0), top, 1.4, TRUNK, nil, M.Wood)
+	for _ = 1, 2 do
+		local a = rng:NextNumber(0, TAU)
+		local tip = top:Lerp(ground, 0.35) + Vector3.new(math.cos(a) * 3.5, 3, math.sin(a) * 3.5)
+		beam(m, top:Lerp(ground, 0.4), tip, 0.6, TRUNK, nil, M.Wood)
+	end
+	for _ = 1, rng:NextInteger(3, 4) do
+		local s = rng:NextNumber(5, 8)
+		local offset = Vector3.new(rng:NextNumber(-3, 3), rng:NextNumber(0, 3.5), rng:NextNumber(-3, 3))
+		blob(m, top + offset, Vector3.new(s, s * 0.8, s), rng, shade(Props.pick(rng, colors), rng, 0.06), M.LeafyGrass)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+-- Mangrove on arching stilt roots. `floorY` is where the roots end (sea floor or ground).
+function Props.mangrove(
+	parent: Instance,
+	ground: Vector3,
+	rng: Random,
+	floorY: number,
+	bark: Color3,
+	canopy: { Color3 }
+): Model
+	local m = newModel("Mangrove", parent)
+	local h = rng:NextNumber(16, 28)
+	local hub = ground + Vector3.new(0, rng:NextNumber(4, 7), 0)
+	local top = ground + Vector3.new(rng:NextNumber(-2, 2), h, rng:NextNumber(-2, 2))
+	beam(m, hub, top, 1.4, bark, nil, M.Wood)
+
+	for _ = 1, rng:NextInteger(4, 6) do
+		local a = rng:NextNumber(0, TAU)
+		local dir = Vector3.new(math.cos(a), 0, math.sin(a))
+		local reach = rng:NextNumber(5, 9)
+		local knee = hub + dir * reach * 0.6 + Vector3.new(0, rng:NextNumber(0, 2), 0)
+		local foot = Vector3.new(ground.X, floorY, ground.Z) + dir * reach
+		beam(m, hub + Vector3.new(0, 1, 0), knee, 0.8, bark, nil, M.Wood)
+		beam(m, knee, foot, 0.8, bark, nil, M.Wood)
+	end
+
+	local crowns = { top }
+	for _ = 1, rng:NextInteger(2, 3) do
+		local a = rng:NextNumber(0, TAU)
+		local from = hub:Lerp(top, rng:NextNumber(0.5, 0.85))
+		local to = from
+			+ Vector3.new(math.cos(a) * rng:NextNumber(5, 9), rng:NextNumber(2, 5), math.sin(a) * rng:NextNumber(5, 9))
+		beam(m, from, to, 0.7, bark, nil, M.Wood)
+		table.insert(crowns, to)
+	end
+	for _, crown in crowns do
+		local s = rng:NextNumber(8, 13)
+		local tilt = CFrame.Angles(rng:NextNumber(-0.2, 0.2), rng:NextNumber(0, TAU), rng:NextNumber(-0.2, 0.2))
+		part(
+			m,
+			Vector3.new(s, s * 0.45, s),
+			CFrame.new(crown) * tilt,
+			shade(Props.pick(rng, canopy), rng, 0.06),
+			M.LeafyGrass
+		)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+function Props.palm(parent: Instance, ground: Vector3, rng: Random): Model
+	local m = newModel("Palm", parent)
+	local h = rng:NextNumber(14, 22)
+	local lean = rng:NextNumber(0, TAU)
+	local dir = Vector3.new(math.cos(lean), 0, math.sin(lean))
+	local bend = rng:NextNumber(2, 6)
+
+	local prev = ground - Vector3.new(0, 1, 0)
+	for k = 1, 5 do
+		local t = k / 5
+		local p = ground + Vector3.new(0, h * t, 0) + dir * (bend * t * t)
+		beam(m, prev, p, 1.3 - t * 0.4, if k % 2 == 0 then rgb(140, 112, 78) else rgb(120, 94, 66), nil, M.Wood)
+		prev = p
+	end
+
+	local top = prev
+	for f = 1, 6 do
+		local a = f / 6 * TAU + rng:NextNumber(-0.2, 0.2)
+		local d = Vector3.new(math.cos(a), 0, math.sin(a))
+		local mid = top + d * 5 + Vector3.new(0, 1.2, 0)
+		local tip = top + d * 10 + Vector3.new(0, -2.5, 0)
+		beam(m, top, mid, 2.4, rgb(78, 140, 60), 0.25, M.LeafyGrass)
+		beam(m, mid, tip, 2, rgb(62, 118, 52), 0.25, M.LeafyGrass)
+	end
+	for _ = 1, rng:NextInteger(1, 3) do
+		ball(m, top + Vector3.new(rng:NextNumber(-1, 1), -1, rng:NextNumber(-1, 1)), 1.1, rgb(96, 70, 44), M.Wood)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+-- Bare trunk with a few branches; swamp snags and charred volcanic trees.
+function Props.deadTree(parent: Instance, ground: Vector3, rng: Random, color: Color3): Model
+	local m = newModel("DeadTree", parent)
+	local h = rng:NextNumber(8, 16)
+	local top = ground + Vector3.new(rng:NextNumber(-1.5, 1.5), h, rng:NextNumber(-1.5, 1.5))
+	beam(m, ground - Vector3.new(0, 1, 0), top, 1.1, color, nil, M.Wood)
+	for _ = 1, rng:NextInteger(2, 3) do
+		local a = rng:NextNumber(0, TAU)
+		local from = ground:Lerp(top, rng:NextNumber(0.45, 0.85))
+		local to = from
+			+ Vector3.new(
+				math.cos(a) * rng:NextNumber(3, 6),
+				rng:NextNumber(1.5, 4),
+				math.sin(a) * rng:NextNumber(3, 6)
+			)
+		beam(m, from, to, 0.5, color, nil, M.Wood)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+function Props.bush(parent: Instance, ground: Vector3, rng: Random, colors: { Color3 }): Model
+	local m = newModel("Bush", parent)
+	for _ = 1, rng:NextInteger(2, 3) do
+		local s = rng:NextNumber(2.5, 4.5)
+		local offset = Vector3.new(rng:NextNumber(-1.5, 1.5), s * 0.25, rng:NextNumber(-1.5, 1.5))
+		blob(
+			m,
+			ground + offset,
+			Vector3.new(s, s * 0.7, s),
+			rng,
+			shade(Props.pick(rng, colors), rng, 0.06),
+			M.LeafyGrass
+		)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+-- Little clump of flowers.
+function Props.flowers(parent: Instance, ground: Vector3, rng: Random): Model
+	local m = newModel("Flowers", parent)
+	local colors = { rgb(230, 90, 90), rgb(250, 210, 90), rgb(240, 240, 240), rgb(180, 120, 220), rgb(250, 150, 60) }
+	local color = Props.pick(rng, colors)
+	for _ = 1, rng:NextInteger(4, 7) do
+		local at = ground + Vector3.new(rng:NextNumber(-1.8, 1.8), 0, rng:NextNumber(-1.8, 1.8))
+		part(m, Vector3.new(0.15, 1.2, 0.15), CFrame.new(at + Vector3.new(0, 0.6, 0)), rgb(80, 120, 60), M.Grass)
+		ball(m, at + Vector3.new(0, 1.3, 0), 0.6, color, M.Plastic)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+----------------------------------------------------------------------------------------------------
+-- Rocks and ice
+
+function Props.rock(parent: Instance, ground: Vector3, rng: Random, size: number, color: Color3): Part
+	return blob(
+		parent,
+		ground + Vector3.new(0, size * 0.2, 0),
+		Vector3.new(size, size * rng:NextNumber(0.5, 0.9), size * rng:NextNumber(0.7, 1.1)),
+		rng,
+		shade(color, rng, 0.08),
+		M.Rock
+	)
+end
+
+function Props.boulder(
+	parent: Instance,
+	ground: Vector3,
+	rng: Random,
+	radius: number,
+	color: Color3,
+	material: Enum.Material?
+): Model
+	local m = newModel("Boulder", parent)
+	LowPoly.boulder(
+		ground + Vector3.new(0, radius * 0.3, 0),
+		radius,
+		rng,
+		shade(color, rng, 0.06),
+		m,
+		material or M.Rock
+	)
+	return m
+end
+
+-- Tall leaning four-sided shard (ice spikes, obsidian).
+function Props.spike(
+	parent: Instance,
+	ground: Vector3,
+	rng: Random,
+	height: number,
+	radius: number,
+	color: Color3,
+	material: Enum.Material?
+): Model
+	local m = newModel("Spike", parent)
+	local spin = rng:NextNumber(0, TAU)
+	local base = {}
+	for i = 0, 3 do
+		local a = spin + i * TAU / 4 + rng:NextNumber(-0.2, 0.2)
+		local r = radius * rng:NextNumber(0.8, 1.2)
+		base[i + 1] = ground + Vector3.new(math.cos(a) * r, -2, math.sin(a) * r)
+	end
+	local lean = Vector3.new(rng:NextNumber(-1, 1), 0, rng:NextNumber(-1, 1)) * height * 0.15
+	LowPoly.pyramid(base, ground + Vector3.new(0, height, 0) + lean, shade(color, rng, 0.05), m, material or M.Ice)
+	return m
+end
+
+-- Cluster of basalt columns.
+function Props.basalt(parent: Instance, ground: Vector3, rng: Random, color: Color3): Model
+	local m = newModel("Basalt", parent)
+	for _ = 1, rng:NextInteger(3, 6) do
+		local h = rng:NextNumber(4, 12)
+		local offset = Vector3.new(rng:NextNumber(-3, 3), h / 2 - 1, rng:NextNumber(-3, 3))
+		part(
+			m,
+			Vector3.new(2.6, h, 2.6),
+			CFrame.new(ground + offset) * CFrame.Angles(0, rng:NextNumber(0, TAU), 0),
+			shade(color, rng, 0.1),
+			M.Basalt
+		)
+	end
+	return m
+end
+
+----------------------------------------------------------------------------------------------------
+-- Water plants
+
+function Props.reeds(parent: Instance, position: Vector3, rng: Random): Model
+	local m = newModel("Reeds", parent)
+	for _ = 1, rng:NextInteger(5, 8) do
+		local base = position + Vector3.new(rng:NextNumber(-2.5, 2.5), -3, rng:NextNumber(-2.5, 2.5))
+		local tip = base + Vector3.new(rng:NextNumber(-1, 1), rng:NextNumber(7, 12), rng:NextNumber(-1, 1))
+		beam(m, base, tip, 0.35, shade(rgb(150, 150, 72), rng, 0.12), nil, M.Grass)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+function Props.lilyPad(parent: Instance, position: Vector3, rng: Random): Model
+	local m = newModel("LilyPad", parent)
+	local d = rng:NextNumber(2.5, 5)
+	cylinder(m, position + Vector3.new(0, 0.1, 0), 0.2, d, shade(rgb(84, 116, 56), rng, 0.1), M.LeafyGrass)
+	if rng:NextNumber() < 0.2 then
+		blob(m, position + Vector3.new(0, 0.5, 0), Vector3.new(0.9, 0.9, 0.9), rng, rgb(230, 170, 190), M.Plastic)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+function Props.coral(parent: Instance, ground: Vector3, rng: Random, colors: { Color3 }): Model
+	local m = newModel("Coral", parent)
+	for _ = 1, rng:NextInteger(2, 4) do
+		local s = rng:NextNumber(1.5, 4)
+		local offset = Vector3.new(rng:NextNumber(-2, 2), s * 0.4, rng:NextNumber(-2, 2))
+		blob(m, ground + offset, Vector3.new(s * 0.6, s * 1.4, s * 0.6), rng, Props.pick(rng, colors), M.Pebble)
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+----------------------------------------------------------------------------------------------------
+-- Buildings
+
+local SHUTTERS = { rgb(70, 92, 112), rgb(112, 60, 50), rgb(72, 102, 74), rgb(64, 62, 60) }
+
+-- Cottage with timber corners, framed windows and a gabled roof; front door on its local +Z.
+-- `stilts` raises it on posts (swamp shacks, beach huts). Tall ones get a second floor of windows.
+function Props.house(
+	parent: Instance,
+	ground: Vector3,
+	facing: number,
+	rng: Random,
+	wall: Color3,
+	roof: Color3,
+	stilts: number?
+): Model
+	local m = newModel("House", parent)
+	local w, d = rng:NextNumber(11, 16), rng:NextNumber(9, 13)
+	local stories = if not stilts and rng:NextNumber() < 0.3 then 2 else 1
+	local h = if stories == 2 then rng:NextNumber(15, 17) else rng:NextNumber(8, 10.5)
+	local lift = stilts or 0
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	local trim = wall:Lerp(Color3.new(0, 0, 0), 0.45)
+	local shutter = Props.pick(rng, SHUTTERS)
+	local wallMaterial = if stilts or rng:NextNumber() < 0.45 then M.WoodPlanks else M.Plaster
+	local roofMaterial = if stilts then M.Fabric elseif rng:NextNumber() < 0.5 then M.RoofShingles else M.ClayRoofTiles
+
+	if lift > 0 then
+		for _, c in { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+			local x, z = c[1] * (w / 2 - 0.5), c[2] * (d / 2 - 0.5)
+			beam(
+				m,
+				base:PointToWorldSpace(Vector3.new(x, -6, z)),
+				base:PointToWorldSpace(Vector3.new(x, lift, z)),
+				0.9,
+				WOOD_DARK,
+				nil,
+				M.Wood
+			)
+		end
+		part(m, Vector3.new(w + 2, 0.6, d + 4), base * CFrame.new(0, lift - 0.7, 1.5), WOOD, M.WoodPlanks)
+	end
+
+	local floor = if lift > 0 then lift - 0.4 else 0.6
+	if lift == 0 then
+		part(m, Vector3.new(w + 0.8, 2, d + 0.8), base * CFrame.new(0, -0.4, 0), STONE, M.Cobblestone)
+	end
+	part(m, Vector3.new(w, h, d), base * CFrame.new(0, floor + h / 2, 0), wall, wallMaterial)
+	for _, c in { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+		part(m, Vector3.new(0.8, h, 0.8), base * CFrame.new(c[1] * w / 2, floor + h / 2, c[2] * d / 2), trim, M.Wood)
+	end
+	if stories == 2 then
+		part(m, Vector3.new(w + 0.4, 0.6, d + 0.4), base * CFrame.new(0, floor + h / 2, 0), trim, M.Wood)
+	end
+
+	-- Roof: two slanted panels, a ridge beam and the gable triangles
+	local top = floor + h
+	local pitch = math.rad(rng:NextNumber(32, 42))
+	local rise = d / 2 * math.tan(pitch)
+	local slant = (d / 2 + 1.2) / math.cos(pitch)
+	for side = -1, 1, 2 do
+		part(
+			m,
+			Vector3.new(w + 1.8, 0.7, slant),
+			base * CFrame.new(0, top + rise / 2, side * d / 4) * CFrame.Angles(side * pitch, 0, 0),
+			roof,
+			roofMaterial
+		)
+		local x = side * w / 2
+		LowPoly.triangle(
+			base:PointToWorldSpace(Vector3.new(x, top, -d / 2)),
+			base:PointToWorldSpace(Vector3.new(x, top, d / 2)),
+			base:PointToWorldSpace(Vector3.new(x, top + rise, 0)),
+			base:PointToWorldSpace(Vector3.new(0, top, 0)),
+			wall,
+			m,
+			wallMaterial
+		)
+	end
+	part(
+		m,
+		Vector3.new(w + 2, 0.8, 0.8),
+		base * CFrame.new(0, top + rise + 0.2, 0),
+		roof:Lerp(Color3.new(0, 0, 0), 0.3),
+		M.Wood
+	)
+
+	-- Door with a frame, a handle and a step
+	local front = d / 2
+	part(m, Vector3.new(3.4, 5.8, 0.2), base * CFrame.new(0, floor + 2.9, front + 0.05), trim, M.Wood)
+	part(m, Vector3.new(2.4, 5, 0.3), base * CFrame.new(0, floor + 2.5, front + 0.1), WOOD_DARK, M.WoodPlanks)
+	ball(m, base:PointToWorldSpace(Vector3.new(0.8, floor + 2.5, front + 0.3)), 0.35, rgb(200, 170, 80), M.Metal)
+	if lift == 0 then
+		part(m, Vector3.new(4, 0.6, 1.6), base * CFrame.new(0, floor - 0.2, front + 0.8), STONE, M.Slate)
+	end
+
+	-- Framed, shuttered front windows on every floor, plain windows on the sides
+	local storyHeight = h / stories
+	for s = 1, stories do
+		local y = floor + (s - 1) * storyHeight + storyHeight * 0.55
+		for side = -1, 1, 2 do
+			local x = side * (w / 4 + 0.8)
+			part(m, Vector3.new(2.4, 2.6, 0.15), base * CFrame.new(x, y, front + 0.05), trim, M.Wood)
+			local glass = part(m, Vector3.new(1.7, 1.9, 0.2), base * CFrame.new(x, y, front + 0.1), LAMP, M.Neon)
+			part(m, Vector3.new(0.15, 1.9, 0.25), base * CFrame.new(x, y, front + 0.12), trim, M.Wood)
+			part(m, Vector3.new(2.8, 0.3, 0.7), base * CFrame.new(x, y - 1.4, front + 0.3), trim, M.Wood)
+			for flap = -1, 1, 2 do
+				part(
+					m,
+					Vector3.new(0.8, 2.6, 0.15),
+					base * CFrame.new(x + flap * 1.7, y, front + 0.1),
+					shutter,
+					M.WoodPlanks
+				)
+			end
+			if s == 1 and side == 1 then
+				light(glass, LAMP, 16, 0.8)
+			end
+			part(m, Vector3.new(0.2, 1.9, 1.7), base * CFrame.new(side * (w / 2 + 0.05), y, 0), LAMP, M.Neon)
+		end
+	end
+
+	if rng:NextNumber() < 0.6 then
+		local chimney = base * CFrame.new(w / 3, top + rise * 0.7, -d / 5)
+		part(m, Vector3.new(1.8, rise + 3, 1.8), chimney, rgb(140, 84, 66), M.Brick)
+		part(m, Vector3.new(2.3, 0.5, 2.3), chimney * CFrame.new(0, (rise + 3) / 2, 0), rgb(80, 70, 66), M.Slate)
+	end
+	if lift == 0 and rng:NextNumber() < 0.45 then
+		-- Little porch roof over the door, with a lantern
+		part(
+			m,
+			Vector3.new(5, 0.4, 2.8),
+			base * CFrame.new(0, floor + 6, front + 1.3) * CFrame.Angles(0.25, 0, 0),
+			roof,
+			roofMaterial
+		)
+		for side = -1, 1, 2 do
+			part(m, Vector3.new(0.4, 6, 0.4), base * CFrame.new(side * 2.2, floor + 3, front + 2.5), trim, M.Wood)
+		end
+		Props.lantern(m, base * CFrame.new(1.6, floor + 5.2, front + 0.6))
+	end
+	if rng:NextNumber() < 0.4 then
+		local box = base * CFrame.new(-(w / 4 + 0.8), floor + storyHeight * 0.55 - 2, front + 0.7)
+		part(m, Vector3.new(2.8, 0.8, 0.9), box, WOOD, M.WoodPlanks)
+		for k = -1, 1 do
+			ball(
+				m,
+				box.Position + base.RightVector * k * 0.8 + Vector3.new(0, 0.6, 0),
+				0.7,
+				Props.pick(rng, {
+					rgb(220, 80, 80),
+					rgb(250, 210, 90),
+					rgb(240, 240, 240),
+				}),
+				M.Plastic
+			)
+		end
+	end
+	Props.simplifyHouseCollision(m)
+	return m
+end
+
+-- Waterside fishing hut on a plank deck: front porch under a tin roof, life ring, lantern and bench.
+-- Faces its local +Z. `color` tints the plank walls.
+function Props.fishingHut(parent: Instance, ground: Vector3, facing: number, rng: Random, color: Color3): Model
+	local m = newModel("FishingHut", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	local w, d, h = 16, 12, 10
+	local wall = color:Lerp(rgb(150, 150, 140), 0.45)
+	local trim = rgb(96, 70, 50)
+	local tin = rgb(118, 122, 124)
+
+	-- Raised deck with a porch out front
+	part(m, Vector3.new(w + 4, 0.8, d + 9), base * CFrame.new(0, 0.6, 2.5), WOOD, M.WoodPlanks)
+	for _, c in { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+		part(
+			m,
+			Vector3.new(0.9, 2, 0.9),
+			base * CFrame.new(c[1] * (w / 2 + 1.5), 0, 2.5 + c[2] * (d + 8) / 2),
+			WOOD_DARK,
+			M.Wood
+		)
+	end
+	part(m, Vector3.new(w, h, d), base * CFrame.new(0, 1 + h / 2, 0), wall, M.WoodPlanks)
+	for _, c in { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+		part(m, Vector3.new(0.8, h, 0.8), base * CFrame.new(c[1] * w / 2, 1 + h / 2, c[2] * d / 2), trim, M.Wood)
+	end
+	part(m, Vector3.new(w + 0.4, 0.6, d + 0.4), base * CFrame.new(0, 1.3, 0), trim, M.Wood)
+
+	-- Gabled tin roof that runs forward over the porch
+	local top = 1 + h
+	local pitch = math.rad(28)
+	local rise = w / 2 * math.tan(pitch)
+	local depth = d + 7
+	for side = -1, 1, 2 do
+		local slant = (w / 2 + 1.2) / math.cos(pitch)
+		part(
+			m,
+			Vector3.new(slant, 0.5, depth),
+			base * CFrame.new(side * w / 4, top + rise / 2, 3) * CFrame.Angles(0, 0, -side * pitch),
+			tin,
+			M.CorrodedMetal
+		)
+		local z = side * d / 2
+		LowPoly.triangle(
+			base:PointToWorldSpace(Vector3.new(-w / 2, top, z)),
+			base:PointToWorldSpace(Vector3.new(w / 2, top, z)),
+			base:PointToWorldSpace(Vector3.new(0, top + rise, z)),
+			base:PointToWorldSpace(Vector3.new(0, top, 0)),
+			wall,
+			m,
+			M.WoodPlanks
+		)
+	end
+	part(m, Vector3.new(0.8, 0.8, depth + 0.4), base * CFrame.new(0, top + rise + 0.2, 3), trim, M.Wood)
+	for side = -1, 1, 2 do
+		part(m, Vector3.new(0.7, h, 0.7), base * CFrame.new(side * (w / 2 - 0.4), 1 + h / 2, d / 2 + 6.2), trim, M.Wood)
+	end
+
+	-- Porch railing with a gap for the steps
+	local railY = 3
+	for side = -1, 1, 2 do
+		local x = side * (w / 2 + 1.6)
+		beam(
+			m,
+			base:PointToWorldSpace(Vector3.new(x, railY, d / 2)),
+			base:PointToWorldSpace(Vector3.new(x, railY, d / 2 + 6.5)),
+			0.35,
+			trim,
+			nil,
+			M.Wood
+		)
+		part(m, Vector3.new(0.4, 2.5, 0.4), base * CFrame.new(x, 2, d / 2 + 6.5), trim, M.Wood)
+		beam(
+			m,
+			base:PointToWorldSpace(Vector3.new(x, railY, d / 2 + 6.5)),
+			base:PointToWorldSpace(Vector3.new(side * 3, railY, d / 2 + 6.5)),
+			0.35,
+			trim,
+			nil,
+			M.Wood
+		)
+	end
+
+	-- Front: door, window, life ring, lantern
+	local front = d / 2
+	part(m, Vector3.new(3.6, 6.4, 0.2), base * CFrame.new(-3, 4.2, front + 0.05), trim, M.Wood)
+	part(m, Vector3.new(2.8, 5.8, 0.3), base * CFrame.new(-3, 3.9, front + 0.1), WOOD_DARK, M.WoodPlanks)
+	part(m, Vector3.new(4.2, 3.4, 0.15), base * CFrame.new(3.5, 6, front + 0.05), trim, M.Wood)
+	local glass = part(m, Vector3.new(3.4, 2.6, 0.2), base * CFrame.new(3.5, 6, front + 0.1), LAMP, M.Neon)
+	light(glass, LAMP, 18, 0.9)
+	part(m, Vector3.new(0.2, 2.6, 0.25), base * CFrame.new(3.5, 6, front + 0.15), trim, M.Wood)
+	part(m, Vector3.new(4.6, 0.3, 0.8), base * CFrame.new(3.5, 4.2, front + 0.4), trim, M.Wood)
+	Props.lifeRing(m, base * CFrame.new(0.2, 7.6, front + 0.3))
+	Props.lantern(m, base * CFrame.new(-0.6, 9.2, front + 4))
+	Props.bench(m, base:PointToWorldSpace(Vector3.new(3.5, 1, front + 1.6)), facing + math.pi)
+	Props.crates(m, base:PointToWorldSpace(Vector3.new(-w / 2 - 0.2, 1, front + 5)), rng)
+	Props.ropeCoil(m, base:PointToWorldSpace(Vector3.new(w / 2 - 1, 1, front + 5)))
+
+	-- Side window and a stovepipe
+	part(m, Vector3.new(0.2, 2.4, 3), base * CFrame.new(w / 2 + 0.05, 6, -1), LAMP, M.Neon)
+	part(m, Vector3.new(0.15, 3, 3.6), base * CFrame.new(w / 2 + 0.02, 6, -1), trim, M.Wood)
+	cylinder(m, base:PointToWorldSpace(Vector3.new(-w / 4, top + rise + 1.5, -d / 4)), 4, 1.2, IRON, M.Metal)
+	return m
+end
+
+function Props.clockTower(parent: Instance, ground: Vector3, facing: number): Model
+	local m = newModel("ClockTower", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	part(m, Vector3.new(11, 2, 11), base * CFrame.new(0, 0, 0), STONE, M.Cobblestone)
+	part(m, Vector3.new(9, 30, 9), base * CFrame.new(0, 15, 0), WHITE, M.Plaster)
+	for _, c in { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+		part(m, Vector3.new(1.2, 30, 1.2), base * CFrame.new(c[1] * 4.5, 15, c[2] * 4.5), STONE, M.Brick)
+	end
+	part(m, Vector3.new(10, 1.2, 10), base * CFrame.new(0, 29.6, 0), rgb(90, 80, 76), M.Slate)
+	part(m, Vector3.new(7, 8, 7), base * CFrame.new(0, 34, 0), WHITE, M.Plaster)
+	for k = 0, 3 do
+		local side = base * CFrame.Angles(0, k * math.pi / 2, 0)
+		cylinder(m, (side * CFrame.new(0, 34, 3.6)).Position, 0.3, 4.4, rgb(255, 240, 200), M.Neon).CFrame = side
+			* CFrame.new(0, 34, 3.6)
+			* CFrame.Angles(0, math.pi / 2, 0)
+		part(m, Vector3.new(0.3, 1.6, 0.2), side * CFrame.new(0, 34.6, 3.85), IRON, M.Metal)
+		part(m, Vector3.new(1.2, 0.3, 0.2), side * CFrame.new(0.5, 34, 3.85), IRON, M.Metal)
+		part(m, Vector3.new(2.2, 3.2, 0.2), side * CFrame.new(0, 20, 4.55), rgb(70, 92, 112), M.Glass)
+	end
+	part(m, Vector3.new(3.4, 6.4, 0.2), base * CFrame.new(0, 4.2, 4.55), rgb(90, 80, 76), M.Wood)
+	part(m, Vector3.new(3, 6, 0.3), base * CFrame.new(0, 4, 4.6), WOOD_DARK, M.WoodPlanks)
+
+	local corners = {}
+	for i, c in { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+		corners[i] = base:PointToWorldSpace(Vector3.new(c[1] * 4.5, 38, c[2] * 4.5))
+	end
+	LowPoly.pyramid(corners, base:PointToWorldSpace(Vector3.new(0, 47, 0)), RED, m, M.RoofShingles)
+	return m
+end
+
+-- Small dock details never snag characters, boats, or interaction raycasts.
+local function dockDetail(p: BasePart, name: string): BasePart
+	p.Name = name
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	return p
+end
+
+local DOCK_WOOD = rgb(119, 83, 53)
+local DOCK_WORN = rgb(158, 122, 81)
+local DOCK_PILE = rgb(77, 55, 39)
+
+-- Local -Z runs along the section. Every board has a level top at local Y = 0.3.
+local function dockDeck(parent: Model, frame: CFrame, width: number, length: number, rng: Random)
+	-- A single walking surface keeps plank seams out of the navmesh and physics.
+	local surface =
+		part(parent, Vector3.new(width, 0.6, length), frame * CFrame.new(0, 0, -length / 2), DOCK_WOOD, M.Wood)
+	surface.Name = "DeckSurface"
+	surface.Transparency, surface.CastShadow = 1, false
+	local count = math.ceil(length / 1.3)
+	local pitch = length / count
+	for i = 1, count do
+		local z = -(i - 0.5) * pitch
+		local color = DOCK_WOOD:Lerp(DOCK_WORN, rng:NextNumber(0.08, 0.8))
+		local board = part(parent, Vector3.new(width, 0.6, pitch - 0.055), frame * CFrame.new(0, 0, z), color, M.Wood)
+		board.Name = "DeckPlank"
+		board.CanCollide, board.CanQuery = false, false
+		if i % 3 == 1 then
+			for _, side in { -1, 1 } do
+				dockDetail(
+					cylinder(
+						parent,
+						(frame * CFrame.new(side * (width / 2 - 0.6), 0.306, z)).Position,
+						0.025,
+						0.13,
+						IRON,
+						M.Metal
+					),
+					"PlankNail"
+				)
+			end
+		end
+	end
+	for _, side in { -1, 1 } do
+		local stringer = part(
+			parent,
+			Vector3.new(0.5, 0.85, length),
+			frame * CFrame.new(side * (width / 2 - 0.3), -0.65, -length / 2),
+			DOCK_PILE,
+			M.Wood
+		)
+		stringer.Name = "Stringer"
+	end
+end
+
+local function dockPile(parent: Model, frame: CFrame, x: number, z: number, rng: Random)
+	local position = frame * CFrame.new(x, 0, z)
+	local pile =
+		cylinder(parent, (position * CFrame.new(0, -7.2, 0)).Position, 18, 1.2, shade(DOCK_PILE, rng, 0.08), M.Wood)
+	pile.Name = "Pile"
+	dockDetail(
+		cylinder(parent, (position * CFrame.new(0, 1.83, 0)).Position, 0.1, 1.24, DOCK_WORN, M.Wood),
+		"PileEndGrain"
+	)
+	dockDetail(
+		cylinder(parent, (position * CFrame.new(0, -3.1, 0)).Position, 0.85, 1.23, rgb(65, 69, 48), M.Wood),
+		"TidalMark"
+	)
+	dockDetail(cylinder(parent, (position * CFrame.new(0, -0.5, 0)).Position, 0.18, 1.26, IRON, M.Metal), "PileCollar")
+	for i = 0, 2 do
+		dockDetail(
+			cylinder(parent, (position * CFrame.new(0, 1.05 + i * 0.14, 0)).Position, 0.11, 1.3, ROPE, M.Fabric),
+			"RopeLashing"
+		)
+	end
+end
+
+local function dockRope(parent: Model, frame: CFrame, a: Vector3, b: Vector3)
+	local previous = frame:PointToWorldSpace(a)
+	for i = 1, 4 do
+		local t = i / 4
+		local nextPoint = frame:PointToWorldSpace(a:Lerp(b, t) - Vector3.new(0, math.sin(t * math.pi) * 0.24, 0))
+		dockDetail(beam(parent, previous, nextPoint, 0.18, ROPE, nil, M.Fabric), "RopeRail")
+		previous = nextPoint
+	end
+end
+
+-- Warm inset panes with dark metal frames, mounted outside the walking lane.
+local function dockLamp(parent: Model, frame: CFrame)
+	local model = newModel("DockLamp", parent)
+	part(model, Vector3.new(0.5, 4.8, 0.5), frame * CFrame.new(0, 2.4, 0), DOCK_PILE, M.Wood)
+	part(model, Vector3.new(1.15, 0.18, 1.15), frame * CFrame.new(0, 4.85, 0), IRON, M.Metal)
+	local pane = part(model, Vector3.new(0.76, 1.05, 0.76), frame * CFrame.new(0, 5.45, 0), rgb(255, 228, 163), M.Neon)
+	dockDetail(pane, "LampPane")
+	light(pane, rgb(255, 215, 148), 17, 1.15)
+	for _, x in { -0.48, 0.48 } do
+		for _, z in { -0.48, 0.48 } do
+			dockDetail(
+				part(model, Vector3.new(0.1, 1.2, 0.1), frame * CFrame.new(x, 5.45, z), IRON, M.Metal),
+				"LampFrame"
+			)
+		end
+	end
+	dockDetail(part(model, Vector3.new(1.35, 0.22, 1.35), frame * CFrame.new(0, 6.12, 0), IRON, M.Metal), "LampCap")
+end
+
+type DockOptions = { innerSide: number?, junctionStart: number?, junctionEnd: number? }
+
+-- Pier with an open central walk lane and an optional opening for the crosswalk.
+function Props.dock(
+	parent: Instance,
+	start: Vector3,
+	direction: Vector3,
+	length: number,
+	rng: Random,
+	options: DockOptions?
+): Vector3
+	local m = newModel("Dock", parent)
+	local origin = Vector3.new(start.X, 3, start.Z)
+	local frame = CFrame.lookAt(origin, origin + Vector3.new(direction.X, 0, direction.Z))
+	dockDeck(m, frame, 7, length, rng)
+	local postsZ = { 1.2 }
+	for z = 10.2, length - 2, 9 do
+		table.insert(postsZ, z)
+	end
+	table.insert(postsZ, length - 1.2)
+	for _, side in { -1, 1 } do
+		local sidePosts = {}
+		for _, z in postsZ do
+			if
+				not (
+					options
+					and side == options.innerSide
+					and options.junctionStart
+					and options.junctionEnd
+					and z > options.junctionStart
+					and z < options.junctionEnd
+				)
+			then
+				table.insert(sidePosts, z)
+			end
+		end
+		if options and side == options.innerSide and options.junctionStart and options.junctionEnd then
+			if not table.find(sidePosts, options.junctionStart) then
+				table.insert(sidePosts, options.junctionStart)
+			end
+			if not table.find(sidePosts, options.junctionEnd) then
+				table.insert(sidePosts, options.junctionEnd)
+			end
+		end
+		table.sort(sidePosts)
+		for _, z in sidePosts do
+			dockPile(m, frame, side * 3.85, -z, rng)
+		end
+		for i = 1, #sidePosts - 1 do
+			local a, b = sidePosts[i], sidePosts[i + 1]
+			if
+				not (options and side == options.innerSide and a == options.junctionStart and b == options.junctionEnd)
+			then
+				dockRope(m, frame, Vector3.new(side * 3.85, 1.3, -a), Vector3.new(side * 3.85, 1.3, -b))
+			end
+		end
+	end
+	for i, z in postsZ do
+		local bearer = part(m, Vector3.new(8.5, 0.65, 0.7), frame * CFrame.new(0, -1.1, -z), DOCK_PILE, M.Wood)
+		bearer.Name = "Bearer"
+		if i % 2 == 0 then
+			for _, side in { -1, 1 } do
+				local brace = beam(
+					m,
+					frame * Vector3.new(side * 3.85, -3.2, -z),
+					frame * Vector3.new(side * 0.7, -1.45, -z),
+					0.35,
+					DOCK_WOOD,
+					nil,
+					M.Wood
+				)
+				brace.Name = "Brace"
+			end
+		end
+	end
+	local lampSide = if options and options.innerSide then -options.innerSide else 1
+	dockLamp(m, frame * CFrame.new(lampSide * 4.15, 0.3, -(length - 1.2)))
+	-- Keep the ladder beyond the tip and the landing free of loose props.
+	Props.ladder(m, frame * CFrame.new(-1.5, 0, -length), -6)
+	return (frame * CFrame.new(0, 0.3, -(length - 5))).Position
+end
+
+-- Matching boarded crosswalk. Local X spans 27 studs; both ends stay open.
+function Props.dockLink(parent: Instance, frame: CFrame, rng: Random): Model
+	local model = newModel("DockLink", parent)
+	local along = frame * CFrame.Angles(0, math.pi / 2, 0) * CFrame.new(0, 0, 13.5)
+	dockDeck(model, along, 5, 27, rng)
+	for _, x in { -8, 0, 8 } do
+		dockPile(model, frame, x, -3.1, rng)
+		local joist = part(model, Vector3.new(0.7, 0.7, 6.6), frame * CFrame.new(x, -1.1, 0), DOCK_PILE, M.Wood)
+		joist.Name = "Joist"
+	end
+	for _, a in { -8, 0 } do
+		dockRope(model, frame, Vector3.new(a, 1.3, -3.1), Vector3.new(a + 8, 1.3, -3.1))
+	end
+	return model
+end
+
+-- Big striped lighthouse on a round stone platform. Its "LighthouseLens" part is spun by Map.animate.
+function Props.lighthouse(parent: Instance, ground: Vector3): Model
+	local m = newModel("Lighthouse", parent)
+	local gx, gz = ground.X, ground.Z
+
+	-- Round platform with a fence around the edge
+	cylinder(m, Vector3.new(gx, ground.Y + 0.5, gz), 3, 36, STONE, M.Cobblestone)
+	local fence = {}
+	for i = 1, 20 do
+		local a = i / 20 * TAU
+		fence[i] = Vector3.new(gx + math.cos(a) * 17, ground.Y + 2, gz + math.sin(a) * 17)
+		part(m, Vector3.new(0.5, 3, 0.5), CFrame.new(fence[i] + Vector3.new(0, 1.5, 0)), WOOD_DARK, M.Wood)
+	end
+	for i = 1, 20 do
+		if i ~= 5 then -- gap facing the path
+			beam(
+				m,
+				fence[i] + Vector3.new(0, 2.4, 0),
+				fence[i % 20 + 1] + Vector3.new(0, 2.4, 0),
+				0.3,
+				WOOD,
+				nil,
+				M.WoodPlanks
+			)
+		end
+	end
+
+	local y = ground.Y + 2
+	local r = 8.5
+	for i = 1, 7 do
+		cylinder(m, Vector3.new(gx, y + 4, gz), 8, r * 2, if i % 2 == 1 then WHITE else RED, M.Plaster)
+		if i % 2 == 0 then
+			for _, a in { 0, math.pi } do
+				local face = CFrame.new(gx, y + 4, gz) * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, r - 0.2)
+				part(m, Vector3.new(1.6, 2.6, 0.6), face, rgb(50, 56, 62), M.Glass)
+			end
+		end
+		y += 8
+		r -= 0.5
+	end
+	part(m, Vector3.new(3, 6, 0.6), CFrame.new(gx, ground.Y + 5, gz) * CFrame.new(0, 0, 8.4), WOOD_DARK, M.WoodPlanks)
+
+	-- Gallery with railing
+	cylinder(m, Vector3.new(gx, y + 0.5, gz), 1, (r + 3) * 2, rgb(60, 56, 54), M.DiamondPlate)
+	local rail = {}
+	for i = 1, 16 do
+		local a = i / 16 * TAU
+		rail[i] = Vector3.new(gx + math.cos(a) * (r + 2.6), y + 1, gz + math.sin(a) * (r + 2.6))
+		part(m, Vector3.new(0.3, 3, 0.3), CFrame.new(rail[i] + Vector3.new(0, 1.5, 0)), IRON, M.Metal)
+	end
+	for i = 1, 16 do
+		beam(m, rail[i] + Vector3.new(0, 3, 0), rail[i % 16 + 1] + Vector3.new(0, 3, 0), 0.3, IRON, nil, M.Metal)
+	end
+
+	-- Lantern room
+	local glass = cylinder(m, Vector3.new(gx, y + 4, gz), 6, (r - 0.5) * 2, rgb(255, 240, 200), M.SmoothPlastic)
+	glass.Transparency = 0.5
+	local lamp = ball(m, Vector3.new(gx, y + 4, gz), 3, LAMP, M.Neon)
+	light(lamp, LAMP, 100, 3)
+
+	local lens = part(m, Vector3.new(1, 1, 1), CFrame.new(gx, y + 4, gz), LAMP)
+	lens.Name = "LighthouseLens"
+	lens.Transparency = 1
+	lens.CanCollide = false
+	lens.CanQuery = false
+	local spot = Instance.new("SpotLight")
+	spot.Face = Enum.NormalId.Front
+	spot.Range = 60
+	spot.Angle = 35
+	spot.Brightness = 8
+	spot.Color = LAMP
+	spot.Parent = lens
+	local a0 = Instance.new("Attachment")
+	a0.Parent = lens
+	local a1 = Instance.new("Attachment")
+	a1.Position = Vector3.new(0, 0, -180)
+	a1.Parent = lens
+	local ray = Instance.new("Beam")
+	ray.Attachment0 = a0
+	ray.Attachment1 = a1
+	ray.Width0 = 3
+	ray.Width1 = 40
+	ray.FaceCamera = true
+	ray.LightEmission = 1
+	ray.Segments = 1
+	ray.Color = ColorSequence.new(LAMP)
+	ray.Transparency = NumberSequence.new(0.55, 1)
+	ray.Parent = lens
+
+	-- Domed cap
+	cylinder(m, Vector3.new(gx, y + 7.3, gz), 0.6, (r + 0.6) * 2, RED, M.Metal)
+	local cap = {}
+	for i = 1, 8 do
+		local a = i / 8 * TAU
+		cap[i] = Vector3.new(gx + math.cos(a) * (r + 0.3), y + 7.6, gz + math.sin(a) * (r + 0.3))
+	end
+	LowPoly.pyramid(cap, Vector3.new(gx, y + 12, gz), RED, m, M.Metal)
+	ball(m, Vector3.new(gx, y + 12.5, gz), 1.4, IRON, M.Metal)
+	return m
+end
+
+-- Channel marker floating at the waterline.
+function Props.buoy(parent: Instance, position: Vector3, rng: Random): Model
+	local m = newModel("Buoy", parent)
+	local color = if rng:NextNumber() < 0.5 then RED else WHITE
+	cylinder(m, position + Vector3.new(0, 0.3, 0), 2.4, 5, color, M.Plastic)
+	cylinder(m, position + Vector3.new(0, 1.6, 0), 0.5, 5.4, rgb(60, 56, 54), M.Rubber)
+	local top = position + Vector3.new(0, 7, 0)
+	for k = 0, 2 do
+		local a = k * TAU / 3
+		beam(m, position + Vector3.new(math.cos(a) * 1.8, 1.5, math.sin(a) * 1.8), top, 0.35, color, nil, M.Metal)
+	end
+	local lamp = part(m, Vector3.new(1.2, 1.2, 1.2), CFrame.new(top + Vector3.new(0, 0.6, 0)), LAMP, M.Neon)
+	light(lamp, LAMP, 24, 2)
+	return m
+end
+
+----------------------------------------------------------------------------------------------------
+-- Harbour and village clutter
+
+function Props.lampPost(parent: Instance, ground: Vector3): Model
+	local m = newModel("LampPost", parent)
+	part(m, Vector3.new(1.4, 0.8, 1.4), CFrame.new(ground + Vector3.new(0, 0.4, 0)), IRON, M.Metal)
+	cylinder(m, ground + Vector3.new(0, 4.5, 0), 9, 0.55, IRON, M.Metal)
+	part(m, Vector3.new(1.8, 0.4, 1.8), CFrame.new(ground + Vector3.new(0, 10.8, 0)), IRON, M.Metal)
+	part(m, Vector3.new(0.8, 0.5, 0.8), CFrame.new(ground + Vector3.new(0, 11.2, 0)), IRON, M.Metal)
+	local lamp = part(m, Vector3.new(1.1, 1.5, 1.1), CFrame.new(ground + Vector3.new(0, 9.8, 0)), LAMP, M.Neon)
+	light(lamp, LAMP, 22, 1.2)
+	return m
+end
+
+-- Small hanging lantern centred on `cframe`.
+function Props.lantern(parent: Instance, cframe: CFrame, range: number?, brightness: number?): Model
+	local m = newModel("Lantern", parent)
+	part(m, Vector3.new(0.2, 1, 0.2), cframe * CFrame.new(0, 1.1, 0), IRON, M.Metal)
+	part(m, Vector3.new(1.2, 0.3, 1.2), cframe * CFrame.new(0, 0.6, 0), IRON, M.Metal)
+	part(m, Vector3.new(1.2, 0.2, 1.2), cframe * CFrame.new(0, -0.6, 0), IRON, M.Metal)
+	local glow = part(m, Vector3.new(0.9, 1, 0.9), cframe, LAMP, M.Neon)
+	light(glow, LAMP, range or 14, brightness or 1)
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+-- Festoon of coloured bulbs sagging between two points.
+function Props.stringLights(parent: Instance, a: Vector3, b: Vector3, rng: Random, sag: number?): Model
+	local m = newModel("StringLights", parent)
+	local colors = { rgb(255, 200, 120), rgb(255, 150, 60), rgb(170, 110, 255), rgb(120, 220, 255) }
+	local droop = sag or (b - a).Magnitude * 0.08
+	local count = math.max(4, math.floor((b - a).Magnitude / 4))
+	local prev = a
+	for i = 1, count do
+		local t = i / count
+		local p = a:Lerp(b, t) - Vector3.new(0, droop * 4 * t * (1 - t), 0)
+		beam(m, prev, p, 0.12, IRON, nil, M.Fabric)
+		if i < count then
+			local bulb = ball(m, p - Vector3.new(0, 0.35, 0), 0.5, Props.pick(rng, colors), M.Neon)
+			bulb.CanCollide = false
+			bulb.CastShadow = false
+		end
+		prev = p
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+-- Red-and-white life ring hung on a wall; `cframe` faces out of the wall.
+function Props.lifeRing(parent: Instance, cframe: CFrame): Model
+	local m = newModel("LifeRing", parent)
+	local sides = 8
+	for i = 1, sides do
+		local a0, a1 = (i - 1) / sides * TAU, i / sides * TAU
+		local p0 = cframe:PointToWorldSpace(Vector3.new(math.cos(a0) * 1.3, math.sin(a0) * 1.3, 0))
+		local p1 = cframe:PointToWorldSpace(Vector3.new(math.cos(a1) * 1.3, math.sin(a1) * 1.3, 0))
+		beam(m, p0, p1, 0.55, if i % 2 == 0 then RED else WHITE, 0.55, M.Plastic)
+	end
+	return m
+end
+
+-- Ladder hanging down from `top` (its local -Z is out over the water) to height `bottomY`.
+function Props.ladder(parent: Instance, top: CFrame, bottomY: number): Model
+	local m = newModel("Ladder", parent)
+	local height = top.Position.Y - bottomY
+	for side = -1, 1, 2 do
+		part(
+			m,
+			Vector3.new(0.3, height + 1.5, 0.3),
+			top * CFrame.new(side * 0.9, -height / 2 + 0.75, -0.3),
+			WOOD_DARK,
+			M.Wood
+		)
+	end
+	for y = 0.8, height, 1.4 do
+		part(m, Vector3.new(1.8, 0.2, 0.25), top * CFrame.new(0, -y + 0.8, -0.3), WOOD, M.Wood)
+	end
+	return m
+end
+
+function Props.ropeCoil(parent: Instance, ground: Vector3): Model
+	local m = newModel("RopeCoil", parent)
+	cylinder(m, ground + Vector3.new(0, 0.3, 0), 0.6, 2.6, ROPE, M.Fabric)
+	cylinder(m, ground + Vector3.new(0, 0.75, 0), 0.4, 1.8, ROPE, M.Fabric)
+	return m
+end
+
+-- Netted crab pot.
+function Props.crabPot(parent: Instance, ground: Vector3, rng: Random): Model
+	local m = newModel("CrabPot", parent)
+	local frame = CFrame.new(ground + Vector3.new(0, 1, 0)) * CFrame.Angles(0, rng:NextNumber(0, TAU), 0)
+	local net = part(m, Vector3.new(3, 1.8, 2.2), frame, rgb(120, 130, 120), M.Fabric)
+	net.Transparency = 0.35
+	for _, y in { -0.9, 0.9 } do
+		part(m, Vector3.new(3.1, 0.15, 2.3), frame * CFrame.new(0, y, 0), IRON, M.Metal)
+	end
+	for _, c in { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+		part(m, Vector3.new(0.15, 1.8, 0.15), frame * CFrame.new(c[1] * 1.5, 0, c[2] * 1.1), IRON, M.Metal)
+	end
+	part(m, Vector3.new(0.4, 0.4, 0.4), frame * CFrame.new(0.4, 0, 0), rgb(220, 100, 60), M.Plastic)
+	return m
+end
+
+-- A crab cage the angler can buy: coated-wire box on wooden skids with a funnel
+-- entrance at each end, an orange bait box hung inside and a rope bridle on top.
+-- `frame` is the centre of its base, the long sides along X. With `float`, a rope
+-- runs to a marker float in a "Float" model that rides at CRAB_CAGE_WATERLINE.
+-- Every part is decoration: no collision, queries or touches.
+Props.CRAB_CAGE_SIZE = Vector3.new(3.2, 1.9, 2.4)
+Props.CRAB_CAGE_WATERLINE = 1.45
+function Props.crabCage(parent: Instance, frame: CFrame, float: boolean?): Model
+	local m = newModel("CrabCage", parent)
+	local coat, wire = rgb(30, 58, 50), rgb(48, 96, 80)
+	local net, rubber = rgb(226, 214, 176), rgb(28, 28, 30)
+	local size = Props.CRAB_CAGE_SIZE
+	local hw, hd, top = size.X / 2 - 0.07, size.Z / 2 - 0.07, size.Y
+	local floor = 0.3
+	local function piece(container: Instance, dimensions: Vector3, offset: CFrame, color: Color3, material): Part
+		local p = part(container, dimensions, frame * offset, color, material)
+		p.CanCollide, p.CanQuery = false, false
+		return p
+	end
+	local function bar(container: Instance, a: Vector3, b: Vector3, width: number, color: Color3, material): Part
+		local p = beam(container, frame * a, frame * b, width, color, nil, material or M.SmoothPlastic)
+		p.CanCollide, p.CanQuery = false, false
+		p.CastShadow = width > 0.06
+		return p
+	end
+	local V = Vector3.new
+	-- An invisible root at `frame` keeps the model's pivot on the cage's base,
+	-- even while a held copy is carried around welded to a Tool.
+	local root = piece(m, V(0.2, 0.2, 0.2), CFrame.new(), WOOD)
+	root.Name = "CageRoot"
+	root.Transparency, root.CastShadow = 1, false
+	m.PrimaryPart = root
+
+	-- Skids, a slatted floor and two weight bars to sink it
+	for _, z in { -(hd - 0.1), hd - 0.1 } do
+		piece(m, V(size.X + 0.3, 0.16, 0.3), CFrame.new(0, 0.08, z), WOOD_DARK, M.Wood)
+	end
+	for index, z in { -0.84, -0.28, 0.28, 0.84 } do
+		piece(
+			m,
+			V(size.X, 0.14, 0.48),
+			CFrame.new(0, 0.23, z),
+			if index % 2 == 0 then WOOD else WOOD:Lerp(WOOD_DARK, 0.3),
+			M.WoodPlanks
+		)
+	end
+	for _, x in { -(hw - 0.3), hw - 0.3 } do
+		piece(m, V(0.3, 0.14, size.Z - 0.5), CFrame.new(x, floor + 0.07, 0), IRON, M.Metal)
+	end
+
+	-- Corner posts and the top and bottom rims
+	for _, x in { -hw, hw } do
+		for _, z in { -hd, hd } do
+			bar(m, V(x, floor, z), V(x, top, z), 0.14, coat)
+		end
+	end
+	for _, y in { floor + 0.04, top } do
+		for _, z in { -hd, hd } do
+			bar(m, V(-hw, y, z), V(hw, y, z), 0.12, coat)
+		end
+		for _, x in { -hw, hw } do
+			bar(m, V(x, y, -hd), V(x, y, hd), 0.12, coat)
+		end
+	end
+	-- Wire mesh on the long sides and the top
+	for _, z in { -hd, hd } do
+		for _, x in { -1, -0.5, 0, 0.5, 1 } do
+			bar(m, V(x, floor, z), V(x, top, z), 0.05, wire)
+		end
+		for _, y in { 0.85, 1.4 } do
+			bar(m, V(-hw, y, z), V(hw, y, z), 0.05, wire)
+		end
+	end
+	for _, z in { -0.6, 0, 0.6 } do
+		bar(m, V(-hw, top, z), V(hw, top, z), 0.05, wire)
+	end
+	for _, x in { -1.05, -0.45, 0.45, 1.05 } do
+		-- The inner pair are the edges of the bait lid.
+		local lid = math.abs(x) < 1
+		bar(m, V(x, top, -hd), V(x, top, hd), if lid then 0.08 else 0.05, if lid then coat else wire)
+	end
+	-- A bungee holds the bait lid shut, hooked over the rim
+	bar(m, V(0.1, top + 0.06, 0), V(hw, top + 0.03, 0), 0.07, rubber, M.Rubber)
+	local function knob(at: Vector3, diameter: number)
+		local p = ball(m, frame * at, diameter, IRON, M.Metal)
+		p.CanCollide, p.CanQuery = false, false
+	end
+	knob(V(hw, top, 0), 0.14)
+
+	-- Funnel entrances: a net ring on each end narrowing to a dark throat inside
+	for _, side in { -1, 1 } do
+		local x, y = side * hw, 1.11
+		for _, z in { -0.66, 0.66 } do
+			bar(m, V(x, floor, z), V(x, top, z), 0.05, wire)
+		end
+		for _, rail in { 0.62, 1.6 } do
+			bar(m, V(x, rail, -hd), V(x, rail, hd), 0.05, wire)
+		end
+		local function ring(angle: number): Vector3
+			return V(x, y + math.sin(angle) * 0.4, math.cos(angle) * 0.4)
+		end
+		for k = 0, 7 do
+			bar(m, ring(k * TAU / 8), ring((k + 1) * TAU / 8), 0.08, net, M.Fabric)
+		end
+		local throatX = side * (hw - 0.55)
+		local throat = piece(m, V(0.05, 0.36, 0.36), CFrame.new(throatX, y - 0.06, 0), rgb(18, 30, 26), M.Fabric)
+		throat.Shape = Enum.PartType.Cylinder
+		throat.Transparency = 0.25
+		for k = 0, 3 do
+			local angle = k * TAU / 4 + TAU / 8
+			local inner = V(throatX, y - 0.06 + math.sin(angle) * 0.17, math.cos(angle) * 0.17)
+			bar(m, ring(angle), inner, 0.04, net, M.Fabric)
+		end
+	end
+
+	-- Bait box hung from the lid on a cord
+	piece(m, V(0.5, 0.36, 0.36), CFrame.new(0, 1.3, 0), rgb(236, 124, 42), M.SmoothPlastic)
+	piece(m, V(0.52, 0.05, 0.38), CFrame.new(0, 1.26, 0), rgb(150, 66, 22), M.SmoothPlastic)
+	piece(m, V(0.54, 0.07, 0.4), CFrame.new(0, 1.5, 0), rgb(214, 104, 32), M.SmoothPlastic)
+	bar(m, V(0, 1.52, 0), V(0, top, 0), 0.03, net, M.Fabric)
+
+	-- Rope bridle up to a shackle in the middle of the lid
+	local shackle = V(0, top + 0.47, 0)
+	for _, x in { -hw * 0.6, hw * 0.6 } do
+		bar(m, V(x, top, 0), shackle, 0.07, ROPE, M.Fabric)
+	end
+	knob(shackle, 0.16)
+
+	if float then
+		local buoy = newModel("Float", m)
+		local water = Props.CRAB_CAGE_WATERLINE
+		local at = V(hw + 0.75, water, hd - 0.3)
+		-- Upright at the waterline, so the client can bob it about its own middle.
+		buoy.WorldPivot = CFrame.new(frame * at)
+		local sag = V(hw * 0.5, water + 0.05, 0.4)
+		bar(buoy, shackle, sag, 0.07, ROPE, M.Fabric)
+		bar(buoy, sag, at + V(-0.45, 0.1, 0), 0.07, ROPE, M.Fabric)
+		local function drum(height: number, diameter: number, y: number, color: Color3, material): Part
+			local p = piece(
+				buoy,
+				V(height, diameter, diameter),
+				CFrame.new(at + V(0, y, 0)) * CFrame.Angles(0, 0, math.pi / 2),
+				color,
+				material
+			)
+			p.Shape = Enum.PartType.Cylinder
+			return p
+		end
+		drum(1.1, 0.95, 0.15, rgb(240, 112, 38), M.SmoothPlastic)
+		drum(0.22, 0.98, 0.4, WHITE, M.SmoothPlastic)
+		drum(0.14, 0.6, 0.76, rgb(200, 84, 30), M.SmoothPlastic)
+		bar(buoy, at + V(0, 0.7, 0), at + V(0, 2.9, 0), 0.09, WOOD_DARK, M.Wood)
+		piece(buoy, V(0.04, 0.5, 0.8), CFrame.new(at + V(0, 2.6, 0.42)), rgb(250, 214, 64), M.Fabric).Name = "Flag"
+	end
+	return m
+end
+
+-- A weighted vertical mesh panel suspended below a surface marker.
+Props.MUSSEL_NET_SIZE = Vector3.new(2.8, 4.4, 0.3)
+Props.MUSSEL_NET_WATERLINE = 5.1
+function Props.musselNet(parent: Instance, frame: CFrame, float: boolean?): Model
+	local m = newModel("MusselNet", parent)
+	local V = Vector3.new
+	local function piece(container, size, offset, color, material)
+		local p = part(container, size, frame * offset, color, material)
+		p.CanCollide, p.CanQuery, p.CanTouch = false, false, false
+		return p
+	end
+	local function cord(container, a, b, width, color)
+		local p = beam(container, frame * a, frame * b, width, color, nil, M.Fabric)
+		p.CanCollide, p.CanQuery, p.CanTouch = false, false, false
+		return p
+	end
+	local root = piece(m, V(0.2, 0.2, 0.2), CFrame.new(), ROPE, M.Fabric)
+	root.Transparency, root.CastShadow = 1, false
+	m.PrimaryPart = root
+	local netColor = rgb(93, 111, 78)
+	-- A single flat curtain of mesh, held open by ropes along its top and bottom.
+	for _, x in { -1.2, -0.8, -0.4, 0, 0.4, 0.8, 1.2 } do
+		cord(m, V(x, 0.25, 0), V(x, 4.25, 0), 0.055, netColor)
+	end
+	for y = 0.25, 4.25, 0.4 do
+		cord(m, V(-1.2, y, 0), V(1.2, y, 0), 0.055, netColor)
+	end
+	cord(m, V(-1.3, 0.25, 0), V(1.3, 0.25, 0), 0.12, ROPE)
+	cord(m, V(-1.3, 4.25, 0), V(1.3, 4.25, 0), 0.12, ROPE)
+	for _, x in { -1.2, 1.2 } do
+		cord(m, V(x, 0.25, 0), V(x, 4.25, 0), 0.09, ROPE)
+		cord(m, V(x, 4.25, 0), V(0, 4.85, 0), 0.08, ROPE)
+		local weight = piece(m, V(0.25, 0.25, 0.25), CFrame.new(x, 0.25, 0), IRON, M.Metal)
+		weight.Shape = Enum.PartType.Ball
+	end
+	if float then
+		local buoy = newModel("Float", m)
+		local at = V(1.7, Props.MUSSEL_NET_WATERLINE, 0.3)
+		buoy.WorldPivot = CFrame.new(frame * at)
+		cord(buoy, V(0, 4.85, 0), at, 0.07, ROPE)
+		local marker = piece(buoy, V(0.9, 0.9, 0.9), CFrame.new(at), rgb(72, 176, 176), M.SmoothPlastic)
+		marker.Shape = Enum.PartType.Ball
+		cord(buoy, at, at + V(0, 2, 0), 0.09, ROPE)
+		piece(buoy, V(0.05, 0.5, 0.75), CFrame.new(at + V(0, 1.8, 0.38)), rgb(250, 214, 64), M.Fabric).Name = "Flag"
+	end
+	return m
+end
+
+function Props.barrel(parent: Instance, ground: Vector3, rng: Random): Model
+	local m = newModel("Barrel", parent)
+	local center = ground + Vector3.new(0, 1.5, 0)
+	cylinder(m, center, 3, 2.3, shade(WOOD, rng, 0.1), M.WoodPlanks)
+	cylinder(m, center + Vector3.new(0, 0.8, 0), 0.3, 2.45, IRON, M.Metal)
+	cylinder(m, center - Vector3.new(0, 0.8, 0), 0.3, 2.45, IRON, M.Metal)
+	return m
+end
+
+function Props.crates(parent: Instance, ground: Vector3, rng: Random): Model
+	local m = newModel("Crates", parent)
+	local y = ground.Y
+	for i = 1, rng:NextInteger(1, 3) do
+		local s = rng:NextNumber(2.4, 3.4)
+		local offset = if i == 3
+			then Vector3.zero
+			else Vector3.new(rng:NextNumber(-1.5, 1.5), 0, rng:NextNumber(-1.5, 1.5))
+		local at = Vector3.new(ground.X, y + s / 2, ground.Z) + offset
+		part(
+			m,
+			Vector3.new(s, s, s),
+			CFrame.new(at) * CFrame.Angles(0, rng:NextNumber(0, TAU), 0),
+			shade(WOOD, rng, 0.12),
+			M.WoodPlanks
+		)
+		if i == 2 then
+			y += s
+		end
+	end
+	return m
+end
+
+function Props.bench(parent: Instance, ground: Vector3, facing: number): Model
+	local m = newModel("Bench", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	part(m, Vector3.new(5, 0.4, 1.6), base * CFrame.new(0, 1.6, 0), WOOD, M.WoodPlanks)
+	part(m, Vector3.new(5, 1.4, 0.3), base * CFrame.new(0, 2.6, -0.8) * CFrame.Angles(-0.2, 0, 0), WOOD, M.WoodPlanks)
+	for side = -1, 1, 2 do
+		part(m, Vector3.new(0.4, 1.6, 1.4), base * CFrame.new(side * 2.1, 0.8, 0), IRON, M.Metal)
+	end
+	return m
+end
+
+-- Signpost with an arrow board per entry ({text, angle relative to `facing`}).
+function Props.signpost(parent: Instance, ground: Vector3, facing: number, arrows: { { any } }): Model
+	local m = newModel("Signpost", parent)
+	part(m, Vector3.new(0.6, 8, 0.6), CFrame.new(ground + Vector3.new(0, 4, 0)), WOOD_DARK, M.Wood)
+	for i, arrow in arrows do
+		local board = part(
+			m,
+			Vector3.new(5, 1.2, 0.3),
+			CFrame.new(ground + Vector3.new(0, 7.4 - i * 1.5, 0))
+				* CFrame.Angles(0, facing + arrow[2], 0)
+				* CFrame.new(2.4, 0, 0),
+			WOOD,
+			M.WoodPlanks
+		)
+		for _, face in { Enum.NormalId.Front, Enum.NormalId.Back } do
+			local gui = Instance.new("SurfaceGui")
+			gui.Face = face
+			gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+			gui.PixelsPerStud = 40
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.fromScale(1, 1)
+			label.BackgroundTransparency = 1
+			label.Font = Enum.Font.Garamond
+			label.TextScaled = true
+			label.TextColor3 = rgb(40, 30, 22)
+			label.Text = arrow[1]
+			label.Parent = gui
+			gui.Parent = board
+		end
+	end
+	return m
+end
+
+-- Market stall with a striped canopy and a counter of fish; faces its local +Z.
+function Props.stall(parent: Instance, ground: Vector3, facing: number, rng: Random, canopy: Color3): Model
+	local m = newModel("Stall", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	part(m, Vector3.new(9, 3, 3), base * CFrame.new(0, 1.5, 1.5), WOOD, M.WoodPlanks)
+	part(m, Vector3.new(9.4, 0.3, 3.4), base * CFrame.new(0, 3.1, 1.5), WOOD_DARK, M.Wood)
+	for _, c in { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } } do
+		part(m, Vector3.new(0.5, 8, 0.5), base * CFrame.new(c[1] * 4.3, 4, c[2] * 2.5 + 0.5), WOOD_DARK, M.Wood)
+	end
+	for i = 0, 4 do
+		local stripe = if i % 2 == 0 then canopy else WHITE
+		part(
+			m,
+			Vector3.new(2, 0.3, 7),
+			base * CFrame.new(-4 + i * 2, 8.2, 0.5) * CFrame.Angles(0.18, 0, 0),
+			stripe,
+			M.Fabric
+		)
+	end
+	part(m, Vector3.new(8.6, 1.2, 2.4), base * CFrame.new(0, 3.5, 1.5), rgb(200, 220, 230), M.Ice)
+	for k = 1, 4 do
+		local fish = base * CFrame.new(-3.5 + k * 1.6, 4.2, 1.5) * CFrame.Angles(0, rng:NextNumber(-0.4, 0.4), 0)
+		part(m, Vector3.new(0.6, 0.4, 1.8), fish, shade(rgb(150, 160, 170), rng, 0.15), M.Foil)
+	end
+	Props.lantern(m, base * CFrame.new(3.8, 6.6, 3.2))
+	Props.crates(m, base:PointToWorldSpace(Vector3.new(5.8, 0, -1)), rng)
+	return m
+end
+
+function Props.well(parent: Instance, ground: Vector3): Model
+	local m = newModel("Well", parent)
+	cylinder(m, ground + Vector3.new(0, 1.5, 0), 3, 7, STONE, M.Cobblestone)
+	cylinder(m, ground + Vector3.new(0, 2.9, 0), 0.4, 5.6, rgb(40, 70, 80), M.Glass)
+	for side = -1, 1, 2 do
+		part(m, Vector3.new(0.6, 7, 0.6), CFrame.new(ground + Vector3.new(side * 3, 5, 0)), WOOD_DARK, M.Wood)
+	end
+	part(m, Vector3.new(6.4, 0.4, 0.4), CFrame.new(ground + Vector3.new(0, 6.2, 0)), WOOD_DARK, M.Wood)
+	part(m, Vector3.new(1, 1.4, 1), CFrame.new(ground + Vector3.new(0, 5, 0)), WOOD, M.WoodPlanks)
+	for side = -1, 1, 2 do
+		part(
+			m,
+			Vector3.new(8, 0.4, 3.4),
+			CFrame.new(ground + Vector3.new(0, 8.6, side * 1.4)) * CFrame.Angles(side * 0.5, 0, 0),
+			RED,
+			M.RoofShingles
+		)
+	end
+	return m
+end
+
+-- Two posts with fish hung out to dry.
+function Props.fishRack(parent: Instance, ground: Vector3, facing: number, rng: Random): Model
+	local m = newModel("FishRack", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	for side = -1, 1, 2 do
+		part(m, Vector3.new(0.5, 6, 0.5), base * CFrame.new(side * 4, 3, 0), WOOD_DARK, M.Wood)
+	end
+	part(m, Vector3.new(8.6, 0.4, 0.4), base * CFrame.new(0, 5.8, 0), WOOD_DARK, M.Wood)
+	for k = 1, 4 do
+		part(
+			m,
+			Vector3.new(0.5, 1.8, 0.3),
+			base * CFrame.new(-4 + k * 1.6, 4.6, 0),
+			shade(rgb(160, 168, 172), rng, 0.15),
+			M.Foil
+		)
+	end
+	return m
+end
+
+-- Low wooden fence between two points.
+function Props.fence(parent: Instance, a: Vector3, b: Vector3): Model
+	local m = newModel("Fence", parent)
+	local length = (b - a).Magnitude
+	local count = math.max(1, math.floor(length / 4))
+	for i = 0, count do
+		part(m, Vector3.new(0.4, 2.6, 0.4), CFrame.new(a:Lerp(b, i / count) + Vector3.new(0, 1.3, 0)), WOOD, M.Wood)
+	end
+	for _, y in { 1, 2.1 } do
+		beam(m, a + Vector3.new(0, y, 0), b + Vector3.new(0, y, 0), 0.25, WOOD, nil, M.WoodPlanks)
+	end
+	return m
+end
+
+function Props.flag(parent: Instance, ground: Vector3, color: Color3): Model
+	local m = newModel("Flag", parent)
+	cylinder(m, ground + Vector3.new(0, 9, 0), 18, 0.5, rgb(70, 66, 62), M.Metal)
+	part(m, Vector3.new(0.2, 4, 6), CFrame.new(ground + Vector3.new(0, 15.6, 3.2)), color, M.Fabric)
+	ball(m, ground + Vector3.new(0, 18.2, 0), 0.9, rgb(200, 170, 80), M.Metal)
+	return m
+end
+
+----------------------------------------------------------------------------------------------------
+-- Beach
+
+-- Striped beach umbrella on a pole stuck in the sand.
+function Props.beachUmbrella(parent: Instance, ground: Vector3, rng: Random, color: Color3): Model
+	local m = newModel("BeachUmbrella", parent)
+	local lean = CFrame.Angles(rng:NextNumber(-0.12, 0.12), 0, rng:NextNumber(-0.12, 0.12))
+	local base = CFrame.new(ground) * lean
+	local function at(x: number, y: number, z: number): Vector3
+		return base:PointToWorldSpace(Vector3.new(x, y, z))
+	end
+	beam(m, at(0, -1, 0), at(0, 9.4, 0), 0.35, WHITE, nil, M.Metal)
+	local apex, inside = at(0, 9.4, 0), at(0, 7, 0)
+	for i = 1, 10 do
+		local a0, a1 = i / 10 * TAU, (i + 1) / 10 * TAU
+		local r0 = at(math.cos(a0) * 5.4, 7.8, math.sin(a0) * 5.4)
+		local r1 = at(math.cos(a1) * 5.4, 7.8, math.sin(a1) * 5.4)
+		local stripe = if i % 2 == 0 then color else WHITE
+		LowPoly.triangle(r0, r1, apex, inside, stripe, m, M.Fabric)
+		-- Scalloped valance hanging from the rim
+		beam(m, r0 - Vector3.new(0, 0.35, 0), r1 - Vector3.new(0, 0.35, 0), 0.1, stripe, 0.7, M.Fabric)
+	end
+	ball(m, apex + Vector3.new(0, 0.3, 0), 0.6, WHITE, M.Plastic)
+	return m
+end
+
+-- Sun lounger with a raised backrest; the foot end points along `facing`.
+function Props.sunLounger(parent: Instance, ground: Vector3, facing: number, color: Color3): Model
+	local m = newModel("SunLounger", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	part(m, Vector3.new(2.6, 0.3, 4.6), base * CFrame.new(0, 1.2, 1), WHITE, M.Plastic)
+	part(m, Vector3.new(2.3, 0.25, 4.4), base * CFrame.new(0, 1.45, 1), color, M.Fabric)
+	local back = base * CFrame.new(0, 1.3, -1.3) * CFrame.Angles(0.75, 0, 0) * CFrame.new(0, 0, -1.3)
+	part(m, Vector3.new(2.6, 0.3, 2.6), back, WHITE, M.Plastic)
+	part(m, Vector3.new(2.3, 0.25, 2.4), back * CFrame.new(0, 0.25, 0), color, M.Fabric)
+	part(m, Vector3.new(1.4, 0.45, 0.7), back * CFrame.new(0, 0.5, -0.8), WHITE, M.Fabric)
+	for _, x in { -1.1, 1.1 } do
+		for _, z in { -1.1, 3 } do
+			part(m, Vector3.new(0.25, 1.1, 0.25), base * CFrame.new(x, 0.55, z), WHITE, M.Plastic)
+		end
+	end
+	return m
+end
+
+-- Striped towel following the sand's slope, built from adjoining fabric panels.
+function Props.towel(parent: Instance, ground: Vector3, facing: number, color: Color3, normal: Vector3?): Model
+	local m = newModel("Towel", parent)
+	local up = if normal and normal.Magnitude > 0.001 then normal.Unit else Vector3.yAxis
+	local right = Vector3.new(math.cos(facing), 0, -math.sin(facing))
+	right -= up * right:Dot(up)
+	if right.Magnitude < 0.001 then
+		right = if math.abs(up.Y) < 0.9 then Vector3.yAxis:Cross(up) else Vector3.zAxis:Cross(up)
+	end
+	right = right.Unit
+	local base = CFrame.fromMatrix(ground, right, up, right:Cross(up))
+	local function panel(from: number, to: number, tint: Color3)
+		local fabric =
+			part(m, Vector3.new(2.8, 0.1, to - from), base * CFrame.new(0, 0.05, (from + to) / 2), tint, M.Fabric)
+		fabric.CanCollide = false
+		fabric.CanTouch = false
+		fabric.CanQuery = false
+		fabric.CastShadow = false
+	end
+	local edge = -2.8
+	for _, z in { -2, 0, 2 } do
+		panel(edge, z - 0.25, color)
+		panel(z - 0.25, z + 0.25, WHITE)
+		edge = z + 0.25
+	end
+	panel(edge, 2.8, color)
+	return m
+end
+
+-- White lifeguard tower on stilts with a red roof, a ladder at the back and a life ring.
+function Props.lifeguardTower(parent: Instance, ground: Vector3, facing: number): Model
+	local m = newModel("LifeguardTower", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	local floor = 8
+	for _, x in { -2.6, 2.6 } do
+		for _, z in { -2.6, 2.6 } do
+			beam(
+				m,
+				base * Vector3.new(x * 1.25, -1, z * 1.25),
+				base * Vector3.new(x, floor, z),
+				0.6,
+				WHITE,
+				nil,
+				M.Wood
+			)
+		end
+	end
+	for _, z in { -3.05, 3.05 } do
+		beam(m, base * Vector3.new(-3.05, 2, z), base * Vector3.new(3.05, 2, z), 0.3, WHITE, nil, M.Wood)
+	end
+	part(m, Vector3.new(7, 0.5, 7), base * CFrame.new(0, floor, 0), WOOD, M.WoodPlanks)
+	-- Cabin: low walls round three sides, open toward the sea
+	part(m, Vector3.new(6.4, 3, 0.3), base * CFrame.new(0, floor + 1.7, -3.1), WHITE, M.WoodPlanks)
+	for side = -1, 1, 2 do
+		part(m, Vector3.new(0.3, 3, 6.4), base * CFrame.new(side * 3.1, floor + 1.7, 0), WHITE, M.WoodPlanks)
+		part(m, Vector3.new(0.3, 3.6, 0.3), base * CFrame.new(side * 3.1, floor + 5, 3.1), WHITE, M.Wood)
+	end
+	part(m, Vector3.new(6.4, 1.2, 0.3), base * CFrame.new(0, floor + 0.8, 3.1), RED, M.WoodPlanks)
+	part(m, Vector3.new(8, 0.4, 8), base * CFrame.new(0, floor + 7, 0) * CFrame.Angles(0.12, 0, 0), RED, M.WoodPlanks)
+	-- Ladder up the back
+	local ladderTop, ladderFoot = base * Vector3.new(0, floor, -3.6), base * Vector3.new(0, 0, -7)
+	for side = -1, 1, 2 do
+		local offset = base:VectorToWorldSpace(Vector3.new(side * 0.9, 0, 0))
+		beam(m, ladderFoot + offset, ladderTop + offset, 0.25, WOOD, nil, M.Wood)
+	end
+	for k = 1, 7 do
+		beam(
+			m,
+			ladderFoot:Lerp(ladderTop, k / 8) + base:VectorToWorldSpace(Vector3.new(-0.9, 0, 0)),
+			ladderFoot:Lerp(ladderTop, k / 8) + base:VectorToWorldSpace(Vector3.new(0.9, 0, 0)),
+			0.2,
+			WOOD,
+			nil,
+			M.Wood
+		)
+	end
+	Props.lifeRing(m, base * CFrame.new(0, floor + 1.7, 3.3))
+	-- Red flag on a pole beside it
+	cylinder(m, base * Vector3.new(4.6, 7, -1), 14, 0.3, WHITE, M.Metal)
+	part(
+		m,
+		Vector3.new(0.15, 2, 3),
+		CFrame.new(base * Vector3.new(4.6, 13, -1)) * CFrame.Angles(0, facing, 0) * CFrame.new(0, 0, 1.5),
+		RED,
+		M.Fabric
+	)
+	return m
+end
+
+-- Striped changing cabana with a pointed roof; the doorway faces along `facing`.
+function Props.cabana(parent: Instance, ground: Vector3, facing: number, color: Color3): Model
+	local m = newModel("Cabana", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	local w, h = 5, 7
+	part(m, Vector3.new(w + 1, 0.4, w + 1), base * CFrame.new(0, 0.2, 0), WOOD, M.WoodPlanks)
+	for i = 0, 4 do
+		local x = -w / 2 + (i + 0.5) * w / 5
+		local stripe = if i % 2 == 0 then color else WHITE
+		part(m, Vector3.new(w / 5, h, 0.2), base * CFrame.new(x, h / 2 + 0.4, -w / 2), stripe, M.Fabric)
+		part(m, Vector3.new(0.2, h, w / 5), base * CFrame.new(w / 2, h / 2 + 0.4, x), stripe, M.Fabric)
+		part(m, Vector3.new(0.2, h, w / 5), base * CFrame.new(-w / 2, h / 2 + 0.4, x), stripe, M.Fabric)
+	end
+	-- Curtains drawn back either side of the door
+	for side = -1, 1, 2 do
+		part(m, Vector3.new(1.4, h, 0.25), base * CFrame.new(side * 1.8, h / 2 + 0.4, w / 2), color, M.Fabric)
+	end
+	part(m, Vector3.new(w + 0.4, 0.6, w + 0.4), base * CFrame.new(0, h + 0.7, 0), WHITE, M.Wood)
+	local roof = {
+		base * Vector3.new(-w / 2 - 0.6, h + 1, -w / 2 - 0.6),
+		base * Vector3.new(w / 2 + 0.6, h + 1, -w / 2 - 0.6),
+		base * Vector3.new(w / 2 + 0.6, h + 1, w / 2 + 0.6),
+		base * Vector3.new(-w / 2 - 0.6, h + 1, w / 2 + 0.6),
+	}
+	LowPoly.pyramid(roof, base * Vector3.new(0, h + 4.5, 0), color, m, M.Fabric)
+	ball(m, base * Vector3.new(0, h + 4.8, 0), 0.6, WHITE, M.Wood)
+	return m
+end
+
+-- Bleached driftwood log half sunk in the sand, with a stub of branch.
+function Props.driftwood(parent: Instance, ground: Vector3, rng: Random): Model
+	local m = newModel("Driftwood", parent)
+	local a = rng:NextNumber(0, TAU)
+	local dir = Vector3.new(math.cos(a), 0, math.sin(a))
+	local length = rng:NextNumber(6, 11)
+	local color = shade(rgb(196, 182, 160), rng, 0.06)
+	local p0, p1 =
+		ground - dir * length / 2 + Vector3.new(0, 0.3, 0), ground + dir * length / 2 + Vector3.new(0, 0.5, 0)
+	beam(m, p0, p1, rng:NextNumber(0.9, 1.4), color, nil, M.Wood)
+	local fork = p0:Lerp(p1, 0.7)
+	beam(m, fork, fork + (dir + Vector3.new(-dir.Z, 0.5, dir.X)).Unit * 3, 0.45, color, nil, M.Wood)
+	return m
+end
+
+-- A scatter of shells and pebbles round `ground`.
+function Props.shells(parent: Instance, ground: Vector3, rng: Random): Model
+	local m = newModel("Shells", parent)
+	local colors = { rgb(246, 228, 214), rgb(236, 190, 170), rgb(214, 196, 168), rgb(250, 244, 236) }
+	for _ = 1, rng:NextInteger(4, 8) do
+		local p = ground + Vector3.new(rng:NextNumber(-4, 4), 0.1, rng:NextNumber(-4, 4))
+		local s = rng:NextNumber(0.35, 0.7)
+		local shell = part(
+			m,
+			Vector3.new(s, s * 0.4, s * 1.2),
+			CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, TAU), 0),
+			shade(Props.pick(rng, colors), rng, 0.05),
+			M.Marble
+		)
+		shell.CanCollide = false
+	end
+	return m
+end
+
+-- Little sandcastle with four towers, a keep and a flag, ringed by a moat.
+function Props.sandcastle(parent: Instance, ground: Vector3, color: Color3): Model
+	local m = newModel("Sandcastle", parent)
+	cylinder(m, ground + Vector3.new(0, 0.05, 0), 0.1, 7.5, rgb(120, 140, 130), M.SmoothPlastic).Transparency = 0.3
+	part(m, Vector3.new(4, 1.2, 4), CFrame.new(ground + Vector3.new(0, 0.6, 0)), color, M.Sand)
+	for _, x in { -1.8, 1.8 } do
+		for _, z in { -1.8, 1.8 } do
+			cylinder(m, ground + Vector3.new(x, 1, z), 2, 1.2, color, M.Sand)
+			LowPoly.pyramid({
+				ground + Vector3.new(x - 0.6, 2, z - 0.6),
+				ground + Vector3.new(x + 0.6, 2, z - 0.6),
+				ground + Vector3.new(x + 0.6, 2, z + 0.6),
+				ground + Vector3.new(x - 0.6, 2, z + 0.6),
+			}, ground + Vector3.new(x, 2.8, z), color, m, M.Sand)
+		end
+	end
+	part(m, Vector3.new(1.8, 2.2, 1.8), CFrame.new(ground + Vector3.new(0, 2.3, 0)), color, M.Sand)
+	cylinder(m, ground + Vector3.new(0, 4, 0), 1.6, 0.1, WOOD, M.Wood)
+	part(m, Vector3.new(0.05, 0.5, 0.8), CFrame.new(ground + Vector3.new(0, 4.5, 0.4)), RED, M.Fabric)
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+-- Beach volleyball net between two posts, with a ball lying nearby.
+function Props.volleyballNet(parent: Instance, ground: Vector3, facing: number): Model
+	local m = newModel("VolleyballNet", parent)
+	local base = CFrame.new(ground) * CFrame.Angles(0, facing, 0)
+	for side = -1, 1, 2 do
+		cylinder(m, base * Vector3.new(side * 9, 4, 0), 9, 0.4, WHITE, M.Metal)
+	end
+	local net = part(m, Vector3.new(18, 3, 0.1), base * CFrame.new(0, 6.2, 0), rgb(40, 40, 44), M.Fabric)
+	net.Transparency = 0.45
+	part(m, Vector3.new(18, 0.4, 0.15), base * CFrame.new(0, 7.8, 0), WHITE, M.Fabric)
+	-- Court boundary lines meet at the corners without overlapping their top faces.
+	for _, z in { -8, 8 } do
+		part(m, Vector3.new(18.3, 0.08, 0.3), base * CFrame.new(0, 0.04, z), WHITE, M.Fabric).CanCollide = false
+	end
+	for _, x in { -9, 9 } do
+		part(m, Vector3.new(0.3, 0.08, 15.7), base * CFrame.new(x, 0.04, 0), WHITE, M.Fabric).CanCollide = false
+	end
+	Props.beachBall(m, base * Vector3.new(3, 0, 4))
+	return m
+end
+
+-- Beach ball in segments of bright colour.
+function Props.beachBall(parent: Instance, ground: Vector3): Model
+	local m = newModel("BeachBall", parent)
+	ball(m, ground + Vector3.new(0, 0.9, 0), 1.8, WHITE, M.SmoothPlastic)
+	local colors = { RED, rgb(240, 200, 50), rgb(40, 110, 190) }
+	for i, color in colors do
+		local band = part(
+			m,
+			Vector3.new(0.45, 1.85, 1.85),
+			CFrame.new(ground + Vector3.new(0, 0.9, 0)) * CFrame.Angles(0, i / #colors * math.pi, 0),
+			color,
+			M.SmoothPlastic
+		)
+		band.Shape = Enum.PartType.Cylinder
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+-- Clump of washed-up seaweed along the tide line.
+function Props.seaweed(parent: Instance, ground: Vector3, rng: Random): Model
+	local m = newModel("Seaweed", parent)
+	for _ = 1, rng:NextInteger(3, 6) do
+		local p = ground + Vector3.new(rng:NextNumber(-2.5, 2.5), 0.08, rng:NextNumber(-2.5, 2.5))
+		local strand = part(
+			m,
+			Vector3.new(rng:NextNumber(0.5, 1.1), 0.15, rng:NextNumber(2, 4)),
+			CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, TAU), 0),
+			shade(rgb(64, 84, 46), rng, 0.15),
+			M.Grass
+		)
+		strand.CanCollide = false
+	end
+	Props.simplifyDecorationCollision(m)
+	return m
+end
+
+----------------------------------------------------------------------------------------------------
+-- Volcanic effects
+
+local function anchor(parent: Instance, position: Vector3): Part
+	local p = part(parent, Vector3.new(4, 1, 4), CFrame.new(position), LAVA)
+	p.Transparency = 1
+	p.CanCollide = false
+	p.CanQuery = false
+	return p
+end
+
+local function smoke(parent: BasePart, size: number, rise: number)
+	local s = Instance.new("Smoke")
+	s.Color = rgb(70, 64, 62)
+	s.Opacity = 0.22
+	s.Size = size
+	s.RiseVelocity = rise
+	s.Parent = parent
+end
+
+function Props.lavaPool(parent: Instance, ground: Vector3, rng: Random, diameter: number?): Model
+	local m = newModel("LavaPool", parent)
+	local d = diameter or rng:NextNumber(6, 14)
+	cylinder(m, ground + Vector3.new(0, 0.1, 0), 0.3, d + 3, rgb(60, 40, 36), M.CrackedLava)
+	local pool = cylinder(m, ground + Vector3.new(0, 0.2, 0), 0.4, d, LAVA, M.Neon)
+	light(pool, LAVA, d * 2.5, 2)
+	return m
+end
+
+-- Glowing ribbon following a list of surface points.
+function Props.lavaFlow(parent: Instance, points: { Vector3 })
+	local m = newModel("LavaFlow", parent)
+	for i = 1, #points - 1 do
+		local width = 7 - 4 * i / #points
+		local lift = Vector3.new(0, 0.6, 0)
+		local p = beam(m, points[i] + lift, points[i + 1] + lift, width, LAVA, 0.5, M.Neon)
+		if i % 4 == 1 then
+			light(p, LAVA, 40, 1.5)
+		end
+	end
+end
+
+function Props.vent(parent: Instance, ground: Vector3)
+	smoke(anchor(parent, ground + Vector3.new(0, 2, 0)), 14, 10)
+end
+
+-- Lava lake in a volcano's crater with rising smoke and embers.
+function Props.crater(parent: Instance, center: Vector3, radius: number, rimY: number)
+	local m = newModel("Crater", parent)
+	local lake = cylinder(m, center + Vector3.new(0, 1, 0), 0.6, radius * 2, LAVA, M.Neon)
+	light(lake, LAVA, 60, 5)
+
+	local embers = Instance.new("ParticleEmitter")
+	embers.Color = ColorSequence.new(rgb(255, 180, 80), rgb(255, 70, 20))
+	embers.LightEmission = 1
+	embers.Size = NumberSequence.new(0.8, 0)
+	embers.Lifetime = NumberRange.new(2, 5)
+	embers.Rate = 25
+	embers.Speed = NumberRange.new(15, 35)
+	embers.SpreadAngle = Vector2.new(25, 25)
+	embers.Acceleration = Vector3.new(0, -6, 0)
+	embers.Parent = anchor(m, center + Vector3.new(0, 2, 0))
+
+	smoke(anchor(m, Vector3.new(center.X, rimY + 10, center.Z)), 60, 18)
+end
+
+return Props
+
+end)()
+local Kitchen = (function()
+-- Kitchen fixtures for the Supermarket path: the processing room's cooking stations,
+-- the shop's supermarket shelves and the cooked dishes themselves. Local +Z is the
+-- side the cook (or a customer at the shelves) stands on; the floor is y=0.
+--
+-- Placed kitchen furniture fills two grid cells end to end (FurnitureCatalog),
+-- so a run of counters meets in one continuous worktop. The two built-in prep
+-- benches keep their shorter BUILT_IN_WIDTH.
+local Props = dependencies.Props
+
+local Kitchen = {}
+local rgb = Color3.fromRGB
+local M = Enum.Material
+local STEEL = rgb(186, 192, 196)
+local DARK_STEEL = rgb(62, 68, 72)
+local CABINET = rgb(222, 226, 226)
+local BLACK = rgb(32, 32, 34)
+local WOOD = rgb(148, 108, 70)
+local LIGHT_WOOD = rgb(206, 170, 118)
+local PLATE = rgb(244, 244, 238)
+local TILE = rgb(236, 240, 238)
+local GROUT = rgb(196, 202, 200)
+local CHARRED = rgb(52, 40, 32)
+local SALMON = rgb(240, 132, 96)
+
+Kitchen.WIDTH = 9
+Kitchen.BUILT_IN_WIDTH = 6
+Kitchen.DEPTH = 2.4
+Kitchen.TOP = 3.1
+Kitchen.CASE_WIDTH = 9
+Kitchen.CASE_DEPTH = 2.6
+Kitchen.CASE_SHELF = 0.55
+-- Where a cooking fish or finished dish sits, in station-local studs.
+Kitchen.WORK_SPOT = CFrame.new(0.6, Kitchen.TOP + 0.02, 0.15)
+-- Both supermarket gondolas have three open shelves with two dishes per tier.
+-- FoodCase keeps its original two-cell footprint and inventory identity for saves.
+Kitchen.SHELF_WIDTH = 4.4
+Kitchen.SHELF_DEPTH = 2.2
+Kitchen.SHELF_HEIGHT = 5.4
+local SHELF_LEVELS = { 0.55, 1.85, 3.15 }
+local CASE_LEVELS = { Kitchen.CASE_SHELF, 2.15, 3.75 }
+local CASE_COLUMNS = { -2.25, 2.25 }
+local SHELF_COLUMNS = { -1.05, 1.05 }
+Kitchen.CASE_SPOTS = {}
+Kitchen.SHELF_SPOTS = {}
+for _, y in CASE_LEVELS do
+	for _, x in CASE_COLUMNS do
+		table.insert(Kitchen.CASE_SPOTS, CFrame.new(x, y + 0.1, 0.25))
+	end
+end
+for _, y in SHELF_LEVELS do
+	for _, x in SHELF_COLUMNS do
+		table.insert(Kitchen.SHELF_SPOTS, CFrame.new(x, y + 0.1, 0.25))
+	end
+end
+-- Eight fish spots in the iced pans of the kitchen storage counter: four across, two deep.
+local STORAGE_COLUMNS = { -3.15, -1.05, 1.05, 3.15 }
+Kitchen.STORAGE_SPOTS = {}
+for _, z in { -0.5, 0.45 } do
+	for _, x in STORAGE_COLUMNS do
+		table.insert(Kitchen.STORAGE_SPOTS, CFrame.new(x, Kitchen.TOP + 0.05, z))
+	end
+end
+
+local function builder(parent: Instance, name: string, frame: CFrame)
+	local model = Instance.new("Model")
+	model.Name = name
+	model.Parent = parent
+	local function piece(
+		label: string,
+		size: Vector3,
+		offset: CFrame,
+		color: Color3,
+		material: Enum.Material?,
+		solid: boolean?
+	): Part
+		local result = Props.part(model, size, frame * offset, color, material)
+		result.Name = label
+		if not solid then
+			result.CanCollide = false
+			result.CanQuery = false
+		end
+		return result
+	end
+	-- An upright cylinder standing on `offset`'s height (its centre).
+	local function round(label: string, height: number, diameter: number, offset: CFrame, color: Color3, material: Enum.Material?): Part
+		local result = piece(label, Vector3.new(height, diameter, diameter), offset * CFrame.Angles(0, 0, math.pi / 2), color, material)
+		result.Shape = Enum.PartType.Cylinder
+		return result
+	end
+	local function ball(label: string, size: Vector3, offset: CFrame, color: Color3, material: Enum.Material?): Part
+		local result = piece(label, size, offset, color, material)
+		result.Shape = Enum.PartType.Ball
+		return result
+	end
+	return model, piece, round, ball
+end
+
+-- The cabinet run every station shares: a recessed plinth, a top drawer row over
+-- hinged doors, an overhanging worktop and a tiled upstand. `open` leaves the
+-- doors off one end, from x = open[1] to open[2], for an open shelf bay.
+local function counter(piece, width: number, top: Color3, topMaterial: Enum.Material, body: Color3, open: { number }?)
+	local d, h = Kitchen.DEPTH, Kitchen.TOP
+	local front = d / 2
+	local face = body:Lerp(Color3.new(1, 1, 1), 0.12)
+	piece("Plinth", Vector3.new(width - 0.1, 0.3, d - 0.3), CFrame.new(0, 0.15, -0.15), DARK_STEEL, M.Metal, true)
+	local bays = math.max(2, math.floor(width / 1.5 + 0.5))
+	local bay = (width - 0.2) / bays
+	local function isOpen(x: number): boolean
+		return open ~= nil and x > open[1] and x < open[2]
+	end
+	-- The carcass stops where the open bay starts; the bay gets a back, a floor and an end.
+	local carcassEnd = width / 2
+	for index = 1, bays do
+		local x = -width / 2 + 0.1 + (index - 0.5) * bay
+		if isOpen(x) then
+			carcassEnd = x - bay / 2
+			break
+		end
+	end
+	local carcass = carcassEnd + width / 2 - 0.02
+	piece("Cabinet", Vector3.new(carcass, h - 0.52, d - 0.02), CFrame.new(-width / 2 + 0.02 + carcass / 2, 0.3 + (h - 0.52) / 2, -0.01), body, M.SmoothPlastic, true)
+	if carcassEnd < width / 2 then
+		local bayWidth = width / 2 - carcassEnd
+		local x = carcassEnd + bayWidth / 2
+		local shade = body:Lerp(Color3.new(0, 0, 0), 0.45)
+		piece("BayBack", Vector3.new(bayWidth, h - 0.52, 0.1), CFrame.new(x, 0.3 + (h - 0.52) / 2, -d / 2 + 0.06), shade, M.SmoothPlastic, true)
+		piece("BayFloor", Vector3.new(bayWidth, 0.1, d - 0.1), CFrame.new(x, 0.35, 0), shade, M.SmoothPlastic, true)
+		piece("BayEnd", Vector3.new(0.1, h - 0.52, d - 0.02), CFrame.new(width / 2 - 0.07, 0.3 + (h - 0.52) / 2, -0.01), body, M.SmoothPlastic, true)
+	end
+	piece("Worktop", Vector3.new(width, 0.22, d + 0.12), CFrame.new(0, h - 0.11, 0.06), top, topMaterial, true)
+	piece("WorktopEdge", Vector3.new(width, 0.08, 0.04), CFrame.new(0, h - 0.18, front + 0.13), DARK_STEEL, M.Metal)
+	piece("Upstand", Vector3.new(width, 0.9, 0.08), CFrame.new(0, h + 0.45, -front + 0.04), TILE, M.CeramicTiles, true)
+	for _, y in { 0.3, 0.6 } do
+		piece("UpstandGrout", Vector3.new(width - 0.02, 0.025, 0.02), CFrame.new(0, h + y, -front + 0.09), GROUT, M.SmoothPlastic)
+	end
+	piece("UpstandCap", Vector3.new(width, 0.06, 0.14), CFrame.new(0, h + 0.93, -front + 0.07), top, topMaterial)
+	-- Doors and drawers in matching bays across the run.
+	for index = 1, bays do
+		local x = -width / 2 + 0.1 + (index - 0.5) * bay
+		local inOpenBay = isOpen(x)
+		piece("Drawer", Vector3.new(bay - 0.1, 0.42, 0.05), CFrame.new(x, h - 0.5, front + 0.005), face, M.SmoothPlastic)
+		piece("DrawerPull", Vector3.new(math.min(0.7, bay * 0.45), 0.06, 0.06), CFrame.new(x, h - 0.5, front + 0.06), DARK_STEEL, M.Metal)
+		if not inOpenBay then
+			piece("CabinetDoor", Vector3.new(bay - 0.1, h - 1.25, 0.05), CFrame.new(x, 0.3 + (h - 1.25) / 2 + 0.06, front + 0.005), face, M.SmoothPlastic)
+			piece("DoorPanel", Vector3.new(bay - 0.42, h - 1.65, 0.03), CFrame.new(x, 0.3 + (h - 1.25) / 2 + 0.06, front + 0.035), body, M.SmoothPlastic)
+			local side = if index % 2 == 0 then -1 else 1
+			piece("DoorHandle", Vector3.new(0.06, 0.55, 0.06), CFrame.new(x + side * (bay / 2 - 0.22), 1.75, front + 0.08), DARK_STEEL, M.Metal)
+		end
+	end
+end
+
+-- A row of hooks on the upstand with kitchen tools hanging from them.
+local function utensils(piece, round, x: number, count: number)
+	local back = -Kitchen.DEPTH / 2 + 0.14
+	piece("UtensilRail", Vector3.new(count * 0.42 + 0.2, 0.05, 0.05), CFrame.new(x, Kitchen.TOP + 0.82, back), STEEL, M.Metal)
+	for index = 1, count do
+		local ux = x + (index - (count + 1) / 2) * 0.42
+		piece("UtensilHandle", Vector3.new(0.05, 0.5, 0.04), CFrame.new(ux, Kitchen.TOP + 0.55, back + 0.02), DARK_STEEL, M.Metal)
+		if index % 2 == 0 then
+			piece("Spatula", Vector3.new(0.22, 0.22, 0.02), CFrame.new(ux, Kitchen.TOP + 0.22, back + 0.02), STEEL, M.Metal)
+		else
+			round("Ladle", 0.1, 0.24, CFrame.new(ux, Kitchen.TOP + 0.26, back + 0.08), STEEL, M.Metal)
+		end
+	end
+end
+
+function Kitchen.buildStation(parent: Instance, frame: CFrame, station: string, width: number?): Model
+	if station == "KitchenStorage" then
+		return Kitchen.buildStorage(parent, frame)
+	end
+	local w = width or Kitchen.WIDTH
+	local top, back = Kitchen.TOP, -Kitchen.DEPTH / 2
+	local model, piece, round, ball = builder(parent, station, frame)
+	if station == "Prep" then
+		counter(piece, w, STEEL, M.Metal, CABINET)
+		-- A deep sink with a drainer at the left end.
+		local sinkX = -w / 2 + 1.25
+		piece("SinkRim", Vector3.new(1.8, 0.04, 1.6), CFrame.new(sinkX, top + 0.01, 0), STEEL, M.Metal)
+		piece("SinkBasin", Vector3.new(1.5, 0.05, 1.3), CFrame.new(sinkX, top + 0.02, 0), DARK_STEEL, M.Metal)
+		round("Drain", 0.02, 0.2, CFrame.new(sinkX, top + 0.05, 0), BLACK, M.Metal)
+		round("Tap", 0.9, 0.12, CFrame.new(sinkX, top + 0.45, back + 0.35), STEEL, M.Metal)
+		piece("Spout", Vector3.new(0.1, 0.1, 0.65), CFrame.new(sinkX, top + 0.86, back + 0.62), STEEL, M.Metal)
+		for _, side in { -1, 1 } do
+			round("TapHandle", 0.08, 0.16, CFrame.new(sinkX + side * 0.25, top + 0.12, back + 0.35), STEEL, M.Metal)
+		end
+		for index = 0, 2 do
+			piece("DrainerRib", Vector3.new(0.04, 0.02, 1.2), CFrame.new(sinkX + 1.0 + index * 0.15, top + 0.01, 0), DARK_STEEL, M.Metal)
+		end
+		-- The board the fish is cut on, with a knife and a bowl beside it.
+		piece("CuttingBoard", Vector3.new(2.2, 0.1, 1.35), CFrame.new(0.6, top + 0.05, 0.1), LIGHT_WOOD, M.Wood)
+		piece("KnifeBlade", Vector3.new(0.8, 0.02, 0.14), CFrame.new(1.25, top + 0.11, 0.6) * CFrame.Angles(0, 0.2, 0), STEEL, M.Metal)
+		piece("KnifeHandle", Vector3.new(0.4, 0.06, 0.1), CFrame.new(1.8, top + 0.12, 0.49) * CFrame.Angles(0, 0.2, 0), BLACK, M.SmoothPlastic)
+		piece("KnifeBlock", Vector3.new(0.45, 0.65, 0.5), CFrame.new(w / 2 - 0.55, top + 0.32, back + 0.45), WOOD, M.Wood)
+		for index = -1, 1 do
+			piece("KnifeHilt", Vector3.new(0.07, 0.3, 0.1), CFrame.new(w / 2 - 0.55 + index * 0.12, top + 0.78, back + 0.42), BLACK, M.SmoothPlastic)
+		end
+		if w >= 8 then
+			round("MixingBowl", 0.3, 0.8, CFrame.new(w / 2 - 1.6, top + 0.15, -0.2), STEEL, M.Metal)
+			round("BowlInside", 0.02, 0.62, CFrame.new(w / 2 - 1.6, top + 0.3, -0.2), DARK_STEEL, M.Metal)
+			utensils(piece, round, -0.6, 4)
+			for index, color in { rgb(70, 140, 60), rgb(96, 160, 72) } do
+				local x = w / 2 - 2.6 + index * 0.45
+				round("HerbPot", 0.35, 0.34, CFrame.new(x, top + 0.18, back + 0.32), rgb(190, 104, 70), M.Concrete)
+				ball("Herbs", Vector3.new(0.42, 0.36, 0.42), CFrame.new(x, top + 0.48, back + 0.32), color, M.Grass)
+			end
+		end
+	elseif station == "GrillStation" then
+		counter(piece, w, DARK_STEEL, M.Metal, rgb(170, 60, 44))
+		-- A charcoal grill set into the worktop, its control knobs on the front.
+		piece("GrillFrame", Vector3.new(3.5, 0.2, 1.95), CFrame.new(0.6, top + 0.06, 0), BLACK, M.Metal)
+		local coals = piece("Coals", Vector3.new(3.2, 0.06, 1.7), CFrame.new(0.6, top + 0.12, 0), rgb(255, 120, 40), M.Neon)
+		coals.Transparency = 0.25
+		for bar = -4, 4 do
+			piece("GrillBar", Vector3.new(0.06, 0.06, 1.75), CFrame.new(0.6 + bar * 0.36, top + 0.19, 0), DARK_STEEL, M.Metal)
+		end
+		piece("ControlPanel", Vector3.new(3.4, 0.42, 0.04), CFrame.new(0.6, top - 0.5, Kitchen.DEPTH / 2 + 0.1), STEEL, M.Metal)
+		for index = -1, 2 do
+			round("GrillKnob", 0.12, 0.22, CFrame.new(0.6 + index * 0.75 - 0.375, top - 0.5, Kitchen.DEPTH / 2 + 0.17) * CFrame.Angles(math.pi / 2, 0, 0), BLACK, M.SmoothPlastic)
+		end
+		-- A stainless canopy on two back posts draws the smoke up a duct.
+		for _, x in { -w / 2 + 0.25, w / 2 - 0.25 } do
+			piece("HoodPost", Vector3.new(0.14, 3.3, 0.14), CFrame.new(x, top + 1.65, back + 0.12), DARK_STEEL, M.Metal)
+		end
+		piece("Hood", Vector3.new(w - 0.3, 0.5, 1.7), CFrame.new(0, top + 3.05, -0.3), STEEL, M.Metal)
+		piece("HoodLip", Vector3.new(w - 0.3, 0.12, 0.08), CFrame.new(0, top + 2.75, 0.52), DARK_STEEL, M.Metal)
+		piece("HoodFilter", Vector3.new(3.6, 0.04, 1.2), CFrame.new(0.6, top + 2.78, -0.3), DARK_STEEL, M.Metal)
+		piece("Duct", Vector3.new(1, 1.2, 0.9), CFrame.new(0.6, top + 3.9, -0.55), STEEL, M.Metal)
+		local lamp = piece("HoodLamp", Vector3.new(0.5, 0.04, 0.3), CFrame.new(-2.6, top + 2.79, 0), rgb(255, 238, 200), M.Neon)
+		local light = Instance.new("SpotLight")
+		light.Face, light.Brightness, light.Range, light.Angle = Enum.NormalId.Bottom, 0.8, 8, 90
+		light.Color = rgb(255, 236, 205)
+		light.Parent = lamp
+		-- Skewers ready on a tray, salt and pepper, tongs resting on the right.
+		piece("SkewerTray", Vector3.new(1.6, 0.06, 1), CFrame.new(-2.7, top + 0.03, 0.1), STEEL, M.Metal)
+		for index = -1, 1 do
+			local z = 0.1 + index * 0.28
+			piece("Skewer", Vector3.new(1.4, 0.03, 0.03), CFrame.new(-2.7, top + 0.12, z), LIGHT_WOOD, M.Wood)
+			for chunk = -1, 1 do
+				piece("SkewerChunk", Vector3.new(0.18, 0.16, 0.16), CFrame.new(-2.7 + chunk * 0.4, top + 0.13, z), if chunk == 0 then rgb(226, 84, 56) else SALMON, M.SmoothPlastic)
+			end
+		end
+		round("Salt", 0.36, 0.16, CFrame.new(-3.9, top + 0.18, back + 0.4), PLATE, M.Glass)
+		round("Pepper", 0.36, 0.16, CFrame.new(-3.65, top + 0.18, back + 0.4), BLACK, M.Glass)
+		piece("Tongs", Vector3.new(0.9, 0.04, 0.08), CFrame.new(3.3, top + 0.04, 0.4) * CFrame.Angles(0, 0.35, 0), STEEL, M.Metal)
+		for index = 0, 2 do
+			round("Plate", 0.05, 0.9, CFrame.new(3.4, top + 0.03 + index * 0.06, -0.35), PLATE, M.SmoothPlastic)
+		end
+		local glow = Instance.new("PointLight")
+		glow.Color, glow.Brightness, glow.Range = rgb(255, 140, 60), 0.8, 8
+		glow.Parent = coals
+	elseif station == "Smoker" then
+		-- An open bay at the right end keeps the smoking wood to hand.
+		counter(piece, w, WOOD, M.WoodPlanks, rgb(92, 70, 52), { 1.6, w / 2 })
+		for row = 0, 2 do
+			for index = 0, 3 - row do
+				local x = 2.25 + index * 0.55 + row * 0.27
+				local log = piece("Log", Vector3.new(1.9, 0.5, 0.5), CFrame.new(x, 0.62 + row * 0.44, 0.1) * CFrame.Angles(0, math.pi / 2, 0), rgb(122, 86, 56), M.Wood)
+				log.Shape = Enum.PartType.Cylinder
+			end
+		end
+		-- The smokehouse cabinet: charred planks in iron bands, a window in the door.
+		local boxX = -w / 2 + 1.55
+		piece("SmokeBox", Vector3.new(2.6, 2.6, 1.9), CFrame.new(boxX, top + 1.3, -0.15), CHARRED, M.WoodPlanks, true)
+		for _, y in { 0.25, 2.35 } do
+			piece("SmokeBand", Vector3.new(2.66, 0.12, 1.96), CFrame.new(boxX, top + y, -0.15), DARK_STEEL, M.Metal)
+		end
+		piece("SmokeDoor", Vector3.new(2.1, 1.85, 0.08), CFrame.new(boxX, top + 1.3, 0.83), rgb(76, 60, 46), M.Wood)
+		local window = piece("SmokeWindow", Vector3.new(1, 0.6, 0.04), CFrame.new(boxX, top + 1.75, 0.88), rgb(255, 150, 70), M.Glass)
+		window.Transparency = 0.3
+		piece("SmokeHandle", Vector3.new(0.1, 0.5, 0.1), CFrame.new(boxX + 0.85, top + 1.2, 0.92), DARK_STEEL, M.Metal)
+		round("Thermometer", 0.06, 0.42, CFrame.new(boxX - 0.6, top + 2.05, 0.89) * CFrame.Angles(math.pi / 2, 0, 0), PLATE, M.SmoothPlastic)
+		piece("Needle", Vector3.new(0.03, 0.16, 0.02), CFrame.new(boxX - 0.6, top + 2.08, 0.93) * CFrame.Angles(0, 0, -0.6), rgb(210, 40, 30), M.Neon)
+		piece("SmokeRoof", Vector3.new(2.9, 0.18, 2.2), CFrame.new(boxX, top + 2.69, -0.15), DARK_STEEL, M.Metal)
+		round("Chimney", 2, 0.5, CFrame.new(boxX - 0.7, top + 3.7, -0.5), DARK_STEEL, M.Metal)
+		piece("ChimneyCap", Vector3.new(0.85, 0.08, 0.85), CFrame.new(boxX - 0.7, top + 4.95, -0.5), BLACK, M.Metal)
+		local vent = piece("Vent", Vector3.new(0.4, 0.1, 0.4), CFrame.new(boxX - 0.7, top + 4.72, -0.5), BLACK, M.Metal)
+		local smoke = Instance.new("ParticleEmitter")
+		smoke.Name = "Smoke"
+		smoke.Color = ColorSequence.new(rgb(180, 176, 168))
+		smoke.Transparency = NumberSequence.new(0.5, 1)
+		smoke.Size = NumberSequence.new(0.6, 2.4)
+		smoke.Lifetime = NumberRange.new(2, 3.5)
+		smoke.Rate = 4
+		smoke.Speed = NumberRange.new(1.5, 2.5)
+		smoke.SpreadAngle = Vector2.new(12, 12)
+		smoke.Parent = vent
+		-- Smoked fish hang from a rail at the back of the open worktop.
+		for _, x in { 0.35, w / 2 - 0.35 } do
+			piece("RailPost", Vector3.new(0.12, 2.2, 0.12), CFrame.new(x, top + 1.1, back + 0.2), DARK_STEEL, M.Metal)
+		end
+		piece("HangingRail", Vector3.new(w / 2 - 0.5, 0.08, 0.08), CFrame.new(w / 4, top + 2.15, back + 0.2), DARK_STEEL, M.Metal)
+		for index = 0, 3 do
+			local x = 1.2 + index * 0.85
+			piece("Hook", Vector3.new(0.03, 0.3, 0.03), CFrame.new(x, top + 1.97, back + 0.2), STEEL, M.Metal)
+			piece("SmokedFish", Vector3.new(0.45, 0.95, 0.14), CFrame.new(x, top + 1.32, back + 0.2), rgb(176, 96, 44), M.SmoothPlastic)
+			piece("FishTail", Vector3.new(0.4, 0.2, 0.1), CFrame.new(x, top + 0.78, back + 0.2), rgb(140, 72, 34), M.SmoothPlastic)
+		end
+		piece("ChipBucket", Vector3.new(0.7, 0.55, 0.7), CFrame.new(w / 2 - 0.7, top + 0.28, 0.35), rgb(110, 116, 118), M.Metal)
+		piece("WoodChips", Vector3.new(0.6, 0.05, 0.6), CFrame.new(w / 2 - 0.7, top + 0.52, 0.35), rgb(170, 120, 74), M.Sand)
+	elseif station == "SushiBar" then
+		counter(piece, w, LIGHT_WOOD, M.Wood, rgb(70, 54, 44))
+		-- A chilled glass neta case along the back shows the day's fish.
+		piece("NetaBase", Vector3.new(w - 1.6, 0.35, 0.8), CFrame.new(0, top + 0.17, back + 0.55), DARK_STEEL, M.Metal)
+		local glass = piece("NetaGlass", Vector3.new(w - 1.6, 0.6, 0.06), CFrame.new(0, top + 0.62, back + 0.95) * CFrame.Angles(math.rad(-18), 0, 0), rgb(205, 232, 235), M.Glass)
+		glass.Transparency = 0.7
+		local lid = piece("NetaTop", Vector3.new(w - 1.6, 0.05, 0.75), CFrame.new(0, top + 0.92, back + 0.55), rgb(205, 232, 235), M.Glass)
+		lid.Transparency = 0.7
+		for index, color in { SALMON, rgb(190, 40, 50), rgb(244, 236, 220), SALMON, rgb(240, 196, 84), rgb(190, 40, 50) } do
+			piece("Neta", Vector3.new(0.9, 0.18, 0.4), CFrame.new(-3.1 + (index - 1) * 1.24, top + 0.44, back + 0.55), color, M.SmoothPlastic)
+		end
+		-- The chef's place: a bamboo mat, the rice tub, soy and a long knife.
+		piece("BambooMat", Vector3.new(1.6, 0.05, 1.1), CFrame.new(0.6, top + 0.03, 0.4), rgb(196, 182, 120), M.Fabric)
+		round("Hangiri", 0.45, 1.2, CFrame.new(-2.6, top + 0.23, 0.35), LIGHT_WOOD, M.Wood)
+		round("HangiriBand", 0.08, 1.24, CFrame.new(-2.6, top + 0.33, 0.35), rgb(184, 115, 51), M.Metal)
+		round("Rice", 0.04, 1.05, CFrame.new(-2.6, top + 0.45, 0.35), PLATE, M.SmoothPlastic)
+		round("SoyBottle", 0.5, 0.2, CFrame.new(2.6, top + 0.25, 0.3), rgb(40, 20, 12), M.Glass)
+		round("SoyCap", 0.1, 0.16, CFrame.new(2.6, top + 0.55, 0.3), rgb(200, 40, 36), M.SmoothPlastic)
+		piece("GingerDish", Vector3.new(0.5, 0.05, 0.35), CFrame.new(3.3, top + 0.03, 0.35), PLATE, M.SmoothPlastic)
+		ball("Ginger", Vector3.new(0.22, 0.1, 0.2), CFrame.new(3.2, top + 0.09, 0.35), rgb(246, 196, 186), M.SmoothPlastic)
+		ball("Wasabi", Vector3.new(0.14, 0.1, 0.14), CFrame.new(3.45, top + 0.09, 0.35), rgb(130, 180, 70), M.SmoothPlastic)
+		piece("YanagibaBlade", Vector3.new(1.2, 0.02, 0.12), CFrame.new(1.7, top + 0.05, 0.75), STEEL, M.Metal)
+		piece("YanagibaHandle", Vector3.new(0.45, 0.07, 0.09), CFrame.new(2.5, top + 0.06, 0.75), LIGHT_WOOD, M.Wood)
+		-- A split noren on a wooden frame, with a paper lantern at each end.
+		for _, x in { -w / 2 + 0.2, w / 2 - 0.2 } do
+			piece("NorenPost", Vector3.new(0.16, 3.4, 0.16), CFrame.new(x, top + 1.7, back + 0.1), LIGHT_WOOD, M.Wood)
+			local lx = x - math.sign(x) * 0.15
+			piece("LanternArm", Vector3.new(0.06, 0.06, 0.5), CFrame.new(lx, top + 2.15, back + 0.35), LIGHT_WOOD, M.Wood)
+			local lantern = ball("Lantern", Vector3.new(0.55, 0.7, 0.55), CFrame.new(lx, top + 1.75, back + 0.55), rgb(214, 52, 40), M.Fabric)
+			piece("LanternCord", Vector3.new(0.03, 0.06, 0.03), CFrame.new(lx, top + 2.12, back + 0.55), BLACK, M.Fabric)
+			local glow = Instance.new("PointLight")
+			glow.Color, glow.Brightness, glow.Range = rgb(255, 170, 120), 0.4, 6
+			glow.Parent = lantern
+		end
+		piece("NorenRod", Vector3.new(w - 0.1, 0.12, 0.12), CFrame.new(0, top + 3.35, back + 0.1), LIGHT_WOOD, M.Wood)
+		local panels = 5
+		local panelWidth = (w - 0.8) / panels
+		for index = 1, panels do
+			local x = -(w - 0.8) / 2 + (index - 0.5) * panelWidth
+			piece("Noren", Vector3.new(panelWidth - 0.08, 1.05, 0.04), CFrame.new(x, top + 2.75, back + 0.1), rgb(34, 52, 92), M.Fabric)
+			piece("NorenCrest", Vector3.new(0.3, 0.3, 0.05), CFrame.new(x, top + 2.65, back + 0.13), PLATE, M.Fabric)
+		end
+	else
+		error("Unknown kitchen station " .. tostring(station))
+	end
+	return model
+end
+
+-- A chilled prep counter holding up to 8 fish for cooking, in iced steel pans.
+function Kitchen.buildStorage(parent: Instance, frame: CFrame): Model
+	local model, piece, round = builder(parent, "KitchenStorage", frame)
+	local w, top, front, back = Kitchen.WIDTH, Kitchen.TOP, Kitchen.DEPTH / 2, -Kitchen.DEPTH / 2
+	counter(piece, w, STEEL, M.Metal, rgb(52, 60, 66))
+
+	local ice = piece("IceBed", Vector3.new(w - 0.6, 0.06, 2.0), CFrame.new(0, top + 0.02, 0), rgb(218, 238, 245), M.Ice, true)
+	ice.Transparency = 0.15
+	-- One pan per pair of fish, rimmed in steel.
+	for _, x in STORAGE_COLUMNS do
+		piece("PanRim", Vector3.new(1.9, 0.08, 1.95), CFrame.new(x, top + 0.04, 0), STEEL, M.Metal)
+		local pan = piece("PanIce", Vector3.new(1.75, 0.04, 1.8), CFrame.new(x, top + 0.07, 0), rgb(232, 246, 250), M.Ice)
+		pan.Transparency = 0.1
+		piece("PanDivider", Vector3.new(1.75, 0.04, 0.04), CFrame.new(x, top + 0.09, -0.025), DARK_STEEL, M.Metal)
+	end
+	-- A sneeze guard over the pans, and the ticket rail behind it.
+	for _, x in { -w / 2 + 0.3, w / 2 - 0.3 } do
+		piece("GuardPost", Vector3.new(0.08, 1.1, 0.08), CFrame.new(x, top + 0.55, back + 0.3), STEEL, M.Metal)
+	end
+	local guard = piece("SneezeGuard", Vector3.new(w - 0.5, 0.05, 0.9), CFrame.new(0, top + 1.08, back + 0.7) * CFrame.Angles(math.rad(-10), 0, 0), rgb(214, 236, 240), M.Glass)
+	guard.Transparency = 0.75
+	piece("TicketRail", Vector3.new(w - 1, 0.1, 0.05), CFrame.new(0, top + 0.75, back + 0.11), DARK_STEEL, M.Metal)
+	for index = -3, 3 do
+		piece("Ticket", Vector3.new(0.45, 0.5, 0.02), CFrame.new(index * 1.1, top + 0.55, back + 0.13), rgb(245, 245, 230), M.SmoothPlastic)
+	end
+	-- The chiller's controls and grille on the front.
+	-- Between the drawer pulls, clear of the doors.
+	local display = piece("TempDisplay", Vector3.new(0.6, 0.26, 0.03), CFrame.new(2.93, top - 0.5, front + 0.05), rgb(90, 220, 255), M.Neon)
+	display.Transparency = 0.15
+	round("TempKnob", 0.06, 0.18, CFrame.new(0, top - 0.5, front + 0.06) * CFrame.Angles(math.pi / 2, 0, 0), BLACK, M.SmoothPlastic)
+	for row = 0, 1 do
+		piece("GrilleSlat", Vector3.new(2.2, 0.04, 0.03), CFrame.new(0, 0.1 + row * 0.1, front - 0.28), DARK_STEEL, M.Metal)
+	end
+
+	local mist = Instance.new("ParticleEmitter")
+	mist.Name = "ChillMist"
+	mist.Color = ColorSequence.new(rgb(225, 242, 255))
+	mist.Transparency = NumberSequence.new(0.65, 1)
+	mist.Size = NumberSequence.new(0.3, 0.8)
+	mist.Lifetime = NumberRange.new(1.2, 2)
+	mist.Rate = 4
+	mist.Speed = NumberRange.new(0.2, 0.6)
+	mist.SpreadAngle = Vector2.new(180, 0)
+	mist.Parent = ice
+
+	return model
+end
+
+-- Ordinary open supermarket shelving, shared by the wide and single-cell units.
+-- Dishes are added separately; the open front (+Z) faces the shoppers.
+local function supermarketShelf(
+	parent: Instance,
+	frame: CFrame,
+	name: string,
+	w: number,
+	d: number,
+	levels: { number },
+	columns: { number }
+): Model
+	local model, piece = builder(parent, name, frame)
+	local h = Kitchen.SHELF_HEIGHT
+	local white = rgb(236, 238, 236)
+	local grey = rgb(196, 200, 200)
+	local strip = rgb(214, 74, 58)
+	local back = -d / 2
+
+	-- The base plinth is the solid footprint; the kickplate covers its front.
+	piece("Base", Vector3.new(w - 0.04, 0.4, d - 0.1), CFrame.new(0, 0.2, 0.03), grey, M.SmoothPlastic, true)
+	piece("Kickplate", Vector3.new(w - 0.1, 0.34, 0.04), CFrame.new(0, 0.2, d / 2 - 0.025), DARK_STEEL, M.Metal)
+	-- Two end uprights and a pegboard back panel.
+	for _, x in { -w / 2 + 0.06, w / 2 - 0.06 } do
+		piece("Upright", Vector3.new(0.12, h, 0.2), CFrame.new(x, h / 2, back + 0.14), white, M.Metal, true)
+		piece("EndFoot", Vector3.new(0.12, 0.12, d - 0.2), CFrame.new(x, 0.46, 0.06), grey, M.Metal)
+	end
+	piece("BackPanel", Vector3.new(w - 0.2, h - 0.5, 0.08), CFrame.new(0, (h - 0.5) / 2 + 0.4, back + 0.08), white, M.SmoothPlastic, true)
+	for row = 1, 9 do
+		for column = -3, 3 do
+			piece("PegHole", Vector3.new(0.06, 0.06, 0.02), CFrame.new(column * (w - 1.1) / 6, 0.4 + row * 0.5, back + 0.13), grey, M.SmoothPlastic)
+		end
+	end
+	-- Shelves with a red price strip along each front edge.
+	for _, y in levels do
+		piece("Shelf", Vector3.new(w - 0.28, 0.08, d - 0.3), CFrame.new(0, y + 0.06, 0.08), white, M.Metal)
+		piece("ShelfBracket", Vector3.new(w - 0.28, 0.16, 0.06), CFrame.new(0, y - 0.04, back + 0.17), grey, M.Metal)
+		piece("PriceStrip", Vector3.new(w - 0.3, 0.2, 0.04), CFrame.new(0, y + 0.02, d / 2 - 0.04), strip, M.SmoothPlastic)
+		for _, x in columns do
+			piece("PriceTag", Vector3.new(0.6, 0.13, 0.02), CFrame.new(x, y + 0.02, d / 2 - 0.01), rgb(252, 250, 236), M.SmoothPlastic)
+		end
+	end
+	piece("TopCap", Vector3.new(w, 0.1, 0.4), CFrame.new(0, h + 0.05, back + 0.2), grey, M.Metal)
+	-- A header board on top reads as an aisle sign.
+	piece("HeaderBoard", Vector3.new(w - 0.6, 0.6, 0.08), CFrame.new(0, h + 0.4, back + 0.2), strip, M.SmoothPlastic)
+	piece("HeaderFace", Vector3.new(w - 0.9, 0.36, 0.02), CFrame.new(0, h + 0.4, back + 0.25), rgb(252, 250, 236), M.SmoothPlastic)
+	return model
+end
+
+-- Keep the saved FoodCase item and its two-cell footprint, now as open shelving.
+function Kitchen.buildCase(parent: Instance, frame: CFrame): Model
+	return supermarketShelf(parent, frame, "FoodCase", Kitchen.CASE_WIDTH, Kitchen.CASE_DEPTH, CASE_LEVELS, CASE_COLUMNS)
+end
+
+function Kitchen.buildShelf(parent: Instance, frame: CFrame): Model
+	return supermarketShelf(parent, frame, "FoodShelf", Kitchen.SHELF_WIDTH, Kitchen.SHELF_DEPTH, SHELF_LEVELS, SHELF_COLUMNS)
+end
+
+-- One cooked dish, resting with its base on `frame`'s origin. Purely decorative.
+function Kitchen.buildDish(recipeId: string, look: string, frame: CFrame): Model
+	local model, piece = builder(nil :: any, "Dish", frame)
+	model:SetAttribute("RecipeId", recipeId)
+	local function round(label: string, y: number, height: number, diameter: number, color: Color3, material: Enum.Material?, x: number?, z: number?): Part
+		local part = Props.cylinder(model, (frame * CFrame.new(x or 0, y, z or 0)).Position, height, diameter, color, material)
+		part.Name = label
+		part.CanCollide, part.CanQuery = false, false
+		return part
+	end
+	if look == "Sushi" or look == "Sashimi" or look == "DragonRoll" then
+		piece("ServingBoard", Vector3.new(1.5, 0.12, 0.8), CFrame.new(0, 0.06, 0), WOOD, M.Wood)
+	else
+		round("Plate", 0.04, 0.08, 1.35, PLATE, M.SmoothPlastic)
+		round("PlateRim", 0.09, 0.03, 1.1, rgb(226, 226, 220), M.SmoothPlastic)
+	end
+	local function bowl(color: Color3, filling: Color3)
+		round("Bowl", 0.26, 0.3, 1.05, color, M.SmoothPlastic)
+		round("BowlLip", 0.41, 0.06, 1.1, color, M.SmoothPlastic)
+		round("BowlFilling", 0.445, 0.01, 0.92, filling, M.SmoothPlastic)
+	end
+	if look == "Fillet" then
+		piece("Fillet", Vector3.new(0.85, 0.14, 0.42), CFrame.new(-0.05, 0.18, 0) * CFrame.Angles(0, 0.3, 0), rgb(240, 160, 130), M.SmoothPlastic)
+		local lemon = piece("Lemon", Vector3.new(0.26, 0.26, 0.26), CFrame.new(0.4, 0.22, 0.25), rgb(246, 220, 70), M.SmoothPlastic)
+		lemon.Shape = Enum.PartType.Ball
+		piece("Herb", Vector3.new(0.3, 0.04, 0.15), CFrame.new(-0.35, 0.13, -0.3), rgb(70, 140, 60), M.Grass)
+	elseif look == "Chips" then
+		piece("BatteredFish", Vector3.new(0.75, 0.2, 0.36), CFrame.new(-0.18, 0.21, 0) * CFrame.Angles(0, -0.25, 0), rgb(214, 156, 66), M.Sand)
+		for index = 1, 6 do
+			piece("Chip", Vector3.new(0.45, 0.08, 0.08), CFrame.new(0.32, 0.15 + (index % 2) * 0.07, -0.3 + index * 0.1) * CFrame.Angles(0, index * 0.5, 0), rgb(240, 206, 110), M.SmoothPlastic)
+		end
+	elseif look == "Grilled" then
+		piece("GrilledFish", Vector3.new(1, 0.22, 0.34), CFrame.new(0, 0.2, 0), rgb(158, 120, 84), M.SmoothPlastic)
+		piece("Tail", Vector3.new(0.2, 0.18, 0.3), CFrame.new(-0.56, 0.2, 0) * CFrame.Angles(0, math.rad(45), 0), rgb(130, 96, 66), M.SmoothPlastic)
+		for index = -1, 1 do
+			piece("GrillMark", Vector3.new(0.05, 0.02, 0.32), CFrame.new(index * 0.22, 0.32, 0), BLACK, M.SmoothPlastic)
+		end
+	elseif look == "Skewers" then
+		for _, z in { -0.18, 0.18 } do
+			piece("Skewer", Vector3.new(1.2, 0.04, 0.04), CFrame.new(0, 0.2, z), LIGHT_WOOD, M.Wood)
+			for index = -1, 1 do
+				piece("Chunk", Vector3.new(0.2, 0.2, 0.2), CFrame.new(index * 0.3, 0.2, z), if index == 0 then rgb(226, 84, 56) else rgb(222, 170, 112), M.SmoothPlastic)
+			end
+		end
+	elseif look == "Smoked" then
+		for index = 0, 2 do
+			piece("SmokedSlice", Vector3.new(0.7, 0.08, 0.3), CFrame.new(0, 0.14 + index * 0.05, -0.2 + index * 0.2) * CFrame.Angles(0, index * 0.25, 0), rgb(176, 92, 40), M.SmoothPlastic)
+		end
+	elseif look == "Sushi" then
+		for index = 0, 5 do
+			local x = -0.55 + (index % 3) * 0.55
+			local z = if index < 3 then -0.18 else 0.18
+			round("Nori", 0.24, 0.24, 0.3, rgb(30, 40, 30), M.SmoothPlastic, x, z)
+			round("Rice", 0.37, 0.02, 0.24, PLATE, M.SmoothPlastic, x, z)
+			round("Salmon", 0.385, 0.01, 0.1, rgb(240, 120, 80), M.SmoothPlastic, x, z)
+		end
+	elseif look == "Sashimi" then
+		for index = 0, 3 do
+			piece("GoldenSlice", Vector3.new(0.3, 0.1, 0.5), CFrame.new(-0.45 + index * 0.3, 0.18, 0) * CFrame.Angles(0, 0, math.rad(-20)), rgb(244, 190, 70), M.Foil)
+		end
+		piece("Shiso", Vector3.new(0.35, 0.03, 0.4), CFrame.new(0.55, 0.13, 0), rgb(60, 150, 70), M.Grass)
+	elseif look == "Sandwich" then
+		for _, y in { 0.18, 0.42 } do
+			piece("BreadCrust", Vector3.new(0.88, 0.12, 0.65), CFrame.new(0, y, 0), rgb(178, 117, 55), M.SmoothPlastic)
+			piece("Bread", Vector3.new(0.77, 0.025, 0.54), CFrame.new(0, y + 0.065, 0), rgb(245, 222, 170), M.SmoothPlastic)
+		end
+		piece("Lettuce", Vector3.new(0.94, 0.04, 0.7), CFrame.new(0, 0.27, 0) * CFrame.Angles(0, 0.12, 0), rgb(84, 159, 61), M.Grass)
+		piece("FishFilling", Vector3.new(0.82, 0.11, 0.52), CFrame.new(0, 0.34, 0), SALMON, M.SmoothPlastic)
+	elseif look == "Soup" or look == "Chowder" then
+		local chowder = look == "Chowder"
+		bowl(if chowder then rgb(119, 63, 42) else rgb(74, 130, 157), if chowder then rgb(239, 217, 170) else rgb(214, 139, 59))
+		for index = 0, 3 do
+			local angle = index * math.pi / 2 + 0.3
+			piece("FishChunk", Vector3.new(0.19, 0.07, 0.13), CFrame.new(math.cos(angle) * 0.24, 0.47, math.sin(angle) * 0.24) * CFrame.Angles(0, angle, 0), if chowder then rgb(181, 105, 58) else rgb(244, 194, 155), M.SmoothPlastic)
+		end
+		for index = -1, 1 do
+			piece(if chowder then "Potato" else "Carrot", Vector3.new(0.1, 0.05, 0.1), CFrame.new(index * 0.23, 0.47, 0.05), if chowder then rgb(248, 230, 184) else rgb(235, 103, 38), M.SmoothPlastic)
+		end
+		piece("Herb", Vector3.new(0.25, 0.025, 0.08), CFrame.new(0.07, 0.51, -0.12) * CFrame.Angles(0, 0.5, 0), rgb(66, 141, 62), M.Grass)
+	elseif look == "Tacos" then
+		for _, z in { -0.25, 0.25 } do
+			piece("TortillaBase", Vector3.new(0.85, 0.04, 0.2), CFrame.new(0, 0.15, z), rgb(237, 199, 106), M.SmoothPlastic)
+			for _, side in { -1, 1 } do
+				piece("TortillaSide", Vector3.new(0.85, 0.3, 0.045), CFrame.new(0, 0.26, z + side * 0.14) * CFrame.Angles(side * math.rad(25), 0, 0), rgb(237, 199, 106), M.SmoothPlastic)
+			end
+			piece("Lettuce", Vector3.new(0.74, 0.08, 0.19), CFrame.new(0, 0.29, z), rgb(76, 151, 54), M.Grass)
+			for index = -1, 1 do
+				piece("FishBite", Vector3.new(0.2, 0.12, 0.16), CFrame.new(index * 0.24, 0.37, z), rgb(215, 157, 77), M.SmoothPlastic)
+			end
+			piece("Salsa", Vector3.new(0.1, 0.06, 0.12), CFrame.new(0.12, 0.43, z), rgb(213, 63, 43), M.SmoothPlastic)
+		end
+	elseif look == "Salad" then
+		bowl(PLATE, rgb(80, 147, 58))
+		for index = 0, 4 do
+			local angle = index * math.pi * 2 / 5
+			piece("SaladLeaf", Vector3.new(0.33, 0.05, 0.18), CFrame.new(math.cos(angle) * 0.26, 0.48, math.sin(angle) * 0.26) * CFrame.Angles(0, angle, 0), rgb(111, 178, 67), M.Grass)
+		end
+		for index = -1, 1 do
+			piece("FishStrip", Vector3.new(0.5, 0.08, 0.12), CFrame.new(0, 0.54, index * 0.17) * CFrame.Angles(0, -0.35, 0), SALMON, M.SmoothPlastic)
+		end
+		round("Tomato", 0.53, 0.1, 0.17, rgb(218, 68, 43), M.SmoothPlastic, 0.29, 0.04)
+	elseif look == "Burger" then
+		round("BottomBun", 0.2, 0.17, 0.85, rgb(207, 150, 77), M.SmoothPlastic)
+		piece("Lettuce", Vector3.new(0.88, 0.05, 0.75), CFrame.new(0, 0.31, 0) * CFrame.Angles(0, 0.15, 0), rgb(86, 157, 58), M.Grass)
+		round("FishPatty", 0.41, 0.16, 0.77, rgb(192, 131, 58), M.Sand)
+		round("Tomato", 0.51, 0.04, 0.7, rgb(209, 64, 43), M.SmoothPlastic)
+		local bun = piece("TopBun", Vector3.new(0.88, 0.32, 0.88), CFrame.new(0, 0.64, 0), rgb(222, 168, 89), M.SmoothPlastic)
+		bun.Shape = Enum.PartType.Ball
+		for index = -1, 1 do
+			piece("Sesame", Vector3.new(0.07, 0.025, 0.035), CFrame.new(index * 0.16, 0.79 - math.abs(index) * 0.02, 0), PLATE, M.SmoothPlastic)
+		end
+	elseif look == "Steak" then
+		round("FishSteak", 0.25, 0.28, 0.75, rgb(210, 147, 109), M.SmoothPlastic, -0.12)
+		round("SteakCenter", 0.4, 0.025, 0.15, PLATE, M.SmoothPlastic, -0.12)
+		for _, z in { -0.16, 0.16 } do
+			piece("SearMark", Vector3.new(0.52, 0.025, 0.04), CFrame.new(-0.12, 0.405, z), CHARRED, M.SmoothPlastic)
+		end
+		for index = -1, 1 do
+			piece("Asparagus", Vector3.new(0.08, 0.07, 0.62), CFrame.new(0.39 + index * 0.08, 0.15, 0), rgb(79, 130, 44), M.Grass)
+		end
+	elseif look == "Teriyaki" then
+		round("RiceMound", 0.21, 0.2, 0.67, PLATE, M.SmoothPlastic, 0.25)
+		piece("GlazedFish", Vector3.new(0.47, 0.2, 0.78), CFrame.new(-0.22, 0.27, 0), rgb(139, 70, 32), M.SmoothPlastic)
+		for index = -1, 1 do
+			piece("GlazeStripe", Vector3.new(0.49, 0.025, 0.045), CFrame.new(-0.22, 0.38, index * 0.2), rgb(86, 42, 24), M.SmoothPlastic)
+			piece("Scallion", Vector3.new(0.14, 0.035, 0.045), CFrame.new(-0.23, 0.41, index * 0.18) * CFrame.Angles(0, 0.5, 0), rgb(91, 164, 65), M.Grass)
+		end
+	elseif look == "Bagel" then
+		-- Eight rounded bread segments leave the bagel's centre visibly open.
+		for index = 0, 7 do
+			local angle = index * math.pi / 4
+			local bread = piece("BagelBread", Vector3.new(0.31, 0.25, 0.31), CFrame.new(math.cos(angle) * 0.28, 0.25, math.sin(angle) * 0.28), rgb(205, 147, 78), M.SmoothPlastic)
+			bread.Shape = Enum.PartType.Ball
+		end
+		for _, z in { -0.25, 0.25 } do
+			piece("CreamCheese", Vector3.new(0.51, 0.05, 0.16), CFrame.new(0, 0.36, z), PLATE, M.SmoothPlastic)
+			piece("SmokedSalmon", Vector3.new(0.53, 0.07, 0.16), CFrame.new(0, 0.42, z) * CFrame.Angles(0, -0.2, 0), rgb(220, 119, 75), M.SmoothPlastic)
+		end
+		piece("Dill", Vector3.new(0.3, 0.03, 0.07), CFrame.new(0.05, 0.47, -0.25), rgb(64, 130, 59), M.Grass)
+	elseif look == "HoneySmoked" then
+		piece("SmokedFillet", Vector3.new(0.95, 0.19, 0.45), CFrame.new(-0.05, 0.22, 0), rgb(177, 91, 37), M.SmoothPlastic)
+		for index = -1, 1 do
+			piece("HoneyGlaze", Vector3.new(0.12, 0.03, 0.47), CFrame.new(-0.05 + index * 0.27, 0.33, 0) * CFrame.Angles(0, -0.2, 0), rgb(242, 177, 43), M.SmoothPlastic)
+		end
+		for _, z in { -0.33, 0.33 } do
+			round("Carrot", 0.15, 0.08, 0.18, rgb(234, 122, 36), M.SmoothPlastic, 0.18, z)
+		end
+		piece("Rosemary", Vector3.new(0.64, 0.035, 0.07), CFrame.new(-0.1, 0.37, 0.03) * CFrame.Angles(0, 0.25, 0), rgb(67, 122, 53), M.Grass)
+	elseif look == "RiceBowl" then
+		bowl(rgb(49, 64, 82), PLATE)
+		for index = -1, 1 do
+			piece("FishSlice", Vector3.new(0.57, 0.08, 0.16), CFrame.new(-0.12, 0.49 + (index + 1) * 0.015, index * 0.18) * CFrame.Angles(0, -0.3, 0), SALMON, M.SmoothPlastic)
+		end
+		for index = -1, 1 do
+			round("Cucumber", 0.48, 0.06, 0.17, rgb(95, 166, 70), M.SmoothPlastic, 0.28, index * 0.17)
+		end
+		piece("NoriStrip", Vector3.new(0.08, 0.025, 0.42), CFrame.new(-0.1, 0.57, 0), rgb(29, 53, 35), M.SmoothPlastic)
+	elseif look == "DragonRoll" then
+		for index = 0, 4 do
+			local x = -0.5 + index * 0.25
+			local z = math.sin(index * 0.8) * 0.13
+			round("Nori", 0.23, 0.22, 0.29, rgb(28, 46, 31), M.SmoothPlastic, x, z)
+			round("Rice", 0.345, 0.02, 0.24, PLATE, M.SmoothPlastic, x, z)
+			round("FishCenter", 0.36, 0.02, 0.11, SALMON, M.SmoothPlastic, x, z)
+			piece("Avocado", Vector3.new(0.21, 0.07, 0.17), CFrame.new(x, 0.4, z - 0.06) * CFrame.Angles(0, -0.25, 0), rgb(141, 182, 63), M.SmoothPlastic)
+		end
+		piece("DragonTail", Vector3.new(0.31, 0.07, 0.15), CFrame.new(0.66, 0.24, -0.06) * CFrame.Angles(0, 0.45, 0), rgb(232, 142, 72), M.SmoothPlastic)
+	end
+	return model
+end
+
+return Kitchen
+
+end)()
+local Recipes = (function()
+-- Kitchen recipes for the Supermarket path. A dish is cooked from one carried fish
+-- at a kitchen station; its value is the fish's value times the recipe's Multiplier.
+-- Better recipes need a rarer fish and a bought station. Pure: no Roblox services.
+local Recipes = {}
+
+-- Same order as AnglerCatalog.Rarities (kept here so this module stays pure).
+Recipes.RarityOrder = {
+	Junk = 0,
+	Common = 1,
+	Uncommon = 2,
+	Rare = 3,
+	Epic = 4,
+	Legendary = 5,
+	Mythical = 6,
+	Exotic = 7,
+	Divine = 8,
+	Limited = 9,
+	Admin = 10,
+}
+-- Diners in the restaurant pay this much more than shop customers.
+Recipes.RESTAURANT_MARKUP = 1.5
+
+-- Prep benches come with the house once the Supermarket is open (FurnitureCatalog
+-- PrepBench, saved under a bench key below). The others are furniture
+-- (FurnitureCatalog item of the same id).
+Recipes.Stations = {
+	Prep = { Name = "Prep bench", BuiltIn = true },
+	GrillStation = { Name = "Grill station" },
+	Smoker = { Name = "Smokehouse" },
+	SushiBar = { Name = "Sushi bar" },
+}
+-- Bench keys of the house's prep benches; each placed PrepBench saves one as its Key.
+Recipes.BuiltIn = {
+	Prep1 = { Station = "Prep" },
+	Prep2 = { Station = "Prep" },
+}
+-- Separate saved keys let island benches and harbour benches cook independently.
+Recipes.CompanyBuiltIn = {
+	CompanyPrep1 = { Station = "Prep" },
+	CompanyPrep2 = { Station = "Prep" },
+}
+
+Recipes.Order = {
+	"FishFillet",
+	"FishSandwich",
+	"FishSoup",
+	"FishSalad",
+	"FishAndChips",
+	"FishTacos",
+	"FishBurger",
+	"GrilledFish",
+	"FishSteak",
+	"FishSkewers",
+	"TeriyakiFish",
+	"SmokedFishBagel",
+	"SmokedFishChowder",
+	"SmokedFish",
+	"HoneySmokedFish",
+	"FishRiceBowl",
+	"SushiPlatter",
+	"GoldenSashimi",
+	"DragonRoll",
+}
+Recipes.Items = {
+	FishFillet = {
+		Name = "Fish fillet",
+		Station = "Prep",
+		MinRarity = "Common",
+		Multiplier = 1.4,
+		Seconds = 6,
+		Look = "Fillet",
+	},
+	FishSandwich = {
+		Name = "Fish sandwich",
+		Station = "Prep",
+		MinRarity = "Common",
+		Multiplier = 1.5,
+		Seconds = 8,
+		Look = "Sandwich",
+	},
+	FishSoup = {
+		Name = "Fish soup",
+		Station = "Prep",
+		MinRarity = "Common",
+		Multiplier = 1.6,
+		Seconds = 10,
+		Look = "Soup",
+	},
+	FishSalad = {
+		Name = "Fish salad",
+		Station = "Prep",
+		MinRarity = "Uncommon",
+		Multiplier = 1.7,
+		Seconds = 8,
+		Look = "Salad",
+	},
+	FishAndChips = {
+		Name = "Fish & chips",
+		Station = "Prep",
+		MinRarity = "Uncommon",
+		Multiplier = 1.8,
+		Seconds = 10,
+		Look = "Chips",
+	},
+	FishTacos = {
+		Name = "Fish tacos",
+		Station = "Prep",
+		MinRarity = "Uncommon",
+		Multiplier = 1.9,
+		Seconds = 12,
+		Look = "Tacos",
+	},
+	FishBurger = {
+		Name = "Fish burger",
+		Station = "GrillStation",
+		MinRarity = "Uncommon",
+		Multiplier = 2.1,
+		Seconds = 11,
+		Look = "Burger",
+	},
+	GrilledFish = {
+		Name = "Grilled fish",
+		Station = "GrillStation",
+		MinRarity = "Uncommon",
+		Multiplier = 2.2,
+		Seconds = 12,
+		Look = "Grilled",
+	},
+	FishSteak = {
+		Name = "Fish steak",
+		Station = "GrillStation",
+		MinRarity = "Rare",
+		Multiplier = 2.7,
+		Seconds = 16,
+		Look = "Steak",
+	},
+	FishSkewers = {
+		Name = "Fish skewers",
+		Station = "GrillStation",
+		MinRarity = "Rare",
+		Multiplier = 2.8,
+		Seconds = 15,
+		Look = "Skewers",
+	},
+	TeriyakiFish = {
+		Name = "Teriyaki fish",
+		Station = "GrillStation",
+		MinRarity = "Epic",
+		Multiplier = 3.3,
+		Seconds = 20,
+		Look = "Teriyaki",
+	},
+	SmokedFishBagel = {
+		Name = "Smoked fish bagel",
+		Station = "Smoker",
+		MinRarity = "Uncommon",
+		Multiplier = 2.4,
+		Seconds = 16,
+		Look = "Bagel",
+	},
+	SmokedFishChowder = {
+		Name = "Smoked fish chowder",
+		Station = "Smoker",
+		MinRarity = "Rare",
+		Multiplier = 3,
+		Seconds = 19,
+		Look = "Chowder",
+	},
+	SmokedFish = {
+		Name = "Smoked fish",
+		Station = "Smoker",
+		MinRarity = "Rare",
+		Multiplier = 3.2,
+		Seconds = 20,
+		Look = "Smoked",
+	},
+	HoneySmokedFish = {
+		Name = "Honey-smoked fish",
+		Station = "Smoker",
+		MinRarity = "Epic",
+		Multiplier = 3.7,
+		Seconds = 24,
+		Look = "HoneySmoked",
+	},
+	FishRiceBowl = {
+		Name = "Fish rice bowl",
+		Station = "SushiBar",
+		MinRarity = "Uncommon",
+		Multiplier = 2.5,
+		Seconds = 18,
+		Look = "RiceBowl",
+	},
+	SushiPlatter = {
+		Name = "Sushi platter",
+		Station = "SushiBar",
+		MinRarity = "Epic",
+		Multiplier = 4,
+		Seconds = 25,
+		Look = "Sushi",
+	},
+	GoldenSashimi = {
+		Name = "Golden sashimi",
+		Station = "SushiBar",
+		MinRarity = "Legendary",
+		Multiplier = 5,
+		Seconds = 30,
+		Look = "Sashimi",
+	},
+	DragonRoll = {
+		Name = "Dragon roll",
+		Station = "SushiBar",
+		MinRarity = "Mythical",
+		Multiplier = 5.6,
+		Seconds = 36,
+		Look = "DragonRoll",
+	},
+}
+
+-- Hand cooking is a short run of minigame steps (client CookingMinigame); chefs
+-- still cook on the recipe's Seconds timer. Step kinds:
+--   Mash   click/tap `Clicks` times within `Time` seconds
+--   Timing click `Hits` times while the sweeping marker is inside the zone
+--          (`Speed` bar-widths per second, zone `Zone` wide)
+--   Hold   hold until the gauge (full after `Fill` seconds) reaches `Target`,
+--          then release inside the `Zone`-wide band around it
+Recipes.Steps = {
+	FishFillet = {
+		{ Kind = "Mash", Text = "Scale the fish", Clicks = 10, Time = 4 },
+		{ Kind = "Timing", Text = "Fillet along the bone", Hits = 1, Speed = 1.1, Zone = 0.22 },
+	},
+	FishSandwich = {
+		{ Kind = "Timing", Text = "Slice the bread", Hits = 2, Speed = 1.1, Zone = 0.24 },
+		{ Kind = "Mash", Text = "Flake the fish", Clicks = 10, Time = 4 },
+		{ Kind = "Timing", Text = "Stack the sandwich", Hits = 1, Speed = 1.2, Zone = 0.22 },
+	},
+	FishSoup = {
+		{ Kind = "Mash", Text = "Chop the fish and vegetables", Clicks = 12, Time = 5 },
+		{ Kind = "Hold", Text = "Simmer the broth", Fill = 2.4, Target = 0.65, Zone = 0.24 },
+		{ Kind = "Timing", Text = "Ladle into the bowl", Hits = 1, Speed = 1.1, Zone = 0.24 },
+	},
+	FishSalad = {
+		{ Kind = "Mash", Text = "Chop the fresh greens", Clicks = 12, Time = 4 },
+		{ Kind = "Timing", Text = "Slice the fish", Hits = 2, Speed = 1.2, Zone = 0.22 },
+		{ Kind = "Hold", Text = "Drizzle the dressing", Fill = 2, Target = 0.55, Zone = 0.22 },
+	},
+	FishAndChips = {
+		{ Kind = "Mash", Text = "Chop the potatoes", Clicks = 14, Time = 5 },
+		{ Kind = "Hold", Text = "Dip in batter", Fill = 2.2, Target = 0.6, Zone = 0.22 },
+		{ Kind = "Timing", Text = "Lift it out of the fryer", Hits = 1, Speed = 1.3, Zone = 0.2 },
+	},
+	FishTacos = {
+		{ Kind = "Mash", Text = "Shred the fish", Clicks = 14, Time = 5 },
+		{ Kind = "Timing", Text = "Fill the tortillas", Hits = 3, Speed = 1.3, Zone = 0.2 },
+		{ Kind = "Hold", Text = "Squeeze on the lime", Fill = 2.1, Target = 0.55, Zone = 0.22 },
+	},
+	FishBurger = {
+		{ Kind = "Mash", Text = "Shape the fish patty", Clicks = 12, Time = 5 },
+		{ Kind = "Hold", Text = "Grill the patty", Fill = 2.4, Target = 0.7, Zone = 0.2 },
+		{ Kind = "Timing", Text = "Build the burger", Hits = 2, Speed = 1.3, Zone = 0.2 },
+	},
+	GrilledFish = {
+		{ Kind = "Mash", Text = "Season the fish", Clicks = 10, Time = 4 },
+		{ Kind = "Hold", Text = "Sear until golden", Fill = 2.4, Target = 0.72, Zone = 0.2 },
+		{ Kind = "Timing", Text = "Flip it", Hits = 2, Speed = 1.3, Zone = 0.2 },
+	},
+	FishSteak = {
+		{ Kind = "Timing", Text = "Cut a thick steak", Hits = 2, Speed = 1.4, Zone = 0.18 },
+		{ Kind = "Mash", Text = "Rub in the seasoning", Clicks = 14, Time = 5 },
+		{ Kind = "Hold", Text = "Sear the steak", Fill = 2.8, Target = 0.74, Zone = 0.18 },
+	},
+	FishSkewers = {
+		{ Kind = "Mash", Text = "Cube the fish", Clicks = 14, Time = 5 },
+		{ Kind = "Timing", Text = "Thread the skewers", Hits = 3, Speed = 1.4, Zone = 0.18 },
+		{ Kind = "Hold", Text = "Grill the skewers", Fill = 2.4, Target = 0.7, Zone = 0.18 },
+	},
+	TeriyakiFish = {
+		{ Kind = "Mash", Text = "Mix the teriyaki glaze", Clicks = 16, Time = 5 },
+		{ Kind = "Hold", Text = "Reduce the sauce", Fill = 2.6, Target = 0.68, Zone = 0.17 },
+		{ Kind = "Timing", Text = "Brush and turn the fish", Hits = 3, Speed = 1.5, Zone = 0.17 },
+		{ Kind = "Timing", Text = "Sprinkle the sesame", Hits = 1, Speed = 1.4, Zone = 0.18 },
+	},
+	SmokedFishBagel = {
+		{ Kind = "Hold", Text = "Smoke the fish gently", Fill = 2.6, Target = 0.6, Zone = 0.22 },
+		{ Kind = "Timing", Text = "Slice the smoked fish", Hits = 2, Speed = 1.3, Zone = 0.2 },
+		{ Kind = "Mash", Text = "Spread and fill the bagel", Clicks = 12, Time = 5 },
+	},
+	SmokedFishChowder = {
+		{ Kind = "Mash", Text = "Dice the potatoes", Clicks = 14, Time = 5 },
+		{ Kind = "Hold", Text = "Smoke the fish", Fill = 2.6, Target = 0.65, Zone = 0.18 },
+		{ Kind = "Hold", Text = "Thicken the creamy chowder", Fill = 2.8, Target = 0.72, Zone = 0.18 },
+		{ Kind = "Timing", Text = "Ladle and garnish", Hits = 1, Speed = 1.4, Zone = 0.18 },
+	},
+	SmokedFish = {
+		{ Kind = "Mash", Text = "Rub in the brine", Clicks = 14, Time = 5 },
+		{ Kind = "Hold", Text = "Stoke the fire", Fill = 2.6, Target = 0.55, Zone = 0.18 },
+		{ Kind = "Hold", Text = "Let the smoke roll", Fill = 3, Target = 0.8, Zone = 0.16 },
+		{ Kind = "Timing", Text = "Pull it from the smoker", Hits = 1, Speed = 1.5, Zone = 0.16 },
+	},
+	HoneySmokedFish = {
+		{ Kind = "Mash", Text = "Mix the honey glaze", Clicks = 16, Time = 5 },
+		{ Kind = "Hold", Text = "Brush on the honey", Fill = 2.5, Target = 0.6, Zone = 0.17 },
+		{ Kind = "Hold", Text = "Smoke until caramelized", Fill = 3, Target = 0.8, Zone = 0.16 },
+		{ Kind = "Timing", Text = "Lift out the glazed fish", Hits = 2, Speed = 1.5, Zone = 0.16 },
+	},
+	FishRiceBowl = {
+		{ Kind = "Mash", Text = "Fluff the rice", Clicks = 12, Time = 5 },
+		{ Kind = "Timing", Text = "Slice the fish topping", Hits = 2, Speed = 1.3, Zone = 0.2 },
+		{ Kind = "Hold", Text = "Pour over the sauce", Fill = 2.2, Target = 0.6, Zone = 0.2 },
+	},
+	SushiPlatter = {
+		{ Kind = "Timing", Text = "Slice the fish", Hits = 3, Speed = 1.5, Zone = 0.17 },
+		{ Kind = "Mash", Text = "Roll the rice", Clicks = 16, Time = 5 },
+		{ Kind = "Timing", Text = "Plate each piece", Hits = 2, Speed = 1.6, Zone = 0.16 },
+	},
+	GoldenSashimi = {
+		{ Kind = "Timing", Text = "Slice paper-thin", Hits = 4, Speed = 1.7, Zone = 0.15 },
+		{ Kind = "Hold", Text = "Lay on the gold leaf", Fill = 2.6, Target = 0.66, Zone = 0.14 },
+		{ Kind = "Mash", Text = "Garnish the plate", Clicks = 16, Time = 5 },
+		{ Kind = "Timing", Text = "Serve it", Hits = 1, Speed = 1.8, Zone = 0.14 },
+	},
+	DragonRoll = {
+		{ Kind = "Timing", Text = "Slice the fish and avocado", Hits = 4, Speed = 1.7, Zone = 0.15 },
+		{ Kind = "Mash", Text = "Pack and roll the rice", Clicks = 18, Time = 5 },
+		{ Kind = "Hold", Text = "Shape the dragon roll", Fill = 2.8, Target = 0.7, Zone = 0.14 },
+		{ Kind = "Timing", Text = "Arrange the dragon scales", Hits = 3, Speed = 1.8, Zone = 0.14 },
+	},
+}
+-- Each step's intro and result screens take this long on the client.
+Recipes.STEP_PAUSE = 1.6
+-- Average step score (0..1) to grade; the grade scales the dish's value.
+Recipes.Grades = {
+	{ Name = "Perfect", Min = 0.9, Multiplier = 1.25 },
+	{ Name = "Great", Min = 0.7, Multiplier = 1.1 },
+	{ Name = "Good", Min = 0.45, Multiplier = 1 },
+	{ Name = "Sloppy", Min = 0, Multiplier = 0.85 },
+}
+
+function Recipes.grade(quality: number)
+	for _, grade in Recipes.Grades do
+		if quality >= grade.Min then
+			return grade
+		end
+	end
+	return Recipes.Grades[#Recipes.Grades]
+end
+
+-- The quickest a person can finish a recipe's steps. The server refuses a cook
+-- result sooner than this after it began, so the minigame can't be skipped.
+function Recipes.minigameSeconds(recipeId: string): number
+	local total = 0
+	for _, step in Recipes.Steps[recipeId] or {} do
+		total += Recipes.STEP_PAUSE * 0.75
+		if step.Kind == "Mash" then
+			total += step.Clicks / 20
+		elseif step.Kind == "Timing" then
+			total += step.Hits * 0.15
+		elseif step.Kind == "Hold" then
+			total += step.Fill * step.Target * 0.8
+		end
+	end
+	return total
+end
+
+-- The station type behind a station key: a built-in bench key or a furniture item id.
+function Recipes.stationOf(key: string): string?
+	local builtIn = Recipes.BuiltIn[key] or Recipes.CompanyBuiltIn[key]
+	if builtIn then
+		return builtIn.Station
+	end
+	local station = Recipes.Stations[key]
+	return if station and not station.BuiltIn then key else nil
+end
+
+-- nil when `recipeId` can be cooked at that station type from a fish of `rarity`
+-- (an AnglerCatalog rarity name), otherwise a player-facing reason.
+function Recipes.problem(recipeId: any, station: string, rarity: string?): string?
+	local recipe = if type(recipeId) == "string" then Recipes.Items[recipeId] else nil
+	if not recipe then
+		return "Choose a recipe."
+	elseif recipe.Station ~= station then
+		return recipe.Name .. " is made at a " .. string.lower(Recipes.Stations[recipe.Station].Name) .. "."
+	elseif (Recipes.RarityOrder[rarity or ""] or -1) < Recipes.RarityOrder[recipe.MinRarity] then
+		return recipe.Name .. " needs a " .. recipe.MinRarity .. " fish or rarer."
+	end
+	return nil
+end
+
+function Recipes.value(recipeId: string, fishValue: number): number
+	return math.max(1, math.floor(fishValue * Recipes.Items[recipeId].Multiplier))
+end
+
+function Recipes.dinerPrice(dishValue: number): number
+	return math.max(1, math.floor(dishValue * Recipes.RESTAURANT_MARKUP))
+end
+
+return Recipes
+
+end)()
+
+local function vectorJson(value)
+ return string.format('[%.9g,%.9g,%.9g]', value.X, value.Y, value.Z)
+end
+local function exportModel(id, model)
+ local parts = {}
+ for _, part in model:GetDescendants() do
+  if not part:IsA('BasePart') then continue end
+  local shape = if part.Shape == 'Ball' then 'sphere' elseif part.Shape == 'Cylinder' then 'cylinder' elseif part.ClassName == 'WedgePart' then 'wedge' else 'block'
+  local color, frame = part.Color, part.CFrame
+  local hex = string.format('#%02x%02x%02x', math.floor(color.R*255+0.5), math.floor(color.G*255+0.5), math.floor(color.B*255+0.5))
+  table.insert(parts, string.format('{"n":"%s","s":"%s","p":%s,"z":%s,"r":[%s,%s,%s],"c":"%s","t":%.9g,"m":"%s","solid":%s}', part.Name, shape, vectorJson(part.Position), vectorJson(part.Size), vectorJson(frame.RightVector), vectorJson(frame.UpVector), vectorJson(frame.ZVector), hex, part.Transparency, tostring(part.Material), tostring(part.CanCollide)))
+ end
+ local _, size = model:GetBoundingBox()
+ print(string.format('{"id":"%s","parts":[%s],"boundsSize":%s}',id,table.concat(parts,','),vectorJson(size)))
+end
+local shelf = Kitchen.buildCase(nil, CFrame.identity)
+assert(shelf.Name == 'FoodCase', 'Cooked-food fixture must preserve its saved item ID')
+assert(#Kitchen.CASE_SPOTS == 6, 'Cooked-food fixture must retain six inventory slots')
+local checks = 0
+for _, recipeId in Recipes.Order do
+ for _, spot in Kitchen.CASE_SPOTS do
+  local dish = Kitchen.buildDish(recipeId, Recipes.Items[recipeId].Look, spot)
+  local box, size = dish:GetBoundingBox()
+  local low, high = box.Position-size/2, box.Position+size/2
+  assert(math.abs(low.Y-spot.Position.Y)<1e-6, recipeId..': dish must rest on slot surface')
+  local supported = false
+  for _,part in shelf:GetDescendants() do
+   if not part:IsA('BasePart') or part.Name ~= 'Shelf' then continue end
+   local top = part.Position.Y+part.Size.Y/2
+   if math.abs(top-spot.Position.Y)<1e-6 then
+    assert(low.X>=part.Position.X-part.Size.X/2 and high.X<=part.Position.X+part.Size.X/2, recipeId..': dish overhangs shelf width')
+    assert(low.Z>=part.Position.Z-part.Size.Z/2 and high.Z<=part.Position.Z+part.Size.Z/2, recipeId..': dish overhangs shelf depth')
+    supported = true
+   elseif part.Position.Y > spot.Position.Y then
+    assert(high.Y<part.Position.Y-part.Size.Y/2, recipeId..': dish intersects shelf above')
+   end
+  end
+  assert(supported, recipeId..': missing shelf below display slot')
+  checks += 1
+  dish:Destroy()
+ end
+end
+print('PASS: '..checks..' recipe/slot combinations rest within shelf bounds and clear the next tier')
+exportModel('empty', shelf)
+local looks = {'Fillet','Chips','Grilled','Skewers','Sushi','Sashimi'}
+for index, spot in Kitchen.CASE_SPOTS do
+ local dish = Kitchen.buildDish('Preview'..index, looks[index], spot)
+ dish.Name, dish.Parent = 'PreviewDish'..index, shelf
+end
+exportModel('stocked', shelf)
+local slots = {}
+for _,spot in Kitchen.CASE_SPOTS do table.insert(slots, vectorJson(spot.Position)) end
+print('{"id":"slots","spots":[' .. table.concat(slots,',') .. ']}')

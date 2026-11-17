@@ -1,6 +1,7 @@
 -- Mainland geometry for the distant city: an irregular coastline cut by a long estuary.
 -- Coordinates are {x, z} pairs relative to the city centre; a third entry "quay" marks
--- the edge that starts at that point as a straight concrete quay wall, and "edge" marks a
+-- the edge that starts at that point as a straight concrete quay wall, "beach" marks a
+-- sandy resort shore, "riverwall" a straight stone river face, and "edge" marks a
 -- straight edge where the land carries on as hills (see CityHills) rather than meeting water.
 local LowPoly = require(script.Parent.LowPoly)
 
@@ -165,6 +166,8 @@ function CityLand.shore(parent: Instance, points: { Point }, origin: Vector3, to
 	local shingle = Color3.fromRGB(148, 138, 116)
 	local quay = Color3.fromRGB(118, 117, 110)
 	local coping = Color3.fromRGB(171, 166, 150)
+	local sand = Color3.fromRGB(206, 188, 146)
+	local wetSand = Color3.fromRGB(172, 158, 126)
 	for i, a in points do
 		local b = points[i % #points + 1]
 		local dx, dz = b[1] - a[1], b[2] - a[2]
@@ -194,6 +197,15 @@ function CityLand.shore(parent: Instance, points: { Point }, origin: Vector3, to
 		if a[3] == "quay" then
 			band("QuayWall", Vector3.new(3, top + 16, length), 1, (top - 16) / 2, quay, Enum.Material.Concrete)
 			band("QuayCoping", Vector3.new(4, 0.8, length), 1.5, top + 0.1, coping, Enum.Material.Concrete)
+		elseif a[3] == "beach" then
+			-- Two shallow shelves read as a dune bank and a broad wet strip from the sea,
+			-- without the dark rock lip used on the other towns' coasts.
+			band("BeachBank", Vector3.new(22, 8, length + 10), 7, 0, sand, Enum.Material.Sand)
+			band("BeachSand", Vector3.new(30, 2.4, length + 12), 21, -0.3, wetSand, Enum.Material.Sand)
+		elseif a[3] == "riverwall" then
+			-- Vertical stone faces keep the narrow river channel clean beside the bridges.
+			band("RiverWall", Vector3.new(2.6, top + 16, length), 1, (top - 16) / 2, quay, Enum.Material.Concrete)
+			band("RiverCoping", Vector3.new(3.4, 0.7, length), 1.4, top + 0.15, coping, Enum.Material.Concrete)
 		else
 			band("ShoreRock", Vector3.new(12, top + 6, length + 10), 3, (top - 6) / 2 - 1, rock, Enum.Material.Slate)
 			band("Shingle", Vector3.new(16, 3, length + 14), 9, -0.6, shingle, Enum.Material.Pebble)

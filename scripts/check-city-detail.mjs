@@ -58,6 +58,11 @@ for i=1,13 do
 end
 local complex=Instance.new('Part'); complex.CanCollide=false; complex.Parent=model
 Instance.new('SpotLight').Parent=complex
+local stall=Instance.new('Model'); stall.Name='StreetFurnitureStall'; stall:SetAttribute('CityDetailSource',true); stall.Parent=ground
+local roof=Instance.new('Part'); roof.Name='StallRoof'; roof.CanCollide=false; roof.CanQuery=false
+roof.Material={Name='Fabric'}; roof.Shape={Name='Block'}; roof.Reflectance=0; roof.CastShadow=false; roof.Parent=stall
+local counter=Instance.new('Part'); counter.Name='StallCounter'; counter.CanCollide=true; counter.CanQuery=false
+counter.Material={Name='WoodPlanks'}; counter.Shape={Name='Block'}; counter.Reflectance=0; counter.CastShadow=true; counter.Parent=stall
 local station=Instance.new('Model'); station.Name='CityMetroStop'; station.Parent=city
 local tracks=Instance.new('Model'); tracks.Name='MetroTracks'; tracks.Parent=station
 local rail=Instance.new('Part'); rail.Name='Rail'; rail.CanCollide=false; rail.CanQuery=false
@@ -65,12 +70,13 @@ rail.Material={Name='Metal'}; rail.Shape={Name='Block'}; rail.Reflectance=0; rai
 local control=Instance.new('Part'); control.Name='Control'; control.CanCollide=false; control.CanQuery=true; control.Parent=tracks
 server.prepare(city)
 check(body.Parent==model and complex.Parent==model,'Collision and parts with children remain on server')
-check(#saved==2 and #saved[1]==13 and model:HasTag('CityDetail'),'Decorations encoded and tagged')
+check(#saved==3 and #saved[1]==13 and model:HasTag('CityDetail'),'Decorations encoded and tagged')
+check(#saved[2]==1 and roof.Parent==nil and counter.Parent==stall and stall:HasTag('CityDetail'),'Opt-in furniture defers only its loose dressing')
 check(rail.Parent==nil and control.Parent==tracks and tracks:HasTag('CityDetail'), 'Station dressing is deferred while queryable controls remain')
 check(tracks:GetAttribute('CityDetailAnchor')~=nil, 'Station detail retains a position after its decoration is removed')
 check(#model:GetChildren()==2,'Only the core and complex part remain')
 server.prepare(city)
-check(#saved==2,'Migration is idempotent')
+check(#saved==3,'Migration is idempotent')
 table.insert(tagged,model)
 control.Parent=nil -- even a room with no remaining parts can locate its local detail
 table.insert(tagged,tracks)

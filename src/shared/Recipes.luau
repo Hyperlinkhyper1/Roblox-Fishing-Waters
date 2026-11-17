@@ -42,12 +42,24 @@ Recipes.CompanyBuiltIn = {
 
 Recipes.Order = {
 	"FishFillet",
+	"FishSandwich",
+	"FishSoup",
+	"FishSalad",
 	"FishAndChips",
+	"FishTacos",
+	"FishBurger",
 	"GrilledFish",
+	"FishSteak",
 	"FishSkewers",
+	"TeriyakiFish",
+	"SmokedFishBagel",
+	"SmokedFishChowder",
 	"SmokedFish",
+	"HoneySmokedFish",
+	"FishRiceBowl",
 	"SushiPlatter",
 	"GoldenSashimi",
+	"DragonRoll",
 }
 Recipes.Items = {
 	FishFillet = {
@@ -58,6 +70,30 @@ Recipes.Items = {
 		Seconds = 6,
 		Look = "Fillet",
 	},
+	FishSandwich = {
+		Name = "Fish sandwich",
+		Station = "Prep",
+		MinRarity = "Common",
+		Multiplier = 1.5,
+		Seconds = 8,
+		Look = "Sandwich",
+	},
+	FishSoup = {
+		Name = "Fish soup",
+		Station = "Prep",
+		MinRarity = "Common",
+		Multiplier = 1.6,
+		Seconds = 10,
+		Look = "Soup",
+	},
+	FishSalad = {
+		Name = "Fish salad",
+		Station = "Prep",
+		MinRarity = "Uncommon",
+		Multiplier = 1.7,
+		Seconds = 8,
+		Look = "Salad",
+	},
 	FishAndChips = {
 		Name = "Fish & chips",
 		Station = "Prep",
@@ -65,6 +101,22 @@ Recipes.Items = {
 		Multiplier = 1.8,
 		Seconds = 10,
 		Look = "Chips",
+	},
+	FishTacos = {
+		Name = "Fish tacos",
+		Station = "Prep",
+		MinRarity = "Uncommon",
+		Multiplier = 1.9,
+		Seconds = 12,
+		Look = "Tacos",
+	},
+	FishBurger = {
+		Name = "Fish burger",
+		Station = "GrillStation",
+		MinRarity = "Uncommon",
+		Multiplier = 2.1,
+		Seconds = 11,
+		Look = "Burger",
 	},
 	GrilledFish = {
 		Name = "Grilled fish",
@@ -74,6 +126,14 @@ Recipes.Items = {
 		Seconds = 12,
 		Look = "Grilled",
 	},
+	FishSteak = {
+		Name = "Fish steak",
+		Station = "GrillStation",
+		MinRarity = "Rare",
+		Multiplier = 2.7,
+		Seconds = 16,
+		Look = "Steak",
+	},
 	FishSkewers = {
 		Name = "Fish skewers",
 		Station = "GrillStation",
@@ -82,6 +142,30 @@ Recipes.Items = {
 		Seconds = 15,
 		Look = "Skewers",
 	},
+	TeriyakiFish = {
+		Name = "Teriyaki fish",
+		Station = "GrillStation",
+		MinRarity = "Epic",
+		Multiplier = 3.3,
+		Seconds = 20,
+		Look = "Teriyaki",
+	},
+	SmokedFishBagel = {
+		Name = "Smoked fish bagel",
+		Station = "Smoker",
+		MinRarity = "Uncommon",
+		Multiplier = 2.4,
+		Seconds = 16,
+		Look = "Bagel",
+	},
+	SmokedFishChowder = {
+		Name = "Smoked fish chowder",
+		Station = "Smoker",
+		MinRarity = "Rare",
+		Multiplier = 3,
+		Seconds = 19,
+		Look = "Chowder",
+	},
 	SmokedFish = {
 		Name = "Smoked fish",
 		Station = "Smoker",
@@ -89,6 +173,22 @@ Recipes.Items = {
 		Multiplier = 3.2,
 		Seconds = 20,
 		Look = "Smoked",
+	},
+	HoneySmokedFish = {
+		Name = "Honey-smoked fish",
+		Station = "Smoker",
+		MinRarity = "Epic",
+		Multiplier = 3.7,
+		Seconds = 24,
+		Look = "HoneySmoked",
+	},
+	FishRiceBowl = {
+		Name = "Fish rice bowl",
+		Station = "SushiBar",
+		MinRarity = "Uncommon",
+		Multiplier = 2.5,
+		Seconds = 18,
+		Look = "RiceBowl",
 	},
 	SushiPlatter = {
 		Name = "Sushi platter",
@@ -106,6 +206,14 @@ Recipes.Items = {
 		Seconds = 30,
 		Look = "Sashimi",
 	},
+	DragonRoll = {
+		Name = "Dragon roll",
+		Station = "SushiBar",
+		MinRarity = "Mythical",
+		Multiplier = 5.6,
+		Seconds = 36,
+		Look = "DragonRoll",
+	},
 }
 
 -- Hand cooking is a short run of minigame steps (client CookingMinigame); chefs
@@ -120,26 +228,84 @@ Recipes.Steps = {
 		{ Kind = "Mash", Text = "Scale the fish", Clicks = 10, Time = 4 },
 		{ Kind = "Timing", Text = "Fillet along the bone", Hits = 1, Speed = 1.1, Zone = 0.22 },
 	},
+	FishSandwich = {
+		{ Kind = "Timing", Text = "Slice the bread", Hits = 2, Speed = 1.1, Zone = 0.24 },
+		{ Kind = "Mash", Text = "Flake the fish", Clicks = 10, Time = 4 },
+		{ Kind = "Timing", Text = "Stack the sandwich", Hits = 1, Speed = 1.2, Zone = 0.22 },
+	},
+	FishSoup = {
+		{ Kind = "Mash", Text = "Chop the fish and vegetables", Clicks = 12, Time = 5 },
+		{ Kind = "Hold", Text = "Simmer the broth", Fill = 2.4, Target = 0.65, Zone = 0.24 },
+		{ Kind = "Timing", Text = "Ladle into the bowl", Hits = 1, Speed = 1.1, Zone = 0.24 },
+	},
+	FishSalad = {
+		{ Kind = "Mash", Text = "Chop the fresh greens", Clicks = 12, Time = 4 },
+		{ Kind = "Timing", Text = "Slice the fish", Hits = 2, Speed = 1.2, Zone = 0.22 },
+		{ Kind = "Hold", Text = "Drizzle the dressing", Fill = 2, Target = 0.55, Zone = 0.22 },
+	},
 	FishAndChips = {
 		{ Kind = "Mash", Text = "Chop the potatoes", Clicks = 14, Time = 5 },
 		{ Kind = "Hold", Text = "Dip in batter", Fill = 2.2, Target = 0.6, Zone = 0.22 },
 		{ Kind = "Timing", Text = "Lift it out of the fryer", Hits = 1, Speed = 1.3, Zone = 0.2 },
+	},
+	FishTacos = {
+		{ Kind = "Mash", Text = "Shred the fish", Clicks = 14, Time = 5 },
+		{ Kind = "Timing", Text = "Fill the tortillas", Hits = 3, Speed = 1.3, Zone = 0.2 },
+		{ Kind = "Hold", Text = "Squeeze on the lime", Fill = 2.1, Target = 0.55, Zone = 0.22 },
+	},
+	FishBurger = {
+		{ Kind = "Mash", Text = "Shape the fish patty", Clicks = 12, Time = 5 },
+		{ Kind = "Hold", Text = "Grill the patty", Fill = 2.4, Target = 0.7, Zone = 0.2 },
+		{ Kind = "Timing", Text = "Build the burger", Hits = 2, Speed = 1.3, Zone = 0.2 },
 	},
 	GrilledFish = {
 		{ Kind = "Mash", Text = "Season the fish", Clicks = 10, Time = 4 },
 		{ Kind = "Hold", Text = "Sear until golden", Fill = 2.4, Target = 0.72, Zone = 0.2 },
 		{ Kind = "Timing", Text = "Flip it", Hits = 2, Speed = 1.3, Zone = 0.2 },
 	},
+	FishSteak = {
+		{ Kind = "Timing", Text = "Cut a thick steak", Hits = 2, Speed = 1.4, Zone = 0.18 },
+		{ Kind = "Mash", Text = "Rub in the seasoning", Clicks = 14, Time = 5 },
+		{ Kind = "Hold", Text = "Sear the steak", Fill = 2.8, Target = 0.74, Zone = 0.18 },
+	},
 	FishSkewers = {
 		{ Kind = "Mash", Text = "Cube the fish", Clicks = 14, Time = 5 },
 		{ Kind = "Timing", Text = "Thread the skewers", Hits = 3, Speed = 1.4, Zone = 0.18 },
 		{ Kind = "Hold", Text = "Grill the skewers", Fill = 2.4, Target = 0.7, Zone = 0.18 },
+	},
+	TeriyakiFish = {
+		{ Kind = "Mash", Text = "Mix the teriyaki glaze", Clicks = 16, Time = 5 },
+		{ Kind = "Hold", Text = "Reduce the sauce", Fill = 2.6, Target = 0.68, Zone = 0.17 },
+		{ Kind = "Timing", Text = "Brush and turn the fish", Hits = 3, Speed = 1.5, Zone = 0.17 },
+		{ Kind = "Timing", Text = "Sprinkle the sesame", Hits = 1, Speed = 1.4, Zone = 0.18 },
+	},
+	SmokedFishBagel = {
+		{ Kind = "Hold", Text = "Smoke the fish gently", Fill = 2.6, Target = 0.6, Zone = 0.22 },
+		{ Kind = "Timing", Text = "Slice the smoked fish", Hits = 2, Speed = 1.3, Zone = 0.2 },
+		{ Kind = "Mash", Text = "Spread and fill the bagel", Clicks = 12, Time = 5 },
+	},
+	SmokedFishChowder = {
+		{ Kind = "Mash", Text = "Dice the potatoes", Clicks = 14, Time = 5 },
+		{ Kind = "Hold", Text = "Smoke the fish", Fill = 2.6, Target = 0.65, Zone = 0.18 },
+		{ Kind = "Hold", Text = "Thicken the creamy chowder", Fill = 2.8, Target = 0.72, Zone = 0.18 },
+		{ Kind = "Timing", Text = "Ladle and garnish", Hits = 1, Speed = 1.4, Zone = 0.18 },
 	},
 	SmokedFish = {
 		{ Kind = "Mash", Text = "Rub in the brine", Clicks = 14, Time = 5 },
 		{ Kind = "Hold", Text = "Stoke the fire", Fill = 2.6, Target = 0.55, Zone = 0.18 },
 		{ Kind = "Hold", Text = "Let the smoke roll", Fill = 3, Target = 0.8, Zone = 0.16 },
 		{ Kind = "Timing", Text = "Pull it from the smoker", Hits = 1, Speed = 1.5, Zone = 0.16 },
+	},
+	HoneySmokedFish = {
+		{ Kind = "Mash", Text = "Mix the honey glaze", Clicks = 16, Time = 5 },
+		{ Kind = "Hold", Text = "Brush on the honey", Fill = 2.5, Target = 0.6, Zone = 0.17 },
+		{ Kind = "Hold", Text = "Smoke until caramelized", Fill = 3, Target = 0.8, Zone = 0.16 },
+		{ Kind = "Timing", Text = "Lift out the glazed fish", Hits = 2, Speed = 1.5, Zone = 0.16 },
+	},
+	FishRiceBowl = {
+		{ Kind = "Mash", Text = "Fluff the rice", Clicks = 12, Time = 5 },
+		{ Kind = "Timing", Text = "Slice the fish topping", Hits = 2, Speed = 1.3, Zone = 0.2 },
+		{ Kind = "Hold", Text = "Pour over the sauce", Fill = 2.2, Target = 0.6, Zone = 0.2 },
 	},
 	SushiPlatter = {
 		{ Kind = "Timing", Text = "Slice the fish", Hits = 3, Speed = 1.5, Zone = 0.17 },
@@ -151,6 +317,12 @@ Recipes.Steps = {
 		{ Kind = "Hold", Text = "Lay on the gold leaf", Fill = 2.6, Target = 0.66, Zone = 0.14 },
 		{ Kind = "Mash", Text = "Garnish the plate", Clicks = 16, Time = 5 },
 		{ Kind = "Timing", Text = "Serve it", Hits = 1, Speed = 1.8, Zone = 0.14 },
+	},
+	DragonRoll = {
+		{ Kind = "Timing", Text = "Slice the fish and avocado", Hits = 4, Speed = 1.7, Zone = 0.15 },
+		{ Kind = "Mash", Text = "Pack and roll the rice", Clicks = 18, Time = 5 },
+		{ Kind = "Hold", Text = "Shape the dragon roll", Fill = 2.8, Target = 0.7, Zone = 0.14 },
+		{ Kind = "Timing", Text = "Arrange the dragon scales", Hits = 3, Speed = 1.8, Zone = 0.14 },
 	},
 }
 -- Each step's intro and result screens take this long on the client.

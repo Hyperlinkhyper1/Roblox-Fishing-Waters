@@ -72,6 +72,8 @@ end)
 local ok, failure = xpcall(function()
 	-- Update notices and stale-server admission must work even while the map loads.
 	require(script.ServerUpdates).start()
+	-- Start cross-server clock synchronization before clock-dependent services.
+	require(script.GlobalTimeService).start()
 	-- Records memory/uptime so a server that dies (everyone kicked, no script error) gets reported.
 	require(script.ServerHealth).start()
 	-- NPCs never collide with players or each other; registered before any other collision group.
@@ -226,18 +228,7 @@ local ok, failure = xpcall(function()
 		step("ElectionService", function()
 			require(script.ElectionService).start()
 		end)
-		-- Builds the city's café plots and installs the café spawn before BaseService spawns players.
-		step("CafeService", function()
-			require(script.CafeService).start(root)
-		end)
-		-- Bea, the café mentor, and each café company's tour (after CafeService and TutorialService).
-		step("CafeTutorialService", function()
-			require(script.CafeTutorialService).start()
-		end)
-		step("BranchService", function()
-			require(script.BranchService).start()
-		end)
-		-- HARBOUR DIRECT, the office PC's web shop, and its delivery vans.
+		-- HARBOUR DIRECT, the office PC web shop and delivery vans.
 		step("WebShopService", function()
 			require(script.WebShopService).start()
 		end)

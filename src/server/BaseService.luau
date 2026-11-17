@@ -53,35 +53,8 @@ local function harbourSpawn(): SpawnLocation?
 	return (map and map:FindFirstChild("HarbourSpawn")) :: SpawnLocation?
 end
 
--- Companies without the fishing branch (Shared.Branches) have no harbour dock.
--- Saves without branches, or with only unknown ones, are fishing companies.
-local function fishes(profile): boolean
-	local branches = profile and profile.Branches
-	return type(branches) ~= "table" or branches.Fishing == true or branches.Cafe ~= true
-end
-
--- Somewhere else to spawn (a café in the city) for players without a dock.
-local spawnProvider: ((Player) -> SpawnLocation?)? = nil
-function BaseService.setSpawnProvider(provider: (Player) -> SpawnLocation?)
-	spawnProvider = provider
-end
-
-local function otherSpawn(player: Player): SpawnLocation?
-	if not spawnProvider then return nil end
-	local ok, point = pcall(spawnProvider, player)
-	if not ok then
-		warn("[Bases] Spawn provider failed: " .. tostring(point))
-		return nil
-	end
-	return point
-end
-
 local function claim(player: Player)
 	local profile = BoatService.getProfile(player)
-	if profile and not fishes(profile) then
-		player.RespawnLocation = otherSpawn(player) or harbourSpawn()
-		return
-	end
 	local info = profile and profile.SaveInfo
 	local expanded = info ~= nil and (info.PlotExpanded == true or info.Multiplayer == true)
 	local base = freeBase(expanded)
@@ -147,7 +120,7 @@ end
 local function placeCharacter(player: Player, character: Model)
 	player:SetAttribute("FishingWatersSpawnReady", false)
 	local base = owned[player]
-	local point = if base then spawnPoint(base) else (otherSpawn(player) or harbourSpawn())
+	local point = if base then spawnPoint(base) else harbourSpawn()
 	local root = character:WaitForChild("HumanoidRootPart", 10) :: BasePart?
 	if not point or not root or player.Character ~= character then
 		return
@@ -190,12 +163,6 @@ local function onPlayer(player: Player)
 		task.spawn(placeCharacter, player, player.Character)
 	end
 	player:GetAttributeChangedSignal("BoatDataStatus"):Connect(enterSave)
-	-- A café company that buys the fishing branch gets its harbour dock now.
-	player:GetAttributeChangedSignal("BranchFishing"):Connect(function()
-		if entered and not owned[player] and player.Parent == Players and player:GetAttribute("BranchFishing") == true then
-			claim(player)
-		end
-	end)
 	enterSave()
 end
 

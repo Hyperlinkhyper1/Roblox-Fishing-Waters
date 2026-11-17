@@ -29,7 +29,8 @@
         "StreamingEnabled": true,
         "StreamingTargetRadius": 256,
         "StreamingMinRadius": 64,
-        "StreamOutBehavior": "LowMemory"
+        "StreamingIntegrityMode": "PauseOutsideLoadedArea",
+        "StreamOutBehavior": "Opportunistic"
       }
     },
     "SoundService": {

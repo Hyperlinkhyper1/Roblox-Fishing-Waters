@@ -51,7 +51,6 @@ local modules = {
 	"MusselNets",
 	"OfficeComputer",
 	"WebShopApp",
-	"Cafe",
 	"TechStore",
 	"PcWorkshop",
 

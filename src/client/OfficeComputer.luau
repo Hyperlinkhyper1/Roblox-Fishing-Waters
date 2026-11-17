@@ -22,7 +22,6 @@ local UserInputService = game:GetService("UserInputService")
 
 local RetroUI = require(script.Parent.RetroUI)
 local StockApp = require(script.Parent.StockApp)
-local BranchApp = require(script.Parent.BranchApp)
 local WebShopApp = require(script.Parent.WebShopApp)
 local Calendar = require(ReplicatedStorage.Shared.Calendar)
 local Stocks = require(ReplicatedStorage.Shared.Stocks)
@@ -257,20 +256,13 @@ local function buildDesktop(root: Frame, current: Session, leave: () -> ())
 				RetroUI.text(
 					content,
 					"Upgrade",
-					"PARTS, MONITORS AND LICENSES: " .. TechCatalog.STORE_NAME .. ", BY THE CAFE QUARTER.",
+					"PARTS, MONITORS AND LICENSES: " .. TechCatalog.STORE_NAME .. ", IN THE INDUSTRIAL DISTRICT.",
 					px(24, 446),
 					px(720, 24),
 					{ Size = 15, Color = C.Mid }
 				)
 				return { destroy = function() end }
 			end,
-		},
-		Branches = {
-			Name = "COMPANY BRANCHES",
-			Title = BranchApp.TITLE .. "  -  " .. BranchApp.SUBTITLE,
-			Connecting = "CONTACTING THE BRANCH OFFICE...",
-			Ready = BranchApp.READY,
-			mount = BranchApp.mount,
 		},
 	}
 
@@ -366,7 +358,7 @@ local function buildDesktop(root: Frame, current: Session, leave: () -> ())
 				content,
 				"Explain",
 				string.format(
-					"%s NEEDS A %s (%s).\nBUY ONE AT THE SOFTWARE & LICENSES DESK IN %s,\nTHE COMPUTER STORE BY THE CAFE QUARTER IN THE CITY.",
+					"%s NEEDS A %s (%s).\nBUY ONE AT THE SOFTWARE & LICENSES DESK IN %s,\nTHE COMPUTER STORE IN THE INDUSTRIAL DISTRICT IN THE CITY.",
 					spec.Name,
 					string.upper(license.Name),
 					Stocks.money(license.Price),
@@ -448,17 +440,6 @@ local function buildDesktop(root: Frame, current: Session, leave: () -> ())
 		end)
 		return art
 	end
-
-	-- BRANCHES: a little shopfront with a striped awning.
-	local shop = desktopIcon("BranchesIcon", "BRANCHES", 180, APPS.Branches)
-	for index = 0, 5 do
-		RetroUI.frame(shop, "Stripe", px(8 + index * 9.3, 10), px(9.3, 10), {
-			BackgroundTransparency = 0,
-			BackgroundColor3 = if index % 2 == 0 then C.Hot else C.Dim,
-		})
-	end
-	RetroUI.frame(shop, "Window", px(10, 26), px(22, 18), { BackgroundTransparency = 0, BackgroundColor3 = C.Mid })
-	RetroUI.frame(shop, "Door", px(40, 26), px(14, 28), { BackgroundTransparency = 0, BackgroundColor3 = C.Bright })
 
 	-- STOCKS: a rising chart.
 	local art = desktopIcon("StocksIcon", "STOCKS", 40, APPS.Stocks)

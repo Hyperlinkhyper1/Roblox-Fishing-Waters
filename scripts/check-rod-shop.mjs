@@ -10,6 +10,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const temporaryRoot = resolve(tmpdir());
 const temporary = await mkdtemp(join(temporaryRoot, 'fishing-rod-shop-'));
 const modules = {
+  BASEGRID: 'src/shared/BaseGrid.luau',
   LOWPOLY: 'src/server/Map/LowPoly.luau',
   PROPS: 'src/server/Map/Props.luau',
   FISHFREEZERGEOMETRY: 'src/server/Map/FishFreezerGeometry.luau',
@@ -55,6 +56,7 @@ try {
     let source = await readFile(join(root, path), 'utf8');
     source = source.replace(/local (\w+) = require\(script\.Parent\.(?:Parent\.)?(\w+)\)/g, 'local $1 = dependencies.$2');
     source = source.replace(/local (\w+) = require\(ReplicatedStorage\.Shared\.(\w+)\)/g, 'local $1 = dependencies.$2');
+    source = source.replace(/require\(game:GetService\("ReplicatedStorage"\)\.Shared\.(\w+)\)/g, 'dependencies.$1');
     if (name === 'HARBOUR') {
       if (!/return Harbour\s*$/.test(source)) throw new Error('Harbour return hook changed');
       source = source.replace(/return Harbour\s*$/, `return {

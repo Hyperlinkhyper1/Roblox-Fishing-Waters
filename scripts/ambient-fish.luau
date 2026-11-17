@@ -115,9 +115,16 @@ game.GetService = function(_, name)
 	assert(services[name], name)
 	return services[name]
 end
+local regionalBoundary = nil
 dependencies.Biomes = {
 	WaterLevel = 0,
 	SeaFloor = -64,
+	zoneAt = function(position)
+		local regional = if regionalBoundary
+			then (position - regionalBoundary.point):Dot(regionalBoundary.normal) < 0
+			else position.X > 3000
+		return { id = if regional then "tropical" else "open" }
+	end,
 	inOceanBounds = function(position)
 		if dryPocket and position.Y < 0 and math.abs(position.X) < 20 and math.abs(position.Z) < 20 then
 			return false
@@ -135,7 +142,15 @@ dependencies.FishSpecies = {
 	SharkFin = { Name = "Shark Fin", RarityDenominator = 2, AverageKg = 1, DropOnly = true },
 	Tire = { Name = "Tire", Rarity = "Common", RarityDenominator = 4, AverageKg = 7, Pools = { "MainLake", "OpenSea" } },
 	LeatherBoot = { Name = "Leather Boot", Rarity = "Junk", RarityDenominator = 2, AverageKg = 1, Pools = { "OpenSea" } },
+	ReefRunner = { Name = "Reef Runner", RarityDenominator = 4, AverageKg = 30, Pools = { "CoralShallows" }, Seasons = { "Summer" } },
+	WinterReef = { Name = "Winter Reef", RarityDenominator = 4, AverageKg = 1, Pools = { "CoralShallows" }, Seasons = { "Winter" } },
 }
+for _, species in dependencies.FishSpecies do
+	species.Rarity = species.Rarity or "Common"
+end
+dependencies.AnglerCatalog = (function()
+	-- CATALOG --
+end)()
 local created = {}
 local totalCreated = 0
 dependencies.FishModels = {
@@ -150,9 +165,10 @@ dependencies.FishModels = {
 		return 1
 	end,
 }
+local season = "Summer"
 dependencies.Seasons = {
 	current = function()
-		return "Summer", 0
+		return season, 0
 	end,
 }
 local waves = 0
@@ -334,7 +350,7 @@ player:SetAttribute("GraphicsTier", 3)
 step(10)
 
 -- Big species cruise alone.
-dependencies.FishSpecies.Sardine.Pools = {}
+dependencies.FishSpecies.Sardine.Requires = { "Night" }
 move(0, 400, 0)
 step(1)
 assert(#fish() == 0, "Climbing high clears every school")
@@ -345,7 +361,7 @@ local soloCreated = totalCreated
 move(1200, 12, 0)
 step(10)
 assert(totalCreated == soloCreated, "The same species reuses retired fish after travelling")
-dependencies.FishSpecies.Sardine.Pools = { "OpenSea" }
+dependencies.FishSpecies.Sardine.Requires = nil
 
 -- Leaving the area recycles schools behind the camera.
 move(2400, 12, 0)
@@ -355,12 +371,76 @@ for _, model in fish() do
 	assert(Vector3.new(position.X - 2400, 0, position.Z).Magnitude < 200, "Old schools are recycled, not left behind")
 end
 
--- The lake has its own species.
+-- The lake has its own species and inherits the sea catalog's swimmers.
 move(-2000, 12, 0)
 step(10)
+local lakeSeen, lakeSeaSeen = false, false
 for _, model in fish() do
-	assert(model.Name == "Pike", "Lake schools are lake species")
+	assert(model.Name == "Pike" or model.Name == "Sardine" or model.Name == "Tuna", "Lake schools use the inherited lake pool")
+	lakeSeen = lakeSeen or model.Name == "Pike"
+	lakeSeaSeen = lakeSeaSeen or model.Name == "Sardine" or model.Name == "Tuna"
 end
+assert(lakeSeen and lakeSeaSeen, "Lake schools include their own and inherited sea species")
+
+-- Regional habitats use the same actual catalog pools as catches do.
+move(4000, 12, 0)
+step(14)
+local reefSeen, inheritedSeen = false, false
+for _, model in fish() do
+	assert(model.Name == "ReefRunner" or model.Name == "Sardine" or model.Name == "Tuna", "Only eligible reef and inherited sea swimmers")
+	reefSeen = reefSeen or model.Name == "ReefRunner"
+	inheritedSeen = inheritedSeen or model.Name == "Sardine" or model.Name == "Tuna"
+end
+assert(reefSeen and inheritedSeen, "Regional pools show both exclusive fish and inherited sea species")
+assert(not created.WinterReef, "Out-of-season regional fish never spawn")
+-- Make the newly eligible species the only replacement choice, so this checks
+-- transition behavior independently of the seeded weighted draw.
+for _, id in { "Sardine", "Tuna", "Icefish" } do
+	dependencies.FishSpecies[id].Requires = { "Night" }
+end
+season = "Winter"
+step(10)
+local winterSeen = false
+for _, model in fish() do
+	assert(model.Name ~= "ReefRunner", "Summer schools retire when the season changes")
+	winterSeen = winterSeen or model.Name == "WinterReef"
+end
+assert(winterSeen, "Newly eligible regional fish spawn after a season transition")
+for _, id in { "Sardine", "Tuna", "Icefish" } do
+	dependencies.FishSpecies[id].Requires = nil
+end
+move(2400, 12, 0)
+step(10)
+for _, model in fish() do
+	assert(model.Name ~= "ReefRunner" and model.Name ~= "WinterReef", "Regional fish stay out of other areas")
+end
+
+-- A solo regional school crosses a habitat edge while the camera stays still.
+season = "Summer"
+dependencies.FishSpecies.Sardine.Requires = { "Night" }
+dependencies.FishSpecies.Tuna.Requires = { "Night" }
+move(4000, 400, 0)
+step(1)
+move(4000, 12, 0)
+step(10)
+local drifting = assert(fish()[1], "Regional swimmers spawn for the boundary check")
+assert(drifting.Name == "ReefRunner", "The boundary check uses a regional solo fish")
+local driftingRoot = rootOf(drifting)
+local direction = driftingRoot.CFrame.RightVector
+local horizontal = Vector3.new(direction.X, 0, direction.Z).Unit
+regionalBoundary = { point = driftingRoot.CFrame.Position + horizontal * 0.2, normal = horizontal }
+local retiredAtBoundary = false
+for _ = 1, 60 do
+	step(1 / 60)
+	if drifting.Parent == nil then
+		retiredAtBoundary = true
+		break
+	end
+end
+assert(retiredAtBoundary, "A school that swims out of its habitat retires through the bounded recycler")
+regionalBoundary = nil
+dependencies.FishSpecies.Sardine.Requires = nil
+dependencies.FishSpecies.Tuna.Requires = nil
 
 -- Shallow water never spawns schools.
 floorY = -4
@@ -446,4 +526,4 @@ if ahead then
 end
 facing = nil
 
-print("Ambient fish: species pools, lightweight models, depth, heading, recycling, lake, shallows, shore, drift and swell passed")
+print("Ambient fish: regional pools, inheritance, seasons, habitat transitions, lightweight models, depth, heading, recycling, lake, shallows, shore, drift and swell passed")

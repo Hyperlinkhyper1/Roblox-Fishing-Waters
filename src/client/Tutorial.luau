@@ -3,9 +3,6 @@
 -- from the TutorialStep/TutorialDone attributes; the server saves a step only after the player
 -- finishes talking to the right guide.
 --
--- Café companies get the café tour (Shared.CafeTutorial) through the same tracker, dialogue and
--- arrows: Bea in their café, then the coffee machine, the customer at the till and the office PC.
--- It comes first while it is unfinished; café-only companies never see the harbour tour.
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -14,8 +11,6 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Theme = require(game:GetService("ReplicatedFirst"):WaitForChild("UITheme"))
 local Tutorial = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Tutorial"))
-local CafeTutorial = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CafeTutorial"))
-local CafeCatalog = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CafeCatalog"))
 
 -- Names this module's per-frame work in the MicroProfiler (otherwise it is all "Script_Client").
 local function profiled<A...>(label: string, callback: (A...) -> ()): (A...) -> ()
@@ -34,7 +29,6 @@ local started = false
 
 local GOLD = Color3.fromRGB(255, 205, 64)
 local PROMPT = "TutorialNpcPrompt"
-local CAFE_PROMPT = "CafeMentorPrompt"
 local GUIDE_TAG = "TutorialGuide"
 local TYPE_SPEED = 70 -- characters per second
 local WALK_AWAY = 18 -- studs from the guide before an open dialogue closes
@@ -88,15 +82,6 @@ function Client.start()
 	local player = Players.LocalPlayer
 	local state = ReplicatedStorage:WaitForChild("Tutorial")
 	local remote = state:WaitForChild("Request") :: RemoteEvent
-	-- The café tour's remote arrives with CafeTutorialService, after the harbour's.
-	local cafeRemote: RemoteEvent? = nil
-
-	-- Which tour the tracker, arrows and Skip button belong to right now.
-	local function cafeTour(): boolean
-		return player:GetAttribute("BranchCafe") == true
-			and player:GetAttribute("CafeTutorialDone") == false
-			and type(player:GetAttribute("CafeTutorialStep")) == "number"
-	end
 	local function harbourTour(): boolean
 		local step = player:GetAttribute("TutorialStep")
 		return player:GetAttribute("BranchFishing") ~= false
@@ -105,9 +90,7 @@ function Client.start()
 			and Tutorial.Steps[step] ~= nil
 	end
 	local function activeTour(): string?
-		if cafeTour() then
-			return "Cafe"
-		elseif harbourTour() then
+		if harbourTour() then
 			return "Harbour"
 		end
 		return nil
@@ -181,13 +164,7 @@ function Client.start()
 		confirmSkip = false
 		skip.Text = "Skip"
 		Theme.button(skip)
-		if activeTour() == "Cafe" then
-			if cafeRemote then
-				cafeRemote:FireServer("Skip")
-			end
-		else
-			remote:FireServer("Skip")
-		end
+		remote:FireServer("Skip")
 	end)
 
 	------------------------------------------------------------------------------------------------
@@ -287,7 +264,7 @@ function Client.start()
 	closeButton.Parent = dialogue
 	Theme.button(closeButton)
 
-	local talking: { npc: string, cafe: boolean, lines: { string }, page: number, current: boolean, typed: number }? =
+	local talking: { npc: string, lines: { string }, page: number, current: boolean, typed: number }? =
 		nil
 	local typing = 0
 
@@ -341,13 +318,7 @@ function Client.start()
 		end
 		closeDialogue()
 		if chat.current then
-			if chat.cafe then
-				if cafeRemote then
-					cafeRemote:FireServer("Finish")
-				end
-			else
-				remote:FireServer("Finish", chat.npc)
-			end
+			remote:FireServer("Finish", chat.npc)
 		end
 	end
 
@@ -361,23 +332,8 @@ function Client.start()
 		if #lines == 0 then
 			return
 		end
-		talking = { npc = npcId, cafe = false, lines = lines, page = 1, current = current, typed = 0 }
+		talking = { npc = npcId, lines = lines, page = 1, current = current, typed = 0 }
 		speaker.Text = npc.Name .. '  <font color="#D7D7D7" size="14">' .. npc.Title .. "</font>"
-		dialogue.Visible = true
-		showPage()
-	end
-
-	-- Bea, in the player's own café (the café client hides her prompt in other companies' cafés).
-	local function openCafeDialogue()
-		local mentor = CafeTutorial.Mentor
-		local step = player:GetAttribute("CafeTutorialStep")
-		local done = player:GetAttribute("CafeTutorialDone") ~= false or player:GetAttribute("BranchCafe") ~= true
-		local lines, current = CafeTutorial.dialogue(if type(step) == "number" then step else nil, done)
-		if #lines == 0 then
-			return
-		end
-		talking = { npc = mentor.Id, cafe = true, lines = lines, page = 1, current = current, typed = 0 }
-		speaker.Text = mentor.Name .. '  <font color="#D7D7D7" size="14">' .. mentor.Title .. "</font>"
 		dialogue.Visible = true
 		showPage()
 	end
@@ -411,8 +367,6 @@ function Client.start()
 			if type(id) == "string" then
 				openDialogue(id)
 			end
-		elseif prompt.Name == CAFE_PROMPT and not talking then
-			openCafeDialogue()
 		end
 	end)
 
@@ -430,14 +384,6 @@ function Client.start()
 	end
 	remote.OnClientEvent:Connect(function(kind, value)
 		onServer("Tutorial", kind, value)
-	end)
-	task.spawn(function()
-		local folder = ReplicatedStorage:WaitForChild("CafeTutorial")
-		local request = folder:WaitForChild("Request") :: RemoteEvent
-		cafeRemote = request
-		request.OnClientEvent:Connect(function(kind, value)
-			onServer("Café tutorial", kind, value)
-		end)
 	end)
 
 	------------------------------------------------------------------------------------------------
@@ -491,93 +437,10 @@ function Client.start()
 		return Tutorial.Steps[player:GetAttribute("TutorialStep")].Npc
 	end
 
-	-- The player's own café plot, if it has streamed in.
-	local function myCafe(): Instance?
-		local companyId = player:GetAttribute("CompanyId")
-		if type(companyId) ~= "string" or companyId == "" then
-			return nil
-		end
-		for _, plot in CollectionService:GetTagged(CafeCatalog.PLOT_TAG) do
-			if plot:GetAttribute("CompanyId") == companyId and plot:IsDescendantOf(workspace) then
-				return plot
-			end
-		end
-		return nil
-	end
-
-	-- The customer waiting at the front of the queue in the player's café (only they have a serve prompt).
-	local function waitingCustomer(plot: Instance): BasePart?
-		local frame = plot:GetAttribute("CafeFrame")
-		local folder = workspace:FindFirstChild("CafeCustomers")
-		if typeof(frame) ~= "CFrame" or not folder then
-			return nil
-		end
-		for _, customer in folder:GetChildren() do
-			local root = customer:FindFirstChild("HumanoidRootPart")
-			if root and root:IsA("BasePart") and root:FindFirstChild("ServeCoffee") then
-				if (root.Position - frame.Position).Magnitude < 60 then
-					return root
-				end
-			end
-		end
-		return nil
-	end
-
-	-- What the café tour points at now: (position, marker lift, marker name, goal text).
-	local function cafeTarget(): (Vector3?, number, string, string?)
-		local index = player:GetAttribute("CafeTutorialStep")
-		local count = player:GetAttribute("CafeTutorialCount")
-		count = if type(count) == "number" then count else 0
-		local step = CafeTutorial.Steps[index]
-		if not step then
-			return nil, MARKER_LIFT, "", nil
-		end
-		local goalText = CafeTutorial.goal(index, count)
-		local plot = myCafe()
-		if not plot then
-			return nil, MARKER_LIFT, "", goalText
-		end
-		local target = step.Target
-		if target == "Customer" and player:GetAttribute("CarryingCoffee") ~= true then
-			-- Serving needs a cup in hand first.
-			target = "CoffeeMachine"
-			local needed = step.Count or 1
-			goalText = "Brew a coffee at the coffee machine, then serve the customer"
-				.. (if needed > 1 then string.format(" (%d/%d)", count, needed) else "")
-		end
-		local name = CafeTutorial.Targets[target] or ""
-		if target == "Mentor" then
-			local position = plot:GetAttribute("MentorPosition")
-			return if typeof(position) == "Vector3" then position else nil, MARKER_LIFT, name, goalText
-		elseif target == "CoffeeMachine" then
-			local machine = plot:FindFirstChild("CoffeeMachine", true)
-			local body = machine and machine:IsA("Model") and machine.PrimaryPart
-			return if body then body.Position else nil, 4, name, goalText
-		elseif target == "Customer" then
-			local root = waitingCustomer(plot)
-			if not root then
-				return nil, MARKER_LIFT, name, step.Waiting or goalText
-			end
-			return root.Position, 5.5, name, goalText
-		elseif target == "OfficePc" then
-			local desk = plot:FindFirstChild("OfficeDesk", true)
-			local chair = desk and desk:FindFirstChild("Chair")
-			local seat = chair and chair:FindFirstChild("Seat")
-			return if seat and seat:IsA("BasePart") then seat.Position else nil, 6, name, goalText
-		end
-		return nil, MARKER_LIFT, name, goalText
-	end
-
 	local function refreshTracker()
 		local tour = activeTour()
 		tracker.Visible = tour ~= nil
-		if tour == "Cafe" then
-			local step = player:GetAttribute("CafeTutorialStep")
-			heading.Text = string.format("CAFÉ TUTORIAL  %d / %d", step, #CafeTutorial.Steps)
-			local _, _, name, goalText = cafeTarget()
-			goal.Text = goalText or ""
-			markerName.Text = name
-		elseif tour == "Harbour" then
+		if tour == "Harbour" then
 			local step = player:GetAttribute("TutorialStep")
 			heading.Text = string.format("TUTORIAL  %d / %d", step, #Tutorial.Steps)
 			goal.Text = Tutorial.Steps[step].Goal
@@ -587,12 +450,7 @@ function Client.start()
 	for _, attribute in {
 		"TutorialStep",
 		"TutorialDone",
-		"CafeTutorialStep",
-		"CafeTutorialDone",
-		"CafeTutorialCount",
-		"BranchCafe",
 		"BranchFishing",
-		"CarryingCoffee",
 	} do
 		player:GetAttributeChangedSignal(attribute):Connect(refreshTracker)
 	end
@@ -634,33 +492,14 @@ function Client.start()
 
 		local chat = talking
 		if chat then
-			local position
-			if chat.cafe then
-				local plot = myCafe()
-				position = plot and plot:GetAttribute("MentorPosition")
-			else
-				position = state:GetAttribute("Npc_" .. chat.npc)
-			end
+			local position = state:GetAttribute("Npc_" .. chat.npc)
 			if typeof(position) == "Vector3" and (root.Position - position).Magnitude > WALK_AWAY then
 				closeDialogue()
 			end
 		end
 
-		local position, lift = nil, MARKER_LIFT
-		if activeTour() == "Cafe" then
-			local name, goalText
-			position, lift, name, goalText = cafeTarget()
-			-- The café goal follows the queue and the cup in hand, so it can change between attributes.
-			if goalText and goal.Text ~= goalText then
-				goal.Text = goalText
-			end
-			if markerName.Text ~= name then
-				markerName.Text = name
-			end
-		else
-			local id = targetId()
-			position = id and state:GetAttribute("Npc_" .. id)
-		end
+		local id = targetId()
+		local position, lift = id and state:GetAttribute("Npc_" .. id), MARKER_LIFT
 		if typeof(position) ~= "Vector3" then
 			markerGui.Enabled = false
 			arrow.Parent = nil

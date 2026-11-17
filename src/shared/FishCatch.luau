@@ -3,7 +3,7 @@
 -- drive it without Roblox's Random.
 local FishCatch = {}
 
-FishCatch.JUNK_CHANCE = 0.06 -- 2% each for the branch, boot and seaweed, in every stocked pool.
+FishCatch.JUNK_CHANCE = 0.06 -- Split evenly between the junk items in every stocked pool.
 -- A fully upgraded rod cuts that by this fraction (6% -> 1.2%).
 FishCatch.JUNK_CUT_AT_BEST_ROD = 0.8
 FishCatch.BIG_CHANCE = 0.06

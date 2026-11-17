@@ -24,6 +24,7 @@ end
 -- Recording EditableMesh: ids index plain arrays.
 local meshes = {}
 local meshFailure, partFailure = nil, false
+local partHook = nil
 local function newMesh()
 	local mesh =
 		{ positions = {}, normals = {}, colors = {}, alphas = {}, faces = {}, faceNormals = {}, faceColors = {} }
@@ -74,6 +75,7 @@ local function newMesh()
 		self.alphas[id] = alpha
 	end
 	function mesh:Destroy()
+		assert(not self.destroyed, "EditableMesh must only be destroyed once")
 		self.destroyed = true
 	end
 	table.insert(meshes, mesh)
@@ -99,6 +101,9 @@ game.GetService = function(_, name)
 				return newMesh()
 			end,
 			CreateMeshPartAsync = function(_, content)
+				if partHook then
+					partHook()
+				end
 				if partFailure then
 					error("Mesh part creation failed")
 				end
@@ -309,4 +314,27 @@ loadClient().start()
 assert(meshes[#meshes].destroyed, "Failed mesh part creation must release the editable mesh")
 assert(#renderStep.callbacks == callbacksBefore and #meshParts == partsBefore, "Failed mesh part must skip the surface")
 print("PASS unavailable mesh and mesh part failures leave the renderer inactive")
+
+-- Fish may evict the dynamic sheet while the asynchronous part call is still
+-- running. A successful late result must be discarded without reviving water.
+partFailure = false
+local racingClient = loadClient()
+local racingBudget = dependencies.surfaceBudget
+partHook = function() coroutine.yield() end
+local construction = coroutine.create(racingClient.start)
+local ok, message = coroutine.resume(construction)
+assert(ok, tostring(message))
+assert(coroutine.status(construction) == "suspended", "MeshPart call must yield")
+local evictedSheet = meshes[#meshes]
+assert(not evictedSheet.destroyed and #renderStep.callbacks == callbacksBefore)
+assert(racingBudget.withScratch({ evict = true }, function()
+	assert(evictedSheet.destroyed, "Fish must evict water before allocating scratch")
+	return true
+end))
+ok, message = coroutine.resume(construction)
+assert(ok, tostring(message))
+assert(coroutine.status(construction) == "dead")
+assert(#meshParts == partsBefore + 1 and meshParts[#meshParts].Parent == nil, "Discard the late water part")
+assert(#renderStep.callbacks == callbacksBefore, "Evicted water must not start rendering")
+print("PASS eviction during a yielding mesh-part creation releases water once and discards its late result")
 print("Recording mocks only; Studio rendering and EditableMesh limits remain unverified.")
