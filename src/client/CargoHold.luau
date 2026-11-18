@@ -223,6 +223,8 @@ function CargoHold.start()
 	local tab, sortBy, ascending = "Backpack", nil, true
 	local view = { Fish = true, Items = true, Favorites = false }
 	local selected, signature = nil, nil
+	-- Cards shift-clicked into the group; action buttons then apply to every fish in it.
+	local multi = {}
 	local lastRequest = -math.huge
 	local render, setOpen, send
 	local cards = {}
@@ -275,7 +277,7 @@ function CargoHold.start()
 			Size = UDim2.fromOffset(146, 32) }, if name == "Boat" then VIOLET else CYAN)
 		tabs[name] = control
 		control.Activated:Connect(function()
-			tab, selected = name, nil
+			tab, selected, multi = name, nil, {}
 			render()
 		end)
 	end
@@ -346,17 +348,19 @@ function CargoHold.start()
 			render()
 		end)
 	end
-	text(panel, "Select a card for actions.\nRight-click a fish to favorite it.", { Position = UDim2.fromOffset(1026, 230),
+	text(panel, "Shift-click cards to select several.\nRight-click a fish to favorite it.", { Position = UDim2.fromOffset(1026, 230),
 		Size = UDim2.fromOffset(134, 66), TextSize = 12, TextColor3 = MUTED, TextWrapped = true })
 	local detail = text(panel, "Select an item", { Name = "SelectedItem", Position = UDim2.fromOffset(LEFT, 404),
 		Size = UDim2.fromOffset(CONTENT, 24), TextSize = 15, RichText = true, TextTruncate = Enum.TextTruncate.AtEnd })
 	local actions = {}
+	local actionLabel = {}
 	for index, spec in { { "Hand", "Take in hand", CYAN }, { "Backpack", "To backpack", CYAN },
 		{ "Boat", "To boat", VIOLET }, { "Favorite", "Favorite", GOLD }, { "Release", "Release", RED },
 		{ "Use", "Use", GOLD }, { "Pantry", "Stock dish", MINT } } do
 		local control = button(panel, spec[2], { Name = "Action" .. spec[1], Position = UDim2.fromOffset(LEFT + (index - 1) * 139, 432),
 			Size = UDim2.fromOffset(131, 32), TextSize = 13, Visible = false }, spec[3])
 		actions[spec[1]] = control
+		actionLabel[spec[1]] = spec[2]
 	end
 	-- Bait crates live on the profile (not in the hold); they're shown here as a
 	-- card too, and opened through the same server action as the equipment bag.
@@ -427,10 +431,33 @@ function CargoHold.start()
 		data.Locked = not entry.Locked
 		send("InventoryLock", data)
 	end
+	local function shiftDown(): boolean
+		return UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+	end
+	-- Shift-clicking a card adds it to the group; clicking a member again removes it.
+	local function toggleMulti(entry)
+		for index, stored in ipairs(multi) do
+			if Inventory.matches(stored.Item, Inventory.expected(entry.Item)) then
+				table.remove(multi, index)
+				return
+			end
+		end
+		table.insert(multi, entry)
+	end
+	-- Finds the live card for a stored selection after transfers and re-sorts.
+	local function findEntry(item)
+		for _, entry in ipairs(Inventory.entries(state, Catalog, Cargo, Recipes)) do
+			if Inventory.matches(entry.Item, Inventory.expected(item)) then
+				return entry
+			end
+		end
+		return nil
+	end
 	local function applyState(nextState)
 		if type(nextState) ~= "table" then return end
 		local oldPending = state.Pending
-		if nextState.BoatId ~= state.BoatId then selected, signature = nil, nil end
+		if nextState.BoatId ~= state.BoatId then selected, signature, multi = nil, nil, {} end
 		state = nextState
 		if state.Pending and not oldPending then
 			tab, selected = "Boat", nil
@@ -438,26 +465,159 @@ function CargoHold.start()
 		end
 		render()
 	end
+	-- Actions travel through a queue so a grouped request can resend each fish one
+	-- at a time, re-resolving its identity after earlier transfers shift indexes.
+	local jobs, working = {}, false
+	local runJobs
+	runJobs = function()
+		while #jobs > 0 do
+			local job = table.remove(jobs, 1)
+			if job.Local then
+				job.Local()
+			else
+				local action, argList = job.Action, job.Args
+				if job.Resolve then
+					action, argList = job.Resolve()
+				end
+				if job.Label then
+					notice.Text, notice.TextColor3 = job.Label, MUTED
+				elseif not job.Quiet then
+					notice.Text, notice.TextColor3 = "Updating inventory…", MUTED
+				end
+				render()
+				if action then
+					local gap = 0.22 - (os.clock() - lastRequest)
+					if gap > 0 then task.wait(gap) end
+					local ok, response = pcall(request.InvokeServer, request, action, table.unpack(argList, 1, argList.n))
+					lastRequest = os.clock()
+					if ok and type(response) == "table" then
+						applyState(response.State)
+						if response.Ok and (action == "Place" or action == "CancelPlace") then setOpen(false) end
+						if not job.Quiet then
+							notice.Text = if response.Message ~= "" then response.Message else (if response.Ok then "Inventory updated." else "Please try again.")
+							notice.TextColor3 = if response.Ok then MINT else RED
+						end
+						if job.Callback then job.Callback(response.Ok == true, response.Message) end
+					else
+						if not job.Quiet then
+							notice.Text, notice.TextColor3 = "Couldn't reach your inventory. Try again.", RED
+						end
+						if job.Callback then job.Callback(false, nil) end
+					end
+				elseif job.Callback then
+					job.Callback(false, "That fish changed. Select it again.")
+				end
+			end
+		end
+		pending, working = false, false
+		render()
+	end
 	send = function(action, ...)
 		if pending then return end
-		pending = true
-		local args = table.pack(...)
-		notice.Text, notice.TextColor3 = "Updating inventory…", MUTED
-		render()
-		task.spawn(function()
-			local delay = 0.22 - (os.clock() - lastRequest)
-			if delay > 0 then task.wait(delay) end
-			local ok, response = pcall(request.InvokeServer, request, action, table.unpack(args, 1, args.n))
-			lastRequest, pending = os.clock(), false
-			if ok and type(response) == "table" then
-				applyState(response.State)
-				if response.Ok and (action == "Place" or action == "CancelPlace") then setOpen(false) end
-				notice.Text = if response.Message ~= "" then response.Message else (if response.Ok then "Inventory updated." else "Please try again.")
-				notice.TextColor3 = if response.Ok then MINT else RED
-			else
-				notice.Text, notice.TextColor3 = "Couldn't reach your inventory. Try again.", RED
+		table.insert(jobs, { Action = action, Args = table.pack(...) })
+		if not working then
+			working, pending = true, true
+			task.spawn(runJobs)
+		end
+	end
+	-- One server request per grouped fish, resolved by identity at send time, then a
+	-- local job that reports how many of them landed.
+	local function queueBulk(verb, targets, build, summarize)
+		if #targets == 0 then return end
+		local total, succeeded, firstFailure = #targets, 0, nil
+		for index, stored in ipairs(targets) do
+			table.insert(jobs, {
+				Label = string.format("%s %d of %d…", verb, index, total),
+				Quiet = true,
+				Resolve = function()
+					local entry = findEntry(stored.Item)
+					if not entry then return nil end
+					local action, data = build(entry)
+					return action, { data }
+				end,
+				Callback = function(ok, message)
+					if ok then succeeded += 1
+					elseif not firstFailure and message and message ~= "" then firstFailure = message end
+				end,
+			})
+		end
+		table.insert(jobs, { Local = function()
+			notice.Text, notice.TextColor3 = summarize(succeeded, total, firstFailure)
+		end })
+		if not working then
+			working, pending = true, true
+			task.spawn(runJobs)
+		end
+	end
+	local function bulkFavorite()
+		local targets, locked = {}, true
+		for _, stored in ipairs(multi) do
+			local entry = findEntry(stored.Item)
+			if entry and entry.Item.Fish then
+				local kind = Catalog.Fish[entry.Item.Fish.FishId]
+				if not (kind and kind.Secret == true) then
+					table.insert(targets, stored)
+					if not entry.Locked then locked = false end
+				end
 			end
-			render()
+		end
+		queueBulk(if locked then "Unfavoriting" else "Favoriting", targets, function(entry)
+			local data = payload(entry)
+			data.Locked = not entry.Locked
+			return "InventoryLock", data
+		end, function(okCount, total, failure)
+			local verb = if locked then "Unfavorited" else "Favorited"
+			if okCount == total then
+				return string.format("%s %d fish.", verb, total), MINT
+			elseif okCount == 0 then
+				return failure or "Couldn't update those favorites.", RED
+			end
+			return string.format("%s %d of %d fish. %s", verb, okCount, total, failure or "Please try again."), AMBER
+		end)
+	end
+	local function bulkMove(destination)
+		local targets = {}
+		for _, stored in ipairs(multi) do
+			local entry = findEntry(stored.Item)
+			if entry and entry.Item.Fish and entry.Source ~= destination
+				and (destination ~= "Boat" or aboard) then
+				table.insert(targets, stored)
+			end
+		end
+		queueBulk("Moving", targets, function(entry)
+			local data = payload(entry)
+			data.Destination = destination
+			return "InventoryMove", data
+		end, function(okCount, total, failure)
+			local place = if destination == "Boat" then "boat" else "backpack"
+			if okCount == total then
+				return string.format("Moved %d fish to your %s.", total, place), MINT
+			elseif okCount == 0 then
+				return failure or "Couldn't move those fish.", RED
+			end
+			return string.format("Moved %d of %d fish to your %s. %s", okCount, total, place,
+				failure or "Please try again."), AMBER
+		end)
+	end
+	local function bulkRelease()
+		local targets = {}
+		for _, stored in ipairs(multi) do
+			local entry = findEntry(stored.Item)
+			if entry and entry.Item.Fish and not entry.Locked then
+				table.insert(targets, stored)
+			end
+		end
+		queueBulk("Releasing", targets, function(entry)
+			local data = payload(entry)
+			data.Destination = "Release"
+			return "InventoryMove", data
+		end, function(okCount, total, failure)
+			if okCount == total then
+				return string.format("Released %d fish.", total), MINT
+			elseif okCount == 0 then
+				return failure or "Couldn't release those fish.", RED
+			end
+			return string.format("Released %d of %d fish. %s", okCount, total, failure or "Please try again."), AMBER
 		end)
 	end
 	render = function()
@@ -540,7 +700,7 @@ function CargoHold.start()
 				text(tile, "×" .. crates, { Position = UDim2.fromOffset(4, CARD_HEIGHT - 19), Size = UDim2.fromOffset(CARD - 8, 16),
 					TextSize = 11, TextColor3 = CREAM, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 3 })
 				table.insert(cards, { Button = tile, Outline = outline, Entry = { Source = "BaitCrate", Index = 0, Crate = true }, Y = 0 })
-				tile.Activated:Connect(function() selected, crateSelected = nil, true render() end)
+				tile.Activated:Connect(function() selected, crateSelected, multi = nil, true, {} render() end)
 			end
 			for position, entry in filtered do
 				local index = position + slots
@@ -572,14 +732,30 @@ function CargoHold.start()
 					text(tile, "★", { Name = "LockIcon", Position = UDim2.fromOffset(3, 17), Size = UDim2.fromOffset(20, 20),
 						TextColor3 = GOLD, TextSize = 18, ZIndex = 4 })
 				end
+				local mark = text(tile, "✓", { Name = "MultiIcon", Position = UDim2.fromOffset(3, CARD_HEIGHT - 20),
+					Size = UDim2.fromOffset(20, 16), TextColor3 = MINT, TextSize = 14,
+					TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 4, Visible = false })
 				if fish then mutationBadge(tile, fish)
 				else
 					text(tile, "⚙", { Position = UDim2.fromOffset(0, 8),
 						Size = UDim2.fromOffset(CARD, 46), TextSize = 32, TextColor3 = tint, TextXAlignment = Enum.TextXAlignment.Center })
 				end
-				table.insert(cards, { Button = tile, Outline = outline, Entry = entry, Y = y })
-				tile.Activated:Connect(function() selected, crateSelected = entry, false render() end)
-				tile.MouseButton2Click:Connect(function() if entry.Item.Fish then selected, crateSelected = entry, false favorite(entry) end end)
+				table.insert(cards, { Button = tile, Outline = outline, Entry = entry, Y = y, Check = mark })
+				tile.Activated:Connect(function()
+					if shiftDown() then
+						toggleMulti(entry)
+					else
+						selected, crateSelected, multi = entry, false, {}
+					end
+					render()
+				end)
+				tile.MouseButton2Click:Connect(function()
+					if shiftDown() then
+						if entry.Item.Fish then toggleMulti(entry) end
+					elseif entry.Item.Fish then
+						selected, crateSelected = entry, false favorite(entry)
+					end
+				end)
 			end
 			list.CanvasSize = UDim2.fromOffset(0, math.ceil((#filtered + slots) / 8) * (CARD_HEIGHT + GAP))
 		end
@@ -590,36 +766,83 @@ function CargoHold.start()
 			end
 		end
 		selected = nextSelected
+		-- The group follows fish identity, so transfers and re-sorts keep members
+		-- selected until they are acted on or clicked away.
+		local kept = {}
+		for _, stored in ipairs(multi) do
+			for _, entry in ipairs(entries) do
+				if Inventory.matches(entry.Item, Inventory.expected(stored.Item)) then
+					table.insert(kept, entry)
+					break
+				end
+			end
+		end
+		multi = kept
+		local grouped = {}
+		for _, entry in ipairs(multi) do grouped[entryId(entry)] = true end
 		for _, card in cards do
-			card.Outline.Color = if (if card.Entry.Crate then crateSelected else selected and entryId(card.Entry) == entryId(selected))
-				then GOLD else EDGE
+			local isGroup = grouped[entryId(card.Entry)] == true
+			local picked = if card.Entry.Crate then crateSelected elseif isGroup then true
+				else selected and entryId(card.Entry) == entryId(selected) or false
+			card.Outline.Color = if picked then (if isGroup then MINT else GOLD) else EDGE
+			if card.Check then card.Check.Visible = isGroup end
 		end
 		local fish = selected and selected.Item and selected.Item.Fish
 		local species = fish and Catalog.Fish[fish.FishId]
 		local secret = species ~= nil and species.Secret == true
 		local reserved = state.Pending ~= nil
+		-- Bulk actions target every fish in the shift-clicked group; a plain click
+		-- keeps the single-card behaviour above.
+		local targets = {}
+		if #multi > 0 then
+			for _, entry in ipairs(multi) do
+				if entry.Item and entry.Item.Fish then table.insert(targets, entry) end
+			end
+		elseif fish then
+			targets = { selected }
+		end
+		local canBackpack, canBoat, canFavorite, canRelease, anySecret = false, false, false, false, false
+		local allLocked = #targets > 0
+		for _, entry in ipairs(targets) do
+			local kind = Catalog.Fish[entry.Item.Fish.FishId]
+			if kind and kind.Secret == true then anySecret = true end
+			if entry.Source ~= "Backpack" then canBackpack = true end
+			if entry.Source ~= "Boat" and aboard then canBoat = true end
+			if not (kind and kind.Secret == true) then canFavorite = true end
+			if not entry.Locked then canRelease = true end
+			if not entry.Locked then allLocked = false end
+		end
 		for name, control in actions do
-			control.Visible = (if name == "Pantry" then selected ~= nil and selected.Item.Dish ~= nil else fish ~= nil) and not reserved
+			control.Visible = (if name == "Pantry" then #multi == 0 and selected ~= nil and selected.Item.Dish ~= nil
+				else #targets > 0) and not reserved
 			control.Active = not pending
 			if name == "Hand" then
-				control.Visible = control.Visible and selected.Source ~= "Hand"
+				control.Visible = control.Visible and #multi == 0 and selected.Source ~= "Hand"
 				control.Text = if state.Hand then "Replace in hand" else "Take in hand"
-			elseif name == "Backpack" then control.Visible = control.Visible and selected.Source ~= "Backpack"
-			elseif name == "Boat" then control.Visible = control.Visible and selected.Source ~= "Boat" and aboard
+			elseif name == "Backpack" then
+				control.Visible = control.Visible and canBackpack
+			elseif name == "Boat" then
+				control.Visible = control.Visible and canBoat
 			elseif name == "Favorite" then
-				control.Visible = control.Visible and not secret
-				control.Text = if selected and selected.Locked then "Unfavorite" else "Favorite"
-			elseif name == "Release" then control.Visible = control.Visible and not selected.Locked
+				control.Visible = control.Visible and canFavorite
+				control.Text = if allLocked then "Unfavorite" else "Favorite"
+			elseif name == "Release" then
+				control.Visible = control.Visible and canRelease
 			elseif name == "Use" then
-				control.Visible = control.Visible and secret
+				control.Visible = control.Visible and #multi == 0 and anySecret
 					and (selected.Source ~= "Boat" or aboard)
 					and player:GetAttribute("TreasureUnlocked") ~= true
+			end
+			if control.Visible and #multi > 0 then
+				control.Text = (if name == "Favorite" then (if allLocked then "Unfavorite" else "Favorite") else actionLabel[name])
+					.. " (" .. #targets .. ")"
 			end
 		end
 		fitPart.Visible, cancelPart.Visible = reserved, reserved
 		openCrate.Visible = crateSelected and not reserved
 		openCrate.Active = not pending
 		detail.Text = if reserved then "Reserved boat fitting · confirm to use cargo space."
+			elseif #multi > 0 then string.format("%d fish selected · hold Shift and click cards to add more", #targets)
 			elseif crateSelected then string.format("%s ×%d · %d–%d bait of one kind · bait goes to your equipment bag",
 				Bait.Crate.Name, crates, Bait.Crate.MinBait, Bait.Crate.MaxBait)
 			elseif fish then string.format("%s · %s · %s · %d space · %s%s", fishTitle(selected),
@@ -665,6 +888,15 @@ function CargoHold.start()
 	end
 	for name, control in actions do
 		control.Activated:Connect(function()
+			if pending then return end
+			if #multi > 0 then
+				if name == "Favorite" then bulkFavorite()
+				elseif name == "Backpack" then bulkMove("Backpack")
+				elseif name == "Boat" then bulkMove("Boat")
+				elseif name == "Release" then bulkRelease()
+				end
+				return
+			end
 			if not selected or pending then return end
 			if name == "Favorite" then
 				favorite(selected)

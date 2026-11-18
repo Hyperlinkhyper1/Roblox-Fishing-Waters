@@ -243,7 +243,9 @@ local Boats = { getProfile = function() return profile end, activeBoat = functio
 		fn(profile) saves += 1 return true, ""
 	end, refit = function() end }
 local RunService = { Heartbeat = signal(), RenderStepped = signal() }
-local UserInputService = { InputBegan = signal(), GetFocusedTextBox = function() return focused end }
+local shiftHeld = false
+local UserInputService = { InputBegan = signal(), GetFocusedTextBox = function() return focused end,
+	IsKeyDown = function() return shiftHeld end }
 local binding
 local ContextActionService = { BindActionAtPriority = function(_, name, fn, touch, priority, key)
 	check(name == "ToggleInventory" and key == "Backquote" and priority > 3000, "Grave key takes priority over default backpack") binding = fn
@@ -384,4 +386,76 @@ player:SetAttribute("RefitPending", "TestBoat|Rudder|Rudder")
 ReplicatedStorage.Cargo.Update.OnClientEvent:Fire(invoke("Get").State)
 binding(nil, "Begin")
 check(not shade.Visible and player:GetAttribute("RefitPending") == nil, "Closing Inventory cancels an unfinished fitting")
-print("Inventory: " .. checks .. " capacity, transactions, ownership, filters, keyboard and UI checks passed (recording doubles; no Studio rendering).")
+-- Shift-click multi-select: favorite, move and release whole groups at once.
+profile.Angler.Backpack = { item("Cod", 21, 30), item("Shad", 22, 40) }
+profile.Angler.Holds.TestBoat = { item("Seabass", 23, 50), item("Tire", 24, 5) }
+profile.Angler.Hand = nil
+aboard = true
+ReplicatedStorage.Cargo.Update.OnClientEvent:Fire(invoke("Get").State)
+binding(nil, "Begin")
+check(shade.Visible, "Inventory reopens after the shift-click setup")
+panel.AllTab.Activated:Fire()
+local group = panel.InventoryItems:GetChildren()
+check(#group == 4, "All tab lists every catch for the multi-select checks")
+shiftHeld = true
+group[1].Activated:Fire()
+group[2].Activated:Fire()
+group[3].Activated:Fire()
+shiftHeld = false
+check(panel.ActionFavorite.Visible and panel.ActionFavorite.Text == "Favorite (3)",
+	"Shift-click groups three fish behind one Favorite button")
+check(string.find(panel.SelectedItem.Text, "3 fish selected", 1, true), "The detail line counts the group")
+check(group[1]:FindFirstChild("MultiIcon", true) ~= nil and group[1].MultiIcon.Visible,
+	"Grouped cards show a mint check mark")
+panel.ActionFavorite.Activated:Fire()
+check(profile.Angler.Backpack[1].Locked and profile.Angler.Backpack[2].Locked
+	and profile.Angler.Holds.TestBoat[1].Locked, "Bulk favoriting locks every selected fish")
+check(panel.InventoryNotice.Text == "Favorited 3 fish.", "The notice summarizes the bulk favorite")
+group = panel.InventoryItems:GetChildren()
+shiftHeld = true
+group[1].Activated:Fire()
+shiftHeld = false
+check(panel.ActionFavorite.Text == "Unfavorite (2)", "Shift-click toggles one card back out of the group")
+panel.ActionFavorite.Activated:Fire()
+check(profile.Angler.Backpack[1].Locked and not profile.Angler.Backpack[2].Locked
+	and not profile.Angler.Holds.TestBoat[1].Locked, "Bulk unfavoriting only touches the remaining group")
+group = panel.InventoryItems:GetChildren()
+group[4].Activated:Fire()
+check(panel.ActionFavorite.Text == "Favorite" and not string.find(panel.SelectedItem.Text, "selected", 1, true),
+	"A plain click leaves the group and selects one card")
+profile.Angler.Backpack = {}
+profile.Angler.Holds.TestBoat = { item("Seabass", 23, 50), item("Tire", 24, 5) }
+ReplicatedStorage.Cargo.Update.OnClientEvent:Fire(invoke("Get").State)
+group = panel.InventoryItems:GetChildren()
+check(#group == 2, "A fresh boat list groups again")
+shiftHeld = true
+group[1].Activated:Fire()
+group[2].Activated:Fire()
+shiftHeld = false
+check(panel.ActionBackpack.Text == "To backpack (2)", "Shift-click groups junk catches with fish")
+panel.ActionBackpack.Activated:Fire()
+check(#profile.Angler.Backpack == 2 and #profile.Angler.Holds.TestBoat == 0,
+	"Bulk move sends the whole group to the backpack")
+check(panel.InventoryNotice.Text == "Moved 2 fish to your backpack.", "The notice reports the moved count")
+group = panel.InventoryItems:GetChildren()
+shiftHeld = true
+group[1].Activated:Fire()
+shiftHeld = false
+check(panel.ActionRelease.Visible and panel.ActionRelease.Text == "Release (1)",
+	"The group exposes bulk release for unlocked fish")
+panel.ActionRelease.Activated:Fire()
+check(#profile.Angler.Backpack == 1 and profile.Angler.Backpack[1].Fish.FishId == "Tire",
+	"Bulk release removes only the selected fish")
+check(panel.InventoryNotice.Text == "Released 1 fish.", "The notice reports the release count")
+profile.Angler.Backpack = { item("Cod", 26, 30) }
+profile.Angler.Holds.TestBoat = {}
+ReplicatedStorage.Cargo.Update.OnClientEvent:Fire(invoke("Get").State)
+group = panel.InventoryItems:GetChildren()
+shiftHeld = true
+group[1].MouseButton2Click:Fire()
+shiftHeld = false
+check(profile.Angler.Backpack[1].Locked == nil and panel.ActionFavorite.Text == "Favorite (1)",
+	"Shift-right-click joins the group without favoriting")
+group[1].MouseButton2Click:Fire()
+check(profile.Angler.Backpack[1].Locked == true, "A plain right-click still favorites one fish")
+print("Inventory: " .. checks .. " capacity, transactions, ownership, filters, keyboard, multi-select and UI checks passed (recording doubles; no Studio rendering).")

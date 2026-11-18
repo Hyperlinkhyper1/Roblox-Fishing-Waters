@@ -1,0 +1,237 @@
+BESTIARY ADDITION IDEAS - 200 fish/sea animals NOT already in the bestiary
+========================================================================
+Source of current bestiary: src/shared/Fish/*.luau (175 files; 169 bestiary
+pages after excluding 6 DropOnly entries; includes 7 junk, 4 black-hole event
+fish, 2 admin fish). Every species below is distinct from those 169 pages.
+
+Conventions
+- Areas are the game's 7 pools: Gullhaven Sound (MainLake), Open Waters,
+  The Sodden Mire, Coral Shallows, Pirate Cove, Cinder Isles, Frostmere Expanse.
+- Seasons use the game's four seasons; "All year" = no Seasons restriction.
+- Rarity uses the AnglerCatalog tiers (Common..Mythical).
+- Size is a realistic weight range in kg (matches MinKg/MaxKg fields).
+No game code was written or changed.
+
+1. Zander - Area: Gullhaven Sound | Season: Spring-Autumn | Rarity: Rare | Size: 0.5-12 kg
+2. Yellow Perch - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Common | Size: 0.05-1.5 kg
+3. Common Bream - Area: Gullhaven Sound | Season: Summer-Autumn | Rarity: Common | Size: 0.5-6 kg
+4. Ide - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Uncommon | Size: 0.5-5 kg
+5. White Sucker - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Uncommon | Size: 0.3-4 kg
+6. Freshwater Drum - Area: Gullhaven Sound | Season: Summer | Rarity: Uncommon | Size: 1-15 kg
+7. Channel Catfish - Area: Gullhaven Sound | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.5-20 kg
+8. White Perch - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Uncommon | Size: 0.2-2 kg
+9. Striped Bass - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Rare | Size: 1-35 kg
+10. White Bass - Area: Gullhaven Sound | Season: Summer | Rarity: Common | Size: 0.3-3 kg
+11. Sauger - Area: Gullhaven Sound | Season: Winter-Spring | Rarity: Uncommon | Size: 0.5-5 kg
+12. Spotted Bass - Area: Gullhaven Sound | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.3-4 kg
+13. Green Sunfish - Area: Gullhaven Sound | Season: Summer | Rarity: Common | Size: 0.05-0.6 kg
+14. Rock Bass - Area: Gullhaven Sound | Season: Summer | Rarity: Common | Size: 0.1-0.8 kg
+15. Redear Sunfish - Area: Gullhaven Sound | Season: Summer | Rarity: Uncommon | Size: 0.2-2 kg
+16. Lake Sturgeon - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Rare | Size: 5-100 kg
+17. Paddlefish - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Rare | Size: 2-60 kg
+18. American Eel - Area: Gullhaven Sound | Season: Summer-Autumn | Rarity: Rare | Size: 0.5-10 kg
+19. Mooneye - Area: Gullhaven Sound | Season: Summer | Rarity: Uncommon | Size: 0.2-2 kg
+20. Golden Trout - Area: Gullhaven Sound | Season: Summer-Autumn | Rarity: Rare | Size: 0.3-3 kg
+21. Common Dace - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Common | Size: 0.1-1 kg
+22. European Chub - Area: Gullhaven Sound | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.5-5 kg
+23. Ruffe - Area: Gullhaven Sound | Season: All year | Rarity: Common | Size: 0.05-0.5 kg
+24. Bitterling - Area: Gullhaven Sound | Season: Spring-Summer | Rarity: Uncommon | Size: 0.02-0.15 kg
+25. Bleak - Area: Gullhaven Sound | Season: Summer | Rarity: Common | Size: 0.02-0.2 kg
+26. Threespine Stickleback - Area: Gullhaven Sound, Frostmere Expanse | Season: All year | Rarity: Common | Size: 0.01-0.1 kg
+27. Rainbow Smelt - Area: Frostmere Expanse | Season: Winter-Spring | Rarity: Common | Size: 0.02-0.5 kg
+28. Flathead Catfish - Area: Gullhaven Sound, The Sodden Mire | Season: Summer | Rarity: Rare | Size: 1-55 kg
+29. Warmouth - Area: The Sodden Mire | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.1-1.5 kg
+30. Spotted Gar - Area: The Sodden Mire | Season: Summer-Autumn | Rarity: Rare | Size: 0.5-8 kg
+31. Florida Gar - Area: The Sodden Mire | Season: Summer | Rarity: Uncommon | Size: 0.5-5 kg
+32. Stone Loach - Area: The Sodden Mire | Season: Spring-Summer | Rarity: Uncommon | Size: 0.05-0.3 kg
+33. Weatherfish - Area: The Sodden Mire | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.05-0.3 kg
+34. Eastern Mudminnow - Area: The Sodden Mire | Season: All year | Rarity: Common | Size: 0.02-0.1 kg
+35. Swamp Eel - Area: The Sodden Mire | Season: Summer-Autumn | Rarity: Rare | Size: 0.5-3 kg
+36. Arctic Cod - Area: Frostmere Expanse | Season: All year | Rarity: Common | Size: 0.2-3 kg
+37. Saffron Cod - Area: Frostmere Expanse | Season: Winter-Spring | Rarity: Uncommon | Size: 0.2-2 kg
+38. Capelin - Area: Frostmere Expanse | Season: Spring-Summer | Rarity: Common | Size: 0.05-1 kg
+39. Slimy Sculpin - Area: Frostmere Expanse | Season: All year | Rarity: Uncommon | Size: 0.05-0.5 kg
+40. Fourhorn Sculpin - Area: Frostmere Expanse | Season: Winter-Spring | Rarity: Rare | Size: 0.1-1 kg
+41. Round Whitefish - Area: Frostmere Expanse | Season: Autumn-Winter | Rarity: Uncommon | Size: 0.5-3 kg
+42. Bloater - Area: Frostmere Expanse | Season: Winter | Rarity: Uncommon | Size: 0.2-2 kg
+43. Bull Trout - Area: Frostmere Expanse | Season: Summer-Autumn | Rarity: Rare | Size: 1-15 kg
+44. Cutthroat Trout - Area: Frostmere Expanse | Season: Spring-Summer | Rarity: Rare | Size: 0.5-10 kg
+45. Sea Lamprey - Area: Frostmere Expanse | Season: Spring-Summer | Rarity: Uncommon | Size: 0.2-2 kg
+46. Chum Salmon - Area: Frostmere Expanse | Season: Autumn | Rarity: Rare | Size: 1-15 kg
+47. Atlantic Wolffish - Area: Frostmere Expanse | Season: Autumn-Winter | Rarity: Rare | Size: 2-15 kg
+48. Cusk - Area: Frostmere Expanse, Open Waters | Season: Spring-Autumn | Rarity: Rare | Size: 1-15 kg
+49. Haddock - Area: Frostmere Expanse, Open Waters | Season: Spring-Autumn | Rarity: Uncommon | Size: 0.5-7 kg
+50. Saithe - Area: Open Waters | Season: Autumn-Winter | Rarity: Uncommon | Size: 1-15 kg
+51. Greenland Shark - Area: Frostmere Expanse | Season: Winter | Rarity: Legendary | Size: 100-1000 kg
+52. Porbeagle - Area: Open Waters, Frostmere Expanse | Season: Autumn-Winter | Rarity: Rare | Size: 5-150 kg
+53. American Lobster - Area: Frostmere Expanse | Season: Autumn-Winter | Rarity: Rare | Size: 0.5-20 kg
+54. Dungeness Crab - Area: Frostmere Expanse | Season: Winter | Rarity: Rare | Size: 0.5-8 kg
+55. Snow Crab - Area: Frostmere Expanse | Season: Winter | Rarity: Rare | Size: 0.5-5 kg
+56. Giant Pacific Octopus - Area: Frostmere Expanse | Season: Autumn-Winter | Rarity: Rare | Size: 2-25 kg
+57. Salmon Shark - Area: Frostmere Expanse, Open Waters | Season: Autumn-Winter | Rarity: Epic | Size: 10-250 kg
+58. White Sturgeon - Area: Open Waters | Season: All year | Rarity: Legendary | Size: 10-300 kg
+59. Pollock - Area: Open Waters | Season: All year | Rarity: Common | Size: 0.5-15 kg
+60. Whiting - Area: Open Waters | Season: Autumn-Winter | Rarity: Common | Size: 0.2-3 kg
+61. Hake - Area: Open Waters | Season: Summer-Autumn | Rarity: Uncommon | Size: 1-15 kg
+62. Monkfish - Area: Open Waters | Season: Autumn-Winter | Rarity: Rare | Size: 2-30 kg
+63. John Dory - Area: Open Waters | Season: Autumn-Winter | Rarity: Rare | Size: 0.5-5 kg
+64. European Plaice - Area: Open Waters | Season: All year | Rarity: Common | Size: 0.3-5 kg
+65. Turbot - Area: Open Waters | Season: Spring-Autumn | Rarity: Rare | Size: 1-20 kg
+66. Dover Sole - Area: Open Waters | Season: All year | Rarity: Uncommon | Size: 0.3-4 kg
+67. Sablefish - Area: Open Waters | Season: All year | Rarity: Rare | Size: 1-25 kg
+68. Common Ling - Area: Open Waters | Season: Autumn-Winter | Rarity: Rare | Size: 2-40 kg
+69. Skipjack Tuna - Area: Open Waters | Season: Summer-Autumn | Rarity: Common | Size: 0.5-15 kg
+70. Bigeye Tuna - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 2-120 kg
+71. Little Tunny - Area: Open Waters | Season: Summer-Autumn | Rarity: Common | Size: 0.5-10 kg
+72. Atlantic Bonito - Area: Open Waters | Season: Summer-Autumn | Rarity: Common | Size: 0.5-8 kg
+73. King Mackerel - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 1-25 kg
+74. Spanish Mackerel - Area: Open Waters, Coral Shallows | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.5-6 kg
+75. Crevalle Jack - Area: Open Waters | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.5-15 kg
+76. Rainbow Runner - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 1-20 kg
+77. Greater Amberjack - Area: Open Waters | Season: Spring-Autumn | Rarity: Rare | Size: 2-50 kg
+78. Yellowtail Amberjack - Area: Open Waters, Cinder Isles | Season: Summer-Autumn | Rarity: Epic | Size: 3-40 kg
+79. Escolar - Area: Open Waters | Season: Autumn-Winter | Rarity: Rare | Size: 2-30 kg
+80. Longnose Lancetfish - Area: Open Waters | Season: Autumn-Winter | Rarity: Rare | Size: 0.5-8 kg
+81. Atlantic Flyingfish - Area: Open Waters | Season: Summer | Rarity: Common | Size: 0.05-0.5 kg
+82. Tiger Shark - Area: Open Waters, Pirate Cove | Season: Summer-Autumn | Rarity: Epic | Size: 40-600 kg
+83. Great Hammerhead - Area: Open Waters | Season: Summer | Rarity: Legendary | Size: 30-400 kg
+84. Bull Shark - Area: Pirate Cove, Gullhaven Sound | Season: Summer-Autumn | Rarity: Epic | Size: 20-300 kg
+85. Sand Tiger Shark - Area: Open Waters, Pirate Cove | Season: Autumn-Winter | Rarity: Epic | Size: 5-160 kg
+86. Sandbar Shark - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 2-60 kg
+87. Spinner Shark - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 5-80 kg
+88. Silky Shark - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 5-100 kg
+89. Oceanic Whitetip Shark - Area: Open Waters | Season: Summer-Autumn | Rarity: Epic | Size: 10-170 kg
+90. Blue Shark - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 5-150 kg
+91. Shortfin Mako - Area: Open Waters | Season: Summer-Autumn | Rarity: Legendary | Size: 10-500 kg
+92. Common Thresher - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 5-250 kg
+93. Angel Shark - Area: Open Waters | Season: Autumn-Winter | Rarity: Rare | Size: 5-80 kg
+94. Cookiecutter Shark - Area: Open Waters | Season: All year | Rarity: Rare | Size: 0.2-2 kg
+95. Basking Shark - Area: Open Waters | Season: Spring-Autumn | Rarity: Exotic | Size: 500-4000 kg
+96. Whale Shark - Area: Open Waters | Season: Summer | Rarity: Mythical | Size: 500-12000 kg
+97. Goblin Shark - Area: Open Waters | Season: All year | Rarity: Exotic | Size: 10-150 kg
+98. Frilled Shark - Area: Open Waters | Season: All year | Rarity: Legendary | Size: 1-60 kg
+99. Manta Ray - Area: Open Waters, Coral Shallows | Season: Summer-Autumn | Rarity: Exotic | Size: 200-2000 kg
+100. Spotted Eagle Ray - Area: Open Waters, Coral Shallows | Season: Summer-Autumn | Rarity: Epic | Size: 5-180 kg
+101. Cownose Ray - Area: Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 1-25 kg
+102. Marbled Electric Ray - Area: Open Waters | Season: All year | Rarity: Rare | Size: 0.5-10 kg
+103. Shovelnose Guitarfish - Area: Open Waters | Season: Spring-Autumn | Rarity: Rare | Size: 1-30 kg
+104. Grey Reef Shark - Area: Coral Shallows, Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 5-35 kg
+105. Opah - Area: Open Waters | Season: Autumn-Winter | Rarity: Exotic | Size: 5-250 kg
+106. Giant Oarfish - Area: Open Waters | Season: All year | Rarity: Legendary | Size: 10-270 kg
+107. Coelacanth - Area: Open Waters | Season: All year | Rarity: Mythical | Size: 30-90 kg
+108. Giant Squid - Area: Open Waters | Season: All year | Rarity: Exotic | Size: 30-200 kg
+109. Vampire Squid - Area: Open Waters | Season: All year | Rarity: Exotic | Size: 0.5-2 kg
+110. Dumbo Octopus - Area: Open Waters | Season: All year | Rarity: Exotic | Size: 0.5-5 kg
+111. Pelican Eel - Area: Open Waters | Season: All year | Rarity: Epic | Size: 0.1-2 kg
+112. Black Swallower - Area: Open Waters | Season: All year | Rarity: Rare | Size: 0.02-0.2 kg
+113. Pacific Viperfish - Area: Open Waters | Season: All year | Rarity: Epic | Size: 0.05-1 kg
+114. Black Dragonfish - Area: Open Waters | Season: All year | Rarity: Rare | Size: 0.05-1 kg
+115. Lanternfish - Area: Open Waters | Season: All year | Rarity: Common | Size: 0.01-0.2 kg
+116. Hatchetfish - Area: Open Waters | Season: All year | Rarity: Common | Size: 0.01-0.1 kg
+117. Barreleye - Area: Open Waters | Season: All year | Rarity: Rare | Size: 0.05-0.5 kg
+118. Fangtooth - Area: Open Waters | Season: All year | Rarity: Epic | Size: 0.1-1.5 kg
+119. Humpback Anglerfish - Area: Open Waters | Season: All year | Rarity: Exotic | Size: 0.05-1 kg
+120. Blobfish - Area: Open Waters | Season: All year | Rarity: Rare | Size: 0.5-5 kg
+121. Spotted Ratfish - Area: Open Waters | Season: All year | Rarity: Rare | Size: 0.5-5 kg
+122. Yellowtail Tang - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.1-1.5 kg
+123. Sailfin Tang - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.2-2 kg
+124. Achilles Tang - Area: Coral Shallows | Season: Summer-Autumn | Rarity: Rare | Size: 0.2-2 kg
+125. Convict Tang - Area: Coral Shallows | Season: All year | Rarity: Common | Size: 0.1-1 kg
+126. Kole Tang - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.1-1.5 kg
+127. Elegant Firefish - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.02-0.1 kg
+128. Longnose Butterflyfish - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.05-0.5 kg
+129. Threadfin Butterflyfish - Area: Coral Shallows | Season: All year | Rarity: Common | Size: 0.05-0.4 kg
+130. Teardrop Butterflyfish - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.05-0.4 kg
+131. Lyretail Anthias - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.05-0.5 kg
+132. Blue-green Chromis - Area: Coral Shallows | Season: All year | Rarity: Common | Size: 0.02-0.1 kg
+133. Domino Damselfish - Area: Coral Shallows | Season: All year | Rarity: Common | Size: 0.05-0.3 kg
+134. Neon Goby - Area: Coral Shallows | Season: All year | Rarity: Common | Size: 0.01-0.05 kg
+135. Yellow Watchman Goby - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.02-0.1 kg
+136. Bicolor Blenny - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.02-0.1 kg
+137. Bird Wrasse - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 0.1-0.8 kg
+138. Moon Wrasse - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.1-1.5 kg
+139. Sixline Wrasse - Area: Coral Shallows | Season: All year | Rarity: Common | Size: 0.02-0.15 kg
+140. Coral Beauty Angelfish - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.05-0.3 kg
+141. Lemonpeel Angelfish - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 0.05-0.3 kg
+142. Foxface - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.2-1.5 kg
+143. Redtooth Triggerfish - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 0.3-3 kg
+144. Titan Triggerfish - Area: Coral Shallows | Season: All year | Rarity: Epic | Size: 1-10 kg
+145. Valentini Puffer - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.05-0.3 kg
+146. Long-spined Porcupinefish - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 0.5-5 kg
+147. Yellow Boxfish - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.1-1.5 kg
+148. Longhorn Cowfish - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 0.2-2 kg
+149. Scrawled Filefish - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.3-3 kg
+150. Giant Frogfish - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 0.2-2 kg
+151. Stonefish - Area: Coral Shallows | Season: All year | Rarity: Epic | Size: 0.5-5 kg
+152. Mangrove Snapper - Area: Coral Shallows, Pirate Cove | Season: All year | Rarity: Rare | Size: 0.5-15 kg
+153. Yellowtail Snapper - Area: Coral Shallows | Season: Summer | Rarity: Rare | Size: 0.3-5 kg
+154. Coral Trout - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 1-15 kg
+155. Stoplight Parrotfish - Area: Coral Shallows | Season: All year | Rarity: Uncommon | Size: 0.3-5 kg
+156. Royal Dottyback - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 0.01-0.1 kg
+157. Blacktip Reef Shark - Area: Coral Shallows | Season: Summer-Autumn | Rarity: Rare | Size: 2-15 kg
+158. Whitetip Reef Shark - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 2-20 kg
+159. Zebra Shark - Area: Coral Shallows | Season: All year | Rarity: Epic | Size: 5-35 kg
+160. Tasselled Wobbegong - Area: Coral Shallows | Season: All year | Rarity: Epic | Size: 3-20 kg
+161. Epaulette Shark - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 0.5-5 kg
+162. Southern Stingray - Area: Coral Shallows, Pirate Cove | Season: All year | Rarity: Uncommon | Size: 1-60 kg
+163. Bluespotted Ribbontail Ray - Area: Coral Shallows | Season: Summer | Rarity: Rare | Size: 0.5-5 kg
+164. Porcupine Ray - Area: Coral Shallows | Season: All year | Rarity: Rare | Size: 5-80 kg
+165. Largetooth Sawfish - Area: Coral Shallows, Pirate Cove | Season: Summer | Rarity: Exotic | Size: 50-500 kg
+166. Common Octopus - Area: Coral Shallows, Pirate Cove | Season: All year | Rarity: Rare | Size: 0.5-10 kg
+167. Bigfin Reef Squid - Area: Coral Shallows | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.1-2 kg
+168. Flamboyant Cuttlefish - Area: Coral Shallows | Season: Summer | Rarity: Epic | Size: 0.1-1 kg
+169. Crown-of-Thorns Starfish - Area: Coral Shallows | Season: Summer-Autumn | Rarity: Rare | Size: 0.2-3 kg
+170. Bluefin Trevally - Area: Coral Shallows | Season: Summer | Rarity: Rare | Size: 1-20 kg
+171. Cero Mackerel - Area: Pirate Cove | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.5-8 kg
+172. Florida Pompano - Area: Pirate Cove | Season: Summer | Rarity: Rare | Size: 0.5-8 kg
+173. Roosterfish - Area: Pirate Cove | Season: Summer-Autumn | Rarity: Epic | Size: 5-50 kg
+174. Common Snook - Area: Pirate Cove | Season: Summer-Autumn | Rarity: Rare | Size: 1-20 kg
+175. Atlantic Tarpon - Area: Pirate Cove | Season: Summer | Rarity: Epic | Size: 10-130 kg
+176. Goliath Grouper - Area: Pirate Cove | Season: Summer | Rarity: Legendary | Size: 5-360 kg
+177. Nurse Shark - Area: Pirate Cove, Coral Shallows | Season: All year | Rarity: Uncommon | Size: 2-60 kg
+178. Lemon Shark - Area: Pirate Cove | Season: Summer | Rarity: Rare | Size: 10-180 kg
+179. Caribbean Reef Shark - Area: Pirate Cove | Season: All year | Rarity: Rare | Size: 10-70 kg
+180. Bonnethead - Area: Pirate Cove | Season: Summer | Rarity: Rare | Size: 1-10 kg
+181. Pajama Cardinalfish - Area: Pirate Cove | Season: All year | Rarity: Uncommon | Size: 0.02-0.15 kg
+182. Christmas Wrasse - Area: Pirate Cove | Season: All year | Rarity: Uncommon | Size: 0.05-0.4 kg
+183. Lined Seahorse - Area: Pirate Cove | Season: Summer-Autumn | Rarity: Rare | Size: 0.05-0.5 kg
+184. Longspine Squirrelfish - Area: Pirate Cove | Season: All year | Rarity: Rare | Size: 0.05-0.3 kg
+185. Caribbean Reef Squid - Area: Pirate Cove | Season: All year | Rarity: Rare | Size: 0.1-2 kg
+186. Peacock Mantis Shrimp - Area: Pirate Cove | Season: Summer | Rarity: Epic | Size: 0.1-1 kg
+187. Spiny Lobster - Area: Pirate Cove | Season: Summer-Autumn | Rarity: Rare | Size: 0.5-10 kg
+188. Porkfish - Area: Pirate Cove | Season: All year | Rarity: Common | Size: 0.1-1 kg
+189. Pinfish - Area: Pirate Cove | Season: All year | Rarity: Common | Size: 0.05-0.5 kg
+190. Atlantic Croaker - Area: Pirate Cove | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.2-4 kg
+191. Red Drum - Area: Pirate Cove | Season: Autumn-Winter | Rarity: Rare | Size: 1-30 kg
+192. Sheepshead - Area: Pirate Cove | Season: Spring-Summer | Rarity: Uncommon | Size: 0.5-8 kg
+193. White Grunt - Area: Pirate Cove | Season: Summer | Rarity: Uncommon | Size: 0.2-3 kg
+194. Spotfin Burrfish - Area: Pirate Cove | Season: All year | Rarity: Rare | Size: 0.2-2 kg
+195. Giant Trevally - Area: Pirate Cove, Coral Shallows | Season: Summer-Autumn | Rarity: Epic | Size: 3-80 kg
+196. Leopard Shark - Area: Cinder Isles | Season: Summer-Autumn | Rarity: Rare | Size: 1-15 kg
+197. Horn Shark - Area: Cinder Isles | Season: All year | Rarity: Uncommon | Size: 0.5-10 kg
+198. Wolf Eel - Area: Cinder Isles | Season: All year | Rarity: Rare | Size: 1-15 kg
+199. Cabezon - Area: Cinder Isles | Season: Spring-Autumn | Rarity: Rare | Size: 0.5-10 kg
+200. Humboldt Squid - Area: Cinder Isles | Season: Summer-Autumn | Rarity: Exotic | Size: 2-40 kg
+
+EXTRA CANDIDATES (bonus swaps if any of the 200 above don't fit)
+- Kelp Greenling - Area: Cinder Isles | Season: All year | Rarity: Uncommon | Size: 0.3-3 kg
+- Copper Rockfish - Area: Cinder Isles | Season: All year | Rarity: Uncommon | Size: 0.5-5 kg
+- Vermilion Rockfish - Area: Cinder Isles | Season: Summer-Autumn | Rarity: Rare | Size: 0.5-8 kg
+- California Sheephead - Area: Cinder Isles | Season: Summer-Autumn | Rarity: Uncommon | Size: 1-15 kg
+- Garibaldi - Area: Cinder Isles | Season: Summer-Autumn | Rarity: Uncommon | Size: 0.2-2 kg
+- Red Abalone - Area: Cinder Isles | Season: All year | Rarity: Rare | Size: 0.2-3 kg
+- Snowy Grouper - Area: Cinder Isles, Open Waters | Season: Summer-Autumn | Rarity: Rare | Size: 1-25 kg
+- Chambered Nautilus - Area: Cinder Isles, Open Waters | Season: All year | Rarity: Exotic | Size: 0.5-5 kg
+
+DESIGN NOTES
+- Balance: about 60% Common-Uncommon fillers, 30% Rare-Epic targets, ~10
+  top-tier picks. Legendaries: Greenland Shark, White Sturgeon, Great Hammerhead,
+  Shortfin Mako, Goliath Grouper, Giant Oarfish, Frilled Shark. Mythical:
+  Coelacanth, Whale Shark. Exotic: Basking Shark, Manta Ray, Giant Squid,
+  Humboldt Squid, Largetooth Sawfish, Opah, Dumbo Octopus, Vampire Squid,
+  Chambered Nautilus, Humpback Anglerfish.
+- Large bodies (Whale Shark, Basking Shark, Oarfish, Goliath Grouper, White
+  Sturgeon) would need Huge/Big cargo Shapes and a raised LengthScale.
+- RarityDenominator suggestions follow the existing pattern: Common 2-4,
+  Uncommon 6-10, Rare 12-25, Epic 30-60, Legendary 80-150, Exotic 200+,
+  Mythical 500+.
