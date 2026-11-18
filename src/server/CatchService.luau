@@ -29,6 +29,10 @@ local MAX_CAST_DISTANCE = 64
 local MAX_LINE_LENGTH = 110
 local MAX_FIGHT_SECONDS = 150
 local BITE_SECONDS = Vector2.new(3, 8)
+-- Rarely a second fish comes up on the same line after a landed catch.
+local DOUBLE_CATCH_CHANCE = 1 / 50
+-- Waits for the first catch popup (CatchPopup HOLD_SECONDS) before showing the second.
+local DOUBLE_CATCH_DELAY = 3
 local casts = {}
 local forcedTreasure = {}
 local charges = {}
@@ -116,6 +120,31 @@ local function beginCharge(player: Player)
 		lastCharge[player] = now
 		charges[player] = { tool = tool, startedAt = now }
 	end
+end
+
+-- One fish from the cast's spot, season and boosts, with its mutation rolled in.
+local function rollFish(player: Player, state)
+	local pool = FishCatch.inSeason(
+		Catalog.poolAt(CatchConditions.area(state.target)),
+		Catalog.Fish,
+		(Seasons.current()),
+		CatchConditions.at(state.target)
+	)
+	local function rng()
+		return random:NextNumber()
+	end
+	local roll = FishCatch.roll(pool, Catalog.Fish, Catalog.Rarities, rng, state.boosts)
+	local night = DayNight.isNight(DayNight.clockTime())
+	local traits = FishMutations.roll(
+		Catalog.Fish[roll.FishId],
+		night,
+		rng,
+		state.boosts,
+		MutationContext.at(state.target, player)
+	)
+	roll.Traits = traits
+	roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)
+	return roll, pool
 end
 
 local function cast(player: Player, target: any, heldSeconds: any)
@@ -209,27 +238,8 @@ local function cast(player: Player, target: any, heldSeconds: any)
 			award(player, secret)
 			return
 		end
-		local pool = FishCatch.inSeason(
-			Catalog.poolAt(CatchConditions.area(state.target)),
-			Catalog.Fish,
-			(Seasons.current()),
-			CatchConditions.at(state.target)
-		)
-		local function rng()
-			return random:NextNumber()
-		end
-		local roll = FishCatch.roll(pool, Catalog.Fish, Catalog.Rarities, rng, state.boosts)
 		-- Rolled at the bite, but only revealed once the fish is landed.
-		local night = DayNight.isNight(DayNight.clockTime())
-		local traits = FishMutations.roll(
-			Catalog.Fish[roll.FishId],
-			night,
-			rng,
-			state.boosts,
-			MutationContext.at(state.target, player)
-		)
-		roll.Traits = traits
-		roll.Value = FishMutations.value(roll.Value, traits.Mutation, traits.Corruptions)
+		local roll, pool = rollFish(player, state)
 		state.roll, state.phase, state.hookedAt = roll, "Hooked", os.clock()
 		tool:SetAttribute("CastPhase", "Hooked")
 		send(player, "Bite", {
@@ -306,6 +316,7 @@ award = function(player: Player, roll)
 		Stored = saved and destination == "Hand",
 		StorageStored = saved and destination == "Storage",
 		Secret = roll.Secret == true,
+		Double = roll.Double == true,
 		Count = count,
 		Bait = if saved then roll.Bait else nil,
 	})
@@ -314,6 +325,21 @@ award = function(player: Player, roll)
 	elseif forced and player.Parent == Players then
 		forcedTreasure[player] = true
 	end
+end
+
+-- Every client throws a look-alike of the fish behind this angler (CatchFling).
+local function fling(player: Player, from: Vector3, roll)
+	update:FireAllClients("Fling", {
+		UserId = player.UserId,
+		-- The water spot it was hooked at, where it leaps out toward the angler.
+		From = from,
+		FishId = roll.FishId,
+		Kg = roll.Kg,
+		Size = roll.Size,
+		Mutation = roll.Traits.Mutation,
+		NeonColor = roll.Traits.NeonColor,
+		Corruptions = roll.Traits.Corruptions,
+	})
 end
 
 local function reel(player: Player, landed: any, noMistakes: any)
@@ -342,20 +368,30 @@ local function reel(player: Player, landed: any, noMistakes: any)
 	-- Reeling runs on the client; only the server-validated throw can qualify it.
 	roll.PerfectCatch = state.perfectThrow == true and noMistakes == true
 	roll.Bait = state.bait
-	-- Every client throws a look-alike of the fish behind this angler (CatchFling).
 	-- Visual only, so it goes out as soon as the fish lands rather than after saving.
-	update:FireAllClients("Fling", {
-		UserId = player.UserId,
-		-- The water spot it was hooked at, where it leaps out toward the angler.
-		From = hookedAt,
-		FishId = roll.FishId,
-		Kg = roll.Kg,
-		Size = roll.Size,
-		Mutation = roll.Traits.Mutation,
-		NeonColor = roll.Traits.NeonColor,
-		Corruptions = roll.Traits.Corruptions,
-	})
-	task.spawn(award, player, roll)
+	fling(player, hookedAt, roll)
+	task.spawn(function()
+		award(player, roll)
+		if roll.Secret or random:NextNumber() >= DOUBLE_CATCH_CHANCE then
+			return
+		end
+		-- A second fish from the same spot and boosts. It never uses up bait.
+		local bonus = rollFish(player, state)
+		bonus.PerfectCatch = false
+		bonus.Double = true
+		task.wait(DOUBLE_CATCH_DELAY)
+		if player.Parent ~= Players then
+			return
+		end
+		local profile = BoatService.getProfile(player)
+		local backpack = profile and BackpackCatalog.layoutFor(player, profile.Angler.BackpackId)
+		if not profile or not AnglerData.hasCatchSpace(profile.Angler, backpack, Catalog.Fish) then
+			FishingService.notify(player, "A second fish was on the line, but you had no room for it!")
+			return
+		end
+		fling(player, hookedAt, bonus)
+		award(player, bonus)
+	end)
 end
 
 function CatchService.start()

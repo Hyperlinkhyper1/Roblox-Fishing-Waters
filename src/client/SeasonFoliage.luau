@@ -16,6 +16,7 @@ local BATCH = 120 -- shared limit for each foliage pass, including streamed arri
 local FRAME_BUDGET = 0.001
 local GROUND_AREA = 400 -- a part this wide on top is lawn, not leaves
 local PIECE_TAG = "LodPiece" -- streamed map pieces (server/Map/Lod)
+local PART_TAG = "SeasonFoliagePart" -- individually streamed city ground and trees
 local rgb = Color3.fromRGB
 
 local SPRING = rgb(132, 198, 84)
@@ -68,7 +69,8 @@ function SeasonFoliage.start()
 	end
 
 	local function apply(part: BasePart, entry: Entry)
-		part.Color = tint(entry.original, season, entry.ground, entry.seed)
+		local color = tint(entry.original, season, entry.ground, entry.seed)
+		if part.Color ~= color then part.Color = color end
 	end
 
 	local function consider(item: Instance)
@@ -136,6 +138,13 @@ function SeasonFoliage.start()
 	-- every arriving island in the same frame. Walk child lists incrementally so startup also
 	-- avoids allocating a snapshot of every instance in workspace.
 	local scans, queued, head = {}, {}, 1
+	local pendingParts: { [BasePart]: boolean } = {}
+	CollectionService:GetInstanceAddedSignal(PART_TAG):Connect(function(part)
+		if part:IsA("BasePart") then pendingParts[part] = true end
+	end)
+	CollectionService:GetInstanceRemovedSignal(PART_TAG):Connect(function(part)
+		pendingParts[part :: BasePart] = nil
+	end)
 	local function scanPiece(piece: Instance)
 		if queued[piece] then return end
 		local scan = { root = piece, stack = { { items = { piece }, next = 1 } } }
@@ -151,6 +160,16 @@ function SeasonFoliage.start()
 	scanPiece(workspace)
 	RunService.Heartbeat:Connect(function()
 		local started, count = os.clock(), 0
+		-- Leave room for the regular walker when a city streams many leaves at once.
+		for part in pendingParts do
+			if count >= BATCH / 2 or os.clock() - started >= FRAME_BUDGET then break end
+			pendingParts[part] = nil
+			if part:IsDescendantOf(workspace) then
+				local entry = tracked[part]
+				if entry then apply(part, entry) else consider(part) end
+			end
+			count += 1
+		end
 		while head <= #scans and count < BATCH and os.clock() - started < FRAME_BUDGET do
 			local scan = scans[head]
 			local root, stack = scan.root, scan.stack

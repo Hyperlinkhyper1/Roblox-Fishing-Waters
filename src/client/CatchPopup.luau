@@ -346,7 +346,17 @@ function Popup:showCatch(payload)
 		caption ..= " (" .. paint(string.format("×%d", payload.Count), GOLD, true) .. ")"
 	end
 	local lines = {}
-	if payload.Count == 1 then
+	-- The popup has three line slots, so both tags share the top one.
+	local discovered = payload.Count == 1
+	if payload.Double then
+		table.insert(
+			lines,
+			paint("DOUBLE CATCH!", GOLD, true)
+				.. (if discovered
+					then "  ·  " .. paint("<i>New species discovered!</i>", GREEN, true)
+					else paint("  ·  A second fish was on the line", MUTED, true))
+		)
+	elseif discovered then
 		table.insert(lines, paint("<i>New species discovered!</i>", GREEN, true))
 	end
 	table.insert(lines, caption)

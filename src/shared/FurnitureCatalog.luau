@@ -586,9 +586,6 @@ Furniture.KITCHEN_STORAGE_CAPACITY = 8
 -- Keep in step with BaseGrid.CELL_SIZE; saved positions are intentionally
 -- not revalidated until an item is moved.
 Furniture.GRID = 4.5
--- The shop walls sit on cell boundaries. Finer snapping allows full-size
--- counters to sit close to those walls without intersecting them.
-Furniture.SHOP_GRID = 0.5
 -- Every item fills a block of 1x1 or 1x2 grid cells (Cells = { across, deep }).
 -- It is saved at the centre of its first cell, and a second cell extends along
 -- its local +X or +Z. The model (Width x Depth) sits inside: centred, or with
@@ -825,16 +822,8 @@ function Furniture.intersectsGridWall(entry): boolean
 	return false
 end
 
-local function onGrid(value: number, grid: number): boolean
-	return type(value) == "number"
-		and value == value
-		and math.abs(value) <= 96
-		and math.abs(value / grid - math.round(value / grid)) < 1e-6
-end
-
-function Furniture.snapPlacement(value: number, inShop: boolean): number
-	local grid = if inShop then Furniture.SHOP_GRID else Furniture.GRID
-	return math.round(value / grid) * grid
+local function validCoordinate(value: number): boolean
+	return type(value) == "number" and math.abs(value) <= 96
 end
 
 -- Checks one placement against the room rules and the other placed items
@@ -842,15 +831,13 @@ end
 -- player-facing reason.
 local function check(placed, itemId: string, x: number, z: number, r: number, skip: number?, legacy: boolean?, site: string?, expanded: boolean?): string?
 	local item = Furniture.Items[itemId]
-	local shopPosition = site ~= "Company" and type(z) == "number"
-		and z >= Furniture.Rooms.Shop[2] and z <= Furniture.Rooms.Shop[4]
-	local grid = if shopPosition then Furniture.SHOP_GRID else Furniture.GRID
 	if not item then
 		return "That isn't furniture."
-	elseif not ((if legacy then type(x) == "number" and x == x and math.abs(x) <= 96
-		and type(z) == "number" and z == z and math.abs(z) <= 96 else onGrid(x, grid) and onGrid(z, grid))
+	elseif not (validCoordinate(x) and validCoordinate(z)
 		and type(r) == "number" and r % 1 == 0 and r >= 0 and r <= 3) then
 		return "That isn't a spot in your house."
+	elseif not legacy and (x % Furniture.GRID ~= 0 or z % Furniture.GRID ~= 0) then
+		return "Choose a spot on the furniture grid."
 	end
 	local area = Furniture.footprint(itemId, x, z, r) :: { number }
 	local strips = Furniture.access(itemId, x, z, r)

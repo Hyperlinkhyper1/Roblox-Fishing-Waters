@@ -304,6 +304,35 @@ for _, part in farParts do homeGround.DescendantRemoving:Fire(part) end
 settle()
 check(farWedge.LocalTransparencyModifier == 1 and nearWedge.LocalTransparencyModifier == 1,
   "A tile that gave way must stay away while its island is still here")
+local cityShell = object("Model", "5", shells)
+cityShell.attributes = {TileSize=100, TileOriginX=0, TileOriginZ=0}
+local cityTile = object("Model", "4,0", cityShell)
+cityTile.attributes.Ground = 4
+local cityWedge = object("BasePart", "Shell", cityTile)
+shells.ChildAdded:Fire(cityShell)
+local city = object("Model", "City", biome)
+city.attributes.LodId = 5
+local cityGround = object("Model", "Ground", city)
+cityGround.attributes.LodSurfaceTracked = true
+biome.ChildAdded:Fire(city)
+for i = 1, 30 do cityGround.DescendantAdded:Fire(groundAt(cityGround, 450, 50)) end
+settle()
+check(cityWedge.LocalTransparencyModifier == 0, "City decoration does not count as shell coverage")
+local citySurface = {}
+for i = 1, 4 do
+  local slab = groundAt(cityGround, 420 + i * 10, 50)
+  slab.Size, slab.CanCollide = Vector3.new(12, 1, 12), true
+  cityGround.DescendantAdded:Fire(slab)
+  table.insert(citySurface, slab)
+end
+settle()
+check(cityWedge.LocalTransparencyModifier == 1, "A city tile gives way when its structural parts load")
+cityGround.DescendantRemoving:Fire(citySurface[1])
+settle()
+check(cityWedge.LocalTransparencyModifier == 1, "A city shell ignores a small loss in coverage")
+cityGround.DescendantRemoving:Fire(citySurface[2])
+settle()
+check(cityWedge.LocalTransparencyModifier == 0, "A city shell fills holes as native streaming releases ground")
 -- A tiled shell the server swaps in later takes over from one that had already given way
 shells.ChildRemoved:Fire(tiled)
 local swapped = object("Model", "3", shells)

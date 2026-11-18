@@ -31,9 +31,10 @@ check(Furniture.check({}, "StorageRack", 54, -13.5, 0, nil, "Home", true) ~= nil
 check(Furniture.check({}, "StorageRack", -40.5, -13.5, 0, nil, "Home", true) ~= nil, "Room-specific placement remains enforced")
 local placed = {{ ItemId = "StorageRack", X = 40.5, Z = -13.5, R = 0 }}
 check(Furniture.check(placed, "StorageRack", 40.5, -13.5, 0, nil, "Home", true) ~= nil, "Extended furniture cannot overlap another item")
-local freezer = {{ ItemId = "Freezer", X = 9, Z = 67.5, R = 0 }}
-check(Furniture.check({}, "Freezer", 9, 67.5, 0, nil, "Home", true) == nil, "The original shop remains usable in expanded mode")
-check(Furniture.check(freezer, "PottedPlant", 9, 72, 0, nil, "Home", true) ~= nil, "Expanded mode still keeps standing access strips clear")
+local freezer = {{ ItemId = "Freezer", X = 9, Z = 72, R = 0 }}
+check(Furniture.check({}, "Freezer", 9, 72, 0, nil, "Home", true) == nil, "The original shop remains usable in expanded mode")
+check(Furniture.check({}, "Freezer", 9, 72.5, 0, nil, "Home", true) ~= nil, "Expanded mode keeps the shop on the furniture grid")
+check(Furniture.check(freezer, "PottedPlant", 9, 76.5, 0, nil, "Home", true) ~= nil, "Expanded mode still keeps standing access strips clear")
 check(Furniture.check({}, "StorageRack", 58.5, 0, 0, nil, "Company", true) ~= nil, "Harbour expansion never enlarges company-island fences")
 
 local angler = Data.decode(nil)

@@ -611,6 +611,7 @@ function methods:FindFirstChildOfClass(class)
 	return nil
 end
 -- Preview geometry is covered by check-rods; these mocks exercise menu lifecycle.
+services.AssetService = {}
 services.CollectionService = {
 	RemoveTag = function(_, tool, tag)
 		tool:SetAttribute("RemovedPreviewTag", tag)
@@ -763,7 +764,16 @@ for _, item in content:GetChildren() do
 	end
 end
 -- BAG_CHECKS_START
+profile.BaitCrates = 2
+player:SetAttribute("BoatDataStatus", "Ready")
 open("Equipmentbag")
+local crate = content:FindFirstChild("BaitCrate", true)
+local cratePreview = crate and crate:FindFirstChild("BaitCratePreview")
+check(cratePreview and cratePreview.CurrentCamera and cratePreview.WorldModel.BaitCrate:FindFirstChildOfClass("Part"),
+	"Owned bait crates still show a 3D preview when editable meshes are disabled")
+crate.OpenBaitCrate.Activated:Fire()
+check(rodActions[#rodActions] == "OpenBaitCrate", "The Equipment Bag can open a crate with a preview")
+profile.BaitCrates = nil
 check(
 	contains("Tidebound Rod") and contains("One-time reward") and not contains("Owned"),
 	"Unclaimed group rod is an offer, not owned equipment"

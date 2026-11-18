@@ -100,6 +100,12 @@ The same log showed `Wrap-deformer fetching meshes resulted in error` about ever
 
 `SeabedCarpet` used to sample, clone, scale and parent up to 24 patches in one Heartbeat every 0.2 seconds. Moving into new water continually triggered these batches, and teleporting could destroy every old patch in one frame. It now attempts at most two cells and removes at most two entries per Heartbeat, stopping further work after a 1 ms budget. Individual patch operations are atomic and can exceed that budget. Persistent cursors limit inspections and resume on later frames; placement rules, density and retry behavior are unchanged. At 60 FPS the maximum attempt throughput remains 120 cells/second; lower frame rates spend less time building scenery.
 
+Above the waterline the open-ocean carpet uses a 192-stud radius. Diving expands it to
+320 studs, and the shallower harbour lake keeps its own radius. At lower graphics settings,
+Terrain ripple targets update at most ten times a second during continuous travel and
+ease every frame. At high settings, the swell sheet updates mesh positions and normals
+only for visible crests, and shoreline tapers are recalculated when wet probes change.
+
 `EnvironmentAudio` and `CoastalAmbience` still cast terrain rays around the listener after the water and seabed renderers had switched to voxel reads. On fresh terrain chunks those rays could build collision shapes synchronously (`RaycastTerrain` / `buildKDTree`). Water, beach and terrain-roof estimates now use `TerrainProbe.surfaceAt` at four-stud voxel resolution. Remaining roof rays exclude Terrain and detect only parts; terrain caves retain shelter through the voxel check. Failed reads and unstreamed air are retried at the normal sampling interval.
 
 ```powershell
@@ -113,12 +119,13 @@ The scenery checks cover sustained travel at 100 studs/second at 30, 60 and 144 
 
 ## Travel arrivals
 
-The four smaller cities now use the main city's `CityDetail` facade descriptions.
-Building collision, lights and interactive parts stream normally; optional facade parts
-are built locally at the existing limit of six per frame, with a 2 ms budget and reduced
-throughput on slow frames. This also migrates current-version saved cities whose facade
-parts are already inside generated ground chunks. Decorative detail appears gradually
-within 350 studs rather than arriving with every full building. The towns now have
+The four smaller cities use the main city's `CityDetail` facade descriptions.
+Building collision, lights and interactive parts stream normally. Optional facades are
+created and retired at a shared budget of three operations and 1 ms per frame, with fewer
+operations on slow frames and a pause in creation after a hitch. Facade parts load within
+112, 160 or 224 studs by graphics tier, and retire 48 studs beyond those distances.
+This also migrates current-version saved cities whose facade parts are already inside
+generated ground chunks. The towns have
 separate layouts and building stocks: fishing terraces and a market quay at Brambleport,
 works and rail at Northwick, hotels and a beach at Westhaven, and a bridged river inlet
 at Riverton. Street furniture and market stalls opt into the same descriptions with a
@@ -133,9 +140,12 @@ and lights stay on the server.
 | Riverton | 2,805 | 623 | 2,182 |
 | Total | 9,813 | 2,289 | 7,524 |
 
-These are real builder counts (76.7% fewer replicated parts), not frame-time measurements.
-Prepared building roots retain their collision cores and facade metadata as one bounded
-streaming piece, including saved buildings with nested generated chunks.
+These builder counts show 76.7% fewer replicated parts. Static scenery on all five city
+islands now streams by part, including saved maps with generated atomic chunks. Dedicated
+underground groups retain their streaming mode. City shell handovers count structural
+parts, and a shell can come back when its tile loses enough coverage during departure.
+Optional facade trim avoids shadow casting, and window and street lighting changes share
+a 24-instance, 1 ms frame budget. See [Roblox instance streaming](https://create.roblox.com/docs/workspace/streaming).
 
 Island shell handovers now share a client budget of 128 part inspections and 1 ms per
 Heartbeat. Previously, every shell in a stepped fade wrote all its part transparencies

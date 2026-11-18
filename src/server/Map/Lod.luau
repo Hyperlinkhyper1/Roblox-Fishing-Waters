@@ -79,9 +79,10 @@ local function countTiles(model: Instance, island: Model)
 	local originX, originZ = model:GetAttribute("TileOriginX") or 0, model:GetAttribute("TileOriginZ") or 0
 	local counts: { [string]: number } = {}
 	local ground = island:FindFirstChild("Ground")
+	local city = ground and ground:GetAttribute("LodSurfaceTracked") == true
 	for _, d in if ground then ground:GetDescendants() else {} do
 		pause()
-		if d:IsA("BasePart") then
+		if d:IsA("BasePart") and (not city or (d.CanCollide and math.max(d.Size.X, d.Size.Z) >= 12)) then
 			tileKeys(d, originX, originZ, function(key)
 				counts[key] = (counts[key] or 0) + 1
 			end)
@@ -651,12 +652,14 @@ end
 -- Everything else keeps its place in the hierarchy: a model small enough becomes a piece as
 -- it is, a bigger one is split into its children. Loose parts in a big model stay as they
 -- were and still stream normally.
-local function splitIntoPieces(container: Instance, pause: (() -> ())?)
+local function splitIntoPieces(container: Instance, pause: (() -> ())?, skip: Instance?)
 	for _, child in container:GetChildren() do
 		if pause then
 			pause()
 		end
-		if child:IsA("Model") then
+		if child == skip then
+			continue
+		elseif child:IsA("Model") then
 			local mode = child.ModelStreamingMode
 			if child:HasTag(BASE_TAG) then
 				pinWhole(child, pause)
@@ -677,6 +680,40 @@ local function splitIntoPieces(container: Instance, pause: (() -> ())?)
 	end
 end
 
+local function isCity(island: Model): boolean
+	return island:GetAttribute("CityVersion") ~= nil or island:GetAttribute("SmallCityVersion") ~= nil
+end
+
+-- Static scenery can stream part by part in a city. Old maps already have generated
+-- atomic chunks; keep their hierarchy and remove the boundary. Underground metro
+-- pieces and independently authored atomic models keep their streaming lifetime.
+local function streamCityGround(ground: Model, pause: (() -> ())?)
+	ground:SetAttribute("LodSurfaceTracked", true)
+	local function visit(container: Instance)
+		if container:IsA("Model") and container:HasTag(PIECE_TAG) then
+			if container:GetAttribute("LodSkip") then
+				addPiece(container)
+				return
+			end
+			clearPiece(container)
+		elseif container:IsA("Model") and container ~= ground
+			and container.ModelStreamingMode ~= Enum.ModelStreamingMode.Default then
+			return
+		end
+		for _, child in container:GetChildren() do
+			if pause then pause() end
+			if child:IsA("Model") or child:IsA("Folder") then
+				visit(child)
+			elseif child:IsA("BasePart") and (child.Material == Enum.Material.Grass or child.Material == Enum.Material.LeafyGrass) then
+				-- Nonatomic scenery arrives by part, so the foliage sweep needs its own arrival signal.
+				child:AddTag("SeasonFoliagePart")
+			end
+		end
+	end
+	ground.ModelStreamingMode = Enum.ModelStreamingMode.Default
+	visit(ground)
+end
+
 -- Must run before an island's contents first replicate: switching a model's streaming mode
 -- after clients have it makes it stream in all over again. So each island is split once,
 -- either as it's generated or at startup before anyone has a character. `pause` may yield, so it is
@@ -687,12 +724,17 @@ local function splitIsland(island: Model, pause: (() -> ())?)
 	end
 	split[island] = true
 	island.ModelStreamingMode = Enum.ModelStreamingMode.Default
-	for _, child in island:GetChildren() do
-		if child:IsA("Model") and child.Name == "Ground" and not child:HasTag(PIECE_TAG) then
-			chunkGround(child, pause)
+	local ground = island:FindFirstChild("Ground")
+	local cityGround = nil
+	if ground and ground:IsA("Model") then
+		if isCity(island) then
+			cityGround = ground
+			streamCityGround(ground, pause)
+		elseif not ground:HasTag(PIECE_TAG) then
+			chunkGround(ground, pause)
 		end
 	end
-	splitIntoPieces(island, pause)
+	splitIntoPieces(island, pause, cityGround)
 end
 
 -- Called as a generated island is parented. Its trees and houses are added after that, so
@@ -716,6 +758,10 @@ function Lod.prepareIsland(island: Model)
 	splitIsland(island, pause)
 	island.ChildAdded:Connect(function(child)
 		if child:IsA("Model") and child.ModelStreamingMode == Enum.ModelStreamingMode.Default then
+			if child.Name == "Ground" and isCity(island) then
+				streamCityGround(child)
+				return
+			end
 			local parts = plainParts(child)
 			if parts and parts <= PIECE_PARTS then
 				addPiece(child)

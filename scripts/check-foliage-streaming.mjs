@@ -50,7 +50,11 @@ local terrain = {GetMaterialColor=function() return Color3.fromRGB(60,120,50) en
 workspace.Terrain = terrain
 function workspace:GetAttributeChangedSignal() return changed end
 local player = {}
-local collection = {GetInstanceAddedSignal=function() return added end, GetInstanceRemovedSignal=function() return removed end}
+local partAdded, partRemoved = event(), event()
+local collection = {
+  GetInstanceAddedSignal=function(_, tag) return if tag == 'SeasonFoliagePart' then partAdded else added end,
+  GetInstanceRemovedSignal=function(_, tag) return if tag == 'SeasonFoliagePart' then partRemoved else removed end,
+}
 game.GetService = function(_,name)
   return ({CollectionService=collection, Players={LocalPlayer=player}, RunService={Heartbeat=heartbeat}, ReplicatedStorage={Shared={}}})[name]
 end
@@ -108,6 +112,15 @@ cancelled.piece.Parent=workspace
 added:Fire(cancelled.piece)
 for i=1,4 do tick() end
 check(not isGreen(cancelled.parts[1]),'A cancelled piece can queue again on return')
+
+local cityLeaves={}
+for i=1,180 do cityLeaves[i]=leaf(workspace); partAdded:Fire(cityLeaves[i]) end
+local leaving=cityLeaves[180]
+partRemoved:Fire(leaving); leaving.Parent=nil
+tick()
+check(writes==60 and reads==0,'City foliage streams by part under the shared frame budget')
+for i=1,4 do tick() end
+check(not isGreen(cityLeaves[179]) and isGreen(leaving),'Queued city leaves tint and departures cancel')
 
 local exemptions=Instance.new('Model'); exemptions:AddTag('LodPiece'); exemptions.Parent=workspace
 local tropical=leaf(exemptions,20000)

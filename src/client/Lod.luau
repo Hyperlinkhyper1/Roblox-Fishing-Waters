@@ -49,6 +49,7 @@ local PREFETCH_INTERVAL = 1
 local PREFETCH_AHEAD = 400
 local PREFETCH_STEP = 150 -- skip requests that barely move the streamed area
 local TILE_LOADED = 0.85 -- share of a tile's ground that has to be in before its shell gives way
+local CITY_TILE_REVEAL = 0.55 -- after giving way, wait for more ground loss to avoid flicker
 local ISLAND_LOADED = 0.95 -- the same for a whole island, which has no player inside it to cover gaps
 local HANDOVER = 0.5 -- share of the ground that will do for a shell replacing one that had already given way
 local TILE_NEAR = 48 -- inside the 64-stud minimum streaming radius
@@ -62,6 +63,7 @@ local FAR_SHELL = 900
 type Island = {
 	model: Model,
 	ground: number,
+	surfaceTracked: boolean?,
 	parts: { [BasePart]: boolean },
 	connections: { RBXScriptConnection },
 	groundConnections: { RBXScriptConnection },
@@ -312,6 +314,8 @@ function Lod.start()
 					recount(shell, id)
 				end
 				local focus = playerPosition()
+				local island = islands[id]
+				local city = island and island.surfaceTracked
 				for _, tile in shell.tiles do
 					local near, far = false, false
 					if focus then
@@ -324,7 +328,8 @@ function Lod.start()
 					-- nearly whole. Right around the player it's always real, never draped in shell.
 					local share = if shell.inherited then HANDOVER else TILE_LOADED
 					local whole = near or tile.loaded >= tile.expected * share
-					show(tile, ground > 0 and (whole or (tile.hidden == true and not far)))
+					local keep = if city then tile.loaded >= tile.expected * CITY_TILE_REVEAL else not far
+					show(tile, ground > 0 and (whole or (tile.hidden == true and keep)))
 				end
 			else
 				local keep = shell.hidden == true and not farShell(shell, playerPosition())
@@ -588,8 +593,10 @@ function Lod.start()
 		if shell then
 			shell.dirty = true
 		end
+		local city = ground ~= nil and ground:GetAttribute("LodSurfaceTracked") == true
+		island.surfaceTracked = city
 		local function arrived(d: Instance)
-			if d:IsA("BasePart") and not island.parts[d] then
+			if d:IsA("BasePart") and not island.parts[d] and (not city or (d.CanCollide and math.max(d.Size.X, d.Size.Z) >= 12)) then
 				island.parts[d] = true
 				island.ground += 1
 				count(id, d, 1)

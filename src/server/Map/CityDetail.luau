@@ -65,7 +65,12 @@ function CityDetail.prepare(city: Instance)
 			task.wait()
 			resumed = os.clock()
 		end
-		if building(model) then prepareModel(model) end
+		if model:IsA("Light") and model:HasTag("NightLight") then
+			-- The client gradually selects nearby lamps after they stream in.
+			model.Enabled = false
+		elseif building(model) then
+			prepareModel(model)
+		end
 	end
 	-- The entire stop is pinned atomically for the ride. Keep its collision, signs,
 	-- lights and controls, but do not send hundreds of loose decorations with it.

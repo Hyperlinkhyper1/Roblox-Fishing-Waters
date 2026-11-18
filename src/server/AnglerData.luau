@@ -288,7 +288,7 @@ end
 -- furniture, retaining its entry and rotation so freezer/rack capacity and
 -- active kitchen jobs stay attached to the player's profile.
 local FURNITURE_WALL_VERSION = 3
-local function migrateFurnitureWalls(data, retry)
+local function migrateFurnitureWalls(data, retry, placedIndex)
 	if data.FurnitureWallVersion == FURNITURE_WALL_VERSION and not retry then return end
 	data.FurnitureWallMigrationPending = nil
 	local indices = {}
@@ -296,7 +296,11 @@ local function migrateFurnitureWalls(data, retry)
 	table.sort(indices)
 	if #indices > 0 then
 		local catalog = furniture()
+		-- Retain the half-stud search for old saves. Relocations triggered by
+		-- furniture edits use the same grid as player placements.
+		local grid = if retry then catalog.GRID else 0.5
 		for _, index in indices do
+			if index == placedIndex then continue end
 			local entry = data.Furniture[index]
 			local shopItem = table.find(catalog.allowedRooms(entry.ItemId), "Shop") ~= nil
 				and entry.Z >= catalog.Rooms.Shop[2] and entry.Z <= catalog.Rooms.Shop[4]
@@ -306,15 +310,16 @@ local function migrateFurnitureWalls(data, retry)
 				if otherIndex ~= index and catalog.Items[other.ItemId] then table.insert(others, other) end
 			end
 			local bestX, bestZ, bestDistance = nil, nil, math.huge
-			-- Scan the old half-stud lattice, not only the new coarse grid, so
-			-- crowded legacy layouts have the best chance of remaining intact.
 			for _, roomId in catalog.allowedRooms(entry.ItemId) do
 				local room = catalog.Rooms[roomId]
-				for ix = math.ceil(room[1] * 2), math.floor(room[3] * 2) do
-					for iz = math.ceil(room[2] * 2), math.floor(room[4] * 2) do
-						local x, z = ix / 2, iz / 2
+				for ix = math.ceil(room[1] / grid), math.floor(room[3] / grid) do
+					for iz = math.ceil(room[2] / grid), math.floor(room[4] / grid) do
+						local x, z = ix * grid, iz * grid
 						local distance = (x - entry.X) ^ 2 + (z - entry.Z) ^ 2
-						if distance < bestDistance and not catalog.checkRelocation(others, entry.ItemId, x, z, entry.R)
+						if distance >= bestDistance then continue end
+						local reason = if retry then catalog.check(others, entry.ItemId, x, z, entry.R)
+							else catalog.checkRelocation(others, entry.ItemId, x, z, entry.R)
+						if not reason
 							and not catalog.intersectsGridWall({ ItemId = entry.ItemId, X = x, Z = z, R = entry.R }) then
 							bestX, bestZ, bestDistance = x, z, distance
 						end
@@ -1552,7 +1557,9 @@ function Data.placeFurniture(raw, from, x, z, r, site, expanded)
 		end
 		table.insert(list, placed)
 	end
-	if data.FurnitureWallMigrationPending then migrateFurnitureWalls(data, true) end
+	if data.FurnitureWallMigrationPending then
+		migrateFurnitureWalls(data, true, if site == "Company" then nil else skip or #list)
+	end
 	return data
 end
 

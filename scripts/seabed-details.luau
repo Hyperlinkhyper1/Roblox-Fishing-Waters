@@ -243,7 +243,7 @@ local function boundedUpdate(position, time)
 	check(rays - beforeRays <= 6, 'A frame must not burst through more than two three-position cell probes')
 	check(destroyed - beforeDestroyed <= 2, 'A frame must not remove more than two old patches')
 end
-local camera = Vector3.new(2600, 20, 2600)
+local camera = Vector3.new(2600, -4, 2600)
 misses['54,54'] = 5
 local now = 0
 for _ = 1, 200 do
@@ -263,7 +263,7 @@ check(retried ~= nil and retried.model ~= nil, 'A cell whose ground streamed in 
 local before = built
 boundedUpdate(camera, now + 1)
 check(built == before, 'A settled neighbourhood builds nothing more')
-camera = Vector3.new(-2600, 20, -2600)
+camera = Vector3.new(-2600, -4, -2600)
 boundedUpdate(camera, now)
 check(destroyed <= 2, 'Teleport cleanup is spread across frames instead of destroying the whole old neighbourhood')
 for _ = 1, 200 do
@@ -299,12 +299,16 @@ for _, fps in { 30, 60, 144 } do
 	for _, entry in neighborhood do
 		if entry.model then
 			nearby += 1
-			if math.abs(entry.x - position.X) > entry.keep then stale += 1 end
+			if math.abs(entry.x - position.X) > 240 then stale += 1 end
 		end
 	end
-	check(nearby > 150 and nearby < 350, 'Moving boats keep a full, bounded carpet at ' .. fps .. ' FPS: ' .. nearby)
+	check(nearby > 60 and nearby < 110, 'Moving boats keep a smaller carpet at ' .. fps .. ' FPS: ' .. nearby)
 	check(stale <= 4, 'Incremental cleanup keeps up with sustained travel at ' .. fps .. ' FPS: ' .. stale)
-	check(removed > 100, 'Sustained travel releases old patches at ' .. fps .. ' FPS')
+	check(removed > 75, 'Sustained travel releases old patches at ' .. fps .. ' FPS')
+	for frame = 1, fps * 5 do drive(Vector3.new(position.X, -4, position.Z), 15 + frame / fps) end
+	local diving = 0
+	for _, entry in neighborhood do if entry.model then diving += 1 end end
+	check(diving > 150, 'The full carpet returns during a dive at ' .. fps .. ' FPS')
 end
 
 -- A slow clone or removal can use the entire time allowance by itself. No second
@@ -317,12 +321,12 @@ local slow = CarpetClient.tracker(trackerData, clientSample, function()
 end, function() return workClock end)
 for frame = 1, 250 do
 	local beforeCopies = slowCopies
-	slow(Vector3.new(2600, 20, 2600), frame / 60)
+	slow(Vector3.new(2600, -4, 2600), frame / 60)
 	check(slowCopies - beforeCopies <= 1, 'An expensive clone ends this frame\'s carpet work')
 end
 check(slowCopies > 150, 'A constrained device still fills its neighbourhood over time')
 local beforeSlowCopies, beforeSlowRemovals = slowCopies, slowRemovals
-slow(Vector3.new(-2600, 20, -2600), 5)
+slow(Vector3.new(-2600, -4, -2600), 5)
 check(slowRemovals - beforeSlowRemovals == 1 and slowCopies == beforeSlowCopies,
 	'An expensive teleport removal ends the frame before any clone work')
 

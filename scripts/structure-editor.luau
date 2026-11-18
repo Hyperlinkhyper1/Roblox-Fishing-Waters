@@ -267,6 +267,11 @@ check(editor:isActive() and editor:tool() == "Select", "Dropping furniture must 
 byName("TabWall").Activated:Fire()
 check(editor:isActive() and modeChanges[#modeChanges] == true, "Structure tab must enable its controller")
 check(blue(byName("TabWall")), "The selected Walls category must have a blue tab and white caption")
+editor:suspend()
+check(editor:section() == "Furniture" and not editor:isActive(), "A furniture move from Walls must switch to the furniture grid")
+editor:resume()
+check(editor:tool() == "Select", "Finishing the move must return to furniture selection")
+byName("TabWall").Activated:Fire()
 local toolbox = byName("BuildDock")
 check(toolbox.AnchorPoint.Y == 1 and toolbox.Position[3] == 1,
 	"The dock must remain anchored to the bottom of the screen")

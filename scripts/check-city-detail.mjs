@@ -92,14 +92,34 @@ check(model:FindFirstChild('CityLocalDetail')==nil,'Detail waits while city stre
 clock=8.1
 heartbeat:Fire(1/60)
 local folder=model:FindFirstChild('CityLocalDetail')
-check(folder~=nil and #folder:GetChildren()<=6 and #folder:GetChildren()>0,'One frame creates at most six decorations')
+local firstRoom=tracks:FindFirstChild('CityLocalDetail')
+check(folder~=nil and #folder:GetChildren()+(firstRoom and #firstRoom:GetChildren() or 0)==3,
+  'One frame creates at most three decorations across all models')
 for i=1,15 do heartbeat:Fire(1/60) end
 check(#folder:GetChildren()==13,'All nearby detail is eventually reconstructed')
 check(tracks:FindFirstChild('CityLocalDetail')~=nil,'An empty station room rebuilds detail using its anchor')
 local glow=folder:FindFirstChild('Decoration1')
 check(glow:HasTag('NightGlow') and glow:GetAttribute('GlowAt')==0.4,'Night lighting metadata survives')
+check(not glow.CastShadow,'Local facade trim does not enter the shadow pass')
+root.Position=Vector3.new(500,0,0)
+clock=9.1
+heartbeat:Fire(1/60)
+check(#folder:GetChildren()==13,'Distance retirement only schedules destruction')
+heartbeat:Fire(1/60)
+check(#folder:GetChildren()>=10,'Distance culling also respects the shared three-part budget')
+for i=1,10 do heartbeat:Fire(1/60) end
+check(folder.Parent==nil,'Local detail is cleaned up once it is out of range')
+root.Position=Vector3.zero
+clock=10.1
+heartbeat:Fire(0.1)
+check(model:FindFirstChild('CityLocalDetail')==nil,'A traversal hitch pauses additions')
+clock=11
+for i=1,15 do heartbeat:Fire(1/60) end
+local rebuilt=model:FindFirstChild('CityLocalDetail')
+check(rebuilt and #rebuilt:GetChildren()==13,'Detail returns once the camera is nearby and frame time recovers')
 removed:Fire(model)
-check(folder.Parent==nil,'Local detail is cleaned up when the building streams out')
+for i=1,10 do heartbeat:Fire(1/60) end
+check(rebuilt.Parent==nil,'Stream-out also drains bounded local removal work')
 _G_print('City detail: migration, lighting, work budget and stream-out checks passed')
 `;
 const temp = await mkdtemp(join(tmpdir(), 'city-detail-'));

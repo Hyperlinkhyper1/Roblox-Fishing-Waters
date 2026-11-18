@@ -726,15 +726,6 @@ local BUILDERS = {
 	River = buildRiver,
 }
 
-local function prepareDetails(city: Instance)
-	CityDetail.prepare(city)
-	-- Saved cities can already have split streaming pieces. Pin each bounded
-	-- prepared building as one unit so its local facade follows its collision core.
-	for _, model in city:GetDescendants() do
-		if model:IsA("Model") and model:HasTag("CityDetail") then Lod.pin(model) end
-	end
-end
-
 local function build(root: Instance, site): Model
 	local rng = Random.new(site.seed)
 	local origin = Vector3.new(site.x, 0, site.z)
@@ -764,7 +755,7 @@ local function build(root: Instance, site): Model
 	local builder = BUILDERS[site.profile] or buildFishing
 	builder(ctx)
 	-- Match the main city's facade budget before these buildings first replicate.
-	prepareDetails(city)
+	CityDetail.prepare(city)
 	Lod.prepareIsland(city)
 	city.Parent = root
 	return city
@@ -779,7 +770,7 @@ function Cities.ensure(root: Instance)
 	if not needsBuild then
 		-- Current-version baked cities still need the facade migration. Their parts
 		-- can already be under GroundChunk models after startup streaming preparation.
-		for _, site in Cities.Sites do prepareDetails(root:FindFirstChild(site.name) :: Instance) end
+		for _, site in Cities.Sites do CityDetail.prepare(root:FindFirstChild(site.name) :: Instance) end
 		return
 	end
 	-- Migrate baked maps by removing only overlapping procedural islands, never player property.
@@ -804,7 +795,7 @@ function Cities.ensure(root: Instance)
 			build(root, site)
 			task.wait()
 		else
-			prepareDetails(city)
+			CityDetail.prepare(city)
 		end
 	end
 	local shells = root:FindFirstChild("Lod")

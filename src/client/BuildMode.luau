@@ -812,10 +812,8 @@ function BuildMode.start()
 			-- Snap the middle of the item's cells to the pointer, so a 1x2 item
 			-- covers the two cells nearest it rather than hanging off one end.
 			local area = Furniture.footprint(held.ItemId, 0, 0, held.R) :: { number }
-			local shop = Furniture.Rooms.Shop
-			local inShop = site ~= "Company" and point.Z >= shop[2] and point.Z <= shop[4]
-			return Furniture.snapPlacement(point.X - (area[1] + area[3]) / 2, inShop),
-				Furniture.snapPlacement(point.Z - (area[2] + area[4]) / 2, inShop)
+			return BaseGrid.snap(point.X - (area[1] + area[3]) / 2),
+				BaseGrid.snap(point.Z - (area[2] + area[4]) / 2)
 		end
 		return BaseGrid.snap(point.X), BaseGrid.snap(point.Z)
 	end
@@ -923,6 +921,14 @@ function BuildMode.start()
 		end
 		if send("Move", index, entry.X, entry.Z, r, site) then
 			choose(if placed()[index] then index else nil)
+		end
+	end
+	local function moveSelected()
+		local index = selected
+		local entry = index and placed()[index]
+		if entry and not held and not pending then
+			structures:suspend()
+			hold(entry.ItemId, index, entry.R)
 		end
 	end
 	local function pickUpFurniture(index: number)
@@ -1595,13 +1601,7 @@ function BuildMode.start()
 		end
 	end)
 	cancel.Activated:Connect(release)
-	move.Activated:Connect(function()
-		local entry = selected and placed()[selected]
-		if entry and not pending then
-			structures:suspend()
-			hold(entry.ItemId, selected, entry.R)
-		end
-	end)
+	move.Activated:Connect(moveSelected)
 	pickUp.Activated:Connect(function()
 		if selected then pickUpFurniture(selected) end
 	end)
@@ -1682,10 +1682,8 @@ function BuildMode.start()
 			aim(mousePosition())
 		elseif input.KeyCode == Enum.KeyCode.R and selected and placed()[selected] then
 			rotateSelected()
-		elseif input.KeyCode == Enum.KeyCode.M and selected and placed()[selected] and not held and not pending then
-			local entry = placed()[selected]
-			structures:suspend()
-			hold(entry.ItemId, selected, entry.R)
+		elseif input.KeyCode == Enum.KeyCode.M and selected and not held and not pending then
+			moveSelected()
 		elseif input.KeyCode == Enum.KeyCode.Delete and selected and placed()[selected] and not held then
 			pickUpFurniture(selected)
 		elseif structures and structures:key(input) then

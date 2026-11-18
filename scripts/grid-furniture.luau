@@ -53,10 +53,11 @@ for _, entry in {
  { ItemId = 'Freezer', X = -21.5, Z = 76.5, R = 1 },
  { ItemId = 'Freezer', X = 21.5, Z = 72, R = 3 },
 } do
- assert(Furniture.check({}, entry.ItemId, entry.X, entry.Z, entry.R) == nil, 'Freezer must fit near each shop wall')
+ assert(Furniture.checkRelocation({}, entry.ItemId, entry.X, entry.Z, entry.R) == nil, 'Legacy freezer position should clear the shop walls')
+ assert(Furniture.check({}, entry.ItemId, entry.X, entry.Z, entry.R) ~= nil, 'Shop placements must use the full furniture grid')
 end
-assert(Furniture.check({}, 'Freezer', 9.1, 72, 0) ~= nil, 'Shop placement must still snap to its finer grid')
 assert(Furniture.check({}, 'StorageRack', 18.5, -13.5, 0) ~= nil, 'House furniture must keep its original grid')
+assert(Furniture.check({}, 'StorageRack', 18.5, -13.5, 0, nil, 'Company') ~= nil, 'Company furniture must use the same grid')
 for _, entry in {
  { ItemId = 'Freezer', X = 22.5, Z = 72, R = 3 },
  { ItemId = 'Freezer', X = -22.5, Z = 72, R = 1 },
@@ -72,6 +73,13 @@ for _, entry in fresh.Furniture do
   assert(Furniture.clearOfShopWalls(entry), 'Starting shop fixture clips into a wall')
  end
 end
+local freezerStock = assert(Data.buyFurniture(fresh, 'Freezer'))
+assert(Data.placeFurniture(freezerStock, 'Freezer', 9.5, 76.5, 0) == nil, 'Off-grid shop placement was saved')
+local stockedShop = assert(Data.placeFurniture(freezerStock, 'Freezer', 9, 76.5, 0))
+local freezerIndex = #stockedShop.Furniture
+assert(Data.placeFurniture(stockedShop, freezerIndex, 9, 72.5, 0) == nil, 'Off-grid shop move was saved')
+local arrangedShop = assert(Data.placeFurniture(stockedShop, freezerIndex, 9, 72, 0))
+assert(arrangedShop.Furniture[freezerIndex].Z == 72, 'On-grid shop move did not save')
 assert(Grid.localToExtendedCell(0, -110) == nil, 'Distant water is outside the base grid')
 for _, id in Furniture.Order do
  for _, roomId in Furniture.allowedRooms(id) do

@@ -16,6 +16,9 @@ try {
   const spears = (await readFile(join(root, 'src/shared/Spears.luau'), 'utf8'))
     .replace(/require\(game:GetService\("ReplicatedStorage"\):WaitForChild\("Shared"\)\.SpearSkins\)/g, () => `(function() ${spearSkins} end)()`);
   const bait = await readFile(join(root, 'src/shared/Bait.luau'), 'utf8');
+  const cratePreview = (await readFile(join(root, 'src/client/BaitCratePreview.luau'), 'utf8'))
+    .replace('require(script.Parent.EditableMeshBudget)', '{}')
+    .replace('require(ReplicatedStorage.Shared.MeshFeatures)', '{ EditableMeshesEnabled = false }');
   const paths = await readFile(join(root, 'src/shared/Paths.luau'), 'utf8');
   const bobberSkins = await readFile(join(root, 'src/shared/BobberSkins.luau'), 'utf8');
   const bobberModel = (await readFile(join(root, 'src/shared/FishingBobber.luau'), 'utf8'))
@@ -155,6 +158,7 @@ print("Settings: " .. checks .. " data, mixer and desktop/mobile menu checks pas
       .replace(/require\(ReplicatedStorage.Shared.SpearSkins\)/g, () => `(function() ${spearSkins} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.Spears\)/g, () => `(function() ${spears} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.Bait\)/g, () => `(function() ${bait} end)()`)
+      .replace('require(script.Parent.BaitCratePreview)', () => `(function() ${cratePreview} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.BobberSkins\)/g, () => `(function() ${bobberSkins} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.FishingBobber\)/g, () => `(function() ${bobberModel} end)()`)
       .replace(/require\(ReplicatedStorage.Shared.BoatCatalog\)/g, 'BoatCatalog')

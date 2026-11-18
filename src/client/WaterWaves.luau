@@ -34,6 +34,7 @@ local WATER_CHECK_INTERVAL = 1.5
 local MAX_RIBBON_PROBES = 3
 -- Coastline exposure samples (eight rays each) are refreshed this often, one per frame.
 local COAST_REFRESH = 3
+local RIPPLE_REFRESH = 0.1
 -- A camera jump this far in one frame is a teleport: every cached sample is stale.
 local TELEPORT_DISTANCE = 200
 -- A ribbon that a recheck finds over land (or back over water) fades over this
@@ -260,9 +261,20 @@ function WaterWaves.start()
 		) == nil
 	end
 	local coloredAt = -math.huge
+	local rippleAt, rippleTarget = -math.huge, terrain.WaterWaveSize
+	local lastDirection: Vector3? = nil
+	local lastRibbonAt = -math.huge
+	local ribbonsVisible = false
+	local function hideRibbons()
+		if not ribbonsVisible then return end
+		ribbonsVisible = false
+		table.clear(hullBounds)
+		for _, ribbon in ribbons do
+			if ribbon.body.Enabled then ribbon.body.Enabled, ribbon.edge.Enabled = false, false end
+		end
+	end
 	local lastCamera: Vector3? = nil
 	local lastAcross, lastAlong = 0, 0
-	local lastDirection: Vector3? = nil
 	local cursor, due = 0, 0
 	local half = (GRID - 1) / 2
 	local coastSamples: { [string]: { exposure: number, at: number, x: number, z: number } } = {}
@@ -317,39 +329,62 @@ function WaterWaves.start()
 	end
 	-- Every frame: throttled updates stepped the crests visibly against the camera.
 	RunService.RenderStepped:Connect(profiled("WaterWaves", function(dt: number)
-		local step = dt
 		local camera = workspace.CurrentCamera
 		if not camera then
-			table.clear(hullBounds)
-			for _, ribbon in ribbons do
-				ribbon.body.Enabled, ribbon.edge.Enabled = false, false
-			end
+			hideRibbons()
+			lastCamera = nil
 			return
 		end
 		local now = workspace:GetServerTimeNow()
-		local state = Weather.getState(now, camera.CFrame.Position)
 		local cameraPosition = camera.CFrame.Position
+		local projected = Vector3.new(cameraPosition.X, Biomes.WaterLevel, cameraPosition.Z)
+		local jumped = not lastCamera or (cameraPosition - lastCamera).Magnitude > TELEPORT_DISTANCE
+		lastCamera = cameraPosition
+		filtered = false
+		if jumped then
+			table.clear(coastSamples)
+			lastDirection = nil
+		end
+		local state = nil
+		if jumped or now >= rippleAt then
+			rippleAt = now + RIPPLE_REFRESH
+			state = Weather.getState(now, cameraPosition)
+			local windStrength = math.clamp((state.windSpeed - 6) / 46, 0, 1)
+			rippleTarget = (0.025 + (MAX_RIPPLE_SIZE - 0.025) * windStrength ^ 1.3)
+				* math.sqrt(Weather.lakeExposure(projected))
+				* coastalExposureAt(projected, now)
+		end
 		-- The engine derives wave phase from elapsed time * speed, so any change in
 		-- speed (gusts, coastal exposure) jumps every ripple. Wind shows in the size.
 		if terrain.WaterWaveSpeed ~= WATER_WAVE_SPEED then
 			terrain.WaterWaveSpeed = WATER_WAVE_SPEED
 		end
+		local waveSize = terrain.WaterWaveSize
+		if math.abs(rippleTarget - waveSize) > 0.0005 then
+			waveSize += (rippleTarget - waveSize) * (1 - math.exp(-dt * 3))
+			terrain.WaterWaveSize = waveSize
+		end
+		if not WaterQuality.layeredEnabled() or cameraPosition.Y <= Biomes.WaterLevel - 0.5
+			or cameraPosition.Y >= Biomes.WaterLevel + 180 or not Biomes.inOceanBounds(cameraPosition) then
+			hideRibbons()
+			return
+		end
+		ribbonsVisible = true
+		state = state or Weather.getState(now, cameraPosition)
 		local direction = Vector3.new(state.windDirection.X, 0, state.windDirection.Z)
 		direction = if direction.Magnitude > 0.001 then direction.Unit else Vector3.xAxis
 		local across = Vector3.new(-direction.Z, 0, direction.X)
-		local projected = Vector3.new(cameraPosition.X, Biomes.WaterLevel, cameraPosition.Z)
 		local acrossOrigin = math.floor(projected:Dot(across) / CELL + 0.5) * CELL
 		-- World-space rows move continuously with the wind. Recenter by a whole
 		-- cell, keeping neighboring pooled crests in the same repeating grid.
 		local travel = (now * Weather.components[1].speed) % CELL
 		local alongOrigin = math.floor((projected:Dot(direction) - travel) / CELL + 0.5) * CELL + travel
-		filtered = false
 		-- Recentering moves the grid by whole cells, so most ribbons land where a neighbour has
 		-- already probed: carry those masks over and leave only the newly uncovered cells to
 		-- probe. A teleport or a sharp turn of the wind uncovers every cell.
 		local dAcross = math.round((acrossOrigin - lastAcross) / CELL)
 		local dAlong = math.round((alongOrigin - lastAlong) / CELL)
-		if not lastDirection or direction:Dot(lastDirection) < 0.999 then
+		if now - lastRibbonAt >= WATER_CHECK_INTERVAL or not lastDirection or direction:Dot(lastDirection) < 0.999 then
 			for _, ribbon in ribbons do
 				ribbon.water, ribbon.wet = nil, nil
 			end
@@ -367,66 +402,29 @@ function WaterWaves.start()
 			end
 		end
 		lastAcross, lastAlong, lastDirection = acrossOrigin, alongOrigin, direction
+		lastRibbonAt = now
 		-- Streamed shoreline changes what's water, so each mask is redone every interval
-		due = math.min(due + #ribbons * step / WATER_CHECK_INTERVAL, MAX_RIBBON_PROBES)
+		due = math.min(due + #ribbons * dt / WATER_CHECK_INTERVAL, MAX_RIBBON_PROBES)
 		for _ = 1, math.floor(due) do
 			cursor = cursor % #ribbons + 1
 			ribbons[cursor].water = nil
 			due -= 1
 		end
-		if lastCamera == nil or (cameraPosition - lastCamera).Magnitude > TELEPORT_DISTANCE then
-			table.clear(coastSamples)
-		end
-		lastCamera = cameraPosition
-		-- Fade native oscillations out near land without switching the whole
-		-- surface between three strengths whenever one probe crosses the shore.
-		local coastalExposure = coastalExposureAt(projected, now)
-		-- Shelter damps the large swells much more than the short wind ripples.
-		-- Using that tiny swell amplitude here made even a storm lake look calm.
-		local windStrength = math.clamp((state.windSpeed - 6) / 46, 0, 1)
-		local ripple = (0.025 + (MAX_RIPPLE_SIZE - 0.025) * windStrength ^ 1.3)
-			* math.sqrt(Weather.lakeExposure(projected))
-			* coastalExposure
-		-- Terrain water settings are engine state: skip the write once the easing has
-		-- settled instead of nudging it by a hair every frame.
-		local waveSize = terrain.WaterWaveSize
-		if math.abs(ripple - waveSize) > 0.0005 then
-			terrain.WaterWaveSize = waveSize + (ripple - waveSize) * (1 - math.exp(-step * 3))
-		end
-		if not WaterQuality.layeredEnabled() then
-			table.clear(hullBounds)
-			for _, ribbon in ribbons do
-				ribbon.body.Enabled, ribbon.edge.Enabled = false, false
-			end
-			return
-		end
-		local recolor = now - coloredAt >= 0.5
-		if recolor then
+		local bodyColor = nil
+		if now - coloredAt >= 0.5 then
 			coloredAt = now
-		end
-		local visible = cameraPosition.Y > Biomes.WaterLevel - 0.5
-			and cameraPosition.Y < Biomes.WaterLevel + 180
-			and Biomes.inOceanBounds(cameraPosition)
-		-- Underwater and high-altitude cameras cannot see these surface ribbons.
-		-- Keep their masks and wave phase ready, but skip hull geometry and samples.
-		if not visible then
-			table.clear(hullBounds)
-			for _, ribbon in ribbons do
-				ribbon.body.Enabled, ribbon.edge.Enabled = false, false
-			end
-			return
+			bodyColor = ColorSequence.new(terrain.WaterColor:Lerp(Color3.fromRGB(160, 205, 210), 0.32))
 		end
 		local footprints = hullFootprints(cameraPosition, across, direction, now)
 		local probes = MAX_RIBBON_PROBES
 		for _, ribbon in ribbons do
 			local center = across * (acrossOrigin + ribbon.column * CELL)
 				+ direction * (alongOrigin + ribbon.row * CELL)
-			local a, b = center - across * HALF_CREST, center + across * HALF_CREST
 			local height, amplitude = Weather.heightAt(center, now, state)
 			local width = math.clamp(8 + amplitude * 6, 8, 24)
-			local from, to = clearSpan(center, width / 2, footprints, across, direction)
-			if visible and ribbon.water == nil and probes > 0 then
+			if ribbon.water == nil and probes > 0 then
 				probes -= 1
+				local a, b = center - across * HALF_CREST, center + across * HALF_CREST
 				-- The ribbon travels downwind until its next recheck: probe its leading
 				-- edge that far ahead, so it starts fading before it reaches the shore.
 				local lead = width / 2 + Weather.components[1].speed * WATER_CHECK_INTERVAL
@@ -445,8 +443,8 @@ function WaterWaves.start()
 					then target
 					else ribbon.wet + math.clamp(
 						target - ribbon.wet,
-						-step / WET_FADE_SECONDS,
-						step / WET_FADE_SECONDS
+						-dt / WET_FADE_SECONDS,
+						dt / WET_FADE_SECONDS
 					)
 			end
 			local wet = ribbon.wet or 0
@@ -456,40 +454,42 @@ function WaterWaves.start()
 			-- that height intersect it repeatedly; ease them in as swells grow.
 			fade *= smoothstep(math.clamp((amplitude - 0.08) / 0.32, 0, 1))
 			fade *= smoothstep(wet)
-			local enabled = visible and fade > 0.01 and from ~= nil
-			ribbon.body.Enabled, ribbon.edge.Enabled = enabled, enabled
-			if not enabled then
+			local from, to = nil, nil
+			if fade > 0.01 then from, to = clearSpan(center, width / 2, footprints, across, direction) end
+			if not from or not to then
+				if ribbon.body.Enabled then ribbon.body.Enabled, ribbon.edge.Enabled = false, false end
 				continue
 			end
 			-- Draw only the stretch clear of hulls; the faded ends keep the cut soft.
-			a, b = center + across * from, center + across * to
+			local a, b = center + across * from, center + across * to
 			local curve = (to - from) / 3
-			ribbon.body.CurveSize0, ribbon.body.CurveSize1 = curve, curve
-			ribbon.edge.CurveSize0, ribbon.edge.CurveSize1 = curve, curve
 			local sampleA, sampleB = Weather.sample(a, now, state), Weather.sample(b, now, state)
-			ribbon.a.CFrame =
+			local frameA =
 				surfaceFrame(Vector3.new(a.X, Biomes.WaterLevel + sampleA.height + 0.06, a.Z), across, sampleA.normal)
-			ribbon.b.CFrame =
+			local frameB =
 				surfaceFrame(Vector3.new(b.X, Biomes.WaterLevel + sampleB.height + 0.06, b.Z), across, sampleB.normal)
-			ribbon.body.Width0, ribbon.body.Width1 = width, width
-			ribbon.edge.Width0, ribbon.edge.Width1 = 1.1 + amplitude * 0.9, 0.9 + amplitude * 0.7
 			-- ZOffset separates the two beam layers relative to the camera; it
 			-- cannot stop either layer intersecting the native water. Dissolve
 			-- the entire ribbon before any of its geometry reaches that surface.
-			local clearance = lowestSurface(ribbon.a.CFrame, ribbon.b.CFrame, curve, width)
-				- (Biomes.WaterLevel + terrain.WaterWaveSize + SURFACE_CLEARANCE)
+			local clearance = lowestSurface(frameA, frameB, curve, width) - (Biomes.WaterLevel + waveSize + SURFACE_CLEARANCE)
 			fade *= smoothstep(math.clamp(clearance / SURFACE_FADE_HEIGHT, 0, 1))
-			ribbon.body.Enabled, ribbon.edge.Enabled = fade > 0.01, fade > 0.01
+			local enabled = fade > 0.01
+			if ribbon.body.Enabled ~= enabled then ribbon.body.Enabled, ribbon.edge.Enabled = enabled, enabled end
+			if not enabled then continue end
+			ribbon.a.CFrame, ribbon.b.CFrame = frameA, frameB
+			if ribbon.body.CurveSize0 ~= curve then
+				ribbon.body.CurveSize0, ribbon.body.CurveSize1 = curve, curve
+				ribbon.edge.CurveSize0, ribbon.edge.CurveSize1 = curve, curve
+			end
+			ribbon.body.Width0, ribbon.body.Width1 = width, width
+			ribbon.edge.Width0, ribbon.edge.Width1 = 1.1 + amplitude * 0.9, 0.9 + amplitude * 0.7
 			-- A boundary row is recycled at GRID * CELL / 2 from the camera.
 			-- It must already be transparent there, including on small camera sway.
 			local distanceFade =
 				smoothstep(math.clamp((GRID * CELL * 0.5 - (center - projected).Magnitude) / CELL, 0, 1))
 			ribbon.body.LocalTransparencyModifier = 1 - fade * distanceFade * 0.68
 			ribbon.edge.LocalTransparencyModifier = 1 - fade * distanceFade * (0.32 + state.rain * 0.48)
-			if recolor then
-				ribbon.body.Color = ColorSequence.new(terrain.WaterColor:Lerp(Color3.fromRGB(160, 205, 210), 0.32))
-				ribbon.edge.Color = ColorSequence.new(Color3.fromRGB(205, 229, 230))
-			end
+			if bodyColor then ribbon.body.Color = bodyColor end
 		end
 	end))
 end

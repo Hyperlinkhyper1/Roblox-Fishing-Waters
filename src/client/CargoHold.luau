@@ -14,6 +14,7 @@ local Cargo = require(ReplicatedStorage.Shared.Cargo)
 local Inventory = require(ReplicatedStorage.Shared.Inventory)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local Bait = require(ReplicatedStorage.Shared.Bait)
+local BaitCratePreview = require(script.Parent.BaitCratePreview)
 local Passes = require(ReplicatedStorage.Shared.Gamepasses)
 local Catalog = require(ReplicatedStorage.Shared.AnglerCatalog)
 local FishCatch = require(ReplicatedStorage.Shared.FishCatch)
@@ -408,7 +409,9 @@ function CargoHold.start()
 		local top = list.CanvasPosition.Y
 		for _, card in cards do
 			local visible = card.Y + CARD_HEIGHT >= top and card.Y <= top + list.Size.Y.Offset
-			if visible and not card.Preview and card.Entry.Item and card.Entry.Item.Fish then
+			if visible and not card.Preview and card.Entry.Crate then
+				card.Preview = BaitCratePreview.show(card.Button, 3)
+			elseif visible and not card.Preview and card.Entry.Item and card.Entry.Item.Fish then
 				local fish = card.Entry.Item.Fish
 				local viewport = make("ViewportFrame", card.Button, { Position = UDim2.fromOffset(2, 9),
 					Size = UDim2.fromOffset(CARD - 4, 58), BackgroundTransparency = 1, ZIndex = 1, Active = false })
@@ -682,20 +685,8 @@ function CargoHold.start()
 				make("UIGradient", tile, { Rotation = 90, Color = ColorSequence.new(INK, GOLD:Lerp(HULL, 0.6)) })
 				make("Frame", tile, { Position = UDim2.new(0, 0, 1, -2), Size = UDim2.new(1, 0, 0, 2),
 					BackgroundColor3 = GOLD, BorderSizePixel = 0, ZIndex = 3 })
-				-- A small drawn crate: wooden box with a lid band and cross slats.
-				local box = make("Frame", tile, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12),
-					Size = UDim2.fromOffset(40, 30), BackgroundColor3 = rgb(150, 104, 58), BorderSizePixel = 0, ZIndex = 2 })
-				round(box, 3)
-				stroke(box, rgb(92, 60, 30), 2)
-				make("Frame", box, { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 7),
-					BackgroundColor3 = rgb(116, 78, 42), BorderSizePixel = 0, ZIndex = 2 })
-				for _, rotation in { 34, -34 } do
-					make("Frame", box, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 3),
-						Size = UDim2.fromOffset(40, 3), Rotation = rotation, BackgroundColor3 = rgb(116, 78, 42),
-						BorderSizePixel = 0, ZIndex = 2 })
-				end
-				text(tile, Bait.Crate.Name, { Name = "FishName", Position = UDim2.fromOffset(4, 44),
-					Size = UDim2.fromOffset(CARD - 8, 32), TextSize = 13, TextWrapped = true,
+				text(tile, Bait.Crate.Name, { Name = "FishName", Position = UDim2.fromOffset(4, 55),
+					Size = UDim2.fromOffset(CARD - 8, 24), TextSize = 13, TextWrapped = true,
 					TextXAlignment = Enum.TextXAlignment.Center, TextStrokeTransparency = 0.3, ZIndex = 3 })
 				text(tile, "×" .. crates, { Position = UDim2.fromOffset(4, CARD_HEIGHT - 19), Size = UDim2.fromOffset(CARD - 8, 16),
 					TextSize = 11, TextColor3 = CREAM, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 3 })

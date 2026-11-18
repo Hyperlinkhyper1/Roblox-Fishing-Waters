@@ -10,6 +10,7 @@ local Spears = require(ReplicatedStorage.Shared.Spears)
 local BobberSkins = require(ReplicatedStorage.Shared.BobberSkins)
 local FishingBobber = require(ReplicatedStorage.Shared.FishingBobber)
 local Bait = require(ReplicatedStorage.Shared.Bait)
+local BaitCratePreview = require(script.Parent.BaitCratePreview)
 
 local Bag = {}
 local white = Color3.fromRGB(245, 245, 245)
@@ -646,20 +647,21 @@ function Bag.show(parent, profile, player, narrow)
 			local ready = player:GetAttribute("BoatDataStatus") == "Ready"
 			local crates = profile.BaitCrates or 0
 			if crates > 0 and state.ItemQuery == "" then
-				local tile = panel(itemBody, "BaitCrate", UDim2.new(), UDim2.new(1, -7, 0, 112))
+				local tile = panel(itemBody, "BaitCrate", UDim2.new(), UDim2.new(1, -7, 0, 170))
 				outline(tile, Color3.fromRGB(244, 196, 76))
+				BaitCratePreview.show(tile, 4)
 				label(tile, Bait.Crate.Name .. "  ×" .. crates, 18, {
-					Position = UDim2.fromOffset(8, 6),
+					Position = UDim2.fromOffset(8, 60),
 					Size = UDim2.new(1, -16, 0, 26),
 					TextXAlignment = Enum.TextXAlignment.Center,
 				})
 				label(tile, string.format("%d–%d bait of one kind. Worms are common; rarer bait is stronger.", Bait.Crate.MinBait, Bait.Crate.MaxBait), 14, {
-					Position = UDim2.fromOffset(8, 32),
-					Size = UDim2.new(1, -16, 0, 34),
+					Position = UDim2.fromOffset(8, 86),
+					Size = UDim2.new(1, -16, 0, 42),
 					TextColor3 = grey,
 					TextXAlignment = Enum.TextXAlignment.Center,
 				})
-				action(tile, "OpenBaitCrate", "[Open crate]", UDim2.fromOffset(8, 72), UDim2.new(1, -16, 0, 32), function()
+				action(tile, "OpenBaitCrate", "[Open crate]", UDim2.fromOffset(8, 130), UDim2.new(1, -16, 0, 32), function()
 					if ready then
 						request:FireServer("OpenBaitCrate")
 					end

@@ -954,9 +954,12 @@ function StructureEditor.new(options)
 			clearPreview(); clearHighlight(); refresh()
 		end
 	end
-	-- Holding furniture pauses the structure tools on the Furniture tab; dropping resumes them.
+	-- Holding furniture shows its grid and pauses the structure tools.
 	function self:suspend()
-		if opened and section == "Furniture" and tool ~= nil then tool = nil; apply(false) end
+		if opened and (section ~= "Furniture" or tool ~= nil) then
+			section, tool = "Furniture", nil
+			apply(false)
+		end
 	end
 	function self:resume()
 		if opened and section == "Furniture" and tool == nil then tool = "Select"; apply(false) end

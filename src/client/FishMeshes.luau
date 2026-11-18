@@ -1,7 +1,7 @@
 -- Gives loft fish (FishModels.LOFT_TAG) their smooth skin on this client,
 -- wherever they are: hands, freezers, customers' arms and menu viewports.
--- EditableMesh never replicates, so servers build the sphere body and each
--- client swaps it out locally. Skins copy their colour, material and
+-- Servers build the sphere body and each client swaps it out for baked mesh
+-- parts once the entire skin is ready. Skins copy their colour, material and
 -- transparency from the body's Chest swatches, so mutation painting and the
 -- Rainbow/Glitch animations carry over. If a mesh can't be made, the sphere
 -- body simply stays.
@@ -37,8 +37,11 @@ local function bandsFor(spec)
 end
 local PAINTED = { "Color", "Material", "Reflectance", "Transparency" }
 local started = false
--- [fishId] = { [band name] = { part, mesh, size, offset } }, false when unavailable.
-local skins: { [string]: any } = {}
+type SkinBand = { part: MeshPart, offset: Vector3 }
+type Skin = { [string]: SkinBand }
+local skins: { [string]: Skin } = {}
+local recentSkins: { string } = {}
+local MAX_CACHED_SKINS = 48
 local skinErrors: { [string]: string } = {}
 -- A failed species is retried after this long (the budget may have freed up).
 local SKIN_RETRY_AFTER = 30
@@ -46,20 +49,15 @@ local skinFailedAt: { [string]: number } = {}
 -- Fish skins outrank cosmetic meshes such as the swell water sheet.
 local ALLOCATE = { evict = true }
 local FORCED = { evict = true, force = true }
--- Part creation and fixed-size copying yield. Only one species may hold a
+-- Baking and part creation yield. Only one species may hold a
 -- temporary dynamic mesh at a time, even when many tagged fish arrive together.
 local building = false
+-- False while loading, true once every band is attached.
 local hydrated: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
-local connections: { [Model]: { RBXScriptConnection } } = setmetatable({}, { __mode = "k" }) :: any
 
--- A client-skinned fish can be cloned, parked outside the data model or have
--- its shared skin reclaimed. Restore its original body before any yielding
--- allocation, so a failed rebuild cannot leave the copied body invisible.
+-- A cloned fish can already have a skin, with no bindings to its new swatches.
+-- Restore its original body while the skin is being attached to the clone.
 local function restoreBody(model: Model)
-	for _, connection in connections[model] or {} do
-		connection:Disconnect()
-	end
-	connections[model] = nil
 	for _, item in model:GetDescendants() do
 		if item.Name == "LoftSkin" then
 			item:Destroy()
@@ -75,37 +73,22 @@ local function restoreBody(model: Model)
 	end
 end
 
--- Skins of species no fish in the game is wearing (caught fish sold, menus
--- closed) are rebuilt on demand, so they give their meshes back when another
--- species can't fit. Fish held outside the game are re-skinned when they return.
-local function releaseIdleSkins(): number
-	local inUse: { [string]: boolean } = {}
-	for model in hydrated do
-		local fishId = model:GetAttribute("LoftFish")
-		if model.Parent and type(fishId) == "string" then
-			inUse[fishId] = true
-		end
+-- Baked content is held by each MeshPart using it. Trim old templates without
+-- affecting fish that are still showing those skins.
+local function touchSkin(fishId: string)
+	local index = table.find(recentSkins, fishId)
+	if index then
+		table.remove(recentSkins, index)
 	end
-	local freed = 0
-	for fishId, bands in skins do
-		if bands and not inUse[fishId] then
-			for model in hydrated do
-				if model:GetAttribute("LoftFish") == fishId then
-					restoreBody(model)
-					hydrated[model] = nil
-				end
-			end
-			for _, built in bands do
-				built.part:Destroy()
-				built.mesh:Destroy()
-				freed += 1
-			end
-			skins[fishId] = nil
+	table.insert(recentSkins, fishId)
+	if #recentSkins > MAX_CACHED_SKINS then
+		local oldest = table.remove(recentSkins, 1) :: string
+		for _, band in skins[oldest] do
+			band.part:Destroy()
 		end
+		skins[oldest] = nil
 	end
-	return freed
 end
-EditableMeshBudget.onReclaim("IdleFishSkins", releaseIdleSkins)
 
 -- One line on what this client holds, for the mesh test.
 local function cacheStatus(): string
@@ -122,8 +105,8 @@ local function cacheStatus(): string
 end
 
 -- One band of the skin as a mesh part, its vertices centred on its bounds.
--- Built in the species' shared scratch mesh; only the fixed copy is kept.
-local function buildBand(scratch: EditableMesh, rings, band, options): (MeshPart?, Vector3?, EditableMesh?, string?)
+-- Bake it to static mesh content before reusing the scratch mesh for the next band.
+local function buildBand(scratch: EditableMesh, rings, band): (MeshPart, Vector3)
 	local scale = FishModels.SCALE
 	local steps = math.max(2, math.ceil((band.to - band.from) * ANGLE_STEPS))
 	local points, normals = {}, {}
@@ -156,131 +139,117 @@ local function buildBand(scratch: EditableMesh, rings, band, options): (MeshPart
 	end
 	local center = (low + high) / 2
 
-	local mesh: EditableMesh? = nil
-	local ok, part = pcall(function()
-		local scratchMesh = scratch
-		EditableMeshBudget.clear(scratchMesh)
-		local vertexIds, normalIds = {}, {}
-		for index, point in points do
-			vertexIds[index] = scratchMesh:AddVertex(point - center)
-			normalIds[index] = scratchMesh:AddNormal(normals[index])
-		end
-		-- Wound so (b - a) x (c - a) faces outward, the side Roblox draws.
-		local function face(a: number, b: number, c: number)
-			local pa = points[a]
-			local cross = (points[b] - pa):Cross(points[c] - pa)
-			if cross.Magnitude < 1e-10 then
-				return
-			end
-			if cross:Dot(normals[a] + normals[b] + normals[c]) < 0 then
-				b, c = c, b
-			end
-			local id = scratchMesh:AddTriangle(vertexIds[a], vertexIds[b], vertexIds[c])
-			scratchMesh:SetFaceNormals(id, { normalIds[a], normalIds[b], normalIds[c] })
-		end
-		for _, side in sides do
-			local grid = grids[side]
-			for ringIndex = 1, #rings - 1 do
-				local row, nextRow = grid[ringIndex], grid[ringIndex + 1]
-				for step = 0, steps - 1 do
-					face(row[step], nextRow[step], nextRow[step + 1])
-					face(row[step], nextRow[step + 1], row[step + 1])
-				end
-			end
-			for step = 0, steps - 1 do
-				face(snout, grid[1][step], grid[1][step + 1])
-				face(tail, grid[#rings][step], grid[#rings][step + 1])
-			end
-		end
-
-		mesh = EditableMeshBudget.fixed(scratchMesh, options, true)
-		if not mesh then
-			return nil
-		end
-		return AssetService:CreateMeshPartAsync(
-			Content.fromObject(mesh),
-			{ CollisionFidelity = Enum.CollisionFidelity.Box }
-		)
-	end)
-	if not ok or not part then
-		if mesh then
-			mesh:Destroy()
-		end
-		if not ok then
-			warn("[FishMeshes] Could not create a fish skin: " .. tostring(part))
-		end
-		return nil, nil, nil, if not ok then tostring(part) else (EditableMeshBudget.failureReason() or "Mesh part creation returned nil")
+	EditableMeshBudget.clear(scratch)
+	local vertexIds, normalIds = {}, {}
+	for index, point in points do
+		vertexIds[index] = scratch:AddVertex(point - center)
+		normalIds[index] = scratch:AddNormal(normals[index])
 	end
+	-- Wound so (b - a) x (c - a) faces outward, the side Roblox draws.
+	local function face(a: number, b: number, c: number)
+		local pa = points[a]
+		local cross = (points[b] - pa):Cross(points[c] - pa)
+		if cross.Magnitude < 1e-10 then
+			return
+		end
+		if cross:Dot(normals[a] + normals[b] + normals[c]) < 0 then
+			b, c = c, b
+		end
+		local id = scratch:AddTriangle(vertexIds[a], vertexIds[b], vertexIds[c])
+		scratch:SetFaceNormals(id, { normalIds[a], normalIds[b], normalIds[c] })
+	end
+	for _, side in sides do
+		local grid = grids[side]
+		for ringIndex = 1, #rings - 1 do
+			local row, nextRow = grid[ringIndex], grid[ringIndex + 1]
+			for step = 0, steps - 1 do
+				face(row[step], nextRow[step], nextRow[step + 1])
+				face(row[step], nextRow[step + 1], row[step + 1])
+			end
+		end
+		for step = 0, steps - 1 do
+			face(snout, grid[1][step], grid[1][step + 1])
+			face(tail, grid[#rings][step], grid[#rings][step + 1])
+		end
+	end
+
+	local result, content = AssetService:CreateDataModelContentAsync(Content.fromObject(scratch))
+	if result ~= Enum.CreateContentResult.Success or not content then
+		error("CreateDataModelContentAsync: " .. tostring(result), 0)
+	end
+	local part = AssetService:CreateMeshPartAsync(content, {
+		CollisionFidelity = Enum.CollisionFidelity.Box,
+		RenderFidelity = Enum.RenderFidelity.Precise,
+	})
 	part.Size = high - low
-	return part, center, mesh
+	return part, center
 end
 
 -- Band templates for a species, built once and shared by every fish of it.
 -- `force` (the mesh test) retries a failed species and the budget right away.
-local function skin(fishId: string, force: boolean?)
+local function skin(fishId: string, force: boolean?, model: Model?): Skin?
 	while building do
 		task.wait()
 	end
+	if model and not model.Parent then
+		return nil
+	end
 	local cached = skins[fishId]
 	if cached then
+		touchSkin(fishId)
 		return cached
-	elseif cached == false then
-		local failedAt = skinFailedAt[fishId]
-		if not failedAt or (not force and os.clock() - failedAt < SKIN_RETRY_AFTER) then
-			return false
-		end
+	end
+	local failedAt = skinFailedAt[fishId]
+	if failedAt and not force and os.clock() - failedAt < SKIN_RETRY_AFTER then
+		return nil
 	end
 	local spec = FishModels.loft(fishId)
 	if not spec then
-		skins[fishId] = false
+		skinFailedAt[fishId] = os.clock()
 		skinErrors[fishId] = "No smooth-body geometry exists for " .. fishId
-		return false
+		return nil
 	end
 	building = true
 	local options = if force then FORCED else ALLOCATE
-	local bands = {}
-	local buildError: string? = nil
+	local bands: Skin = {}
+	local bandName = "Scratch mesh"
 	-- Fish and sharks share the scratch lock; neither can consume a second
-	-- maximum-sized dynamic allocation while the other is making fixed skins.
+	-- maximum-sized dynamic allocation while the other is making skins.
 	local ok, complete = pcall(EditableMeshBudget.withScratch, options, function(scratch)
 		for _, band in bandsFor(spec) do
-			local part, center, mesh, reason = buildBand(scratch, spec.rings, band, options)
-			if not part or not center or not mesh then
-				buildError = band.name .. " band: " .. tostring(reason or "unknown mesh creation failure")
-				return false
-			end
-			bands[band.name] = { part = part, mesh = mesh, size = part.Size, offset = center - spec.anchorPosition }
+			bandName = band.name .. " band"
+			local part, center = buildBand(scratch, spec.rings, band)
+			bands[band.name] = { part = part, offset = center - spec.anchorPosition }
 		end
 		return true
 	end)
+	building = false
 	if not ok or not complete then
 		for _, built in bands do
 			built.part:Destroy()
-			built.mesh:Destroy()
 		end
-		skins[fishId] = false
 		skinFailedAt[fishId] = os.clock()
-		skinErrors[fishId] = if not ok then tostring(complete) else (buildError or "Scratch mesh: " .. (EditableMeshBudget.failureReason() or "EditableMesh allocation failed"))
-		building = false
-		return false
+		local reason = if ok then EditableMeshBudget.failureReason() or "EditableMesh allocation failed" else tostring(complete)
+		skinErrors[fishId] = bandName .. ": " .. reason
+		return nil
 	end
 	skins[fishId] = bands
+	touchSkin(fishId)
 	skinErrors[fishId] = nil
-	building = false
+	skinFailedAt[fishId] = nil
 	return bands
 end
 
--- Exercise the same seven bands used by a rainbow trout, then report whether
--- tagged fish currently in this client actually received their skins.
--- Tagged fish still wearing the sphere body whose species failed to build.
-local function retryUnskinned(force: boolean?)
+-- Retry tagged fish still wearing their fallback bodies.
+local function retryUnskinned()
 	for _, model in CollectionService:GetTagged(FishModels.LOFT_TAG) do
-		if model:IsA("Model") and model.Parent and not hydrated[model] then
-			task.spawn(FishMeshes.hydrate, model, force)
+		if model:IsA("Model") and model.Parent and hydrated[model] == nil then
+			task.spawn(FishMeshes.hydrate, model)
 		end
 	end
 end
 
+-- Exercise the Rainbow Trout geometry, then check the fish already on this client.
 function FishMeshes.diagnose(): string
 	if not MeshFeatures.EditableMeshesEnabled then
 		return "Mesh test FAILED: EditableMeshesEnabled is off."
@@ -295,19 +264,32 @@ function FishMeshes.diagnose(): string
 	if not result then
 		return "Mesh test FAILED: " .. (skinErrors.RainbowTrout or "unknown failure") .. " " .. EditableMeshBudget.status() .. " " .. cacheStatus()
 	end
-	retryUnskinned(true)
+	local models = CollectionService:GetTagged(FishModels.LOFT_TAG)
+	local retried: { [string]: boolean } = {}
+	for _, model in models do
+		if model:IsA("Model") and model.Parent then
+			while hydrated[model] == false and model.Parent do
+				task.wait()
+			end
+			local fishId = model:GetAttribute("LoftFish")
+			if hydrated[model] == nil and model.Parent and type(fishId) == "string" then
+				FishMeshes.hydrate(model, not retried[fishId])
+				retried[fishId] = true
+			end
+		end
+	end
 	local total, skinned, pending = 0, 0, 0
 	local firstFailure: string? = nil
-	for _, model in CollectionService:GetTagged(FishModels.LOFT_TAG) do
+	for _, model in models do
 		if model:IsA("Model") and model.Parent then
 			total += 1
-			if model:FindFirstChild("LoftSkin", true) then
+			if hydrated[model] then
 				skinned += 1
 			else
 				pending += 1
 				local fishId = model:GetAttribute("LoftFish")
-				if type(fishId) == "string" and skinErrors[fishId] then
-					firstFailure = firstFailure or (fishId .. ": " .. skinErrors[fishId])
+				if type(fishId) == "string" then
+					firstFailure = firstFailure or (fishId .. ": " .. (skinErrors[fishId] or "Body swatches unavailable"))
 				end
 			end
 		end
@@ -317,13 +299,13 @@ function FishMeshes.diagnose(): string
 		return "Mesh test PARTIAL: " .. summary .. " Failure: " .. firstFailure .. " " .. EditableMeshBudget.status() .. " " .. cacheStatus()
 	end
 	if pending > 0 then
-		return "Mesh test PARTIAL: " .. summary .. " Some fish may still be loading."
+		return "Mesh test PARTIAL: " .. summary .. " A tagged fish is missing its species ID."
 	end
 	return "Mesh test PASS: " .. summary .. " Spots and fins remain separate parts."
 end
 
 function FishMeshes.hydrate(model: Instance, force: boolean?)
-	if not model:IsA("Model") or hydrated[model] then
+	if not model:IsA("Model") or not model.Parent or hydrated[model] ~= nil then
 		return
 	end
 	local fishId = model:GetAttribute("LoftFish")
@@ -331,14 +313,14 @@ function FishMeshes.hydrate(model: Instance, force: boolean?)
 		return
 	end
 	restoreBody(model)
-	hydrated[model] = true
-	local bands = skin(fishId, force)
-	local spec = FishModels.loft(fishId)
-	if not bands or not spec or not model.Parent then
+	hydrated[model] = false
+	local bands = skin(fishId, force, model)
+	if not bands or not model.Parent then
 		-- Left as a sphere; retryUnskinned() may try again once the budget frees.
 		hydrated[model] = nil
 		return
 	end
+	local spec = FishModels.loft(fishId)
 	local swatches: { [string]: BasePart } = {}
 	for _, item in model:GetDescendants() do
 		local swatch = item:GetAttribute("LoftSwatch")
@@ -362,10 +344,11 @@ function FishMeshes.hydrate(model: Instance, force: boolean?)
 		part.Massless = true
 		part.CanCollide, part.CanTouch, part.CanQuery = false, false, false
 		part.CastShadow = anchor.CastShadow
-		parts[band] = part
+		parts[band] = { part = part, size = template.part.Size, offset = template.offset }
 	end
 	local function paint()
-		for band, part in parts do
+		for band, skinPart in parts do
+			local part = skinPart.part
 			local a, b = swatches[band.a], swatches[band.b]
 			part.Color = a.Color:Lerp(b.Color, band.mix)
 			part.Material = a.Material
@@ -380,10 +363,10 @@ function FishMeshes.hydrate(model: Instance, force: boolean?)
 		for _, weld in welds do
 			weld.Enabled = false
 		end
-		for band, part in parts do
-			local template = bands[band.name]
-			part.Size = template.size * ratio
-			part.CFrame = anchor.CFrame * CFrame.new(template.offset * ratio)
+		for _, skinPart in parts do
+			local part = skinPart.part
+			part.Size = skinPart.size * ratio
+			part.CFrame = anchor.CFrame * CFrame.new(skinPart.offset * ratio)
 		end
 		for _, weld in welds do
 			weld.Enabled = true
@@ -391,21 +374,20 @@ function FishMeshes.hydrate(model: Instance, force: boolean?)
 	end
 	paint()
 	place()
-	for _, part in parts do
+	for _, skinPart in parts do
+		local part = skinPart.part
 		local weld = Instance.new("WeldConstraint")
 		weld.Part0, weld.Part1 = anchor, part
 		weld.Parent = part
 		table.insert(welds, weld)
 		part.Parent = anchor.Parent
 	end
-	local bound = {}
-	connections[model] = bound
 	for _, swatch in swatches do
 		for _, property in PAINTED do
-			table.insert(bound, swatch:GetPropertyChangedSignal(property):Connect(paint))
+			swatch:GetPropertyChangedSignal(property):Connect(paint)
 		end
 	end
-	table.insert(bound, anchor:GetPropertyChangedSignal("Size"):Connect(place))
+	anchor:GetPropertyChangedSignal("Size"):Connect(place)
 	-- Hide the sphere body visually only; its parts keep carrying particles,
 	-- lights and the colours the skin copies.
 	for _, item in model:GetDescendants() do
@@ -417,6 +399,7 @@ function FishMeshes.hydrate(model: Instance, force: boolean?)
 			end
 		end
 	end
+	hydrated[model] = true
 end
 
 function FishMeshes.start()

@@ -117,10 +117,16 @@ for _, size in {{1920, 1080}, {1280, 720}, {844, 390}, {390, 844}, {640, 360}} d
         end
       end
       checkPointer()
+      held = {ItemId = "Freezer", R = 0}
+      mouse = project(houseFrame * Vector3.new(11.75, FLOOR_Y, 72.5))
+      local freezerX, freezerZ = pointerSpot(mousePosition())
+      assert(freezerX == 9 and freezerZ == 72, "Shop furniture preview must snap both axes to the same grid as home")
+      held = nil
+      checks += 1
       -- Run real preview validation and placement at the back/side walls. A green
       -- mouse preview must submit the same tile as an inset-adjusted touch/click.
       do
-        local held, spot, pending, sent = nil, nil, false, nil
+        local spot, pending, sent = nil, false, nil
         local state = {Placed = {}}
         local function placed() return state.Placed end
         local function updatePreview() end

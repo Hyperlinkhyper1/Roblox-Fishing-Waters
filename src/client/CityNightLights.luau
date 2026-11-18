@@ -13,6 +13,7 @@
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local DayNight = require(ReplicatedStorage.Shared.DayNight)
 
 local CityNightLights = {}
@@ -28,6 +29,8 @@ local MAX_LIT = { 24, 40, 64 } -- by graphics tier: Performance, Balanced, Quali
 CityNightLights.MAX_LIT = MAX_LIT
 local REFRESH = 0.5
 local MOVE_STUDS = 16 -- camera travel that forces a fresh choice
+local UPDATES_PER_FRAME = 24
+local FRAME_BUDGET = 0.001
 local rgb = Color3.fromRGB
 
 export type Candidate = { position: Vector3, at: number }
@@ -63,6 +66,8 @@ function CityNightLights.start()
 	local originals: { [BasePart]: Original } = setmetatable({}, { __mode = "k" }) :: any
 	local lights: { [Light]: Candidate } = {}
 	local lit: { [Light]: boolean } = {}
+	local chosen: { [Light]: boolean } = {}
+	local pending: { [Instance]: boolean } = {}
 	local lightsDirty = true
 	local darkness = DayNight.darkness(DayNight.clockTime())
 
@@ -95,10 +100,8 @@ function CityNightLights.start()
 	end
 
 	local function setLight(light: Light, on: boolean)
-		if lit[light] ~= on then
-			lit[light] = on
-			light.Enabled = on
-		end
+		lit[light] = on
+		if light.Enabled ~= on then light.Enabled = on end
 	end
 
 	local function add(instance: Instance)
@@ -110,7 +113,7 @@ function CityNightLights.start()
 			-- Lamps are anchored, so the position is read once
 			lights[instance] = { position = holder.Position, at = threshold(instance) }
 			lit[instance] = nil
-			setLight(instance, false) -- built enabled; wait for the next choice
+			setLight(instance, false)
 			lightsDirty = true
 		elseif instance:IsA("BasePart") then
 			if tracked[instance] ~= nil then
@@ -119,9 +122,10 @@ function CityNightLights.start()
 			if not originals[instance] then
 				originals[instance] = { material = instance.Material, color = instance.Color }
 			end
-			-- Built unlit: only a part that should glow needs writing
-			tracked[instance] = false
-			applyGlow(instance, darkness >= threshold(instance))
+			local original = originals[instance]
+			-- A returning part may still have its previous local appearance.
+			tracked[instance] = instance.Material ~= original.material or instance.Color ~= original.color
+			if tracked[instance] ~= (darkness >= threshold(instance)) then pending[instance] = true end
 		end
 	end
 
@@ -129,10 +133,27 @@ function CityNightLights.start()
 		if lights[instance :: Light] then
 			lights[instance :: Light] = nil
 			lit[instance :: Light] = nil
+			chosen[instance :: Light] = nil
 			lightsDirty = true
 		end
 		tracked[instance] = nil
+		pending[instance] = nil
 	end
+
+	-- Arriving windows and lamps share a budget for render state changes.
+	RunService.Heartbeat:Connect(function()
+		local deadline, count = os.clock() + FRAME_BUDGET, 0
+		for instance in pending do
+			if count >= UPDATES_PER_FRAME or os.clock() >= deadline then break end
+			pending[instance] = nil
+			if lights[instance :: Light] then
+				setLight(instance :: Light, chosen[instance :: Light] == true)
+			elseif tracked[instance] ~= nil then
+				applyGlow(instance :: BasePart, darkness >= threshold(instance))
+			end
+			count += 1
+		end
+	end)
 
 	for _, tag in { GLOW_TAG, LIGHT_TAG } do
 		CollectionService:GetInstanceAddedSignal(tag):Connect(add)
@@ -190,10 +211,8 @@ function CityNightLights.start()
 			if now ~= darkness then
 				darkness = now
 				lightsDirty = true
-				for instance in tracked do
-					if instance.Parent then
-						applyGlow(instance :: BasePart, darkness >= threshold(instance))
-					end
+				for instance, on in tracked do
+					if on ~= (darkness >= threshold(instance)) then pending[instance] = true end
 				end
 			end
 		end
@@ -208,10 +227,14 @@ function CityNightLights.start()
 			local focus = camera and camera.CFrame.Position
 			if focus and (lightsDirty or not lastFocus or (focus - lastFocus).Magnitude > MOVE_STUDS) then
 				lightsDirty, lastFocus = false, focus
-				local chosen = CityNightLights.choose(lights, focus, darkness, MAX_LIT[tier()], LIGHT_DISTANCE)
-				for light in lights do
-					setLight(light, chosen[light] == true)
+				local nextChosen = CityNightLights.choose(lights, focus, darkness, MAX_LIT[tier()], LIGHT_DISTANCE)
+				for light in chosen do
+					if not nextChosen[light] then pending[light] = true end
 				end
+				chosen = nextChosen
+			end
+			for light in chosen do
+				if not lit[light] or not light.Enabled then pending[light] = true end
 			end
 		end
 	end)

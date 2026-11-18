@@ -16,6 +16,13 @@ const files = ['src/shared/Cargo.luau', 'src/shared/Inventory.luau', 'src/shared
   'src/server/AnglerData.luau', 'src/server/CargoService.luau', 'src/client/CargoHold.luau'];
 const sources = await Promise.all(files.map(read));
 let harness = await read('scripts/inventory.luau');
+const vectorMock = (await read('scripts/harbour-geometry.luau')).split('local Vector2 = vectorType(2)')[0];
+const frameMock = (await read('scripts/drydock-geometry.luau')).split('-- SHARED_PRIMITIVES --')[1].split('local function typeof')[0];
+harness = harness.replace('-- PREVIEW_MATH --', () => vectorMock + 'local Vector3 = vectorType(3)\n' + frameMock);
+const cratePreview = (await read('src/client/BaitCratePreview.luau'))
+  .replace('require(script.Parent.EditableMeshBudget)', 'MeshBudget')
+  .replace('require(ReplicatedStorage.Shared.MeshFeatures)', '{ EditableMeshesEnabled = true }');
+harness = harness.replace('-- CRATE_PREVIEW_SOURCE --', () => cratePreview);
 const worker = await read('src/server/CustomerService.luau');
 const workerStart = worker.indexOf('\tlocal function cargo(id: string)');
 const workerEnd = worker.indexOf('\n\tlocal shelf = {}', workerStart);
@@ -24,6 +31,7 @@ harness = harness.replace('-- WORKER_CARGO_SOURCE --', () => worker.slice(worker
 const names = ['GRID', 'INVENTORY', 'BACKPACKS', 'DATA', 'SERVER', 'CLIENT'];
 const dependencies = {
   'ReplicatedStorage.Shared.Cargo': 'Grid', 'ReplicatedStorage.Shared.Inventory': 'Inventory',
+  'ReplicatedStorage.Shared.Recipes': '(function()\n' + await read('src/shared/Recipes.luau') + '\nend)()',
   'ReplicatedStorage.Shared.BackpackCatalog': 'Backpacks', 'ReplicatedStorage.Shared.BoatCatalog': 'BoatCatalog',
   'ReplicatedStorage.Shared.AnglerCatalog': 'Catalog', 'ReplicatedStorage.Shared.Aboard': 'function() return aboard end',
   'ReplicatedStorage.Shared.FishCatch': '{formatKg=function(kg) return tostring(kg) .. "kg" end}',
@@ -33,6 +41,7 @@ const dependencies = {
   'ReplicatedStorage.Shared.Recipes': '{Items = {}}',
   'ReplicatedStorage.Shared.Admin': '{isAdmin=function() return false end}',
   'ReplicatedStorage.Shared.Bait': '(function()\n' + await read('src/shared/Bait.luau') + '\nend)()',
+  'script.Parent.BaitCratePreview': 'BaitCratePreview',
   'script.Parent.AnglerData': 'Data', 'script.Parent.BoatService': 'Boats',
   'script.Parent.GamepassService': '{ownsAutoStore=function() return owns end}',
 };

@@ -26,6 +26,9 @@ local SeabedCarpet = {}
 
 -- The deep floor is out of sight further away than this, even from a diver.
 local RADIUS = 320
+-- From above the surface, the deep carpet fades into the water well before the diver's view distance.
+local SURFACE_RADIUS = 192
+local SURFACE_KEEP_MARGIN = 48
 -- The harbour lake's grid is four times as dense (24-stud cells) and lies around the village,
 -- where the camera spends most of its time; past this the floor is lost under the surface
 -- glare anyway. At 320 it was ~700 patches (~7k parts) drawn under the water at all times.
@@ -62,13 +65,22 @@ function SeabedCarpet.tracker(data, sample, place, clock)
 		taken[grid.id] = Rules.occupied(grid, data.gardens)
 	end
 	local inLake = Rules.lakeTest(data.lake)
-	-- [key] = { model = Model?, x, z, keep, tries, retryAt }
+	-- [key] = { model = Model?, x, z, lake, tries, retryAt }
 	local cells: { [number]: any } = {}
 	local entries = {}
 	local cleanupCursor, candidateCursor = 1, 0
 	local ranges = {}
+	local surfaceView = false
 
 	local function update(position: Vector3, now: number): number
+		-- Hysteresis keeps camera bob and the waterline from repeatedly replacing a ring of patches.
+		if position.Y > Biomes.WaterLevel + 3 then
+			surfaceView = true
+		elseif position.Y <= Biomes.WaterLevel then
+			surfaceView = false
+		end
+		local oceanRadius = if surfaceView then SURFACE_RADIUS else RADIUS
+		local oceanKeep = oceanRadius + (if surfaceView then SURFACE_KEEP_MARGIN else KEEP_MARGIN)
 		local deadline = clock() + FRAME_BUDGET
 		local built = 0
 		-- A teleport used to destroy the entire old neighbourhood in one frame.
@@ -81,7 +93,8 @@ function SeabedCarpet.tracker(data, sample, place, clock)
 			end
 			local entry = entries[cleanupCursor]
 			scanned += 1
-			if math.max(math.abs(entry.x - position.X), math.abs(entry.z - position.Z)) > entry.keep then
+			local keep = if entry.lake then LAKE_RADIUS + KEEP_MARGIN else oceanKeep
+			if math.max(math.abs(entry.x - position.X), math.abs(entry.z - position.Z)) > keep then
 				if entry.model then
 					entry.model:Destroy()
 				end
@@ -95,11 +108,11 @@ function SeabedCarpet.tracker(data, sample, place, clock)
 		end
 		local total = 0
 		for index, grid in grids do
-			local radius = if grid.lake then LAKE_RADIUS else RADIUS
+			local radius = if grid.lake then LAKE_RADIUS else oceanRadius
 			local x0, x1, z0, z1 = Rules.range(grid, position.X, position.Z, radius)
 			local columns = math.max(0, z1 - z0 + 1)
 			local count = math.max(0, x1 - x0 + 1) * columns
-			ranges[index] = { x = x0, z = z0, columns = columns, count = count, radius = radius }
+			ranges[index] = { x = x0, z = z0, columns = columns, count = count }
 			total += count
 		end
 		-- The cursor survives frames and camera movement. Limiting scans as well as
@@ -127,7 +140,7 @@ function SeabedCarpet.tracker(data, sample, place, clock)
 					key = key,
 					x = cx * grid.cell + grid.cell / 2,
 					z = cz * grid.cell + grid.cell / 2,
-					keep = range.radius + KEEP_MARGIN,
+					lake = grid.lake,
 					tries = 0,
 					retryAt = 0,
 				}

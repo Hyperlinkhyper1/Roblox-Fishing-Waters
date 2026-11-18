@@ -37,11 +37,6 @@ local FADE_FROM, FADE_HEIGHT = 0.22, 0.35
 -- Clearance kept beneath a hull's sole so open decks never flood.
 local HULL_CLEARANCE = 0.3
 local HULL_MARGIN = 1.5
-local SUNKEN = -2
--- A vertex whose swell is weaker than this can't rise to FADE_FROM, so it is fully
--- transparent: it is written flat once and then left alone. Sheltered water (the
--- harbour, the lake) otherwise rewrote and re-uploaded the whole mesh every frame.
-local FLAT_AMPLITUDE = 0.03
 -- Hull boxes are rigid with the root; GetBoundingBox walks every part, so it is
 -- redone this often rather than every frame for every boat in range.
 local HULL_BOX_REFRESH = 2
@@ -203,8 +198,7 @@ function SwellSurface.start()
 		-- World grid cells, kept while inside the sheet: wet probe and swell strength.
 		local cells = {}
 		local alphas = table.create(size * size, -1)
-		-- Vertices already written flat since the sheet last moved.
-		local flat = table.create(size * size, false)
+		local caps = {}
 		local hullBoxes: { [Model]: { root: BasePart, offset: CFrame, extents: Vector3, at: number } } =
 			setmetatable({}, { __mode = "k" }) :: any
 		local function hullBox(boat: Model): (CFrame, Vector3)
@@ -243,32 +237,47 @@ function SwellSurface.start()
 		local probeCursor, probeDue = 0, 0
 		local refreshCursor, refreshDue = 0, 0
 		local coloredAt = -math.huge
-		local unprobed = true
+		local span = COUNT + 1 + SHORE_REACH * 2
+		local freshCursor = 0
 		local function cellAt(x: number, z: number)
 			local k = key(x, z)
 			local cell = cells[k]
 			if not cell then
-				cell = { x = x, z = z, wet = nil :: boolean?, amplitude = 0, shore = 0, shown = 0 }
+				cell = { x = x, z = z, wet = nil :: boolean?, shoreDirty = false, amplitude = 0, shore = 0, shown = 0 }
 				cells[k] = cell
 			end
 			return cell
 		end
-		local function refresh(cell, now: number, state)
-			local wet, total = 0, 0
+		local function probe(cell)
+			local water = isWater(cell.x * SPACING, cell.z * SPACING)
+			local changed = water ~= (cell.wet == true)
+			cell.wet = water
+			if not changed then return end
 			for dz = -SHORE_REACH, SHORE_REACH do
 				for dx = -SHORE_REACH, SHORE_REACH do
 					local neighbour = cells[key(cell.x + dx, cell.z + dz)]
-					total += 1
-					if neighbour and neighbour.wet then
-						wet += 1
-					end
+					if neighbour then neighbour.shoreDirty = true end
 				end
 			end
-			-- Swells die out before the beach, so the sheet never covers sand.
-			cell.shore = if cell.wet then smoothstep((wet / total - 0.6) / 0.4) else 0
-			local _, amplitude =
-				Weather.heightAt(Vector3.new(cell.x * SPACING, Biomes.WaterLevel, cell.z * SPACING), now, state)
-			cell.amplitude = amplitude
+		end
+		local function refresh(cell, state)
+			if cell.shoreDirty then
+				cell.shoreDirty = false
+				local wet = 0
+				if cell.wet then
+					for dz = -SHORE_REACH, SHORE_REACH do
+						for dx = -SHORE_REACH, SHORE_REACH do
+							local neighbour = cells[key(cell.x + dx, cell.z + dz)]
+							if neighbour and neighbour.wet then wet += 1 end
+						end
+					end
+				end
+				-- Swells die out before the beach, so the sheet never covers sand.
+				cell.shore = smoothstep((wet / (2 * SHORE_REACH + 1) ^ 2 - 0.6) / 0.4)
+			end
+			cell.amplitude = if cell.wet then Weather.amplitudeAt(
+				Vector3.new(cell.x * SPACING, Biomes.WaterLevel, cell.z * SPACING), state
+			) else 0
 		end
 
 		if released then
@@ -284,7 +293,7 @@ function SwellSurface.start()
 				or cameraPosition.Y > Biomes.WaterLevel + 180
 				or not Biomes.inOceanBounds(cameraPosition)
 			then
-				part.LocalTransparencyModifier = 1
+				if part.LocalTransparencyModifier ~= 1 then part.LocalTransparencyModifier = 1 end
 				return
 			end
 			if part.LocalTransparencyModifier ~= 0 then
@@ -300,9 +309,8 @@ function SwellSurface.start()
 				originX, originZ = firstX, firstZ
 				-- The part just moved a cell: every vertex must be rewritten this frame.
 				moved = true
-				unprobed = true
+				freshCursor = 0
 				part.CFrame = CFrame.new(centerX * SPACING, Biomes.WaterLevel, centerZ * SPACING)
-				table.clear(flat)
 				-- Forget cells the sheet left; keep a shore-reach border for the taper.
 				for k, cell in cells do
 					if
@@ -328,24 +336,22 @@ function SwellSurface.start()
 			end
 
 			-- Wet probes: unknown cells first (teleport, new rows), then a slow sweep.
-			local span = COUNT + 1 + SHORE_REACH * 2
 			local filtered = false
 			local fresh = 0
-			for row = -SHORE_REACH, if unprobed then COUNT + SHORE_REACH else -SHORE_REACH - 1 do
-				for column = -SHORE_REACH, COUNT + SHORE_REACH do
-					local cell = cellAt(firstX + column, firstZ + row)
-					if cell.wet == nil and fresh < FIRST_PROBES_PER_FRAME then
-						if not filtered then
-							filtered = true
-							refreshFilter()
-						end
-						cell.wet = isWater(cell.x * SPACING, cell.z * SPACING)
-						refresh(cell, now, state)
-						fresh += 1
+			while freshCursor < span * span and fresh < FIRST_PROBES_PER_FRAME do
+				local row, column = freshCursor // span - SHORE_REACH, freshCursor % span - SHORE_REACH
+				freshCursor += 1
+				local cell = cellAt(firstX + column, firstZ + row)
+				if cell.wet == nil then
+					if not filtered then
+						filtered = true
+						refreshFilter()
 					end
+					probe(cell)
+					refresh(cell, state)
+					fresh += 1
 				end
 			end
-			unprobed = fresh >= FIRST_PROBES_PER_FRAME
 			probeDue = math.min(probeDue + span * span * dt / WATER_CHECK_INTERVAL, SWEEP_PROBES_PER_FRAME)
 			while probeDue >= 1 do
 				probeDue -= 1
@@ -356,18 +362,18 @@ function SwellSurface.start()
 					filtered = true
 					refreshFilter()
 				end
-				cell.wet = isWater(cell.x * SPACING, cell.z * SPACING)
+				probe(cell)
 			end
 			refreshDue = math.min(refreshDue + size * size * dt / AMPLITUDE_REFRESH, AMPLITUDE_REFRESHES_PER_FRAME)
 			while refreshDue >= 1 do
 				refreshDue -= 1
 				refreshCursor = refreshCursor % (size * size) + 1
 				local row, column = (refreshCursor - 1) // size, (refreshCursor - 1) % size
-				refresh(cellAt(firstX + column, firstZ + row), now, state)
+				refresh(cellAt(firstX + column, firstZ + row), state)
 			end
 
 			-- Each nearby hull caps the water inside its footprint below its sole.
-			local caps = {}
+			table.clear(caps)
 			local boats = workspace:FindFirstChild("PlayerBoats")
 			if boats then
 				for _, boat in boats:GetChildren() do
@@ -438,31 +444,18 @@ function SwellSurface.start()
 						cell.shown += (cell.shore - cell.shown) * ease
 					end
 					local amplitude = cell.amplitude * cell.shown * edges[index]
-					if amplitude < FLAT_AMPLITUDE then
-						if not flat[index] then
-							flat[index] = true
-							local y = if cell.shown < 0.01 then SUNKEN else 0
-							mesh:SetPosition(vertices[index], Vector3.new(localX[index], y, localZ[index]))
-							mesh:SetNormal(normals[index], Vector3.yAxis)
-							if alphas[index] ~= 0 then
-								alphas[index] = 0
-								mesh:SetColorAlpha(colors[index], 0)
-							end
+					local alpha = 0
+					if amplitude > FADE_FROM and cell.shown >= 0.01 then
+						local unit, sx, sz = Weather.swell(cell.x * SPACING, cell.z * SPACING, now, direction)
+						local height = math.min(unit * amplitude, caps[index] or math.huge)
+						alpha = smoothstep((height - FADE_FROM) / FADE_HEIGHT)
+						-- A hidden vertex is never drawn by the face pass. Leave its mesh storage
+						-- alone until it rises into a crest again, even when the sheet recenters.
+						if alpha > 0 then
+							mesh:SetPosition(vertices[index], Vector3.new(localX[index], height, localZ[index]))
+							mesh:SetNormal(normals[index], Vector3.new(-amplitude * sx, 1, -amplitude * sz).Unit)
 						end
-						continue
 					end
-					flat[index] = false
-					local unit, sx, sz = Weather.swell(cell.x * SPACING, cell.z * SPACING, now, direction)
-					local height = unit * amplitude
-					local cap = caps[index]
-					if cap and height > cap then
-						height = cap
-					end
-					local alpha = if cell.shown < 0.01 then 0 else smoothstep((height - FADE_FROM) / FADE_HEIGHT)
-					-- Land cells drop out of sight beneath the shore.
-					local y = if cell.shown < 0.01 then SUNKEN else height
-					mesh:SetPosition(vertices[index], Vector3.new(localX[index], y, localZ[index]))
-					mesh:SetNormal(normals[index], Vector3.new(-amplitude * sx, 1, -amplitude * sz).Unit)
 					if math.abs(alpha - alphas[index]) > 0.02 or (alpha == 0) ~= (alphas[index] == 0) then
 						alphas[index] = alpha
 						mesh:SetColorAlpha(colors[index], alpha)

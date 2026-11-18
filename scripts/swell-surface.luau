@@ -27,7 +27,7 @@ local meshFailure, partFailure = nil, false
 local partHook = nil
 local function newMesh()
 	local mesh =
-		{ positions = {}, normals = {}, colors = {}, alphas = {}, faces = {}, faceNormals = {}, faceColors = {} }
+		{ positions = {}, normals = {}, colors = {}, alphas = {}, faces = {}, faceNormals = {}, faceColors = {}, poseWrites = 0 }
 	function mesh:AddVertex(position)
 		table.insert(self.positions, position)
 		return #self.positions
@@ -62,6 +62,7 @@ local function newMesh()
 	function mesh:SetPosition(id, position)
 		assert(self.positions[id], "Unknown vertex")
 		self.positions[id] = position
+		self.poseWrites += 1
 	end
 	function mesh:SetNormal(id, normal)
 		assert(self.normals[id], "Unknown normal")
@@ -195,14 +196,14 @@ for id, local_ in mesh.positions do
 	if world.X < 1560 + 40 then
 		-- Over land, or tapering into it.
 		if world.X < 1560 then
-			assert(local_.Y < 0 and alpha == 0, "Land must hide the sheet")
+			assert(alpha == 0, "Land must hide the sheet")
 			sunk += 1
 		end
 		continue
 	end
 	local offset = world - part.CFrame.Position
 	local inner = math.max(math.abs(offset.X), math.abs(offset.Z)) < 264 - 72
-	if inner then
+	if inner and alpha > 0 then
 		local expected = Weather.heightAt(world, now, state)
 		assert(
 			math.abs(local_.Y - expected) < 0.05 + math.abs(expected) * 0.03,
@@ -210,16 +211,16 @@ for id, local_ in mesh.positions do
 		)
 		matched += 1
 	end
-	if local_.Y > 1 then
+	if alpha > 0 and local_.Y > 1 then
 		assert(alpha > 0.9, "Raised crests must be opaque")
 		crests += 1
-	elseif local_.Y <= 0 then
+	elseif inner and Weather.heightAt(world, now, state) <= 0 then
 		assert(alpha == 0, "Troughs beneath Terrain water must not show")
 		troughs += 1
 	end
 end
 assert(
-	matched > 500 and crests > 50 and troughs > 50 and sunk > 50,
+	matched > 300 and crests > 50 and troughs > 50 and sunk > 50,
 	"Check must see crests, troughs, open water and land"
 )
 -- Only triangles wholly on visible crest are drawn: nothing lies on or under Terrain's water.
@@ -268,17 +269,17 @@ hull.Parent = boat
 local sole = 1 - hullSize.Y / 2 + 0.5
 for _ = 1, 30 do
 	tick(1 / 30)
-	for _, local_ in mesh.positions do
+	for id, local_ in mesh.positions do
 		local world = part.CFrame:PointToWorldSpace(local_)
 		if math.abs(world.X - 1700) < hullSize.X / 2 and math.abs(world.Z) < hullSize.Z / 2 then
-			assert(world.Y <= sole - 0.3 + 1e-6, "Water must stay below a boat's sole")
+			assert(mesh.alphas[id] == 0 or world.Y <= sole - 0.3 + 1e-6, "Visible water must stay below a boat's sole")
 		end
 	end
 end
 boats.Parent = nil
 
 -- Steady sailing probes a bounded number of rays per frame.
-local busiest = 0
+local busiest, poseWritesBefore = 0, mesh.poseWrites
 for frame = 1, 300 do
 	camera.CFrame = CFrame.new(1700 + frame * 0.8, 12, frame * 0.3)
 	local before = rays
@@ -286,6 +287,9 @@ for frame = 1, 300 do
 	busiest = math.max(busiest, rays - before)
 end
 assert(busiest <= 260, "Sailing must not probe the whole sheet in one frame: " .. busiest)
+local averagePoses = (mesh.poseWrites - poseWritesBefore) / 300
+assert(averagePoses < 800, "Only visible crest vertices need a pose while sailing: " .. averagePoses)
+print(string.format("Swell sheet: %.0f vertex poses per sailing frame", averagePoses))
 
 camera.CFrame = CFrame.new(1700, -3, 0)
 tick(1 / 60)

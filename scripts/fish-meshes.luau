@@ -47,7 +47,7 @@ function instanceMethods:Clone()
 	return clone
 end
 local created, templates = {}, {}
-local liveDynamic, peakDynamic, allocations, copies = 0, 0, 0, 0
+local liveDynamic, peakDynamic, allocations, bakes = 0, 0, 0, 0
 local failure, failAt = nil, 1
 local function newMesh(fixed)
 	local mesh = { FixedSize = fixed, points = {}, normals = {}, faces = {} }
@@ -101,25 +101,27 @@ function assetService:CreateEditableMesh()
 	end
 	return newMesh(false)
 end
-function assetService:CreateEditableMeshAsync(content, options)
-	copies += 1
+function assetService:CreateDataModelContentAsync(content)
+	bakes += 1
 	task.wait() -- Deliberately interleave species builds at both yielding APIs.
-	assert(options.FixedSize and not content.object.destroyed)
-	if copies == failAt then
-		if failure == "copy-budget" then return nil end
-		if failure == "copy-error" then error("Fixed-size copy failed") end
+	assert(not content.object.FixedSize and not content.object.destroyed)
+	if bakes == failAt then
+		if failure == "bake-result" then return Enum.CreateContentResult.UnknownFailure end
+		if failure == "bake-error" then error("Static mesh bake failed") end
 	end
-	local fixed = newMesh(true)
-	fixed.points = table.clone(content.object.points)
-	fixed.faces = table.clone(content.object.faces)
-	return fixed
+	return Enum.CreateContentResult.Success, {
+		SourceType = Enum.ContentSourceType.Opaque,
+		points = table.clone(content.object.points),
+		faces = table.clone(content.object.faces),
+	}
 end
-function assetService:CreateMeshPartAsync(content)
+function assetService:CreateMeshPartAsync(content, options)
 	task.wait()
 	if failure == "part" then error("Mesh part failed") end
-	assert(content.object.FixedSize and not content.object.destroyed)
-	local part = Instance.new("Part")
-	part.mesh = content.object
+	assert(content.SourceType == Enum.ContentSourceType.Opaque and #content.faces > 0)
+	assert(options.RenderFidelity == Enum.RenderFidelity.Precise)
+	local part = Instance.new("MeshPart")
+	part.MeshContent = content
 	table.insert(templates, part)
 	return part
 end
@@ -159,7 +161,7 @@ end
 local function reset()
 	assert(#pending == 0)
 	created, templates, warnings = {}, {}, {}
-	liveDynamic, peakDynamic, allocations, copies = 0, 0, 0, 0
+	liveDynamic, peakDynamic, allocations, bakes = 0, 0, 0, 0
 	failure, failAt = nil, 1
 	clock = 0
 	dependencies.EditableMeshBudget = loadBudget()
@@ -203,10 +205,10 @@ for _, id in { "round", "flat", "other", "round", "flat", "other" } do
 end
 flush()
 assert(peakDynamic == 1 and liveDynamic == 0, "Simultaneous species must share one temporary dynamic mesh")
-assert(#templates == 16 and copies == 16, "Species templates must be cached, including flatfish")
+assert(#templates == 16 and bakes == 16, "Species templates must be cached, including flatfish")
 assert(allocations == 3, "Each species must build every band in one reused scratch mesh")
 for _, mesh in created do
-	assert(mesh.FixedSize ~= (mesh.destroyed == true), "Only fixed-size skins stay alive")
+	assert(mesh.destroyed, "All editable meshes must be released")
 end
 for _, model in models do
 	assert(not visibleFallback(model), "Completed skins must replace fallback geometry")
@@ -214,15 +216,15 @@ for _, model in models do
 	for _, part in model:GetChildren() do
 		if part.Name == "LoftSkin" then
 			count += 1
-			assert(part.mesh.FixedSize and not part.mesh.destroyed and #part.mesh.faces > 0)
+			assert(part.MeshContent.SourceType == Enum.ContentSourceType.Opaque and #part.MeshContent.faces > 0)
 			assert(not part.CanCollide and part.Transparency == 0 and part.Color.G == 100 / 255)
 		end
 	end
 	assert(count == (if model:GetAttribute("LoftFish") == "flat" then 2 else 7))
 end
-print("PASS concurrent species use one dynamic mesh, keep fixed skins, reuse templates and hydrate flatfish")
+print("PASS concurrent species share one temporary mesh, reuse baked skins and hydrate flatfish")
 
-for _, reason in { "budget", "access", "copy-budget", "copy-error" } do
+for _, reason in { "budget", "access" } do
 	client = reset()
 	failure = reason
 	local fallback = fish("round")
@@ -236,7 +238,7 @@ for _, reason in { "budget", "access", "copy-budget", "copy-error" } do
 end
 print("PASS budget/API failures stop further engine allocations across species and water")
 
-for _, reason in { "geometry", "part", "copy-budget" } do
+for _, reason in { "geometry", "part", "bake-result", "bake-error" } do
 	client = reset()
 	failure, failAt = reason, 3
 	local fallback = fish("round")
@@ -249,11 +251,7 @@ for _, reason in { "geometry", "part", "copy-budget" } do
 	local nextFish = fish("other")
 	task.spawn(client.hydrate, nextFish)
 	flush()
-	if reason == "geometry" or reason == "part" then
-		assert(not visibleFallback(nextFish), "Non-budget failure must release the species build lock")
-	else
-		assert(visibleFallback(nextFish) and allocations == 1, "Budget failure must stay latched")
-	end
+	assert(not visibleFallback(nextFish), "A failed skin must release the species build lock")
 end
 print("PASS partial-build, geometry and mesh-part failures release resources and keep fallbacks visible")
 
@@ -261,8 +259,8 @@ client = reset()
 local completed = fish("round")
 task.spawn(client.hydrate, completed)
 flush()
-local completedMeshes = table.clone(created)
-failure, failAt = "copy-budget", copies + 3
+local completedSkin = completed:FindFirstChild("LoftSkin", true)
+failure, failAt = "budget", allocations + 1
 task.spawn(client.hydrate, fish("other"))
 flush()
 local attempts = allocations
@@ -270,12 +268,9 @@ local cached = fish("round")
 task.spawn(client.hydrate, cached)
 flush()
 assert(not visibleFallback(completed) and not visibleFallback(cached) and allocations == attempts)
-for _, mesh in completedMeshes do
-	if mesh.FixedSize then assert(not mesh.destroyed, "Budget exhaustion must preserve completed skins") end
-end
-for index = #completedMeshes + 1, #created do
-	assert(created[index].destroyed, "Only the incomplete species should be discarded")
-end
+assert(cached:FindFirstChild("LoftSkin", true).MeshContent.SourceType == Enum.ContentSourceType.Opaque)
+assert(completedSkin.Parent and #completedSkin.MeshContent.faces > 0, "A budget failure must preserve completed skins")
+assertReleased()
 print("PASS exhausted budgets preserve completed skins and allow cached species to hydrate")
 
 client = reset()
@@ -306,42 +301,27 @@ assert(not visibleFallback(evictedFish) and allocations == 1, "Release water bef
 assert(dependencies.EditableMeshBudget.status():find("Released for fish: SwellSurface", 1, true))
 print("PASS fish skins evict the swell sheet when the device budget is full")
 
--- The reported failure: the last band's fixed copy doesn't fit. Skins of
--- species no fish is wearing give their meshes back and the build continues.
+-- An inventory can show many species at once. The cached templates can be
+-- trimmed even when visible fish still reference their baked mesh content.
 client = reset()
-local idle = fish("round")
-task.spawn(client.hydrate, idle)
+local oldest = fish("round")
+task.spawn(client.hydrate, oldest)
 flush()
-local idleMeshes = {}
-for _, mesh in created do
-	if mesh.FixedSize then table.insert(idleMeshes, mesh) end
+local oldestSkin = oldest:FindFirstChild("LoftSkin", true)
+for index = 1, 48 do
+	local latest = fish("species" .. index)
+	task.spawn(client.hydrate, latest)
+	flush()
+	assert(not visibleFallback(latest))
+	assertReleased()
 end
-assert(#idleMeshes == 7)
-local worn = fish("flat")
-task.spawn(client.hydrate, worn)
+assert(oldestSkin.Parent and #oldestSkin.MeshContent.faces > 0)
+local beforeRebuild = allocations
+local rebuilt = fish("round")
+task.spawn(client.hydrate, rebuilt)
 flush()
-idle.Parent = nil
-failure, failAt = "copy-budget", copies + 7
-local starved = fish("other")
-task.spawn(client.hydrate, starved)
-flush()
-assert(not visibleFallback(starved), "A starved species must build after idle skins are reclaimed")
-for _, mesh in idleMeshes do assert(mesh.destroyed, "Idle species skins must be reclaimed") end
-assert(not visibleFallback(worn), "Skins still worn by a fish must survive")
-for _, part in worn:GetChildren() do
-	if part.Name == "LoftSkin" then assert(not part.mesh.destroyed, "Worn skins keep their meshes") end
-end
-assert(liveDynamic == 0)
-assert(dependencies.EditableMeshBudget.status():find("IdleFishSkins", 1, true))
-idle.Parent = world
-local idleSkinned = false
-task.spawn(client.hydrate, idle)
-flush()
-for _, part in idle:GetChildren() do
-	if part.Name == "LoftSkin" and not part.mesh.destroyed then idleSkinned = true end
-end
-assert(idleSkinned, "A returning fish of a reclaimed species must be re-skinned")
-print("PASS a full budget reclaims idle species skins and keeps worn ones")
+assert(not visibleFallback(rebuilt) and allocations == beforeRebuild + 1)
+print("PASS many simultaneous species retain no editable meshes and cache trimming preserves worn skins")
 
 client = reset()
 failure = "budget"
@@ -357,11 +337,13 @@ task.spawn(function() report = client.diagnose() end)
 flush()
 collection.GetTagged = untagged
 assert(report:find("Rainbow Trout skin available", 1, true), "The mesh test must retry a latched budget")
+assert(report:find("Mesh test PASS", 1, true) and report:find("with skins: 1; without skins: 0.", 1, true),
+	"The diagnostic must wait for complete hydration before counting fish")
 assert(not visibleFallback(latched), "A successful retry must re-skin fish left as spheres")
 print("PASS mesh test retries a latched failure and re-skins fallback fish")
 
--- Reclaimed meshes invalidate every MeshPart referencing them. The detached
--- fish and its clones must have a visible body even if a rebuild cannot fit.
+-- A clone needs its own swatch bindings. It must show the fallback if a
+-- rebuild fails, while the original still references valid baked content.
 client = reset()
 local parked = fish("round")
 task.spawn(client.hydrate, parked)
@@ -369,24 +351,20 @@ flush()
 local copied = parked:Clone()
 assert(not visibleFallback(copied), "Cloning must preserve the source's hidden fallback")
 parked.Parent = nil
-failure, failAt = "copy-budget", copies + 1
-task.spawn(client.hydrate, fish("other"))
-flush()
-assert(visibleFallback(parked), "Reclamation must restore the detached fish before destroying its mesh")
-assert(not parked:FindFirstChild("LoftSkin", true), "Reclamation must remove invalid skins")
+copied:SetAttribute("LoftFish", "uncached")
 failure, failAt = "budget", allocations + 1
 parked.Parent, copied.Parent = world, world
 task.spawn(client.hydrate, parked)
 task.spawn(client.hydrate, copied)
 flush()
-assert(visibleFallback(parked) and visibleFallback(copied), "Rebuild failure must preserve returning and cloned bodies")
+assert(not visibleFallback(parked) and visibleFallback(copied), "A failed rebuild must preserve both visible bodies")
 assert(not copied:FindFirstChild("LoftSkin", true), "A cloned stale skin must be removed before allocation")
 local before = allocations
 clock = 3600
 task.spawn(client.hydrate, fish("afterAnHour"))
 flush()
 assert(allocations == before, "Elapsed time alone must not retry an exhausted engine budget")
-print("PASS reclaimed and cloned fish remain visible after rebuild failures; exhausted budgets stay latched")
+print("PASS returning and cloned fish remain visible after rebuild failures; exhausted budgets stay latched")
 
 -- A fish can leave the world during the yielding copy. It must not retain its
 -- in-progress hydration mark and skip rebuilding when it returns.

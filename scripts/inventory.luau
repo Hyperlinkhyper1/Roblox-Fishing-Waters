@@ -185,6 +185,14 @@ function methods:FindFirstChildOfClass(class)
 end
 methods.WaitForChild = methods.FindFirstChild
 function methods:Destroy() self.Parent = nil self.props.Destroyed = true end
+function methods:ClearAllChildren()
+	for _, child in self:GetChildren() do child:Destroy() end
+end
+function methods:Clone()
+	local copy = Instance.new(self.class)
+	copy.props = table.clone(self.props)
+	return copy
+end
 function methods:GetAttribute(name) return self.attributes[name] end
 function methods:SetAttribute(name, value) self.attributes[name] = value if self.events[name] then self.events[name]:Fire() end end
 function methods:GetAttributeChangedSignal(name) self.events[name] = self.events[name] or signal() return self.events[name] end
@@ -261,6 +269,38 @@ local workspace = { CurrentCamera = { ViewportSize = Vector2.new(1366, 768) }, F
 local services = { Players = Players, ReplicatedStorage = ReplicatedStorage, RunService = RunService,
 	UserInputService = UserInputService, ContextActionService = ContextActionService, MarketplaceService = MarketplaceService, StarterGui = StarterGui }
 local game = { GetService = function(_, name) return services[name] end }
+-- PREVIEW_MATH --
+local warn = print
+local meshBuilds, meshVertices = 0, {}
+local Content = { fromObject = function(mesh) return mesh end }
+local MeshBudget = {
+	withScratch = function(_, build)
+		local vertices, normals = {}, {}
+		local scratch = { faces = 0 }
+		function scratch:AddVertex(point) table.insert(vertices, point) return #vertices end
+		function scratch:AddNormal(normal) table.insert(normals, normal) return #normals end
+		function scratch:AddColor(_, alpha) assert(alpha == 1) return 1 end
+		function scratch:AddTriangle(a, b, c)
+			self.faces += 1
+			self.faceNormal = (vertices[b] - vertices[a]):Cross(vertices[c] - vertices[a]).Unit
+			return self.faces
+		end
+		function scratch:SetFaceNormals(_, ids)
+			assert(self.faceNormal:Dot(normals[ids[1]]) > 0.999, "Crate triangle winds toward its normal")
+		end
+		function scratch:SetFaceColors(_, ids) assert(#ids == 3) end
+		meshVertices = vertices
+		return build(scratch)
+	end,
+	fixed = function(scratch) return scratch end,
+}
+services.AssetService = { CreateMeshPartAsync = function(_, mesh)
+	assert(mesh.faces > 100, "Crate has a triangulated body and hardware")
+	meshBuilds += 1
+	return Instance.new("MeshPart")
+end }
+local BaitCratePreview = (function() -- CRATE_PREVIEW_SOURCE --
+end)()
 local Server = (function() -- SERVER_SOURCE --
 end)()
 Server.start()
@@ -309,10 +349,24 @@ player:SetAttribute("BoatDataStatus", "Ready")
 player:SetAttribute("BaitCrates", 2)
 local crate = panel.InventoryItems:FindFirstChild("BaitCrateCard")
 check(crate ~= nil and not panel.EmptyInventory.Visible, "Owned bait crates appear in inventory")
+local preview = crate.BaitCratePreview
+check(preview.CurrentCamera and preview.WorldModel.BaitCrate:FindFirstChildOfClass("MeshPart"),
+	"Bait crate cards render a mesh through a viewport camera")
+local camera = preview.CurrentCamera
+local slope = math.tan(math.rad(camera.FieldOfView / 2))
+local aspect = preview.Size.X.Offset / preview.Size.Y.Offset
+for _, vertex in meshVertices do
+	local point = camera.CFrame:PointToObjectSpace(vertex)
+	assert(math.abs(point.X) < -point.Z * slope * aspect and math.abs(point.Y) < -point.Z * slope,
+		"The full crate fits inside the inventory thumbnail")
+end
 crate.Activated:Fire()
 check(panel.ActionOpenCrate.Visible and not panel.ActionFavorite.Visible, "Crate selection exposes its open action")
 panel.ActionOpenCrate.Activated:Fire()
 check(crateOpens == 1, "Opening a crate uses the fishing request")
+player:SetAttribute("BaitCrates", 1)
+check(meshBuilds == 1 and panel.InventoryItems.BaitCrateCard.BaitCratePreview.WorldModel.BaitCrate.CrateMesh,
+	"Updating the stack reuses the crate mesh")
 player:SetAttribute("BaitCrates", 0)
 check(not panel.InventoryItems:FindFirstChild("BaitCrateCard") and not panel.ActionOpenCrate.Visible, "Last opened crate removes its card")
 panel.ViewFish.Activated:Fire()

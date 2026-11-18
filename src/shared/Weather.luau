@@ -499,9 +499,13 @@ local function shelteredHeight(position: Vector3, time: number, state: State, ba
 	return swell(position.X, position.Z, time, state.windDirection) * base * Weather.lakeExposure(position) ^ 2
 end
 
-local function heightAt(position: Vector3, time: number, state: State): (number, number)
+function Weather.amplitudeAt(position: Vector3, state: State): number
 	local _, _, _, wind = localConditions(position, state)
-	local amplitude = waveAmplitude(wind) * Weather.lakeExposure(position) ^ 2
+	return waveAmplitude(wind) * Weather.lakeExposure(position) ^ 2
+end
+
+local function heightAt(position: Vector3, time: number, state: State): (number, number)
+	local amplitude = Weather.amplitudeAt(position, state)
 	return swell(position.X, position.Z, time, state.windDirection) * amplitude, amplitude
 end
 

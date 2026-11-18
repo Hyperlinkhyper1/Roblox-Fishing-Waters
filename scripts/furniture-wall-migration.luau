@@ -61,7 +61,16 @@ local pending = Data.decode({
 assert(pending.Furniture[1].X == 6 and pending.Furniture[1].Z == 3, 'Ordinary decode retried pending relocation')
 local resolved = assert(Data.pickUpFurniture(pending, 2))
 assert(not resolved.FurnitureWallMigrationPending and not Furniture.intersectsGridWall(resolved.Furniture[1]), 'Pickup did not retry pending migration')
+assert(resolved.Furniture[1].X % Furniture.GRID == 0 and resolved.Furniture[1].Z % Furniture.GRID == 0, 'A retry moved furniture off the grid')
 assert(resolved.FurnitureStock.PottedPlant == 1, 'Picked up item was lost')
+
+local pendingPlacement = Data.decode({
+	ShopBuildingVersion = 1, FurnitureWallVersion = 3, FurnitureWallMigrationPending = true,
+	FurnitureStock = { Rug = 1 },
+})
+local placed = assert(Data.placeFurniture(pendingPlacement, 'Rug', 9, 0, 3))
+local rug = placed.Furniture[#placed.Furniture]
+assert(rug.ItemId == 'Rug' and rug.X == 9 and rug.Z == 0, 'A pending migration changed the confirmed grid placement')
 
 -- Saturate the available space with a test fixture to exercise the genuinely
 -- unplaceable case without deleting an item or its stored contents.

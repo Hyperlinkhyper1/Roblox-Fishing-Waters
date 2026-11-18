@@ -194,10 +194,11 @@ for _, p in parts do
   end
 end
 
--- Streaming pieces stay small, and nothing streams outside one
+-- Static features stream incrementally; the metro retains its bounded pieces.
 local biggest, biggestName, ungrouped, pieces = 0, "", 0, 0
 for _, d in ground:GetDescendants() do
   if d:IsA("Model") and d:HasTag("LodPiece") then
+    check(d:GetAttribute("LodSkip") == true, d.Name .. " must be a dedicated underground piece to arrive atomically")
     pieces += 1
     local count = 0
     for _, e in d:GetDescendants() do if e:IsA("BasePart") then count += 1 end end
@@ -211,7 +212,7 @@ for _, d in ground:GetDescendants() do
     if not inPiece then ungrouped += 1 end
   end
 end
-check(ungrouped == 0, ungrouped .. " city parts would stream outside any pinned piece")
+check(ungrouped > #parts * 0.95, ungrouped .. " city parts stream individually")
 check(biggest <= 260, "Largest streaming piece (" .. biggestName .. ") has " .. biggest .. " parts")
 
 -- Traffic flows on the real network at the densest population the client uses

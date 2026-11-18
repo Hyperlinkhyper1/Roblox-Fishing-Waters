@@ -179,7 +179,14 @@ output("Largest original 96-stud island bin: " .. largestUnbounded .. " parts")
 Cities.ensure(world)
 local cityBlocks = { Brambleport = 33, Northwick = 30, Westhaven = 37, Riverton = 40 }
 local function verifyCity(city, label)
-  verify(city, label)
+  local ground = assert(city:FindFirstChild("Ground"))
+  check(ground:GetAttribute("LodSurfaceTracked") == true, label .. " uses structural shell coverage")
+  for _, model in ground:GetDescendants() do
+    if model:IsA("Model") then
+      check(model.ModelStreamingMode == Enum.ModelStreamingMode.Default and not model:HasTag("LodPiece"),
+        label .. " streams static scenery by part: " .. model.Name)
+    end
+  end
   local buildings, deferred, protected = 0, 0, 0
   for _, d in city:GetDescendants() do
     if d:IsA("Model") and d:HasTag("CityDetail") then
@@ -187,7 +194,7 @@ local function verifyCity(city, label)
       local parts = 0
       for _, x in d:GetDescendants() do if x:IsA("BasePart") then parts += 1 end end
       if parts > 0 then
-        check(d:HasTag("LodPiece"), d.Name .. " building core and facade metadata share one streaming lifetime")
+        check(d.ModelStreamingMode == Enum.ModelStreamingMode.Default, d.Name .. " building core streams incrementally")
       else
         for _, x in d:GetDescendants() do
           if x:IsA("Model") and x.Name == "GroundChunk" then
@@ -216,8 +223,10 @@ for _, site in Cities.Sites do verifyCity(assert(world:FindFirstChild(site.name)
 -- geometry, then run the same ensure call after the facade migration is available.
 local bakedWorld = Instance.new("Folder"); bakedWorld.Name = "BakedMap"; bakedWorld.Parent = workspace
 detailEnabled = false
+local prepareIsland = Lod.prepareIsland
+Lod.prepareIsland = function(city) Lod.pinGround(city:FindFirstChild("Ground")) end
 Cities.ensure(bakedWorld)
-Lod.prepareStreaming(bakedWorld)
+Lod.prepareIsland = prepareIsland
 local oldChunks = {}
 for _, d in bakedWorld:GetDescendants() do
   if d:IsA("Model") and d.Name:match("^CityBlock%d+$") then
@@ -227,6 +236,7 @@ for _, d in bakedWorld:GetDescendants() do
   end
 end
 check(#oldChunks > 0, "Saved fixture has already-split building chunks")
+Lod.prepareStreaming(bakedWorld)
 detailEnabled = true
 Cities.ensure(bakedWorld)
 for _, chunk in oldChunks do

@@ -316,13 +316,35 @@ local function contains(p, point)
 end
 local solids = {}
 for _, p in parts do if p.CanCollide and p.Transparency < 1 then table.insert(solids, p) end end
-local function blockedAt(point)
-  for _, p in solids do
+-- Index conservative bounds horizontally before the exact shape tests. The metro's
+-- vertical probes visit thousands of points and most of the city cannot contain them.
+local function pointQuery(parts)
+  local cell = 32
+  local bins = {}
+  local function key(x, z) return x * 100000 + z end
+  for _, p in parts do
     local h, c = halfExtent(p), p.CFrame.p
-    if math.abs(point.X - c.X) <= h.X and math.abs(point.Y - c.Y) <= h.Y and math.abs(point.Z - c.Z) <= h.Z and contains(p, point) then return p end
+    local bounds = { part = p, center = c, half = h }
+    for x = math.floor((c.X - h.X) / cell), math.floor((c.X + h.X) / cell) do
+      for z = math.floor((c.Z - h.Z) / cell), math.floor((c.Z + h.Z) / cell) do
+        local id = key(x, z)
+        if not bins[id] then bins[id] = {} end
+        table.insert(bins[id], bounds)
+      end
+    end
   end
-  return nil
+  return function(point)
+    local bin = bins[key(math.floor(point.X / cell), math.floor(point.Z / cell))]
+    if not bin then return nil end
+    for _, bounds in bin do
+      local h, c = bounds.half, bounds.center
+      if math.abs(point.X - c.X) <= h.X and math.abs(point.Y - c.Y) <= h.Y
+        and math.abs(point.Z - c.Z) <= h.Z and contains(bounds.part, point) then return bounds.part end
+    end
+    return nil
+  end
 end
+local blockedAt = pointQuery(solids)
 
 -- The channel stays open from the sea to the marina
 local channel = CityPort.CHANNEL
@@ -452,13 +474,7 @@ for _, model in ground:GetChildren() do
 end
 check(#facets > 3000 and hillTop > 200, "Hills have " .. #facets .. " facets rising to " .. fmt(hillTop))
 check(#facets % 2 == 0, "Every hill facet is a whole triangle")
-local function facetAt(point)
-  for _, p in facets do
-    local h, c = halfExtent(p), p.CFrame.p
-    if math.abs(point.X - c.X) <= h.X and math.abs(point.Y - c.Y) <= h.Y and math.abs(point.Z - c.Z) <= h.Z and contains(p, point) then return p end
-  end
-  return nil
-end
+local facetAt = pointQuery(facets)
 -- No step where the mainland ends and the hills begin
 for x = -1150, 1170, 37 do
   local y = CityHills.surface(x, EDGE + 1)
@@ -533,7 +549,7 @@ do
   for _, model in ground:GetChildren() do
     local name = model.Name
     if name:match("^Circuit") or name:match("^Pit") or name:match("^Paddock") or name:match("Grandstand$") then
-      check(model:HasTag("LodPiece"), name .. " is a streaming piece")
+      check(model.ModelStreamingMode == Enum.ModelStreamingMode.Default, name .. " streams individual parts")
       for _, p in model:GetDescendants() do
         if p:IsA("BasePart") then
           table.insert(circuitParts, p)
@@ -542,13 +558,7 @@ do
       end
     end
   end
-  local function asphaltAt(point)
-    for _, p in asphalt do
-      local h, c = halfExtent(p), p.CFrame.p
-      if math.abs(point.X - c.X) <= h.X and math.abs(point.Y - c.Y) <= h.Y and math.abs(point.Z - c.Z) <= h.Z and contains(p, point) then return p end
-    end
-    return nil
-  end
+  local asphaltAt = pointQuery(asphalt)
   local function across(s, o) return s[1] - s[8] * o, s[2] + s[7] * o end
   local steepest, lowest, highest, worstLip = 0, math.huge, -math.huge, 0
   for k, s in laps do
@@ -735,11 +745,12 @@ for _, corner in { { site.x0, site.z0 }, { site.x1, site.z0 }, { site.x0, site.z
 end
 check(site.x1 < CityPort.WEST_QUAY - 400, "Refinery sits behind the container terminal")
 
--- Streaming pieces stay small; the city is split before it is first replicated
+-- Static scenery streams by part. Authored underground groups keep their atomic boundary.
 local pieces, biggest, biggestName, ungrouped = 0, 0, "", 0
 for _, d in ground:GetDescendants() do
   if d:IsA("Model") and d:HasTag("LodPiece") then
     check(d:GetAttribute("PieceId") ~= nil and d.ModelStreamingMode == "Enum.ModelStreamingMode.PersistentPerPlayer", d.Name .. " is a pinned streaming piece")
+    check(d:GetAttribute("LodSkip") == true, "Only dedicated underground groups stay pinned under city ground")
     pieces += 1
     local count = 0
     for _, e in d:GetDescendants() do if e:IsA("BasePart") then count += 1 end end
@@ -753,7 +764,8 @@ for _, d in ground:GetDescendants() do
     if not inPiece then ungrouped += 1 end
   end
 end
-check(ungrouped == 0, ungrouped .. " city parts would stream outside any pinned piece")
+check(ungrouped > #parts * 0.95, ungrouped .. " city parts stream progressively")
+check(ground:GetAttribute("LodSurfaceTracked") == true, "City tiles only count structural coverage")
 check(biggest <= 260, "Largest streaming piece (" .. biggestName .. ") has " .. biggest .. " parts")
 
 -- Distant shell: tiled, one union per tile, each tile waiting on the ground under it

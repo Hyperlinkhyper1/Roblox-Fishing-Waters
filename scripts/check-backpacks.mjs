@@ -20,6 +20,7 @@ const replacements = {
  'game:GetService("ReplicatedFirst"):WaitForChild("UITheme")': 'Theme',
  'ReplicatedStorage.Shared.Admin': '{isAdmin=function() return false end}',
  'ReplicatedStorage.Shared.Bait': '(function()\n' + await read('src/shared/Bait.luau') + '\nend)()',
+ 'script.Parent.BaitCratePreview': '{}',
 };
 function inject(source) { for (const [key,value] of Object.entries(replacements)) source = source.replaceAll('require(' + key + ')', value); return source; }
 let program = mocks + '\nlocal Inventory = (function()\n' + await read('src/shared/Inventory.luau') + '\nend)()\n' + await read('scripts/backpacks.luau');

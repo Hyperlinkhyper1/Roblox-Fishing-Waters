@@ -38,7 +38,7 @@ end
 flush()
 assert(#warnings == 0, table.concat(warnings, "\\n"))
 assert(peakDynamic == 1 and liveDynamic == 0, "Species serialize scratch allocations and release them")
-assert(allocations == #models and copies == #models * 7, "Each species builds all seven fixed skin bands")
+assert(allocations == #models and bakes == #models * 7, "Each species bakes all seven skin bands")
 local triangles, vertices = 0, 0
 local function finite(n) return n == n and math.abs(n) < math.huge end
 for _, model in models do
@@ -46,9 +46,9 @@ for _, model in models do
 	for _, part in model:GetDescendants() do
 		if part.Name == "LoftSkin" then
 			bands += 1
-			local mesh = part.mesh
-			assert(mesh and mesh.FixedSize and not mesh.destroyed and #mesh.faces > 0,
-				model.Name .. ": live fixed mesh has triangles")
+			local mesh = part.MeshContent
+			assert(mesh and mesh.SourceType == Enum.ContentSourceType.Opaque and #mesh.faces > 0,
+				model.Name .. ": baked mesh has triangles")
 			for _, point in mesh.points do
 				assert(finite(point.X) and finite(point.Y) and finite(point.Z), model.Name .. ": finite vertices")
 			end
@@ -68,7 +68,7 @@ for _, model in models do
 	assert(bands == 7 and hidden > 0, model.Name .. ": all body bands hydrate")
 end
 print("PASS " .. #models .. " new fish hydrate through EditableMesh API doubles: "
-	.. copies .. " bands, " .. vertices .. " vertices, " .. triangles .. " valid triangles")
+	.. bakes .. " bands, " .. vertices .. " vertices, " .. triangles .. " valid triangles")
 print("Recording doubles only; Studio appearance and device memory require play testing.")
 `;
 const runtime = await freezerRuntime();
